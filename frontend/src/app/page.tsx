@@ -1,6 +1,7 @@
 import Poster from "@/components/sections/Poster";
 import LeadHero from "@/components/sections/LeadHero";
 import CoffeeLoop from "@/components/sections/CoffeeLoop";
+import DatingScroll from "@/components/sections/DatingScroll";
 import Examples from "@/components/sections/Examples";
 import RelayDiagram from "@/components/shell/RelayDiagram";
 
@@ -98,6 +99,10 @@ export default function PortfolioPage() {
 
         <Examples.Item caption="A Tuesday night. The owner is asleep. Four agents aren't. At 3am the coffee shop's ordering agent pings the bakery, produce supplier, and coffee mill in parallel. By 6am, all the paperwork is done.">
           <CoffeeLoop />
+        </Examples.Item>
+
+        <Examples.Item caption="Two people. Two agents. A friendship that doesn't quite work. An agent that learns from the miss and tries again. Scroll through.">
+          <DatingScroll />
         </Examples.Item>
       </Examples>
 
