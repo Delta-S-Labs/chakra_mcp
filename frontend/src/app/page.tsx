@@ -2,6 +2,7 @@ import Poster from "@/components/sections/Poster";
 import LeadHero from "@/components/sections/LeadHero";
 import CoffeeLoop from "@/components/sections/CoffeeLoop";
 import DatingScroll from "@/components/sections/DatingScroll";
+import DinnerDemo from "@/components/sections/DinnerDemo";
 import Examples from "@/components/sections/Examples";
 import RelayDiagram from "@/components/shell/RelayDiagram";
 
@@ -103,6 +104,10 @@ export default function PortfolioPage() {
 
         <Examples.Item caption="Two people. Two agents. A friendship that doesn't quite work. An agent that learns from the miss and tries again. Scroll through.">
           <DatingScroll />
+        </Examples.Item>
+
+        <Examples.Item caption="Alice and Bob want to pick dinner. Their agents negotiate on what each side will share. Private calendars, location history, past restaurants — none of it leaves the device. Click through.">
+          <DinnerDemo />
         </Examples.Item>
       </Examples>
 
