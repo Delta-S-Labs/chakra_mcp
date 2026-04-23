@@ -1,0 +1,337 @@
+/* ——— Section chrome ——— */
+.section {
+  width: min(1180px, calc(100% - 1.5rem));
+  margin: 0 auto;
+  display: grid;
+  gap: 1.5rem;
+}
+
+.header {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 56ch;
+}
+
+.eyebrow {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-coral);
+}
+
+.headline {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(1.9rem, 3.2vw, 3rem);
+  line-height: 1.02;
+  letter-spacing: -0.04em;
+  color: var(--ink);
+  margin: 0;
+  text-wrap: balance;
+}
+
+.body {
+  font-family: var(--font-body);
+  font-size: 1.08rem;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  margin: 0;
+}
+
+.stage {
+  position: relative;
+  border-radius: 1.6rem;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklab, var(--line) 82%, var(--ink) 18%);
+  box-shadow: var(--shadow-soft);
+  background: #0b1128;
+}
+
+.scene {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1200 / 560;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* ——— The master 6s timeline ———
+ * All child elements share this duration so they stay in sync. */
+
+/* ——— Sky: night → dawn → morning → night ——— */
+.sky {
+  animation: skyCycle 6s infinite;
+}
+@keyframes skyCycle {
+  0%, 48% {
+    fill: #0b1128;
+  }
+  58% {
+    fill: #4a2d4a;
+  }
+  68% {
+    fill: #b57562;
+  }
+  75%, 85% {
+    fill: #fcd998;
+  }
+  95%, 100% {
+    fill: #0b1128;
+  }
+}
+
+/* Grid texture visible at night, fades in morning */
+.grid {
+  color: rgba(252, 246, 224, 0.35);
+  animation: gridVis 6s infinite;
+}
+@keyframes gridVis {
+  0%, 45% { opacity: 0.22; }
+  60%, 88% { opacity: 0.05; }
+  98%, 100% { opacity: 0.22; }
+}
+
+/* ——— Moon ——— */
+.moon {
+  animation: moonCycle 6s infinite;
+  transform-origin: 120px 90px;
+}
+@keyframes moonCycle {
+  0%, 50% { opacity: 1; transform: translateY(0); }
+  60%, 88% { opacity: 0; transform: translateY(-30px); }
+  96%, 100% { opacity: 1; transform: translateY(0); }
+}
+
+/* ——— Sun ——— */
+.sun {
+  animation: sunCycle 6s infinite;
+  transform-origin: 1080px 110px;
+  opacity: 0;
+}
+@keyframes sunCycle {
+  0%, 55% { opacity: 0; transform: translateY(20px) scale(0.8); }
+  68%, 88% { opacity: 1; transform: translateY(0) scale(1); }
+  95%, 100% { opacity: 0; transform: translateY(20px) scale(0.8); }
+}
+
+.sunRays {
+  animation: sunRaysPulse 3s ease-in-out infinite;
+  transform-origin: 1080px 110px;
+}
+@keyframes sunRaysPulse {
+  0%, 100% { transform: rotate(0deg); opacity: 0.8; }
+  50% { transform: rotate(12deg); opacity: 1; }
+}
+
+/* ——— Signal arcs — stroke-dasharray draw-on ——— */
+.arc {
+  stroke-dasharray: 650;
+  stroke-dashoffset: 650;
+}
+
+/* Outbound arc 1 → bakery */
+.arcOut1 {
+  animation: arcDraw 6s infinite;
+  animation-delay: 0s;
+}
+/* Outbound arc 2 → produce */
+.arcOut2 {
+  animation: arcDraw 6s infinite;
+  animation-delay: 0s;
+}
+/* Outbound arc 3 → mill */
+.arcOut3 {
+  animation: arcDraw 6s infinite;
+  animation-delay: 0s;
+}
+
+@keyframes arcDraw {
+  0%, 15% { stroke-dashoffset: 650; opacity: 0; }
+  18% { opacity: 1; }
+  25%, 30% { stroke-dashoffset: 0; opacity: 1; }
+  35% { stroke-dashoffset: 0; opacity: 0.4; }
+  38%, 100% { stroke-dashoffset: 0; opacity: 0; }
+}
+
+/* Return checkmark arcs (green) */
+.arcBack1, .arcBack2, .arcBack3 {
+  animation: arcDrawBack 6s infinite;
+  stroke-dasharray: 650;
+  stroke-dashoffset: 650;
+}
+
+@keyframes arcDrawBack {
+  0%, 35% { stroke-dashoffset: 650; opacity: 0; }
+  38% { opacity: 1; }
+  45%, 52% { stroke-dashoffset: 0; opacity: 1; }
+  58%, 100% { stroke-dashoffset: 0; opacity: 0; }
+}
+
+/* ——— Shops: shared lighting envelope ——— */
+.shop {
+  animation: shopNight 6s infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+@keyframes shopNight {
+  0%, 48% { filter: brightness(0.35) saturate(0.6); }
+  62% { filter: brightness(0.65) saturate(0.8); }
+  70%, 88% { filter: brightness(1) saturate(1); }
+  96%, 100% { filter: brightness(0.35) saturate(0.6); }
+}
+
+/* Coffee shop pulses at the start */
+.coffeeShop {
+  animation: shopNight 6s infinite, coffeeShopPulse 6s infinite;
+}
+@keyframes coffeeShopPulse {
+  0%, 14% { transform: scale(1); }
+  18% { transform: scale(1.04); }
+  22% { transform: scale(1); }
+}
+
+/* Target shops pulse when they receive a signal (staggered) */
+.target1 { animation: shopNight 6s infinite, targetPulse 6s infinite; }
+.target2 { animation: shopNight 6s infinite, targetPulse 6s infinite; }
+.target3 { animation: shopNight 6s infinite, targetPulse 6s infinite; }
+
+@keyframes targetPulse {
+  0%, 28% { transform: scale(1); }
+  32% { transform: scale(1.05); }
+  36% { transform: scale(1); }
+}
+
+/* ——— Status dot: red during inventory warning, green after confirmations ——— */
+.statusRed {
+  animation: statusRedPulse 6s infinite;
+  transform-origin: center;
+}
+@keyframes statusRedPulse {
+  0% { opacity: 0; transform: scale(0.7); }
+  8% { opacity: 1; transform: scale(1.2); }
+  14% { opacity: 1; transform: scale(1); }
+  18% { opacity: 1; transform: scale(1.15); }
+  50% { opacity: 1; transform: scale(1); }
+  55%, 100% { opacity: 0; transform: scale(0.6); }
+}
+
+.statusGreen {
+  opacity: 0;
+  animation: statusGreen 6s infinite;
+  transform-origin: center;
+}
+@keyframes statusGreen {
+  0%, 52% { opacity: 0; transform: scale(0.5); }
+  56% { opacity: 1; transform: scale(1.2); }
+  60%, 88% { opacity: 1; transform: scale(1); }
+  95%, 100% { opacity: 0; transform: scale(0.5); }
+}
+
+/* Target dots — subtle ping when hit */
+.targetDot {
+  animation: targetDotPing 6s infinite;
+  transform-origin: center;
+}
+@keyframes targetDotPing {
+  0%, 28% { opacity: 0.35; transform: scale(0.9); }
+  32% { opacity: 1; transform: scale(1.3); }
+  40% { opacity: 1; transform: scale(1); }
+  90% { opacity: 1; transform: scale(1); }
+  95%, 100% { opacity: 0.35; transform: scale(0.9); }
+}
+
+/* ——— OPEN sign lights up in the morning ——— */
+.openSign {
+  animation: openSign 6s infinite;
+  transform-origin: center;
+}
+@keyframes openSign {
+  0%, 62% { fill: #7a3a2e; }
+  68%, 88% { fill: #ec6a52; }
+  95%, 100% { fill: #7a3a2e; }
+}
+.openSignText {
+  animation: openSignText 6s infinite;
+}
+@keyframes openSignText {
+  0%, 62% { opacity: 0.4; }
+  68%, 88% { opacity: 1; }
+  95%, 100% { opacity: 0.4; }
+}
+
+/* ——— Steam curls during morning ——— */
+.steam {
+  animation: steamRise 6s infinite;
+  transform-origin: center;
+  opacity: 0;
+}
+@keyframes steamRise {
+  0%, 66% { opacity: 0; transform: translateY(10px); }
+  72% { opacity: 0.7; transform: translateY(0); }
+  85% { opacity: 0.4; transform: translateY(-8px); }
+  92%, 100% { opacity: 0; transform: translateY(-14px); }
+}
+
+/* ——— Owner at door ——— */
+.owner {
+  animation: ownerAppears 6s infinite;
+  transform-origin: center;
+}
+@keyframes ownerAppears {
+  0%, 68% { opacity: 0; transform: translateY(8px); }
+  74%, 88% { opacity: 1; transform: translateY(0); }
+  95%, 100% { opacity: 0; transform: translateY(8px); }
+}
+
+/* ——— Clock (time text toggle) ——— */
+.time3am {
+  animation: time3am 6s infinite;
+}
+@keyframes time3am {
+  0%, 55% { opacity: 1; }
+  62%, 95% { opacity: 0; }
+  100% { opacity: 1; }
+}
+.time7am {
+  opacity: 0;
+  animation: time7am 6s infinite;
+}
+@keyframes time7am {
+  0%, 58% { opacity: 0; }
+  68%, 90% { opacity: 1; }
+  95%, 100% { opacity: 0; }
+}
+
+/* Caption stays visible through the night, fades in morning */
+.caption {
+  animation: captionVis 6s infinite;
+}
+@keyframes captionVis {
+  0%, 48% { opacity: 0.75; }
+  65%, 88% { opacity: 0.3; }
+  95%, 100% { opacity: 0.75; }
+}
+
+/* ——— Accessibility: honor reduced motion ——— */
+@media (prefers-reduced-motion: reduce) {
+  .sky, .grid, .moon, .sun, .sunRays,
+  .arc, .arcBack1, .arcBack2, .arcBack3,
+  .shop, .coffeeShop, .target1, .target2, .target3,
+  .statusRed, .statusGreen, .targetDot,
+  .openSign, .openSignText, .steam, .owner,
+  .time3am, .time7am, .caption {
+    animation: none !important;
+  }
+  .sky { fill: #2a2f5a; }
+  .statusGreen { opacity: 1; }
+  .openSign { fill: #ec6a52; }
+  .openSignText { opacity: 1; }
+}
+
+/* ——— Responsive ——— */
+@media (max-width: 640px) {
+  .headline { font-size: clamp(1.6rem, 6vw, 2.2rem); }
+  .body { font-size: 0.98rem; }
+}

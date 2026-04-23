@@ -1,5 +1,6 @@
 import Poster from "@/components/sections/Poster";
 import LeadHero from "@/components/sections/LeadHero";
+import CoffeeLoop from "@/components/sections/CoffeeLoop";
 import RelayDiagram from "@/components/shell/RelayDiagram";
 
 const principleTags = [
@@ -90,6 +91,8 @@ export default function PortfolioPage() {
       <LeadHero />
 
       <Poster />
+
+      <CoffeeLoop />
 
       <section className="hero-block hero-block--portfolio">
         <div className="hero-copy reveal">
