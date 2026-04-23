@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ChakraMCP — Logo options</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { margin: 0; padding: 3.5rem 2rem 4rem; background:
+    radial-gradient(circle at 10% 0%, oklch(95% 0.08 92), transparent 28%),
+    radial-gradient(circle at 92% 8%, oklch(92% 0.06 25), transparent 32%),
+    linear-gradient(180deg, var(--paper-soft), var(--paper));
+    color: var(--ink); font-family: var(--font-body); min-height: 100vh; }
+  body::before { content: ''; position: fixed; inset: 0; pointer-events: none; opacity: 0.14;
+    background: linear-gradient(90deg, transparent calc(100% - 1px), color-mix(in oklab, var(--line) 60%, transparent) calc(100% - 1px)),
+                linear-gradient(180deg, transparent calc(100% - 1px), color-mix(in oklab, var(--line) 45%, transparent) calc(100% - 1px));
+    background-size: 88px 88px; mask-image: linear-gradient(180deg, black, transparent 82%); z-index: 0; }
+  .page { max-width: 1180px; margin: 0 auto; position: relative; z-index: 1; }
+  header { display: grid; gap: 0.85rem; margin-bottom: 3rem; }
+  .eyebrow { font-family: var(--font-display); font-weight: 700; font-size: 0.74rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-soft); }
+  h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(2.6rem, 5vw, 4.4rem); line-height: 0.96; letter-spacing: -0.045em; margin: 0; max-width: 18ch; }
+  .lead { font-size: 1.12rem; color: var(--ink-soft); max-width: 60ch; margin: 0; line-height: 1.65; }
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.75rem; }
+  .card { padding: 2.5rem 2rem 1.5rem; border: 1px solid color-mix(in oklab, var(--line) 80%, var(--ink) 20%); border-radius: 1.6rem;
+    background: linear-gradient(180deg, color-mix(in oklab, var(--paper-soft) 97%, white 3%), color-mix(in oklab, var(--paper) 94%, var(--paper-warm) 6%));
+    box-shadow: var(--shadow-soft); display: grid; gap: 1.25rem; position: relative; overflow: hidden; }
+  .card--ink { background: linear-gradient(180deg, color-mix(in oklab, var(--accent-ink) 94%, black 6%), color-mix(in oklab, var(--accent-ink) 88%, var(--accent-coral) 12%)); color: var(--paper-soft); }
+  .card--ink .option-label, .card--ink .option-notes { color: color-mix(in oklab, var(--paper-soft) 85%, var(--paper-warm)); }
+  .card--ink .usage { border-top-color: color-mix(in oklab, var(--paper-warm) 30%, transparent); }
+  .card--butter { background: linear-gradient(180deg, color-mix(in oklab, var(--accent-butter) 80%, white 20%), color-mix(in oklab, var(--accent-butter) 65%, var(--paper-warm) 35%)); }
+  .specimen { display: grid; place-items: center; min-height: 180px; padding: 1.5rem 1rem; }
+  .option-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
+  .option-num { font-family: var(--font-display); font-weight: 800; font-size: 0.76rem; letter-spacing: 0.08em; text-transform: uppercase; }
+  .option-notes { font-size: 0.88rem; color: var(--ink-soft); line-height: 1.55; max-width: 48ch; }
+  .usage { display: flex; flex-wrap: wrap; gap: 0.5rem; padding-top: 0.75rem; border-top: 1px solid color-mix(in oklab, var(--line) 70%, transparent); }
+  .usage span { padding: 0.3rem 0.6rem; border: 1px solid color-mix(in oklab, var(--line) 70%, transparent); border-radius: 999px; font-family: var(--font-display); font-weight: 700; font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; }
+  .card--ink .usage span { border-color: color-mix(in oklab, var(--paper-warm) 35%, transparent); }
+
+  /* ─── Specimen 1: Concentric chakra dot + wordmark ─── */
+  .lockup-1 { display: inline-flex; align-items: center; gap: 1rem; }
+  .lockup-1 .chakra { width: 68px; height: 68px; position: relative; }
+  .lockup-1 .chakra::before, .lockup-1 .chakra::after, .lockup-1 .chakra .core {
+    position: absolute; inset: 0; border-radius: 999px; content: ''; }
+  .lockup-1 .chakra::before { background: color-mix(in oklab, var(--accent-coral) 20%, transparent); }
+  .lockup-1 .chakra::after { inset: 10px; border: 2px solid color-mix(in oklab, var(--accent-coral) 70%, var(--ink) 30%); background: transparent; }
+  .lockup-1 .chakra .core { inset: 24px; background: var(--accent-coral); }
+  .lockup-1 .word { font-family: var(--font-display); font-weight: 800; font-size: 3.2rem; letter-spacing: -0.045em; line-height: 1; }
+  .lockup-1 .word .mcp { color: var(--accent-coral); }
+
+  /* ─── Specimen 2: Printer's stamp — square block with reversed type ─── */
+  .lockup-2 { display: inline-flex; align-items: stretch; gap: 0; border: 2px solid var(--ink); border-radius: 0.5rem; overflow: hidden; }
+  .lockup-2 .block { padding: 0.9rem 1.1rem; background: var(--accent-coral); color: var(--paper-soft); font-family: var(--font-display); font-weight: 800; font-size: 2.2rem; letter-spacing: -0.04em; line-height: 1; display: grid; place-items: center; }
+  .lockup-2 .tail { padding: 0.9rem 1.1rem; font-family: var(--font-display); font-weight: 800; font-size: 2.2rem; letter-spacing: -0.04em; line-height: 1; background: var(--paper-soft); color: var(--ink); display: grid; place-items: center; }
+
+  /* ─── Specimen 3: Hub — central coral node + 7 satellites ─── */
+  .lockup-3 { display: inline-flex; flex-direction: column; align-items: center; gap: 0.75rem; }
+  .lockup-3 .hub { width: 160px; height: 160px; }
+  .lockup-3 .hub svg { width: 100%; height: 100%; }
+  .lockup-3 .word { font-family: var(--font-display); font-weight: 800; font-size: 2.4rem; letter-spacing: -0.045em; line-height: 1; }
+  .lockup-3 .word .mcp { color: var(--accent-coral); }
+
+  /* ─── Specimen 4: Chain — 4-node handoff ─── */
+  .lockup-4 { display: inline-flex; align-items: center; gap: 1.1rem; }
+  .lockup-4 .chain { width: 110px; height: 70px; }
+  .lockup-4 .chain svg { width: 100%; height: 100%; overflow: visible; }
+  .lockup-4 .word { font-family: var(--font-display); font-weight: 800; font-size: 2.7rem; letter-spacing: -0.045em; line-height: 1; }
+  .lockup-4 .word .mcp { color: var(--accent-coral); }
+
+  @media (max-width: 840px) {
+    .grid { grid-template-columns: 1fr; }
+    .lockup-1 .word { font-size: 2.4rem; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div class="eyebrow">Logo · shortlist</div>
+    <h1>Four directions for the ChakraMCP mark.</h1>
+    <p class="lead">The shortlist after the first pass. Each holds up at favicon size, on signage, and on a coral button. Pick a direction — or a blend — and I'll refine it into a proper lockup with spacing rules, wordmark variants, and vector files.</p>
+  </header>
+
+  <div class="grid">
+    <!-- 01 · Concentric chakra (was 01) -->
+    <article class="card">
+      <div class="option-head">
+        <span class="option-num">01 · Concentric chakra</span>
+      </div>
+      <div class="specimen">
+        <div class="lockup-1">
+          <div class="chakra"><div class="core"></div></div>
+          <div class="word">Chakra<span class="mcp">MCP</span></div>
+        </div>
+      </div>
+      <p class="option-notes">A coral disc inside a coral ring inside a soft coral halo — literal "chakra." Loud, warm, reads as a sun or a vinyl record. Pairs with any wordmark treatment.</p>
+      <div class="usage"><span>Web favicon</span><span>Hero mark</span><span>Sticker</span></div>
+    </article>
+
+    <!-- 02 · Printer's stamp (was 02) -->
+    <article class="card card--butter">
+      <div class="option-head">
+        <span class="option-num">02 · Printer's stamp</span>
+      </div>
+      <div class="specimen">
+        <div class="lockup-2">
+          <div class="block">chakra</div>
+          <div class="tail">MCP</div>
+        </div>
+      </div>
+      <p class="option-notes">Two adjacent blocks in the style of a letterpress nameplate: coral plate + cream plate. Maximum "zine" energy, ships anywhere, looks printed even on a screen.</p>
+      <div class="usage"><span>Masthead</span><span>Book cover</span><span>Merch</span></div>
+    </article>
+
+    <!-- 03 · Hub (was 08) -->
+    <article class="card card--ink">
+      <div class="option-head">
+        <span class="option-num">03 · Hub · seven-pointed relay</span>
+      </div>
+      <div class="specimen">
+        <div class="lockup-3">
+          <div class="hub">
+            <svg viewBox="-60 -60 120 120" fill="none">
+              <g stroke="oklch(82% 0.04 80)" stroke-width="1.5" stroke-linecap="round" opacity="0.7" stroke-dasharray="2 4">
+                <line x1="0" y1="0" x2="0" y2="-46"/>
+                <line x1="0" y1="0" x2="41.4" y2="-19.9"/>
+                <line x1="0" y1="0" x2="35.8" y2="28.9"/>
+                <line x1="0" y1="0" x2="10.2" y2="45"/>
+                <line x1="0" y1="0" x2="-10.2" y2="45"/>
+                <line x1="0" y1="0" x2="-35.8" y2="28.9"/>
+                <line x1="0" y1="0" x2="-41.4" y2="-19.9"/>
+              </g>
+              <g>
+                <circle cx="0" cy="-46" r="6" fill="oklch(86% 0.16 128)"/>
+                <circle cx="41.4" cy="-19.9" r="6" fill="oklch(91% 0.13 96)"/>
+                <circle cx="35.8" cy="28.9" r="6" fill="oklch(86% 0.16 128)"/>
+                <circle cx="10.2" cy="45" r="6" fill="oklch(91% 0.13 96)"/>
+                <circle cx="-10.2" cy="45" r="6" fill="oklch(86% 0.16 128)"/>
+                <circle cx="-35.8" cy="28.9" r="6" fill="oklch(91% 0.13 96)"/>
+                <circle cx="-41.4" cy="-19.9" r="6" fill="oklch(86% 0.16 128)"/>
+              </g>
+              <circle cx="0" cy="0" r="14" fill="oklch(63% 0.19 28)"/>
+              <circle cx="0" cy="0" r="4" fill="var(--paper-soft)"/>
+            </svg>
+          </div>
+          <div class="word" style="color: var(--paper-soft);">Chakra<span class="mcp">MCP</span></div>
+        </div>
+      </div>
+      <p class="option-notes">Seven agents circling one relay — the network topology as the protagonist. Dashed spokes keep it airy instead of mechanical. Strong on dark surfaces and OG cards; the central hub holds at favicon size.</p>
+      <div class="usage"><span>Hero lockup</span><span>Social OG</span><span>Poster</span></div>
+    </article>
+
+    <!-- 04 · Chain (was 09) -->
+    <article class="card card--butter">
+      <div class="option-head">
+        <span class="option-num">04 · Chain · four-node handoff</span>
+      </div>
+      <div class="specimen">
+        <div class="lockup-4">
+          <div class="chain">
+            <svg viewBox="0 0 110 70" fill="none">
+              <path d="M 15 35 Q 30 10 45 35" stroke="oklch(38% 0.04 60)" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+              <path d="M 45 35 Q 60 60 75 35" stroke="oklch(38% 0.04 60)" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+              <path d="M 75 35 Q 90 10 105 35" stroke="oklch(38% 0.04 60)" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+              <circle cx="15" cy="35" r="7" fill="oklch(63% 0.19 28)"/>
+              <circle cx="45" cy="35" r="7" fill="oklch(86% 0.16 128)"/>
+              <circle cx="75" cy="35" r="7" fill="oklch(91% 0.13 96)"/>
+              <circle cx="105" cy="35" r="7" fill="oklch(63% 0.19 28)"/>
+              <circle cx="30" cy="22" r="1.6" fill="oklch(38% 0.04 60)"/>
+              <circle cx="60" cy="48" r="1.6" fill="oklch(38% 0.04 60)"/>
+              <circle cx="90" cy="22" r="1.6" fill="oklch(38% 0.04 60)"/>
+            </svg>
+          </div>
+          <div class="word">Chakra<span class="mcp">MCP</span></div>
+        </div>
+      </div>
+      <p class="option-notes">Four agents passing context down a chain — coral, lime, butter, coral — with arc hand-offs. Reads as "gossip protocol" or "relay". Horizontal format makes it a natural banner / nav-bar mark.</p>
+      <div class="usage"><span>Nav mark</span><span>Banner</span><span>Sticker strip</span></div>
+    </article>
+  </div>
+</div>
+</body>
+</html>

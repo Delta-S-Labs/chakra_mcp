@@ -1,0 +1,187 @@
+@import url('https://fonts.googleapis.com/css2?family=Afacad:wght@400;500;600;700&family=Archivo+Expanded:wght@500;700;800&display=swap');
+
+:root {
+  --font-display: 'Archivo Expanded', sans-serif;
+  --font-body: 'Afacad', sans-serif;
+
+  --space-2xs: 0.25rem;
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-2xl: 3rem;
+  --space-3xl: 4rem;
+  --space-4xl: 6rem;
+
+  --paper: oklch(96% 0.014 72);
+  --paper-warm: oklch(93% 0.03 45);
+  --paper-soft: oklch(98% 0.01 70);
+  --ink: oklch(24% 0.03 18);
+  --ink-soft: oklch(42% 0.025 22);
+  --line: oklch(78% 0.02 38);
+  --accent-coral: oklch(63% 0.19 28);
+  --accent-lime: oklch(86% 0.16 128);
+  --accent-butter: oklch(91% 0.13 96);
+  --accent-ink: oklch(30% 0.03 18);
+
+  --shadow-soft: 0 28px 50px color-mix(in oklab, var(--ink) 10%, transparent);
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at top left, oklch(95% 0.08 92), transparent 26%),
+    radial-gradient(circle at 90% 8%, oklch(92% 0.06 25), transparent 32%),
+    linear-gradient(180deg, var(--paper-soft), var(--paper));
+  font: 1.0625rem/1.6 var(--font-body);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.18;
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      transparent calc(100% - 1px),
+      color-mix(in oklab, var(--line) 60%, transparent) calc(100% - 1px)
+    ),
+    linear-gradient(
+      180deg,
+      transparent,
+      transparent calc(100% - 1px),
+      color-mix(in oklab, var(--line) 45%, transparent) calc(100% - 1px)
+    );
+  background-size: 88px 88px;
+  mask-image: linear-gradient(180deg, black, transparent 82%);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+a,
+button {
+  color: inherit;
+}
+
+img,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+h1,
+h2,
+h3,
+dt,
+.brand-mark,
+.eyebrow,
+.pill-link,
+.nav-link,
+.jump-link,
+.tag,
+.note-badge,
+.relay-label,
+.relay-chip {
+  font-family: var(--font-display);
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  line-height: 0.96;
+  text-wrap: balance;
+}
+
+h1 {
+  font-size: clamp(3.3rem, 7vw, 7rem);
+  max-width: 11ch;
+  letter-spacing: -0.05em;
+}
+
+h2 {
+  font-size: clamp(1.9rem, 3vw, 3.1rem);
+  letter-spacing: -0.04em;
+}
+
+h3,
+dt {
+  font-size: 1.1rem;
+  letter-spacing: -0.03em;
+}
+
+p,
+li,
+dd {
+  max-width: 68ch;
+}
+
+ol,
+ul {
+  margin: 0;
+  padding: 0;
+}
+
+li {
+  list-style-position: inside;
+}
+
+.lead {
+  font-size: 1.22rem;
+  line-height: 1.72;
+  max-width: 56ch;
+  color: var(--ink-soft);
+}
+
+.reveal {
+  opacity: 0;
+  transform: translateY(24px) rotate(0.001deg);
+  animation: rise-in 700ms var(--ease-out-quart) forwards;
+}
+
+.reveal:nth-child(2) {
+  animation-delay: 110ms;
+}
+
+.reveal:nth-child(3) {
+  animation-delay: 180ms;
+}
+
+@keyframes rise-in {
+  to {
+    opacity: 1;
+    transform: translateY(0) rotate(0.001deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,17 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>.rad { display: flex; gap: 14px; align-items: center; }
+.rad .box { width: 80px; height: 80px; background: var(--accent-butter); border: 1px solid color-mix(in oklab, var(--accent-coral) 30%, var(--line)); display: flex; align-items: flex-end; justify-content: flex-start; padding: 6px; }
+.rad .lbl { font-family: var(--font-display); font-size: 0.58rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); }
+.rad .group { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.rad .val { font-family: var(--font-mono); font-size: 0.68rem; color: var(--ink-soft); }
+</style></head>
+<body class="card">
+  <div class="rad">
+    <div class="group"><div class="box" style="border-radius: 0.45rem;"></div><div class="lbl">xs</div><div class="val">0.45r</div></div>
+    <div class="group"><div class="box" style="border-radius: 0.9rem;"></div><div class="lbl">sm</div><div class="val">0.9r</div></div>
+    <div class="group"><div class="box" style="border-radius: 1.15rem;"></div><div class="lbl">md</div><div class="val">1.15r</div></div>
+    <div class="group"><div class="box" style="border-radius: 1.4rem;"></div><div class="lbl">lg</div><div class="val">1.4r</div></div>
+    <div class="group"><div class="box" style="border-radius: 1.6rem;"></div><div class="lbl">xl</div><div class="val">1.6r</div></div>
+    <div class="group"><div class="box" style="border-radius: 999px;"></div><div class="lbl">pill</div><div class="val">999</div></div>
+  </div>
+</body></html>

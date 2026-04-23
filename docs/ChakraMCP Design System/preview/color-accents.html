@@ -1,0 +1,27 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+.pal { display: flex; gap: 10px; align-items: stretch; }
+.pal .sw { flex: 1; min-width: 0; height: 104px; border-radius: var(--radius-lg); border: 1px solid color-mix(in oklab, var(--line) 78%, var(--ink) 22%); padding: 10px 12px; display:flex; flex-direction:column; justify-content: space-between; box-shadow: var(--shadow-xs); }
+.pal .sw .name { font-family: var(--font-display); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.pal .sw .hex { font-family: var(--font-mono); font-size: 0.7rem; color: var(--ink-soft); }
+</style></head>
+<body class="card">
+  <div class="pal">
+    <div class="sw" style="background: var(--accent-coral); color: var(--paper-soft);">
+      <div class="name">Coral</div>
+      <div class="hex" style="color: color-mix(in oklab, var(--paper-soft) 86%, var(--accent-butter));">oklch(63% 0.19 28)</div>
+    </div>
+    <div class="sw" style="background: var(--accent-lime); color: var(--ink);">
+      <div class="name">Lime</div>
+      <div class="hex">oklch(86% 0.16 128)</div>
+    </div>
+    <div class="sw" style="background: var(--accent-butter); color: var(--ink);">
+      <div class="name">Butter</div>
+      <div class="hex">oklch(91% 0.13 96)</div>
+    </div>
+    <div class="sw" style="background: var(--accent-ink); color: var(--paper-soft);">
+      <div class="name">Deep Ink</div>
+      <div class="hex" style="color: color-mix(in oklab, var(--paper-soft) 82%, var(--accent-butter));">oklch(30% 0.03 18)</div>
+    </div>
+  </div>
+</body></html>

@@ -1,0 +1,22 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>body.card { padding: 0; background: var(--paper); }
+.wrap { position: relative; height: 150px; background:
+  radial-gradient(circle at top left, oklch(95% 0.08 92), transparent 26%),
+  radial-gradient(circle at 90% 8%, oklch(92% 0.06 25), transparent 32%),
+  linear-gradient(180deg, var(--paper-soft), var(--paper));
+  overflow: hidden;
+}
+.wrap::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0.22;
+  background:
+    linear-gradient(90deg, transparent calc(100% - 1px), color-mix(in oklab, var(--line) 60%, transparent) calc(100% - 1px)),
+    linear-gradient(180deg, transparent calc(100% - 1px), color-mix(in oklab, var(--line) 45%, transparent) calc(100% - 1px));
+  background-size: 44px 44px;
+}
+.caption {
+  position: absolute; left: 20px; bottom: 14px;
+  font-family: var(--font-display); font-weight: 700; font-size: 0.68rem;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-soft);
+}
+</style></head>
+<body class="card"><div class="wrap"><div class="caption">Page background · radial warm + 88px grid</div></div></body></html>

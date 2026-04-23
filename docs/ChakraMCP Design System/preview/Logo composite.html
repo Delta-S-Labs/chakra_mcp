@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ChakraMCP — Composite lockup</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { margin: 0; padding: 3.5rem 2rem 4rem; background:
+    radial-gradient(circle at 10% 0%, oklch(95% 0.08 92), transparent 28%),
+    radial-gradient(circle at 92% 8%, oklch(92% 0.06 25), transparent 32%),
+    linear-gradient(180deg, var(--paper-soft), var(--paper));
+    color: var(--ink); font-family: var(--font-body); min-height: 100vh; }
+  body::before { content: ''; position: fixed; inset: 0; pointer-events: none; opacity: 0.14;
+    background: linear-gradient(90deg, transparent calc(100% - 1px), color-mix(in oklab, var(--line) 60%, transparent) calc(100% - 1px)),
+                linear-gradient(180deg, transparent calc(100% - 1px), color-mix(in oklab, var(--line) 45%, transparent) calc(100% - 1px));
+    background-size: 88px 88px; mask-image: linear-gradient(180deg, black, transparent 82%); z-index: 0; }
+  .page { max-width: 1180px; margin: 0 auto; position: relative; z-index: 1; }
+  header { display: grid; gap: 0.85rem; margin-bottom: 3rem; }
+  .eyebrow { font-family: var(--font-display); font-weight: 700; font-size: 0.74rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-soft); }
+  h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(2.6rem, 5vw, 4.4rem); line-height: 0.96; letter-spacing: -0.045em; margin: 0; max-width: 20ch; }
+  .lead { font-size: 1.1rem; color: var(--ink-soft); max-width: 62ch; margin: 0; line-height: 1.65; }
+
+  .stack { display: grid; gap: 2rem; }
+  .card { padding: 3rem 2.5rem 1.75rem; border: 1px solid color-mix(in oklab, var(--line) 80%, var(--ink) 20%); border-radius: 1.6rem;
+    background: linear-gradient(180deg, color-mix(in oklab, var(--paper-soft) 98%, white 2%), color-mix(in oklab, var(--paper) 94%, var(--paper-warm) 6%));
+    box-shadow: var(--shadow-soft); display: grid; gap: 1.5rem; position: relative; overflow: hidden; }
+  .specimen { display: grid; place-items: center; min-height: 260px; padding: 2rem 1rem; }
+  .option-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
+  .option-num { font-family: var(--font-display); font-weight: 800; font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; }
+  .option-notes { font-size: 0.92rem; color: var(--ink-soft); line-height: 1.6; max-width: 60ch; }
+  .usage { display: flex; flex-wrap: wrap; gap: 0.5rem; padding-top: 0.85rem; border-top: 1px solid color-mix(in oklab, var(--line) 70%, transparent); }
+  .usage span { padding: 0.3rem 0.6rem; border: 1px solid color-mix(in oklab, var(--line) 70%, transparent); border-radius: 999px; font-family: var(--font-display); font-weight: 700; font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; }
+
+  /* ─── Composite lockup ─── */
+  /* Layout: big animated chakra node sitting on a LIGHT plate (left), stamp-format wordmark "ChakraMCP" to the right. */
+  .composite { display: inline-flex; align-items: stretch; gap: 0; border: 2.5px solid var(--ink); border-radius: 0.55rem; overflow: hidden; background: var(--paper-soft); }
+  .composite__mark {
+    width: 140px; padding: 1rem 1.1rem;
+    background: color-mix(in oklab, var(--paper-soft) 94%, var(--paper-warm) 6%);
+    display: grid; place-items: center;
+    border-right: 2.5px solid var(--ink);
+  }
+  .composite__word {
+    display: flex; align-items: stretch; align-self: stretch;
+  }
+  .composite__word .block { padding: 0.95rem 1.1rem; background: var(--accent-coral); color: var(--paper-soft); font-family: var(--font-display); font-weight: 800; font-size: 2.4rem; letter-spacing: -0.04em; line-height: 1; display: grid; place-items: center; }
+  .composite__word .tail { padding: 0.95rem 1.1rem; background: var(--paper-soft); color: var(--ink); font-family: var(--font-display); font-weight: 800; font-size: 2.4rem; letter-spacing: -0.04em; line-height: 1; display: grid; place-items: center; border-left: 2.5px solid var(--ink); }
+
+  /* Inner SVG mark: bigger multi-node hub + animated concentric chakra beside (both on light bg, connected by arcs) */
+  .mark-svg { width: 100%; height: auto; display: block; overflow: visible; }
+
+  /* Animated chakra — halo breathes, inner ring rotates */
+  .chakra-halo { transform-origin: center; animation: halo 2.6s ease-in-out infinite; }
+  .chakra-ring { transform-origin: center; animation: spin 14s linear infinite; transform-box: fill-box; }
+  @keyframes halo {
+    0%, 100% { opacity: 0.25; transform: scale(1); }
+    50%      { opacity: 0.55; transform: scale(1.14); }
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    .chakra-halo, .chakra-ring { animation: none; }
+    .chakra-halo { opacity: 0.4; }
+  }
+
+  /* Variant B: light background, wordmark-only stamp tail */
+  .composite--tail-only .composite__word .block { display: none; }
+
+  /* Variant C: hero size */
+  .composite--hero { transform: scale(1.45); transform-origin: center; }
+
+  /* Scale preview row */
+  .scale-row { display: flex; flex-wrap: wrap; align-items: center; gap: 1.75rem; padding-top: 1rem; border-top: 1px dashed color-mix(in oklab, var(--line) 60%, transparent); }
+  .scale-row .mini { transform-origin: left center; }
+  .scale-row .label { font-family: var(--font-display); font-weight: 700; font-size: 0.64rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-soft); }
+
+  @media (max-width: 840px) {
+    .composite__mark { width: 110px; }
+    .composite__word .block, .composite__word .tail { font-size: 1.8rem; padding: 0.75rem 0.9rem; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div class="eyebrow">Composite · v2</div>
+    <h1>Hub + animated chakra, stamped beside the wordmark.</h1>
+    <p class="lead">A larger multi-node hub and a pulsing red-dot chakra share one light plate on the left. To the right, the stamp-format wordmark seals the lockup. Variants below: full stamp, tail-only, and hero.</p>
+  </header>
+
+  <div class="stack">
+
+    <!-- Variant A: full stamp (mark plate + coral block + cream tail) -->
+    <article class="card">
+      <div class="option-head">
+        <span class="option-num">A · Mark + coral block + cream tail</span>
+      </div>
+      <div class="specimen">
+        <div class="composite">
+          <div class="composite__mark">
+            <svg class="mark-svg" viewBox="0 0 200 110" fill="none">
+              <!-- connection between hub and chakra -->
+              <path d="M 70 55 Q 100 30 130 55" stroke="oklch(38% 0.04 60)" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+              <path d="M 70 55 Q 100 80 130 55" stroke="oklch(38% 0.04 60)" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="2 4" fill="none" opacity="0.6"/>
+
+              <!-- LEFT: big multi-node hub -->
+              <g>
+                <!-- dashed spokes from center to 7 satellites -->
+                <g stroke="oklch(42% 0.06 60)" stroke-width="1.2" stroke-linecap="round" stroke-dasharray="2 3" opacity="0.6">
+                  <line x1="45" y1="55" x2="45" y2="18"/>
+                  <line x1="45" y1="55" x2="78" y2="36"/>
+                  <line x1="45" y1="55" x2="74" y2="72"/>
+                  <line x1="45" y1="55" x2="52" y2="92"/>
+                  <line x1="45" y1="55" x2="38" y2="92"/>
+                  <line x1="45" y1="55" x2="16" y2="72"/>
+                  <line x1="45" y1="55" x2="12" y2="36"/>
+                </g>
+                <!-- 7 satellite nodes (lime + butter) -->
+                <g>
+                  <circle cx="45" cy="18" r="4.5" fill="oklch(86% 0.16 128)"/>
+                  <circle cx="78" cy="36" r="4.5" fill="oklch(91% 0.13 96)"/>
+                  <circle cx="74" cy="72" r="4.5" fill="oklch(86% 0.16 128)"/>
+                  <circle cx="52" cy="92" r="4.5" fill="oklch(91% 0.13 96)"/>
+                  <circle cx="38" cy="92" r="4.5" fill="oklch(86% 0.16 128)"/>
+                  <circle cx="16" cy="72" r="4.5" fill="oklch(91% 0.13 96)"/>
+                  <circle cx="12" cy="36" r="4.5" fill="oklch(86% 0.16 128)"/>
+                </g>
+                <!-- central coral core -->
+                <circle cx="45" cy="55" r="11" fill="oklch(63% 0.19 28)"/>
+                <circle cx="45" cy="55" r="3" fill="var(--paper-soft)"/>
+              </g>
+
+              <!-- RIGHT: animated concentric chakra (red dot + light halo + rotating dashed ring) -->
+              <g transform="translate(155 55)">
+                <circle class="chakra-halo" cx="0" cy="0" r="26" fill="oklch(63% 0.19 28)" opacity="0.25"/>
+                <circle class="chakra-ring" cx="0" cy="0" r="18" fill="none" stroke="oklch(63% 0.19 28)" stroke-width="1.6" stroke-dasharray="3 4" opacity="0.85"/>
+                <circle cx="0" cy="0" r="9" fill="oklch(63% 0.19 28)"/>
+              </g>
+            </svg>
+          </div>
+          <div class="composite__word">
+            <div class="block">Chakra</div>
+            <div class="tail">MCP</div>
+          </div>
+        </div>
+      </div>
+      <p class="option-notes">The hub is now the hero — seven-satellite, coral core, dashed spokes. The red-dot chakra pulses beside it and shares an arc connection, so the two together still read as "nodes on the network." Stamp-format wordmark to the right: coral "Chakra" plate + cream "MCP" plate, all framed by a 2.5px ink border.</p>
+      <div class="usage"><span>Masthead</span><span>Docs header</span><span>Site footer</span></div>
+    </article>
+
+    <!-- Variant B: tail-only (cream plate only, no coral block) -->
+    <article class="card">
+      <div class="option-head">
+        <span class="option-num">B · Tail only — one-tone wordmark</span>
+      </div>
+      <div class="specimen">
+        <div class="composite composite--tail-only">
+          <div class="composite__mark">
+            <svg class="mark-svg" viewBox="0 0 200 110" fill="none">
+              <path d="M 70 55 Q 100 30 130 55" stroke="oklch(38% 0.04 60)" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+              <path d="M 70 55 Q 100 80 130 55" stroke="oklch(38% 0.04 60)" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="2 4" fill="none" opacity="0.6"/>
+              <g>
+                <g stroke="oklch(42% 0.06 60)" stroke-width="1.2" stroke-linecap="round" stroke-dasharray="2 3" opacity="0.6">
+                  <line x1="45" y1="55" x2="45" y2="18"/><line x1="45" y1="55" x2="78" y2="36"/>
+                  <line x1="45" y1="55" x2="74" y2="72"/><line x1="45" y1="55" x2="52" y2="92"/>
+                  <line x1="45" y1="55" x2="38" y2="92"/><line x1="45" y1="55" x2="16" y2="72"/>
+                  <line x1="45" y1="55" x2="12" y2="36"/>
+                </g>
+                <g>
+                  <circle cx="45" cy="18" r="4.5" fill="oklch(86% 0.16 128)"/>
+                  <circle cx="78" cy="36" r="4.5" fill="oklch(91% 0.13 96)"/>
+                  <circle cx="74" cy="72" r="4.5" fill="oklch(86% 0.16 128)"/>
+                  <circle cx="52" cy="92" r="4.5" fill="oklch(91% 0.13 96)"/>
+                  <circle cx="38" cy="92" r="4.5" fill="oklch(86% 0.16 128)"/>
+                  <circle cx="16" cy="72" r="4.5" fill="oklch(91% 0.13 96)"/>
+                  <circle cx="12" cy="36" r="4.5" fill="oklch(86% 0.16 128)"/>
+                </g>
+                <circle cx="45" cy="55" r="11" fill="oklch(63% 0.19 28)"/>
+                <circle cx="45" cy="55" r="3" fill="var(--paper-soft)"/>
+              </g>
+              <g transform="translate(155 55)">
+                <circle class="chakra-halo" cx="0" cy="0" r="26" fill="oklch(63% 0.19 28)" opacity="0.25"/>
+                <circle class="chakra-ring" cx="0" cy="0" r="18" fill="none" stroke="oklch(63% 0.19 28)" stroke-width="1.6" stroke-dasharray="3 4" opacity="0.85"/>
+                <circle cx="0" cy="0" r="9" fill="oklch(63% 0.19 28)"/>
+              </g>
+            </svg>
+          </div>
+          <div class="composite__word">
+            <div class="tail">ChakraMCP</div>
+          </div>
+        </div>
+      </div>
+      <p class="option-notes">Same left plate, single cream tail with the wordmark in one tone. Quieter — good when the mark is already inside another coral surface (buttons, banners, hero backgrounds).</p>
+      <div class="usage"><span>Nav mark</span><span>Email signature</span><span>T-shirt</span></div>
+    </article>
+
+    <!-- Variant C: hero blow-up -->
+    <article class="card">
+      <div class="option-head">
+        <span class="option-num">C · Hero scale</span>
+      </div>
+      <div class="specimen" style="min-height: 360px;">
+        <div class="composite composite--hero">
+          <div class="composite__mark">
+            <svg class="mark-svg" viewBox="0 0 200 110" fill="none">
+              <path d="M 70 55 Q 100 30 130 55" stroke="oklch(38% 0.04 60)" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+              <path d="M 70 55 Q 100 80 130 55" stroke="oklch(38% 0.04 60)" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="2 4" fill="none" opacity="0.6"/>
+              <g>
+                <g stroke="oklch(42% 0.06 60)" stroke-width="1.2" stroke-linecap="round" stroke-dasharray="2 3" opacity="0.6">
+                  <line x1="45" y1="55" x2="45" y2="18"/><line x1="45" y1="55" x2="78" y2="36"/>
+                  <line x1="45" y1="55" x2="74" y2="72"/><line x1="45" y1="55" x2="52" y2="92"/>
+                  <line x1="45" y1="55" x2="38" y2="92"/><line x1="45" y1="55" x2="16" y2="72"/>
+                  <line x1="45" y1="55" x2="12" y2="36"/>
+                </g>
+                <g>
+                  <circle cx="45" cy="18" r="4.5" fill="oklch(86% 0.16 128)"/>
+                  <circle cx="78" cy="36" r="4.5" fill="oklch(91% 0.13 96)"/>
+                  <circle cx="74" cy="72" r="4.5" fill="oklch(86% 0.16 128)"/>
+                  <circle cx="52" cy="92" r="4.5" fill="oklch(91% 0.13 96)"/>
+                  <circle cx="38" cy="92" r="4.5" fill="oklch(86% 0.16 128)"/>
+                  <circle cx="16" cy="72" r="4.5" fill="oklch(91% 0.13 96)"/>
+                  <circle cx="12" cy="36" r="4.5" fill="oklch(86% 0.16 128)"/>
+                </g>
+                <circle cx="45" cy="55" r="11" fill="oklch(63% 0.19 28)"/>
+                <circle cx="45" cy="55" r="3" fill="var(--paper-soft)"/>
+              </g>
+              <g transform="translate(155 55)">
+                <circle class="chakra-halo" cx="0" cy="0" r="26" fill="oklch(63% 0.19 28)" opacity="0.25"/>
+                <circle class="chakra-ring" cx="0" cy="0" r="18" fill="none" stroke="oklch(63% 0.19 28)" stroke-width="1.6" stroke-dasharray="3 4" opacity="0.85"/>
+                <circle cx="0" cy="0" r="9" fill="oklch(63% 0.19 28)"/>
+              </g>
+            </svg>
+          </div>
+          <div class="composite__word">
+            <div class="block">Chakra</div>
+            <div class="tail">MCP</div>
+          </div>
+        </div>
+      </div>
+      <p class="option-notes">Same lockup blown up 1.45× for landing hero, poster, or OG card use. Animation scales with the mark.</p>
+      <div class="usage"><span>Hero</span><span>OG card</span><span>Poster</span></div>
+    </article>
+
+  </div>
+</div>
+</body>
+</html>
