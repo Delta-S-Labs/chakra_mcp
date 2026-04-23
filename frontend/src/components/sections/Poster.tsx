@@ -4,7 +4,7 @@ export default function Poster() {
   return (
     <section className={styles.poster} aria-label="The relay is the bouncer — poster">
       <div className={styles.inkPanel}>
-        <div className={styles.eyebrow}>Example D · The poster</div>
+        <div className={styles.eyebrow}>Paperwork, not magic</div>
         <h1 className={styles.headline}>
           The relay
           <br />

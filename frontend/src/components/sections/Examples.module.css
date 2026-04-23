@@ -1,0 +1,66 @@
+.section {
+  width: min(1180px, calc(100% - 1.5rem));
+  margin: 0 auto;
+  display: grid;
+  gap: 2.25rem;
+}
+
+.sectionHead {
+  display: grid;
+  gap: 0.6rem;
+  max-width: 54ch;
+}
+
+.sectionEyebrow {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.78rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent-coral);
+}
+
+.sectionHeadline {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(2.1rem, 3.8vw, 3.2rem);
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--ink);
+  margin: 0;
+  text-wrap: balance;
+}
+
+.sectionLead {
+  font-family: var(--font-body);
+  font-size: 1.08rem;
+  line-height: 1.58;
+  color: var(--ink-soft);
+  margin: 0;
+  max-width: 58ch;
+}
+
+.exampleList {
+  display: grid;
+  gap: 3rem;
+}
+
+.example {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.exampleMedia {
+  min-width: 0;
+}
+
+.caption {
+  font-family: var(--font-body);
+  font-size: 0.98rem;
+  line-height: 1.52;
+  color: var(--ink-soft);
+  margin: 0;
+  padding-left: 0.8rem;
+  border-left: 2px solid color-mix(in oklab, var(--accent-coral) 60%, transparent);
+  max-width: 68ch;
+}

@@ -1,6 +1,5 @@
 .poster {
-  width: min(1180px, calc(100% - 1.5rem));
-  margin: 2.5rem auto 0;
+  width: 100%;
   display: grid;
   grid-template-columns: 1.35fr 0.95fr;
   gap: 1.5rem;

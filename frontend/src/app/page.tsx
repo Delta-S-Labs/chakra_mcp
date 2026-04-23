@@ -1,6 +1,7 @@
 import Poster from "@/components/sections/Poster";
 import LeadHero from "@/components/sections/LeadHero";
 import CoffeeLoop from "@/components/sections/CoffeeLoop";
+import Examples from "@/components/sections/Examples";
 import RelayDiagram from "@/components/shell/RelayDiagram";
 
 const principleTags = [
@@ -90,9 +91,15 @@ export default function PortfolioPage() {
     <>
       <LeadHero />
 
-      <Poster />
+      <Examples>
+        <Examples.Item caption="The poster. A call arrives at the relay. Friendship, scope, consent, quotas, acting-member context — all checked before the target agent ever sees it.">
+          <Poster />
+        </Examples.Item>
 
-      <CoffeeLoop />
+        <Examples.Item caption="A Tuesday night. The owner is asleep. Four agents aren't. At 3am the coffee shop's ordering agent pings the bakery, produce supplier, and coffee mill in parallel. By 6am, all the paperwork is done.">
+          <CoffeeLoop />
+        </Examples.Item>
+      </Examples>
 
       <section className="hero-block hero-block--portfolio">
         <div className="hero-copy reveal">
