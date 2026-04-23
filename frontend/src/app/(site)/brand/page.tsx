@@ -69,6 +69,20 @@ const downloads = [
     description:
       "The skill frontmatter that teaches Claude Code to apply the ChakraMCP brand when generating artifacts.",
   },
+  {
+    name: "Coffee-loop (MP4)",
+    file: "coffee-loop.mp4",
+    path: "/assets/coffee-loop.mp4",
+    description:
+      "The dispatch-log animation as a 12-second MP4. 1200×720, H.264, muted, loop-friendly. Drop it into a social post or a deck.",
+  },
+  {
+    name: "Coffee-loop (GIF)",
+    file: "coffee-loop.gif",
+    path: "/assets/coffee-loop.gif",
+    description:
+      "Same animation as a GIF for places that don\u2019t play MP4 inline. 800×480, 15fps.",
+  },
 ];
 
 export default function BrandPage() {

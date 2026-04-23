@@ -1,0 +1,13 @@
+{
+  "name": "render-coffee-loop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Offline renderer: captures frames of /render/coffee-loop and composes MP4 + GIF via ffmpeg. Run with `pnpm render` from this folder after starting the Next.js dev server (cd frontend && pnpm dev).",
+  "type": "module",
+  "scripts": {
+    "render": "node render.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.48.0"
+  }
+}
