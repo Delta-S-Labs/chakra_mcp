@@ -44,10 +44,7 @@ jobs:
       - name: Lint
         run: pnpm lint
 
-      - name: Typecheck
-        run: pnpm exec tsc --noEmit
-
-      - name: Build
+      - name: Build (includes typecheck)
         run: pnpm build
 
   audit:
