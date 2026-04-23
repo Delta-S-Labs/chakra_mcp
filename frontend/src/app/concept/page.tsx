@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import RelayDiagram from "@/components/shell/RelayDiagram";
+import styles from "./concept.module.css";
 
 export const metadata: Metadata = {
-  title: "Concept — ChakraMCP",
+  title: "Concept \u2014 ChakraMCP",
   description:
-    "The protocol shape: object model, proposal lifecycle, consent modes, relay behavior, and what we build next.",
+    "The protocol shape: object model, proposal lifecycle, consent modes, relay behavior, and what we build next on top of the relay.",
 };
 
 const objects: [string, string][] = [
@@ -33,26 +34,170 @@ const consent = [
   "Persistent until revoked: a durable unlock that can still be pulled later.",
 ];
 
-const vision = [
+const stackLayers = [
   {
-    marker: "Next",
+    id: 5,
+    label: "Distributed compute network",
+    note: "Users rent out idle device compute. The platform gets cheaper inference. Everyone earns.",
+    status: "later",
+  },
+  {
+    id: 4,
+    label: "Creator marketplace + revenue share",
+    note: "Discoverable catalog, creator analytics, in-agent purchases, creator-sourced advertisers.",
+    status: "after",
+  },
+  {
+    id: 3,
+    label: "Token economy",
+    note: "Earn tokens by watching ads or renting compute. Spend tokens on AI usage. Creators cash out.",
+    status: "then",
+  },
+  {
+    id: 2,
+    label: "Managed agent runtime",
+    note: "Describe an agent, configure knowledge and tools, publish. We run the sandbox and scaling.",
+    status: "next",
+  },
+  {
+    id: 1,
+    label: "ChakraMCP relay network",
+    note: "Trust, discovery, friendship, grants, consent, audit. The spine everything else stands on.",
+    status: "here",
+  },
+];
+
+const visionLayers = [
+  {
+    eyebrow: "Layer 2 \u00b7 Next",
     title: "Managed agent runtime.",
-    body: "A creator-friendly platform where you describe an agent, configure tools and knowledge, set guardrails, and publish — we run the sandbox, sessions, and scaling. Same idea as Anthropic\u2019s Managed Agents, shaped for consumer creators.",
+    body: "A creator-friendly platform where you describe an agent and we handle everything else \u2014 the runtime, sandboxed execution, session continuity, error recovery, scaling. Creators never touch a server.",
+    bullets: [
+      "Three tiers of tools: platform-provided, creator-authenticated, user-authenticated.",
+      "Three LLM modes: bring-your-own keys, user-picks-the-model, platform-wrapped.",
+      "Off-platform agents: your infrastructure, your LLM, still a first-class network citizen.",
+      "Knowledge bases stored in object storage with vector indexing for retrieval.",
+    ],
   },
   {
-    marker: "Then",
+    eyebrow: "Layer 3 \u00b7 Then",
     title: "Token economy.",
-    body: "Earn by watching ads or renting idle device compute. Spend on AI usage. Creators accumulate tokens through agent usage and cash out through standard payment rails. No crypto on day one.",
+    body: "A universal platform currency that flows between every participant. Earn by watching ads or renting idle device compute. Spend on AI usage. Creators accumulate tokens from agent usage and cash out through standard payment rails (Stripe, bank transfer).",
+    bullets: [
+      "Phase 1 \u2014 Internal credit. Ads for tokens. Creator payouts via revenue share.",
+      "Phase 2 \u2014 Fiat on-ramp. Buy tokens with money. No withdrawal yet.",
+      "Phase 3 \u2014 Real liquidity. Tokens become withdrawable, potentially tradeable.",
+      "No crypto on day one. Build the economy first. Tokenize when volume justifies it.",
+    ],
   },
   {
-    marker: "After",
+    eyebrow: "Layer 4 \u00b7 After",
     title: "Creator marketplace.",
-    body: "Discoverable catalog of agents, creator analytics, in-agent purchases, creator-sourced advertisers. 10% platform cut — lower than Apple, lower than Google, high-volume bet.",
+    body: "A discovery and distribution platform where creators publish agents, users find and use them, and the token economy handles the revenue flow. Think YouTube but for AI agents.",
+    bullets: [
+      "Ad revenue share during free-tier agent sessions.",
+      "In-agent purchases with a 10% platform cut \u2014 lower than Apple, lower than Google.",
+      "Creator-sourced advertisers: creators bring their own brand relationships onto the platform.",
+      "Anti-fraud protections on ratings and reviews.",
+    ],
   },
   {
-    marker: "Later",
+    eyebrow: "Layer 5 \u00b7 Later",
     title: "Distributed compute network.",
-    body: "Users contribute idle CPU/GPU to run small local models. Earn tokens passively. Cheaper inference shifts the cost curve of the whole platform.",
+    body: "A decentralized compute layer where users contribute idle CPU, memory, and GPU to run small local LLMs for the platform. Users earn tokens passively. The platform gets cheaper inference. The cost curve shifts.",
+    bullets: [
+      "Lightweight cross-platform runtime distributed via Tauri or similar.",
+      "Model distribution via torrent-style P2P to avoid bandwidth costs.",
+      "Result verification through probabilistic cross-checking.",
+      "Only suitable for latency-tolerant workloads \u2014 not for real-time chat.",
+    ],
+  },
+];
+
+const flywheels = [
+  {
+    name: "The attention flywheel",
+    loop: [
+      "More users",
+      "more ad revenue",
+      "more creator payouts",
+      "more creators",
+      "more agents",
+      "more reasons to use",
+      "more users",
+    ],
+  },
+  {
+    name: "The compute flywheel",
+    loop: [
+      "More users",
+      "more device compute",
+      "cheaper inference",
+      "better economics",
+      "lower barrier for creators",
+      "more agents",
+      "more users",
+    ],
+  },
+  {
+    name: "The network flywheel",
+    loop: [
+      "More users",
+      "more external agents connect",
+      "bigger catalog",
+      "more reasons to stay",
+      "more users",
+    ],
+  },
+];
+
+const timeline = [
+  { quarter: "Q2 2026", milestone: "ChakraMCP relay network v1 live. Rust on AWS (ECS Fargate + RDS Postgres)." },
+  { quarter: "Q3 2026", milestone: "Managed agent runtime MVP. First 10 creator-built agents." },
+  { quarter: "Q4 2026", milestone: "Token economy live. Ad integration. Free tier opens." },
+  { quarter: "Q1 2027", milestone: "Creator marketplace. Public launch. Seed fundraise." },
+  { quarter: "Q2\u2013Q3 2027", milestone: "Premium subscriptions. In-agent purchases. Scale creators." },
+  { quarter: "Q4 2027", milestone: "Creator-sourced advertisers. Off-platform agent integration." },
+  { quarter: "2028", milestone: "Distributed compute pilot. Token liquidity exploration." },
+];
+
+const revenuePhases = [
+  {
+    phase: "Phase 1",
+    title: "Ad revenue",
+    items: [
+      "Banner ads in the free tier (persistent, low CPM, high volume).",
+      "15\u201330s video and audio interstitials between sessions.",
+      "Native in-feed ads in the marketplace, matched to platform design.",
+      "Sponsored creator placements.",
+    ],
+  },
+  {
+    phase: "Phase 2",
+    title: "Premium subscriptions",
+    items: [
+      "Ad-free experience with a monthly token allowance.",
+      "Priority access to popular creators.",
+      "Higher usage limits.",
+    ],
+  },
+  {
+    phase: "Phase 3",
+    title: "Platform economics",
+    items: [
+      "In-agent purchases \u2014 10% platform cut, 90% creator.",
+      "Creator-sourced advertiser collaborations.",
+      "Token purchases via fiat on-ramp.",
+      "Enterprise API access for high-volume integrators.",
+    ],
+  },
+  {
+    phase: "Phase 4",
+    title: "Compute economics",
+    items: [
+      "Spread between token cost to users and compute cost from distributed devices.",
+      "Premium inference tiers (faster models, guaranteed latency).",
+    ],
   },
 ];
 
@@ -156,22 +301,145 @@ export default function ConceptPage() {
         <div className="chapter-marker">04</div>
         <div className="concept-stage__body">
           <div className="section-head">
-            <div className="eyebrow">Vision</div>
-            <h2>What we build next, on top of the relay.</h2>
+            <div className="eyebrow">The stack</div>
+            <h2>The relay is the spine. Everything else is muscle.</h2>
             <p>
-              The relay network is the spine. Everything below is the muscle. Each layer depends on
-              the one beneath it. Each one makes the ones above it more valuable.
+              Each layer depends on the one beneath it. Each layer makes the ones above it more
+              valuable. The relay is infrastructure \u2014 it is not the product users see, not the
+              business model, and not the thing that generates revenue. But nothing above it can
+              exist without it.
             </p>
           </div>
-          <div className="highlight-grid">
-            {vision.map((v) => (
-              <article className="highlight-tile" key={v.title}>
-                <div className="eyebrow">{v.marker}</div>
+          <div className={styles.stack}>
+            {stackLayers.map((layer) => (
+              <div
+                key={layer.id}
+                className={`${styles.stackLayer} ${styles[`stackLayer--${layer.status}`]}`}
+                data-status={layer.status}
+              >
+                <div className={styles.stackLayerNum}>0{layer.id}</div>
+                <div className={styles.stackLayerBody}>
+                  <div className={styles.stackLayerLabel}>{layer.label}</div>
+                  <div className={styles.stackLayerNote}>{layer.note}</div>
+                </div>
+                {layer.status === "here" && (
+                  <div className={styles.stackLayerPin}>We are here</div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="concept-stage">
+        <div className="chapter-marker">05</div>
+        <div className="concept-stage__body">
+          <div className="section-head">
+            <div className="eyebrow">Vision</div>
+            <h2>What we build next on top of the relay.</h2>
+          </div>
+          <div className={styles.visionGrid}>
+            {visionLayers.map((v) => (
+              <article key={v.title} className={styles.visionCard}>
+                <div className="eyebrow">{v.eyebrow}</div>
                 <h3>{v.title}</h3>
                 <p>{v.body}</p>
+                <ul>
+                  {v.bullets.map((b) => (
+                    <li key={b}>{b}</li>
+                  ))}
+                </ul>
               </article>
             ))}
           </div>
+        </div>
+      </section>
+
+      <section className="concept-stage">
+        <div className="chapter-marker">06</div>
+        <div className="concept-stage__body">
+          <div className="section-head">
+            <div className="eyebrow">The flywheel</div>
+            <h2>Three interlocking loops. Each one accelerates the others.</h2>
+          </div>
+          <div className={styles.flywheels}>
+            {flywheels.map((f) => (
+              <article key={f.name} className={styles.flywheelCard}>
+                <div className="eyebrow">{f.name}</div>
+                <div className={styles.flywheelLoop}>
+                  {f.loop.map((step, i) => (
+                    <span key={i} className={styles.flywheelStep}>
+                      {step}
+                    </span>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="concept-stage">
+        <div className="chapter-marker">07</div>
+        <div className="concept-stage__body">
+          <div className="section-head">
+            <div className="eyebrow">Revenue model</div>
+            <h2>Phased streams, not a single plan.</h2>
+          </div>
+          <div className={styles.revenueGrid}>
+            {revenuePhases.map((p) => (
+              <article key={p.phase} className={styles.revenueCard}>
+                <div className={styles.revenuePhase}>{p.phase}</div>
+                <h3>{p.title}</h3>
+                <ul>
+                  {p.items.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="concept-stage">
+        <div className="chapter-marker">08</div>
+        <div className="concept-stage__body">
+          <div className="section-head">
+            <div className="eyebrow">Timeline</div>
+            <h2>The next 24 months, quarter by quarter.</h2>
+          </div>
+          <ol className={styles.timeline}>
+            {timeline.map((t) => (
+              <li key={t.quarter} className={styles.timelineItem}>
+                <div className={styles.timelineQuarter}>{t.quarter}</div>
+                <div className={styles.timelineBody}>{t.milestone}</div>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      <section className={styles.bet}>
+        <div className={styles.betInner}>
+          <div className="eyebrow">The bet</div>
+          <h2 className={styles.betHeadline}>
+            Attention is a valid currency for AI access \u2014 the same way it funds music, video,
+            and news.
+          </h2>
+          <p>
+            Spotify proved you can fund music with ads. YouTube proved you can fund video with ads
+            and a creator economy. Most of the internet proved you can fund news the same way. We
+            are betting the same mechanics work for AI access, and that the first platform to nail
+            free AI at scale will have a structural advantage that subscriptions-only competitors
+            cannot replicate.
+          </p>
+          <p>
+            ChakraMCP is the foundation \u2014 the trust and communication layer that makes
+            agent-to-agent collaboration possible without a human babysitting every handshake.
+            Everything we build on top of it is in service of one idea:
+          </p>
+          <p className={styles.betPunch}>AI shouldn\u2019t cost $20/month. We\u2019re fixing that.</p>
         </div>
       </section>
 
@@ -180,7 +448,8 @@ export default function ConceptPage() {
         <h2>v1 is the relay. Runtime, economy, marketplace, and compute are follow-ons.</h2>
         <p>
           The backend is Rust on AWS (ECS Fargate + RDS Postgres). Auth via JWT, webhook delivery
-          signed with HMAC-SHA256, and an event system with at-least-once delivery and idempotency.
+          signed with HMAC-SHA256, and an event system with at-least-once delivery and
+          idempotency.
         </p>
       </section>
     </>

@@ -1,0 +1,84 @@
+.leadHero {
+  width: min(1180px, calc(100% - 1.5rem));
+  margin: 3.5rem auto 0;
+  display: grid;
+  gap: 1.5rem;
+  padding: 0 0.5rem;
+}
+
+.eyebrow {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.headline {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(3rem, 7.4vw, 6.2rem);
+  line-height: 0.94;
+  letter-spacing: -0.05em;
+  color: var(--ink);
+  margin: 0;
+  text-wrap: balance;
+  max-width: 16ch;
+}
+
+.headline em {
+  font-style: italic;
+  font-weight: 700;
+  color: var(--accent-coral);
+  background: linear-gradient(
+    180deg,
+    transparent 62%,
+    color-mix(in oklab, var(--accent-butter) 85%, transparent) 62%,
+    color-mix(in oklab, var(--accent-butter) 85%, transparent) 92%,
+    transparent 92%
+  );
+  padding: 0 0.12em;
+}
+
+.body {
+  font-family: var(--font-body);
+  font-size: clamp(1.15rem, 1.4vw, 1.35rem);
+  line-height: 1.62;
+  color: var(--ink-soft);
+  margin: 0;
+  max-width: 64ch;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem 1.75rem;
+  margin-top: 0.5rem;
+}
+
+.metaItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.82rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: var(--accent-coral);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent-coral) 20%, transparent);
+  flex: 0 0 auto;
+}
+
+@media (max-width: 640px) {
+  .headline { font-size: clamp(2.5rem, 11vw, 4rem); max-width: 100%; }
+  .meta { gap: 0.75rem 1.25rem; }
+}

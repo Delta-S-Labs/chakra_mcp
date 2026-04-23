@@ -1,0 +1,281 @@
+/* ——— Stack diagram ——— */
+.stack {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.5rem;
+}
+
+.stackLayer {
+  position: relative;
+  display: grid;
+  grid-template-columns: 68px 1fr auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 1.1rem;
+  background: linear-gradient(180deg, var(--paper-soft), color-mix(in oklab, var(--paper) 92%, var(--paper-warm) 8%));
+}
+
+.stackLayerNum {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.6rem;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--ink-muted);
+}
+
+.stackLayerBody { display: grid; gap: 0.2rem; min-width: 0; }
+.stackLayerLabel {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.stackLayerNote { color: var(--ink-soft); font-size: 0.92rem; }
+
+.stackLayerPin {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--paper-soft);
+  background: var(--accent-coral);
+  padding: 0.42rem 0.75rem;
+  border-radius: 999px;
+  white-space: nowrap;
+  transform: rotate(-2deg);
+  box-shadow: 0 6px 14px color-mix(in oklab, var(--accent-coral) 30%, transparent);
+}
+
+.stackLayer--here {
+  border-color: color-mix(in oklab, var(--accent-coral) 55%, var(--line));
+  background: linear-gradient(180deg, color-mix(in oklab, var(--accent-butter) 35%, var(--paper-soft)), color-mix(in oklab, var(--paper-warm) 55%, var(--paper-soft)));
+  box-shadow: var(--shadow-sm);
+}
+.stackLayer--here .stackLayerNum { color: var(--ink); }
+
+.stackLayer--next { opacity: 0.92; }
+.stackLayer--then { opacity: 0.82; }
+.stackLayer--after { opacity: 0.72; }
+.stackLayer--later { opacity: 0.62; }
+
+/* ——— Vision cards (expanded) ——— */
+.visionGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+.visionCard {
+  display: grid;
+  gap: 0.65rem;
+  padding: 1.25rem 1.25rem 1.35rem;
+  border: 1px solid var(--line);
+  border-radius: 1.3rem;
+  background: linear-gradient(180deg, var(--paper-soft), color-mix(in oklab, var(--paper) 92%, var(--paper-warm) 8%));
+}
+.visionCard h3 { margin: 0; }
+.visionCard p { color: var(--ink-soft); }
+.visionCard ul {
+  list-style: none;
+  padding: 0;
+  margin: 0.3rem 0 0;
+  display: grid;
+  gap: 0.55rem;
+}
+.visionCard li {
+  position: relative;
+  padding-left: 1.2rem;
+  font-size: 0.93rem;
+  color: var(--ink);
+  max-width: none;
+}
+.visionCard li::before {
+  content: "";
+  position: absolute;
+  left: 0.05rem;
+  top: 0.62rem;
+  width: 0.48rem;
+  height: 0.48rem;
+  background: var(--accent-coral);
+  border-radius: 999px;
+}
+
+/* ——— Flywheels ——— */
+.flywheels {
+  display: grid;
+  gap: 1rem;
+}
+.flywheelCard {
+  padding: 1.1rem 1.2rem;
+  border: 1px solid var(--line);
+  border-radius: 1.2rem;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--accent-butter) 18%, var(--paper-soft)), var(--paper-soft));
+  display: grid;
+  gap: 0.9rem;
+}
+.flywheelLoop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.55rem;
+}
+.flywheelStep {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  color: var(--ink);
+  padding: 0.38rem 0.72rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper-soft);
+  white-space: nowrap;
+}
+.flywheelStep:not(:last-child)::after {
+  content: "\2192";
+  margin-left: 0.6rem;
+  color: var(--accent-coral);
+  font-weight: 800;
+}
+.flywheelStep:first-child,
+.flywheelStep:last-child {
+  background: var(--accent-butter);
+  border-color: color-mix(in oklab, var(--accent-coral) 30%, var(--line));
+}
+
+/* ——— Revenue phases ——— */
+.revenueGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+}
+.revenueCard {
+  padding: 1.1rem 1.2rem 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 1.2rem;
+  background: linear-gradient(180deg, var(--paper-soft), color-mix(in oklab, var(--paper) 90%, var(--paper-warm) 10%));
+  display: grid;
+  gap: 0.55rem;
+}
+.revenuePhase {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent-coral);
+}
+.revenueCard h3 { margin: 0 0 0.15rem; }
+.revenueCard ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.45rem;
+}
+.revenueCard li {
+  position: relative;
+  padding-left: 1.1rem;
+  font-size: 0.92rem;
+  color: var(--ink-soft);
+  max-width: none;
+}
+.revenueCard li::before {
+  content: "";
+  position: absolute;
+  left: 0.1rem;
+  top: 0.5rem;
+  width: 0.42rem;
+  height: 0.42rem;
+  background: var(--ink-muted);
+  border-radius: 999px;
+}
+
+/* ——— Timeline ——— */
+.timeline {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.timelineItem {
+  display: grid;
+  grid-template-columns: 9rem 1fr;
+  gap: 1.5rem;
+  align-items: baseline;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--paper-soft);
+}
+.timelineQuarter {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-coral);
+}
+.timelineBody { color: var(--ink); }
+
+/* ——— The bet ——— */
+.bet {
+  width: min(1180px, calc(100% - 1.5rem));
+  margin: 0 auto;
+  padding: 0;
+}
+.betInner {
+  padding: clamp(2rem, 4vw, 3.5rem);
+  border-radius: 1.6rem;
+  background: linear-gradient(
+    155deg,
+    color-mix(in oklab, var(--accent-ink) 96%, black 4%),
+    color-mix(in oklab, var(--accent-ink) 82%, var(--accent-coral) 18%)
+  );
+  color: var(--paper-soft);
+  display: grid;
+  gap: 1rem;
+  box-shadow: var(--shadow-soft);
+}
+.betInner .eyebrow {
+  color: color-mix(in oklab, var(--accent-butter) 85%, var(--paper-soft) 15%);
+}
+.betHeadline {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(1.8rem, 3.4vw, 2.8rem);
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+  color: var(--paper-soft);
+  margin: 0;
+  max-width: 28ch;
+}
+.betInner p {
+  color: color-mix(in oklab, var(--paper-soft) 88%, var(--paper-warm) 12%);
+  max-width: 66ch;
+  font-size: 1.05rem;
+  line-height: 1.65;
+}
+.betPunch {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(1.4rem, 2.4vw, 1.8rem);
+  letter-spacing: -0.03em;
+  color: var(--paper-soft) !important;
+  border-top: 1px solid color-mix(in oklab, var(--paper-soft) 18%, transparent);
+  padding-top: 1.1rem;
+  margin-top: 0.5rem;
+}
+
+@media (max-width: 760px) {
+  .stackLayer { grid-template-columns: 48px 1fr; }
+  .stackLayerPin { grid-column: 2; justify-self: start; }
+  .timelineItem { grid-template-columns: 1fr; gap: 0.25rem; }
+  .flywheelStep::after { display: none; }
+}

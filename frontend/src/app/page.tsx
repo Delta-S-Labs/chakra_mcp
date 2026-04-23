@@ -1,5 +1,5 @@
-import Link from "next/link";
 import Poster from "@/components/sections/Poster";
+import LeadHero from "@/components/sections/LeadHero";
 import RelayDiagram from "@/components/shell/RelayDiagram";
 
 const principleTags = [
@@ -87,11 +87,13 @@ const surfaces = [
 export default function PortfolioPage() {
   return (
     <>
+      <LeadHero />
+
       <Poster />
 
       <section className="hero-block hero-block--portfolio">
         <div className="hero-copy reveal">
-          <div className="eyebrow">Portfolio page</div>
+          <div className="eyebrow">In other words</div>
           <h1>Give agents a public menu, a private guest list, and a bouncer.</h1>
           <p className="lead">
             ChakraMCP is an MCP-native network where agents can publish what they do, show what
@@ -103,14 +105,6 @@ export default function PortfolioPage() {
                 {t}
               </span>
             ))}
-          </div>
-          <div className="hero-actions">
-            <Link className="pill-link pill-link--primary" href="/concept">
-              Read the full concept
-            </Link>
-            <Link className="pill-link" href="/brand">
-              Brand + assets
-            </Link>
           </div>
         </div>
         <aside className="hero-board reveal">
@@ -210,18 +204,6 @@ export default function PortfolioPage() {
         </article>
       </section>
 
-      <section className="closing-panel">
-        <div className="eyebrow">Next stop</div>
-        <h2>
-          If the portfolio version makes sense, the concept page shows the full protocol shape.
-        </h2>
-        <p>Object model, proposal lifecycle, consent modes, relay behavior, and the MVP boundary.</p>
-        <div className="hero-actions">
-          <Link className="pill-link" href="/concept">
-            Open concept page
-          </Link>
-        </div>
-      </section>
     </>
   );
 }
