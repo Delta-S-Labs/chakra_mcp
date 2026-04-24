@@ -1,0 +1,391 @@
+/* ——— Page scaffold ——— */
+.hero,
+.stage,
+.ask {
+  width: min(1180px, calc(100% - 1.5rem));
+  margin: 0 auto;
+}
+
+/* ——— Hero ——— */
+.hero {
+  padding: 2rem 0 1rem;
+}
+.heroInner {
+  display: grid;
+  gap: 1rem;
+  max-width: 80ch;
+}
+.heroHeadline {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(2.6rem, 6vw, 5.4rem);
+  line-height: 0.96;
+  letter-spacing: -0.05em;
+  color: var(--ink);
+  margin: 0;
+  text-wrap: balance;
+}
+.heroLead {
+  font-family: var(--font-body);
+  font-size: 1.15rem;
+  line-height: 1.62;
+  color: var(--ink-soft);
+  margin: 0;
+  max-width: 70ch;
+}
+.heroLinks {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+}
+
+/* ——— Stage (numbered chapter, matches /concept pattern) ——— */
+.stage {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 2rem;
+  padding: 3.6rem 0;
+  border-top: 1px solid var(--line);
+}
+.stageMark {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(2.6rem, 4vw, 4.8rem);
+  line-height: 0.88;
+  letter-spacing: -0.08em;
+  color: color-mix(in oklab, var(--ink) 22%, var(--paper-warm) 78%);
+}
+.stageBody {
+  display: grid;
+  gap: 1rem;
+}
+.stageBody h2 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(1.8rem, 3vw, 3rem);
+  line-height: 1.02;
+  letter-spacing: -0.04em;
+  text-wrap: balance;
+  margin: 0;
+}
+.stageBody h3 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.1rem;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.3rem;
+}
+.stageBody p {
+  font-family: var(--font-body);
+  font-size: 1.02rem;
+  line-height: 1.6;
+  color: var(--ink);
+  margin: 0;
+  max-width: 72ch;
+}
+
+/* ——— Portraits (shared visual with /concept) ——— */
+.portraits {
+  display: grid;
+  gap: 1.2rem;
+  max-width: 72ch;
+}
+.portrait {
+  padding: 1.2rem 1.4rem;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent-coral);
+  border-radius: 0.4rem 1.2rem 1.2rem 0.4rem;
+  background: linear-gradient(
+    180deg,
+    var(--paper-soft),
+    color-mix(in oklab, var(--paper) 92%, var(--paper-warm) 8%)
+  );
+}
+.portrait p { max-width: none; }
+.portraitFoot {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 0.88rem;
+  letter-spacing: 0.06em;
+  color: var(--accent-coral);
+  padding: 0.4rem 0 0 0.4rem;
+}
+
+/* ——— What's shipped ——— */
+.shippedList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.55rem;
+}
+.shippedList li {
+  display: grid;
+  grid-template-columns: 12.5rem 1fr;
+  gap: 1rem;
+  align-items: baseline;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+  background: var(--paper-soft);
+  max-width: none;
+}
+.shippedLabel {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.82rem;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+}
+.shippedLabel a {
+  color: var(--accent-coral);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.shippedDetail {
+  color: var(--ink-soft);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+/* ——— Ships grid (shared with /concept) ——— */
+.shipsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+.shipsCol {
+  padding: 1.1rem 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 1.1rem;
+  background: var(--paper-soft);
+}
+.shipsFirst {
+  border-color: color-mix(in oklab, oklch(60% 0.18 140) 35%, var(--line));
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, oklch(85% 0.14 140) 16%, var(--paper-soft)),
+    var(--paper-soft)
+  );
+}
+.shipsLater {
+  background: color-mix(in oklab, var(--paper-warm) 22%, var(--paper-soft));
+  opacity: 0.85;
+}
+.shipsHead {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+  padding-bottom: 0.55rem;
+  margin-bottom: 0.65rem;
+  border-bottom: 1px dashed color-mix(in oklab, var(--line) 80%, var(--ink) 20%);
+}
+.shipsFirst .shipsHead { color: oklch(35% 0.14 145); }
+.shipsLater .shipsHead { color: var(--ink-muted); }
+.shipsCol ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.45rem;
+}
+.shipsCol li {
+  display: grid;
+  grid-template-columns: 1.2rem 1fr;
+  gap: 0.45rem;
+  align-items: baseline;
+  font-size: 0.94rem;
+  line-height: 1.4;
+  color: var(--ink);
+  max-width: none;
+}
+.shipsTick { font-family: var(--font-display); font-weight: 800; color: oklch(55% 0.18 145); text-align: center; }
+.shipsCross { font-family: var(--font-display); font-weight: 800; color: var(--ink-muted); text-align: center; }
+.shipsLater li { color: var(--ink-muted); }
+
+/* ——— Risks ——— */
+.risks {
+  display: grid;
+  gap: 0.85rem;
+}
+.risk {
+  padding: 1rem 1.2rem;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent-butter);
+  border-radius: 0.4rem 1rem 1rem 0.4rem;
+  background: color-mix(in oklab, var(--accent-butter) 12%, var(--paper-soft));
+}
+.risk p {
+  margin: 0;
+  color: var(--ink);
+  max-width: none;
+}
+
+/* ——— Tech stack ——— */
+.stackGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.85rem;
+}
+.stackBlock {
+  padding: 1rem 1.2rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--paper-soft);
+}
+.stackLabel {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-coral);
+  margin-bottom: 0.55rem;
+  padding-bottom: 0.45rem;
+  border-bottom: 1px dashed color-mix(in oklab, var(--line) 80%, var(--ink) 20%);
+}
+.stackBlock ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.32rem;
+}
+.stackBlock li {
+  position: relative;
+  padding-left: 1rem;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: var(--ink);
+  max-width: none;
+}
+.stackBlock li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.55rem;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--accent-coral);
+}
+.stackBlock code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  padding: 0.04rem 0.35rem;
+  border-radius: 0.3rem;
+  background: color-mix(in oklab, var(--accent-butter) 35%, transparent);
+  color: var(--ink);
+}
+
+/* ——— What I'm looking for ——— */
+.workingList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.85rem;
+}
+.workingList li {
+  padding: 0.95rem 1.2rem;
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+  background: var(--paper-soft);
+  font-size: 1rem;
+  line-height: 1.55;
+  color: var(--ink);
+  max-width: none;
+}
+.workingList strong {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-coral);
+  margin-bottom: 0.3rem;
+}
+
+/* ——— Culture ——— */
+.cultureGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.85rem;
+}
+.cultureCard {
+  padding: 1rem 1.2rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: linear-gradient(
+    180deg,
+    var(--paper-soft),
+    color-mix(in oklab, var(--paper) 92%, var(--paper-warm) 8%)
+  );
+}
+.cultureCard h3 {
+  color: var(--ink);
+  margin-bottom: 0.4rem;
+}
+.cultureCard p {
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+  margin: 0;
+  max-width: none;
+}
+
+/* ——— The ask ——— */
+.ask {
+  margin-top: 2rem;
+  padding-bottom: 2rem;
+}
+.askInner {
+  padding: clamp(1.75rem, 3vw, 2.75rem);
+  border-radius: 1.6rem;
+  background: linear-gradient(
+    155deg,
+    color-mix(in oklab, var(--accent-ink) 96%, black 4%),
+    color-mix(in oklab, var(--accent-ink) 82%, var(--accent-coral) 18%)
+  );
+  color: var(--paper-soft);
+  display: grid;
+  gap: 0.85rem;
+  box-shadow: var(--shadow-soft);
+}
+.askInner :global(.eyebrow) {
+  color: color-mix(in oklab, var(--accent-butter) 85%, var(--paper-soft) 15%);
+}
+.askHeadline {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(1.6rem, 2.8vw, 2.4rem);
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  color: var(--paper-soft);
+  margin: 0;
+}
+.askHeadline a {
+  color: var(--accent-butter);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 5px;
+}
+.askBody {
+  color: color-mix(in oklab, var(--paper-soft) 88%, var(--paper-warm) 12%);
+  font-size: 1.05rem;
+  line-height: 1.6;
+  max-width: 60ch;
+  margin: 0;
+}
+
+/* ——— Responsive ——— */
+@media (max-width: 820px) {
+  .stage { grid-template-columns: 1fr; gap: 1rem; padding: 2.4rem 0; }
+  .shippedList li { grid-template-columns: 1fr; gap: 0.3rem; }
+  .shipsGrid { grid-template-columns: 1fr; }
+  .stackGrid { grid-template-columns: 1fr; }
+}

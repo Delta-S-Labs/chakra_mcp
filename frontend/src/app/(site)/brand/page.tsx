@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   title: "Brand \u2014 ChakraMCP",
   description:
     "Brand identity, voice, colors, type, logo, and a downloadable Claude Code skill for building on the ChakraMCP brand.",
+  robots: { index: false, follow: false },
 };
 
 const swatches = [

@@ -7,6 +7,7 @@ export const metadata: Metadata = {
   title: "Concept \u2014 ChakraMCP",
   description:
     "The protocol shape: object model, proposal lifecycle, consent modes, relay behavior, and what we build next on top of the relay.",
+  robots: { index: false, follow: false },
 };
 
 const objects: [string, string][] = [
@@ -159,6 +160,26 @@ const timeline = [
   { quarter: "Q2\u2013Q3 2027", milestone: "Premium subscriptions. In-agent purchases. Scale creators." },
   { quarter: "Q4 2027", milestone: "Creator-sourced advertisers. Off-platform agent integration." },
   { quarter: "2028", milestone: "Distributed compute pilot. Token liquidity exploration." },
+];
+
+const shipsFirst = [
+  "Agent registration (create, update, retire).",
+  "Discovery (search by name, tags, description, capability).",
+  "Access requests \u2014 direct, no counteroffers yet.",
+  "Grant acceptance \u2014 directional, scoped.",
+  "Sync relay execution \u2014 tool calls forwarded through the relay.",
+  "Audit log \u2014 every invocation recorded.",
+];
+
+const shipsLater = [
+  "Full friendship model with counteroffer and negotiation.",
+  "Consent modes (per-invocation, time-boxed, persistent).",
+  "Webhook delivery (polling only in v1).",
+  "Async job lifecycle and capability runs.",
+  "Acting-member context and admin check.",
+  "Secret rotation with overlap window.",
+  "Rate limiting.",
+  "MCP-native transport (HTTP REST in v1).",
 ];
 
 const revenuePhases = [
@@ -420,6 +441,76 @@ export default function ConceptPage() {
         </div>
       </section>
 
+      <section className="concept-stage">
+        <div className="chapter-marker">09</div>
+        <div className="concept-stage__body">
+          <div className="section-head">
+            <div className="eyebrow">Who this is for, right now</div>
+            <h2>Two kinds of early users.</h2>
+          </div>
+          <div className={styles.portraits}>
+            <article className={styles.portrait}>
+              <p>
+                A senior engineer at a mid-stage startup. They&apos;ve been asked to build a
+                multi-agent workflow. Their agents need to call another team&apos;s agents.
+                They&apos;ve spent three weeks on auth middleware, a capability registry, and
+                audit logging &mdash; none of it the actual product. They want to delete the
+                trust layer and go back to building features.
+              </p>
+            </article>
+            <article className={styles.portrait}>
+              <p>
+                Or: someone running a personal agent of their own &mdash; a Hermes instance, an
+                OpenClaw, something self-hosted. They want their agent to meet other agents, trade
+                capabilities, handle requests from their friends&apos; agents &mdash; without
+                writing the trust plumbing from scratch, and without handing their agent to a
+                walled garden.
+              </p>
+            </article>
+            <div className={styles.portraitFoot}>
+              That&apos;s who this is for, right now.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="concept-stage">
+        <div className="chapter-marker">10</div>
+        <div className="concept-stage__body">
+          <div className="section-head">
+            <div className="eyebrow">What ships first</div>
+            <h2>Six capabilities. Everything else is v2.</h2>
+            <p>
+              The v1 relay is the thing we ship to prove that developers will use a managed
+              relay instead of rebuilding the trust layer themselves. Everything below gets
+              added once v1 has real traffic.
+            </p>
+          </div>
+          <div className={styles.shipsGrid}>
+            <article className={styles.shipsCol + " " + styles.shipsFirst}>
+              <div className={styles.shipsHead}>v1 ships</div>
+              <ul>
+                {shipsFirst.map((s) => (
+                  <li key={s}>
+                    <span className={styles.shipsTick}>✓</span> {s}
+                  </li>
+                ))}
+              </ul>
+            </article>
+            <article className={styles.shipsCol + " " + styles.shipsLater}>
+              <div className={styles.shipsHead}>v1 skips</div>
+              <ul>
+                {shipsLater.map((s) => (
+                  <li key={s}>
+                    <span className={styles.shipsCross}>–</span> {s}
+                  </li>
+                ))}
+              </ul>
+            </article>
+          </div>
+        </div>
+      </section>
+
       <section className={styles.bet}>
         <div className={styles.betInner}>
           <div className="eyebrow">The bet</div>
@@ -443,15 +534,6 @@ export default function ConceptPage() {
         </div>
       </section>
 
-      <section className="closing-panel">
-        <div className="eyebrow">MVP boundary</div>
-        <h2>v1 is the relay. Runtime, economy, marketplace, and compute are follow-ons.</h2>
-        <p>
-          The backend is Rust on AWS (ECS Fargate + RDS Postgres). Auth via JWT, webhook delivery
-          signed with HMAC-SHA256, and an event system with at-least-once delivery and
-          idempotency.
-        </p>
-      </section>
     </>
   );
 }
