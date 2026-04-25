@@ -1,0 +1,155 @@
+# ChakraMCP — task runner.
+#
+# Everything a developer needs to do should run through `task` (https://taskfile.dev).
+# Install once: `brew install go-task` (macOS) or see https://taskfile.dev/installation.
+# Then `task --list` for the menu.
+
+version: "3"
+
+dotenv:
+  - .env
+  - .env.local
+
+vars:
+  FRONTEND_DIR: frontend
+  BACKEND_DIR: backend
+  RENDER_DIR: tools/render-coffee-loop
+  PROD_URL: https://chakra-mcp.netlify.app
+
+tasks:
+  default:
+    desc: Show all available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  # ─── Setup ────────────────────────────────────────────────
+
+  install:
+    desc: Install all dependencies (frontend + tooling)
+    cmds:
+      - task: install:frontend
+      - task: install:render-tool
+      - echo "✓ Dependencies installed. Run `task dev` to start the frontend."
+
+  install:frontend:
+    desc: Install frontend dependencies via pnpm
+    dir: "{{.FRONTEND_DIR}}"
+    cmds:
+      - pnpm install --frozen-lockfile=false
+
+  install:render-tool:
+    desc: Install Playwright + ffmpeg dependencies for the render pipeline
+    dir: "{{.RENDER_DIR}}"
+    cmds:
+      - pnpm install --frozen-lockfile=false
+      - pnpm exec playwright install chromium
+
+  # ─── Local development ────────────────────────────────────
+
+  dev:
+    desc: Start the frontend dev server (http://localhost:3000)
+    dir: "{{.FRONTEND_DIR}}"
+    cmds:
+      - pnpm dev
+
+  dev:backend:
+    desc: Run the Rust relay locally (Phase 1 not yet scaffolded)
+    dir: "{{.BACKEND_DIR}}"
+    cmds:
+      - 'echo "Backend not scaffolded yet. See docs/chakramcp-build-spec.md for Phase 1."'
+      - 'echo "Stub will become cargo run"'
+
+  # ─── Build & verify ───────────────────────────────────────
+
+  build:
+    desc: Build the whole project
+    cmds:
+      - task: build:frontend
+
+  build:frontend:
+    desc: Build the Next.js frontend (also runs typecheck)
+    dir: "{{.FRONTEND_DIR}}"
+    cmds:
+      - pnpm build
+
+  lint:
+    desc: Lint all code
+    cmds:
+      - task: lint:frontend
+
+  lint:frontend:
+    dir: "{{.FRONTEND_DIR}}"
+    cmds:
+      - pnpm lint
+
+  test:
+    desc: Run all tests
+    cmds:
+      - task: test:frontend
+
+  test:frontend:
+    dir: "{{.FRONTEND_DIR}}"
+    cmds:
+      - pnpm exec tsc --noEmit
+      - 'echo "(no frontend test suite yet — typecheck-only for now)"'
+
+  # ─── Render pipeline ──────────────────────────────────────
+
+  render:coffee-loop:
+    desc: Re-render the (C) dispatch-log MP4/GIF using Playwright + ffmpeg
+    cmds:
+      - 'echo "Make sure task dev is running in another terminal."'
+      - cd {{.RENDER_DIR}} && pnpm render
+
+  # ─── Production checks ────────────────────────────────────
+
+  prod:check:
+    desc: Smoke-test all production URLs
+    cmds:
+      - |
+        for path in / /concept /brand /cofounder /assets/coffee-loop.mp4 /robots.txt; do
+          status=$(curl -sS -o /dev/null -w "%{http_code} %{size_download}B" "{{.PROD_URL}}$path")
+          echo "$path  →  $status"
+        done
+
+  prod:robots:
+    desc: Print the live /robots.txt
+    cmds:
+      - curl -sS {{.PROD_URL}}/robots.txt
+
+  # ─── Skills ──────────────────────────────────────────────
+
+  skills:list:
+    desc: List all installed Claude Code skills
+    cmds:
+      - npx -y skills list
+
+  skills:update:
+    desc: Update all installed skills
+    cmds:
+      - npx -y skills update
+
+  # ─── CI helpers ──────────────────────────────────────────
+
+  ci:
+    desc: Run the same checks CI does (lint, build)
+    cmds:
+      - task: lint
+      - task: build
+
+  # ─── Cleanup ─────────────────────────────────────────────
+
+  clean:
+    desc: Remove build outputs and caches (keeps node_modules)
+    cmds:
+      - rm -rf {{.FRONTEND_DIR}}/.next
+      - rm -rf {{.RENDER_DIR}}/frames {{.RENDER_DIR}}/output
+      - echo "✓ Cleaned build outputs."
+
+  clean:deep:
+    desc: Remove all node_modules and lockfile caches (forces a fresh install)
+    cmds:
+      - find . -name node_modules -type d -prune -exec rm -rf {} +
+      - rm -rf {{.FRONTEND_DIR}}/.next {{.RENDER_DIR}}/frames {{.RENDER_DIR}}/output
+      - echo "✓ Deep clean done. Run `task install` to restore."

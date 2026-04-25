@@ -24,9 +24,13 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files
+# env files — never commit. Use .env.example for templates.
 .env
-.env*.local
+.env.local
+.env.*.local
+**/.env
+**/.env.local
+**/.env.*.local
 
 # netlify
 .netlify/
