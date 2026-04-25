@@ -194,6 +194,37 @@ export default function CofounderPage() {
         </div>
       </section>
 
+      <section className={styles.profile}>
+        <div className={styles.profileMark} aria-hidden="true">
+          <span className={styles.profileDot} />
+        </div>
+        <div className={styles.stageBody}>
+          <div className="eyebrow">Why me</div>
+          <h2>I&apos;ve built this kind of thing before.</h2>
+          <p>
+            Senior Engineering Manager at Setu in Bangalore &mdash; fintech, applied AI,
+            engineering leadership. Three functions, 24 engineers, 10+ enterprise clients, four
+            applied-AI tools shipped into production workflows.
+          </p>
+          <p>
+            The most directly relevant one: I architected an MCP-enabled agent automation portal
+            at Setu that cut enterprise client integration timelines by 50%. A smaller, internal
+            version of what ChakraMCP is for &mdash; agents talking to other agents through a
+            managed layer, with policy and audit, in a regulated environment where the
+            constraints were real.
+          </p>
+          <p>
+            Fintech depth, AI bias, low tolerance for vague roadmaps. All of that is context.
+            ChakraMCP is what I&apos;m building next.
+          </p>
+          <div className={styles.profileLink}>
+            <a href="https://banerjee.life" target="_blank" rel="noreferrer">
+              Longer version → banerjee.life
+            </a>
+          </div>
+        </div>
+      </section>
+
       <section className={styles.stage}>
         <div className={styles.stageMark}>04</div>
         <div className={styles.stageBody}>
