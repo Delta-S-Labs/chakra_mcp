@@ -93,6 +93,13 @@ fn router(state: RelayState) -> Router {
         .route("/v1/friendships/{id}/reject", post(handlers::friendships::reject))
         .route("/v1/friendships/{id}/counter", post(handlers::friendships::counter))
         .route("/v1/friendships/{id}/cancel", post(handlers::friendships::cancel))
+        // ─── Grants ────────────────────────────────────
+        .route(
+            "/v1/grants",
+            get(handlers::grants::list).post(handlers::grants::create),
+        )
+        .route("/v1/grants/{id}", get(handlers::grants::get_one))
+        .route("/v1/grants/{id}/revoke", post(handlers::grants::revoke))
         .with_state(state)
         .layer(cors)
         .layer(TraceLayer::new_for_http())

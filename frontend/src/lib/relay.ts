@@ -303,4 +303,66 @@ export function cancelFriendship(token: string, id: string) {
   });
 }
 
+// ─── Grants ──────────────────────────────────────────────
+
+export type GrantStatus = "active" | "revoked" | "expired";
+
+export interface Grant {
+  id: string;
+  status: GrantStatus;
+  granter: AgentSummary;
+  grantee: AgentSummary;
+  capability_id: string;
+  capability_name: string;
+  capability_visibility: Visibility;
+  granted_at: string;
+  expires_at: string | null;
+  revoked_at: string | null;
+  revoke_reason: string | null;
+  i_granted: boolean;
+  i_received: boolean;
+}
+
+export interface CreateGrantRequest {
+  granter_agent_id: string;
+  grantee_agent_id: string;
+  capability_id: string;
+  expires_at?: string | null;
+}
+
+export interface RevokeGrantRequest {
+  reason?: string | null;
+}
+
+export function listGrants(
+  token: string,
+  opts: { direction?: "all" | "outbound" | "inbound"; status?: GrantStatus } = {},
+) {
+  const qs = new URLSearchParams();
+  if (opts.direction) qs.set("direction", opts.direction);
+  if (opts.status) qs.set("status", opts.status);
+  const q = qs.toString();
+  return request<Grant[]>(`/v1/grants${q ? `?${q}` : ""}`, { token });
+}
+
+export function getGrant(token: string, id: string) {
+  return request<Grant>(`/v1/grants/${encodeURIComponent(id)}`, { token });
+}
+
+export function createGrant(token: string, body: CreateGrantRequest) {
+  return request<Grant>("/v1/grants", {
+    method: "POST",
+    token,
+    body: JSON.stringify(body),
+  });
+}
+
+export function revokeGrant(token: string, id: string, body: RevokeGrantRequest = {}) {
+  return request<Grant>(`/v1/grants/${encodeURIComponent(id)}/revoke`, {
+    method: "POST",
+    token,
+    body: JSON.stringify(body),
+  });
+}
+
 export const relayBaseUrl = BASE;

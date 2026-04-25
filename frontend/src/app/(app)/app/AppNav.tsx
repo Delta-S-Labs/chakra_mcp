@@ -11,6 +11,7 @@ const tabs: Tab[] = [
   { label: "Orgs", href: "/app/orgs" },
   { label: "Agents", href: "/app/agents" },
   { label: "Friendships", href: "/app/friendships" },
+  { label: "Grants", href: "/app/grants" },
   { label: "API keys", href: "/app/api-keys" },
 ];
 
