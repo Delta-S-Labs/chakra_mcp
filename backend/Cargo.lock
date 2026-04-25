@@ -231,6 +231,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "chakramcp-relay"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "chakramcp-shared",
+ "chrono",
+ "dotenvy",
+ "hex",
+ "jsonwebtoken",
+ "rand",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "thiserror",
+ "tokio",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "chakramcp-shared"
 version = "0.1.0"
 dependencies = [
