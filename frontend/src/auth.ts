@@ -16,10 +16,11 @@
  */
 
 import NextAuth, { type DefaultSession } from "next-auth";
+import Credentials from "next-auth/providers/credentials";
 import GitHub from "next-auth/providers/github";
 import Google from "next-auth/providers/google";
 
-import { upsertUser, ApiClientError } from "@/lib/api";
+import { ApiClientError, loginWithPassword, upsertUser } from "@/lib/api";
 
 declare module "next-auth" {
   interface Session {
@@ -57,6 +58,45 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       allowDangerousEmailAccountLinking: true,
     }),
+    Credentials({
+      id: "password",
+      name: "Email and password",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
+      },
+      async authorize(creds) {
+        const email = String(creds?.email ?? "").trim();
+        const password = String(creds?.password ?? "");
+        if (!email || !password) return null;
+
+        try {
+          const result = await loginWithPassword({ email, password });
+          // Return shape that NextAuth's User expects, plus extras the
+          // jwt callback below will pluck onto the JWT.
+          return {
+            id: result.user.id,
+            email: result.user.email,
+            name: result.user.display_name,
+            image: result.user.avatar_url,
+            backendToken: result.token,
+            backendUserId: result.user.id,
+            isAdmin: result.user.is_admin,
+          } as unknown as Parameters<typeof Credentials>[0]["authorize"] extends (
+            ...args: infer _a
+          ) => Promise<infer _r>
+            ? _r
+            : never;
+        } catch (err) {
+          if (err instanceof ApiClientError) {
+            console.error("[auth] password login failed", err.status, err.message);
+          } else {
+            console.error("[auth] password login error", err);
+          }
+          return null;
+        }
+      },
+    }),
   ],
   pages: {
     signIn: "/login",
@@ -66,6 +106,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   callbacks: {
     async signIn({ user, account, profile }) {
       if (!account || !user.email) return false;
+
+      // Credentials provider: backend auth already happened in authorize().
+      // The user object already has backendToken / isAdmin attached.
+      if (account.provider === "password") {
+        return true;
+      }
 
       try {
         const result = await upsertUser({

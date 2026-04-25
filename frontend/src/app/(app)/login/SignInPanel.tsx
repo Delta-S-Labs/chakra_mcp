@@ -1,11 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useRef, useState } from "react";
 import { signIn } from "next-auth/react";
 import ReCAPTCHA from "react-google-recaptcha";
 import styles from "./login.module.css";
 
-type Provider = "github" | "google";
+type Provider = "github" | "google" | "password";
 
 export default function SignInPanel({
   captchaEnabled,
@@ -19,6 +20,9 @@ export default function SignInPanel({
   const recaptchaRef = useRef<ReCAPTCHA>(null);
   const [loadingProvider, setLoadingProvider] = useState<Provider | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   // If the captcha is enabled, the user must complete it before either
   // sign-in button works. We hold the v2 token here.
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
@@ -55,7 +59,22 @@ export default function SignInPanel({
     }
 
     setLoadingProvider(provider);
-    await signIn(provider, { redirectTo });
+    if (provider === "password") {
+      const result = await signIn("password", {
+        email: email.trim(),
+        password,
+        redirectTo,
+        redirect: false,
+      });
+      setLoadingProvider(null);
+      if (result?.error) {
+        setError("Wrong email or password.");
+      } else if (result?.ok) {
+        window.location.href = redirectTo;
+      }
+    } else {
+      await signIn(provider, { redirectTo });
+    }
   }
 
   return (
@@ -98,6 +117,62 @@ export default function SignInPanel({
           />
         </div>
       )}
+
+      <div className={styles.divider}>
+        <span>or</span>
+      </div>
+
+      {!showPassword ? (
+        <button
+          type="button"
+          className={styles.secondaryBtn}
+          onClick={() => setShowPassword(true)}
+        >
+          Sign in with email + password
+        </button>
+      ) : (
+        <form
+          className={styles.passwordForm}
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSignIn("password");
+          }}
+        >
+          <label className={styles.field}>
+            <span className={styles.fieldLabel}>Email</span>
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              autoComplete="email"
+            />
+          </label>
+          <label className={styles.field}>
+            <span className={styles.fieldLabel}>Password</span>
+            <input
+              type="password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              autoComplete="current-password"
+            />
+          </label>
+          <button
+            type="submit"
+            className={styles.submitBtn}
+            disabled={!captchaReady || loadingProvider !== null}
+          >
+            {loadingProvider === "password" ? "Signing in…" : "Sign in"}
+          </button>
+        </form>
+      )}
+
+      <p className={styles.signupHint}>
+        New here? <Link href="/signup">Create an account</Link>.
+      </p>
 
       {captchaMisconfigured && (
         <div className={styles.notice}>

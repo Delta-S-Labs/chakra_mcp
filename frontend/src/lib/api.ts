@@ -144,7 +144,33 @@ async function request<T>(
   return json as T;
 }
 
-// ─── Sign-in / session ──────────────────────────────────
+// ─── Email + password auth ──────────────────────────────
+
+export interface AuthResponse {
+  user: User;
+  memberships: Membership[];
+  token: string;
+}
+
+export function signupWithPassword(args: {
+  email: string;
+  password: string;
+  name: string;
+}) {
+  return request<AuthResponse>("/v1/auth/signup", {
+    method: "POST",
+    body: JSON.stringify(args),
+  });
+}
+
+export function loginWithPassword(args: { email: string; password: string }) {
+  return request<AuthResponse>("/v1/auth/login", {
+    method: "POST",
+    body: JSON.stringify(args),
+  });
+}
+
+// ─── OAuth-flow upsert + session ────────────────────────
 
 export function upsertUser(args: {
   email: string;

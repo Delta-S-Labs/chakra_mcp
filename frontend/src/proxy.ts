@@ -1,28 +1,31 @@
 /**
- * Middleware — gate the /app/* routes behind a session.
+ * Proxy — gate the /app/* routes behind a session.
  *
- * Anyone hitting an unauthenticated /app/* URL gets bounced to /login.
- * /login itself is public so users can actually sign in.
+ * Public auth pages: /login, /signup. Anyone hitting an unauthenticated
+ * /app/* URL gets bounced to /login. Logged-in users hitting /login or
+ * /signup get bounced to /app.
  *
- * NextAuth.js v5 exposes `auth` as a middleware function directly.
+ * NextAuth.js v5 exposes `auth` as middleware directly.
  */
 
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 
+const PUBLIC_AUTH_PATHS = new Set(["/login", "/signup"]);
+
 export default auth((req) => {
   const { pathname } = req.nextUrl;
-  const isLoginPage = pathname === "/login";
+  const isPublicAuth = PUBLIC_AUTH_PATHS.has(pathname);
   const isLoggedIn = !!req.auth;
 
-  if (!isLoggedIn && !isLoginPage) {
+  if (!isLoggedIn && !isPublicAuth) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("from", pathname);
     return NextResponse.redirect(url);
   }
 
-  if (isLoggedIn && isLoginPage) {
+  if (isLoggedIn && isPublicAuth) {
     const url = req.nextUrl.clone();
     url.pathname = "/app";
     return NextResponse.redirect(url);
@@ -31,8 +34,9 @@ export default auth((req) => {
   return NextResponse.next();
 });
 
-// Run only on the relay-app surfaces and the login page. The marketing
-// site (/, /concept, /brand, /cofounder) and render targets stay public.
+// Run only on the relay-app surfaces and the public auth pages. The
+// marketing site (/, /concept, /brand, /cofounder, /terms) and render
+// targets stay public.
 export const config = {
-  matcher: ["/app", "/app/:path*", "/login"],
+  matcher: ["/app", "/app/:path*", "/login", "/signup"],
 };

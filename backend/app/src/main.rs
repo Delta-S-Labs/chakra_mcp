@@ -61,6 +61,9 @@ fn router(state: AppState) -> Router {
         .route("/readyz", get(handlers::health::readyz))
         // ─── Sign-in callback from frontend ────────────
         .route("/v1/users/upsert", post(handlers::users::upsert))
+        // ─── Email + password auth ─────────────────────
+        .route("/v1/auth/signup", post(handlers::auth::signup))
+        .route("/v1/auth/login", post(handlers::auth::login))
         // ─── Authenticated user routes ─────────────────
         .route("/v1/me", get(handlers::users::me))
         .route("/v1/orgs", get(handlers::orgs::list).post(handlers::orgs::create))

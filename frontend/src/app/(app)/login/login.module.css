@@ -191,3 +191,106 @@
   font-size: 0.88rem;
   color: oklch(38% 0.14 28);
 }
+
+/* ─── Divider between OAuth + email/password ─── */
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin: 0.5rem 0 0.25rem;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.7rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.divider::before,
+.divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: color-mix(in oklab, var(--line) 80%, var(--ink) 20%);
+}
+
+.secondaryBtn {
+  width: 100%;
+  padding: 0.7rem 1rem;
+  border-radius: 0.7rem;
+  border: 1px solid var(--line);
+  background: var(--paper-soft);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.86rem;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 180ms, background 180ms;
+}
+.secondaryBtn:hover {
+  border-color: color-mix(in oklab, var(--accent-coral) 50%, var(--line));
+  background: color-mix(in oklab, var(--accent-butter) 16%, var(--paper-soft));
+}
+
+/* ─── Password / signup form ─── */
+.passwordForm {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.field { display: grid; gap: 0.3rem; }
+
+.fieldLabel {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.field input {
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.55rem;
+  background: var(--paper);
+  font: inherit;
+  color: var(--ink);
+}
+
+.field input:focus {
+  outline: 2px solid color-mix(in oklab, var(--accent-coral) 50%, transparent);
+  outline-offset: 1px;
+}
+
+.submitBtn {
+  padding: 0.85rem 1.1rem;
+  border-radius: 0.7rem;
+  background: var(--accent-coral);
+  color: var(--paper-soft);
+  border: 1px solid color-mix(in oklab, var(--accent-coral) 70%, var(--ink));
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 0.9rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: transform 180ms, box-shadow 180ms;
+}
+.submitBtn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+.submitBtn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.signupHint {
+  margin: 0;
+  text-align: center;
+  font-family: var(--font-body);
+  font-size: 0.86rem;
+  color: var(--ink-muted);
+}
+.signupHint a {
+  color: var(--accent-coral);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
