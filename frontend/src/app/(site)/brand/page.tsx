@@ -46,10 +46,17 @@ const downloads = [
       "Logo mark + wordmark, design tokens (colors, type, spacing), and the Claude Code design skill. Drop the skill in your .claude/skills folder and Claude can generate ChakraMCP-branded UI.",
   },
   {
-    name: "Logo mark (SVG)",
+    name: "Composite mark (SVG)",
+    file: "mark-composite.svg",
+    path: "/brand/mark-composite.svg",
+    description:
+      "v3 composite — floating hub with seven satellites + pulsing chakra + relay arc. Hero-scale lockup. Use on big surfaces (decks, OG, posters).",
+  },
+  {
+    name: "Simple mark (SVG)",
     file: "mark.svg",
     path: "/brand/mark.svg",
-    description: "The coral dot. Use at 16px and up.",
+    description: "The coral dot, alone. Use at 16px and up — favicons, inline mentions.",
   },
   {
     name: "Wordmark (SVG)",

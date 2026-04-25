@@ -43,6 +43,15 @@ yarn-error.log*
 backend/target/
 backend/**/*.rs.bk
 
+# example agents
+examples/python-langchain/.venv/
+examples/python-langchain/uv.lock
+examples/python-langchain/**/__pycache__/
+examples/python-langchain/.python-version
+examples/rust-rig/target/
+examples/rust-rig/Cargo.lock
+examples/typescript-mastra/dist/
+
 # IDE
 .idea/
 .vscode/

@@ -94,6 +94,51 @@ tasks:
       - pnpm exec tsc --noEmit
       - 'echo "(no frontend test suite yet — typecheck-only for now)"'
 
+  # ─── Example agents ───────────────────────────────────────
+
+  examples:install:
+    desc: Install all three example agents (Python, Rust, TypeScript)
+    cmds:
+      - task: examples:install:py
+      - task: examples:install:rust
+      - task: examples:install:ts
+
+  examples:install:py:
+    desc: Install the Python LangChain example
+    dir: examples/python-langchain
+    cmds:
+      - uv sync
+
+  examples:install:rust:
+    desc: Build the Rust rig example
+    dir: examples/rust-rig
+    cmds:
+      - cargo build
+
+  examples:install:ts:
+    desc: Install the TypeScript Mastra example
+    dir: examples/typescript-mastra
+    cmds:
+      - pnpm install --frozen-lockfile=false
+
+  examples:py:
+    desc: Run the Python LangChain example agent
+    dir: examples/python-langchain
+    cmds:
+      - 'uv run agent {{.CLI_ARGS}}'
+
+  examples:rust:
+    desc: Run the Rust rig example agent
+    dir: examples/rust-rig
+    cmds:
+      - 'cargo run --quiet -- {{.CLI_ARGS}}'
+
+  examples:ts:
+    desc: Run the TypeScript Mastra example agent
+    dir: examples/typescript-mastra
+    cmds:
+      - 'pnpm agent {{.CLI_ARGS}}'
+
   # ─── Render pipeline ──────────────────────────────────────
 
   render:coffee-loop:

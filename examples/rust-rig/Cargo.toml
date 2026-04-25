@@ -1,0 +1,21 @@
+[package]
+name = "chakramcp-example-rust"
+version = "0.1.0"
+edition = "2021"
+description = "Example ChakraMCP agent — Rust + rig + NVIDIA NIM (OpenAI-compatible)"
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "agent"
+path = "src/main.rs"
+
+[dependencies]
+rig-core = "0.7"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+dotenvy = "0.15"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

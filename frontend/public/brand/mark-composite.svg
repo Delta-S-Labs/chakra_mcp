@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" role="img" aria-label="ChakraMCP composite mark">
+  <title>ChakraMCP composite mark — hub + chakra + relay arc</title>
+
+  <!-- Floating hub: 7-spoke node with a coral core and lime/butter satellites -->
+  <g transform="translate(380 400)">
+    <g stroke="#5b3a2c" stroke-width="6" stroke-linecap="round" stroke-dasharray="10 14" opacity="0.55">
+      <line x1="0" y1="0" x2="0" y2="-180"/>
+      <line x1="0" y1="0" x2="155" y2="-90"/>
+      <line x1="0" y1="0" x2="155" y2="90"/>
+      <line x1="0" y1="0" x2="40" y2="190"/>
+      <line x1="0" y1="0" x2="-40" y2="190"/>
+      <line x1="0" y1="0" x2="-155" y2="90"/>
+      <line x1="0" y1="0" x2="-155" y2="-90"/>
+    </g>
+    <g fill="#c5e060">
+      <circle cx="0" cy="-180" r="22"/>
+      <circle cx="155" cy="90" r="22"/>
+      <circle cx="-40" cy="190" r="22"/>
+      <circle cx="-155" cy="-90" r="22"/>
+    </g>
+    <g fill="#f5d34a">
+      <circle cx="155" cy="-90" r="22"/>
+      <circle cx="40" cy="190" r="22"/>
+      <circle cx="-155" cy="90" r="22"/>
+    </g>
+    <circle cx="0" cy="0" r="48" fill="#e35d4c"/>
+    <circle cx="0" cy="0" r="14" fill="#fbf3e3"/>
+  </g>
+
+  <!-- Chakra: layered halo, dashed orbit, coral core -->
+  <g transform="translate(840 400)">
+    <circle cx="0" cy="0" r="160" fill="#e35d4c" opacity="0.30"/>
+    <circle cx="0" cy="0" r="110" fill="none" stroke="#e35d4c" stroke-width="9" stroke-dasharray="16 22"/>
+    <circle cx="0" cy="0" r="50" fill="#e35d4c"/>
+  </g>
+
+  <!-- Relay arc connecting hub and chakra -->
+  <path d="M 460 400 Q 650 300 760 400" stroke="#5b3a2c" stroke-width="9" stroke-linecap="round" fill="none"/>
+</svg>
