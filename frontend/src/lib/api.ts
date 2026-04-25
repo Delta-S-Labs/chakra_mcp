@@ -223,6 +223,25 @@ export function createInvite(
   );
 }
 
+export interface InvitePreview {
+  email: string;
+  role: "owner" | "admin" | "member";
+  org_slug: string;
+  org_display_name: string;
+  expires_at: string;
+}
+
+export function previewInvite(token: string) {
+  return request<InvitePreview>(`/v1/invites/${encodeURIComponent(token)}`);
+}
+
+export function acceptInvite(authToken: string, inviteToken: string) {
+  return request<Org>(`/v1/invites/${encodeURIComponent(inviteToken)}/accept`, {
+    method: "POST",
+    token: authToken,
+  });
+}
+
 // ─── API keys ────────────────────────────────────────────
 
 export function listApiKeys(token: string) {

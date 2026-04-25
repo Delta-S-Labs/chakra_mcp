@@ -8,6 +8,7 @@ type Tab = { label: string; href: string; exact?: boolean };
 
 const tabs: Tab[] = [
   { label: "Dashboard", href: "/app", exact: true },
+  { label: "Orgs", href: "/app/orgs" },
   { label: "API keys", href: "/app/api-keys" },
 ];
 

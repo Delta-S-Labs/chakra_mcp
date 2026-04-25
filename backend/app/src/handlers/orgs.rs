@@ -317,3 +317,130 @@ pub async fn create_invite(
         token,
     }))
 }
+
+// ─────────────────────────────────────────────────────────
+// GET /v1/invites/:token  (no auth) — preview before accept
+// ─────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+pub struct InvitePreviewDto {
+    pub email: String,
+    pub role: String,
+    pub org_slug: String,
+    pub org_display_name: String,
+    pub expires_at: DateTime<Utc>,
+}
+
+pub async fn preview_invite(
+    State(state): State<AppState>,
+    Path(token): Path<String>,
+) -> ApiResult<Json<InvitePreviewDto>> {
+    let token_hash = sha256_hex(token.as_bytes());
+
+    let row = sqlx::query!(
+        r#"
+        SELECT i.email, i.role, i.expires_at, i.accepted_at, a.slug, a.display_name
+        FROM account_invites i
+        JOIN accounts a ON a.id = i.account_id
+        WHERE i.token_hash = $1
+        LIMIT 1
+        "#,
+        token_hash
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(ApiError::NotFound)?;
+
+    if row.accepted_at.is_some() {
+        return Err(ApiError::Conflict("invite already accepted".into()));
+    }
+    if row.expires_at < Utc::now() {
+        return Err(ApiError::Conflict("invite has expired".into()));
+    }
+
+    Ok(Json(InvitePreviewDto {
+        email: row.email,
+        role: row.role,
+        org_slug: row.slug,
+        org_display_name: row.display_name,
+        expires_at: row.expires_at,
+    }))
+}
+
+// ─────────────────────────────────────────────────────────
+// POST /v1/invites/:token/accept  (auth required)
+// ─────────────────────────────────────────────────────────
+pub async fn accept_invite(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(token): Path<String>,
+) -> ApiResult<Json<OrgDto>> {
+    let token_hash = sha256_hex(token.as_bytes());
+
+    let mut tx = state.db.begin().await?;
+
+    let invite = sqlx::query!(
+        r#"
+        SELECT i.id, i.account_id, i.email, i.role, i.expires_at, i.accepted_at,
+               a.slug, a.display_name, a.account_type, a.created_at
+        FROM account_invites i
+        JOIN accounts a ON a.id = i.account_id
+        WHERE i.token_hash = $1
+        FOR UPDATE
+        "#,
+        token_hash
+    )
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(ApiError::NotFound)?;
+
+    if invite.accepted_at.is_some() {
+        return Err(ApiError::Conflict("invite already accepted".into()));
+    }
+    if invite.expires_at < Utc::now() {
+        return Err(ApiError::Conflict("invite has expired".into()));
+    }
+    if invite.email.to_lowercase() != user.email.to_lowercase() {
+        return Err(ApiError::Forbidden);
+    }
+
+    // Idempotent: if the user is already in the org, mark the invite
+    // accepted and return the existing membership.
+    sqlx::query!(
+        r#"
+        INSERT INTO account_memberships (id, account_id, user_id, role)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (account_id, user_id) DO NOTHING
+        "#,
+        Uuid::now_v7(),
+        invite.account_id,
+        user.user_id,
+        invite.role,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query!(
+        r#"UPDATE account_invites SET accepted_at = now() WHERE id = $1"#,
+        invite.id
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(Json(OrgDto {
+        id: invite.account_id,
+        slug: invite.slug,
+        display_name: invite.display_name,
+        account_type: invite.account_type,
+        role: invite.role,
+        created_at: invite.created_at,
+    }))
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    let mut h = Sha256::new();
+    h.update(bytes);
+    hex::encode(h.finalize())
+}

@@ -70,6 +70,8 @@ fn router(state: AppState) -> Router {
         .route("/v1/orgs/{slug}", get(handlers::orgs::get_one))
         .route("/v1/orgs/{slug}/members", get(handlers::orgs::list_members))
         .route("/v1/orgs/{slug}/invites", post(handlers::orgs::create_invite))
+        .route("/v1/invites/{token}", get(handlers::orgs::preview_invite))
+        .route("/v1/invites/{token}/accept", post(handlers::orgs::accept_invite))
         .route(
             "/v1/api-keys",
             get(handlers::api_keys::list).post(handlers::api_keys::create),

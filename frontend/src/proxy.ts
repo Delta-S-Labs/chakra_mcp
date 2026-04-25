@@ -12,9 +12,15 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 
 const PUBLIC_AUTH_PATHS = new Set(["/login", "/signup"]);
+const isInvitePath = (pathname: string) => pathname.startsWith("/invites/");
 
 export default auth((req) => {
   const { pathname } = req.nextUrl;
+  // /invites/<token> renders for both signed-in and signed-out users; the
+  // page itself decides what to render. Always pass through.
+  if (isInvitePath(pathname)) {
+    return NextResponse.next();
+  }
   const isPublicAuth = PUBLIC_AUTH_PATHS.has(pathname);
   const isLoggedIn = !!req.auth;
 
@@ -38,5 +44,5 @@ export default auth((req) => {
 // marketing site (/, /concept, /brand, /cofounder, /terms) and render
 // targets stay public.
 export const config = {
-  matcher: ["/app", "/app/:path*", "/login", "/signup"],
+  matcher: ["/app", "/app/:path*", "/login", "/signup", "/invites/:path*"],
 };
