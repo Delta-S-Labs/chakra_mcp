@@ -30,11 +30,30 @@ export interface UpsertResponse {
   user: User;
   memberships: Membership[];
   token: string;
+  survey_required: boolean;
 }
 
 export interface MeResponse {
   user: User;
   memberships: Membership[];
+  survey_required: boolean;
+}
+
+export interface Survey {
+  use_case: string | null;
+  agent_types: string[];
+  frameworks: string[];
+  scale: string | null;
+  notes: string | null;
+  completed_at: string;
+}
+
+export interface SubmitSurveyRequest {
+  use_case: string | null;
+  agent_types: string[];
+  frameworks: string[];
+  scale: string | null;
+  notes: string | null;
 }
 
 export interface Org {
@@ -188,6 +207,20 @@ export function upsertUser(args: {
 
 export function getMe(token: string) {
   return request<MeResponse>("/v1/me", { token });
+}
+
+// ─── Survey ──────────────────────────────────────────────
+
+export function getMySurvey(token: string) {
+  return request<Survey | null>("/v1/me/survey", { token });
+}
+
+export function submitSurvey(token: string, body: SubmitSurveyRequest) {
+  return request<Survey>("/v1/me/survey", {
+    method: "POST",
+    token,
+    body: JSON.stringify(body),
+  });
 }
 
 // ─── Orgs ────────────────────────────────────────────────

@@ -1,0 +1,204 @@
+.page {
+  display: grid;
+  gap: 2rem;
+  max-width: 64rem;
+}
+
+.head {
+  display: grid;
+  gap: 0.7rem;
+  max-width: 60ch;
+  padding: 0 0.5rem;
+}
+
+.title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 1;
+  letter-spacing: -0.04em;
+  margin: 0;
+  color: var(--ink);
+}
+
+.body {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  margin: 0;
+}
+
+.form {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.fieldset {
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  padding: 1rem 1.2rem 1.2rem;
+  background: var(--paper-soft);
+  display: grid;
+  gap: 0.8rem;
+}
+
+.legend {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.96rem;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  padding: 0 0.4rem;
+}
+
+.legendHint {
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: 0.84rem;
+  color: var(--ink-muted);
+  letter-spacing: 0;
+  margin-left: 0.4rem;
+}
+
+.options {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.option {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 0.7rem;
+  row-gap: 0.15rem;
+  align-items: baseline;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  background: var(--paper);
+  cursor: pointer;
+}
+
+.option:has(input:checked) {
+  border-color: var(--accent-coral);
+  background: color-mix(in oklab, var(--accent-coral) 8%, var(--paper));
+}
+
+.option input {
+  grid-row: 1;
+  margin: 0;
+  accent-color: var(--accent-coral);
+}
+
+.optionLabel {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.94rem;
+  color: var(--ink);
+}
+
+.optionHint {
+  grid-column: 2;
+  font-family: var(--font-body);
+  font-size: 0.84rem;
+  color: var(--ink-muted);
+  line-height: 1.45;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.42rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  color: var(--ink);
+  user-select: none;
+}
+
+.chip input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.chipOn {
+  border-color: color-mix(in oklab, var(--accent-coral) 70%, var(--ink));
+  background: var(--accent-coral);
+  color: var(--paper-soft);
+}
+
+.field {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0 0.4rem;
+}
+
+.fieldLabel {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.96rem;
+  color: var(--ink);
+}
+
+.field textarea {
+  font: inherit;
+  font-family: var(--font-body);
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  background: var(--paper);
+  color: var(--ink);
+  resize: vertical;
+  min-height: 4.5rem;
+}
+
+.field textarea:focus {
+  outline: 2px solid color-mix(in oklab, var(--accent-coral) 50%, transparent);
+  outline-offset: 1px;
+}
+
+.error {
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--accent-coral);
+  background: color-mix(in oklab, var(--accent-coral) 14%, var(--paper-soft));
+  border-radius: 0.55rem;
+  font-size: 0.88rem;
+  color: oklch(38% 0.14 28);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 0.4rem;
+}
+
+.submit {
+  padding: 0.7rem 1.3rem;
+  border-radius: 999px;
+  background: var(--accent-coral);
+  color: var(--paper-soft);
+  border: 1px solid color-mix(in oklab, var(--accent-coral) 70%, var(--ink));
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.84rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.submit:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

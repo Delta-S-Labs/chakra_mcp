@@ -47,12 +47,16 @@ pub struct UpsertResponse {
     pub user: UserDto,
     pub memberships: Vec<MembershipDto>,
     pub token: String,
+    /// Whether the network requires this user to fill out the first-login
+    /// survey. True only when SURVEY_ENABLED && no completed survey yet.
+    pub survey_required: bool,
 }
 
 #[derive(Debug, Serialize)]
 pub struct MeResponse {
     pub user: UserDto,
     pub memberships: Vec<MembershipDto>,
+    pub survey_required: bool,
 }
 
 // ─────────────────────────────────────────────────────────
@@ -218,11 +222,14 @@ pub async fn upsert(
 
     let claims = jwt::UserClaims::new(user_id, user_record.email.clone(), user_record.is_admin, 24);
     let token = jwt::encode_jwt(&claims, &state.config.jwt_secret)?;
+    let survey_required =
+        crate::handlers::surveys::is_required(&state.db, state.config.survey_enabled, user_id).await?;
 
     Ok(Json(UpsertResponse {
         user: user_record,
         memberships,
         token,
+        survey_required,
     }))
 }
 
@@ -260,6 +267,10 @@ pub async fn me(State(state): State<AppState>, user: AuthUser) -> ApiResult<Json
     })
     .collect();
 
+    let survey_required =
+        crate::handlers::surveys::is_required(&state.db, state.config.survey_enabled, user.user_id)
+            .await?;
+
     Ok(Json(MeResponse {
         user: UserDto {
             id: row.id,
@@ -269,6 +280,7 @@ pub async fn me(State(state): State<AppState>, user: AuthUser) -> ApiResult<Json
             is_admin: row.is_admin,
         },
         memberships,
+        survey_required,
     }))
 }
 

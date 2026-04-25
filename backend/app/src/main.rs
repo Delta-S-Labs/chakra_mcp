@@ -66,6 +66,10 @@ fn router(state: AppState) -> Router {
         .route("/v1/auth/login", post(handlers::auth::login))
         // ─── Authenticated user routes ─────────────────
         .route("/v1/me", get(handlers::users::me))
+        .route(
+            "/v1/me/survey",
+            get(handlers::surveys::get_mine).post(handlers::surveys::submit),
+        )
         .route("/v1/orgs", get(handlers::orgs::list).post(handlers::orgs::create))
         .route("/v1/orgs/{slug}", get(handlers::orgs::get_one))
         .route("/v1/orgs/{slug}/members", get(handlers::orgs::list_members))

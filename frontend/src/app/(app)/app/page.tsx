@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getMe } from "@/lib/api";
 import styles from "./dashboard.module.css";
@@ -6,7 +7,8 @@ import styles from "./dashboard.module.css";
  * /app — relay app dashboard.
  *
  * Reads the session from NextAuth, then pulls the canonical user +
- * memberships from the backend `/v1/me` endpoint.
+ * memberships from the backend `/v1/me` endpoint. If the backend reports
+ * `survey_required: true`, hard-redirects to /app/welcome.
  */
 export default async function AppDashboard() {
   const session = await auth();
@@ -14,16 +16,24 @@ export default async function AppDashboard() {
   const name = session?.user?.name;
 
   let memberships: Awaited<ReturnType<typeof getMe>>["memberships"] = [];
+  let surveyRequired = false;
   let backendError: string | null = null;
   if (token) {
     try {
       const me = await getMe(token);
+      surveyRequired = me.survey_required;
       memberships = me.memberships;
     } catch (err) {
       backendError = err instanceof Error ? err.message : "Backend unavailable.";
     }
   } else {
     backendError = "No backend token in session — sign in again.";
+  }
+
+  // redirect() throws NEXT_REDIRECT; keep it outside the try/catch above so it
+  // doesn't get swallowed as a backend error.
+  if (surveyRequired) {
+    redirect("/app/welcome");
   }
 
   const personal = memberships.find((m) => m.account_type === "individual");

@@ -46,6 +46,7 @@ pub struct AuthResponse {
     pub user: UserDto,
     pub memberships: Vec<MembershipDto>,
     pub token: String,
+    pub survey_required: bool,
 }
 
 const MIN_PASSWORD_LEN: usize = 8;
@@ -144,11 +145,15 @@ pub async fn signup(
     };
     let claims = jwt::UserClaims::new(user.id, user.email, user.is_admin, 24);
     let token = jwt::encode_jwt(&claims, &state.config.jwt_secret)?;
+    let survey_required =
+        crate::handlers::surveys::is_required(&state.db, state.config.survey_enabled, user_dto.id)
+            .await?;
 
     Ok(Json(AuthResponse {
         user: user_dto,
         memberships,
         token,
+        survey_required,
     }))
 }
 
@@ -193,11 +198,15 @@ pub async fn login(
     };
     let claims = jwt::UserClaims::new(row.id, row.email, row.is_admin, 24);
     let token = jwt::encode_jwt(&claims, &state.config.jwt_secret)?;
+    let survey_required =
+        crate::handlers::surveys::is_required(&state.db, state.config.survey_enabled, user_dto.id)
+            .await?;
 
     Ok(Json(AuthResponse {
         user: user_dto,
         memberships,
         token,
+        survey_required,
     }))
 }
 

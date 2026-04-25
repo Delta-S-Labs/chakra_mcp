@@ -56,3 +56,4 @@ examples/typescript-mastra/dist/
 .idea/
 .vscode/
 .claude/worktrees/
+.claude/scheduled_tasks.lock
