@@ -14,7 +14,7 @@ use std::env;
 use std::net::SocketAddr;
 
 use anyhow::Result;
-use axum::routing::{get, patch};
+use axum::routing::{get, patch, post};
 use axum::Router;
 use sqlx::PgPool;
 use tower_http::cors::{Any, CorsLayer};
@@ -83,6 +83,16 @@ fn router(state: RelayState) -> Router {
         )
         // ─── Network discovery ─────────────────────────
         .route("/v1/network/agents", get(handlers::agents::list_network))
+        // ─── Friendships ───────────────────────────────
+        .route(
+            "/v1/friendships",
+            get(handlers::friendships::list).post(handlers::friendships::propose),
+        )
+        .route("/v1/friendships/{id}", get(handlers::friendships::get_one))
+        .route("/v1/friendships/{id}/accept", post(handlers::friendships::accept))
+        .route("/v1/friendships/{id}/reject", post(handlers::friendships::reject))
+        .route("/v1/friendships/{id}/counter", post(handlers::friendships::counter))
+        .route("/v1/friendships/{id}/cancel", post(handlers::friendships::cancel))
         .with_state(state)
         .layer(cors)
         .layer(TraceLayer::new_for_http())

@@ -200,4 +200,107 @@ export function deleteCapability(token: string, agentId: string, capId: string) 
   );
 }
 
+// ─── Friendships ─────────────────────────────────────────
+
+export type FriendshipStatus =
+  | "proposed"
+  | "accepted"
+  | "rejected"
+  | "cancelled"
+  | "countered";
+
+export interface AgentSummary {
+  id: string;
+  slug: string;
+  display_name: string;
+  account_id: string;
+  account_slug: string;
+  account_display_name: string;
+}
+
+export interface Friendship {
+  id: string;
+  status: FriendshipStatus;
+  proposer: AgentSummary;
+  target: AgentSummary;
+  proposer_message: string | null;
+  response_message: string | null;
+  counter_of_id: string | null;
+  created_at: string;
+  updated_at: string;
+  decided_at: string | null;
+  i_proposed: boolean;
+  i_received: boolean;
+}
+
+export interface ProposeFriendshipRequest {
+  proposer_agent_id: string;
+  target_agent_id: string;
+  proposer_message?: string | null;
+}
+
+export interface FriendshipResponseRequest {
+  response_message?: string | null;
+}
+
+export interface FriendshipCounterRequest {
+  proposer_message?: string | null;
+  response_message?: string | null;
+}
+
+export function listFriendships(
+  token: string,
+  opts: { direction?: "all" | "outbound" | "inbound"; status?: FriendshipStatus } = {},
+) {
+  const qs = new URLSearchParams();
+  if (opts.direction) qs.set("direction", opts.direction);
+  if (opts.status) qs.set("status", opts.status);
+  const q = qs.toString();
+  return request<Friendship[]>(`/v1/friendships${q ? `?${q}` : ""}`, { token });
+}
+
+export function getFriendship(token: string, id: string) {
+  return request<Friendship>(`/v1/friendships/${encodeURIComponent(id)}`, { token });
+}
+
+export function proposeFriendship(token: string, body: ProposeFriendshipRequest) {
+  return request<Friendship>("/v1/friendships", {
+    method: "POST",
+    token,
+    body: JSON.stringify(body),
+  });
+}
+
+export function acceptFriendship(token: string, id: string, body: FriendshipResponseRequest = {}) {
+  return request<Friendship>(`/v1/friendships/${encodeURIComponent(id)}/accept`, {
+    method: "POST",
+    token,
+    body: JSON.stringify(body),
+  });
+}
+
+export function rejectFriendship(token: string, id: string, body: FriendshipResponseRequest = {}) {
+  return request<Friendship>(`/v1/friendships/${encodeURIComponent(id)}/reject`, {
+    method: "POST",
+    token,
+    body: JSON.stringify(body),
+  });
+}
+
+export function counterFriendship(token: string, id: string, body: FriendshipCounterRequest) {
+  return request<Friendship>(`/v1/friendships/${encodeURIComponent(id)}/counter`, {
+    method: "POST",
+    token,
+    body: JSON.stringify(body),
+  });
+}
+
+export function cancelFriendship(token: string, id: string) {
+  return request<Friendship>(`/v1/friendships/${encodeURIComponent(id)}/cancel`, {
+    method: "POST",
+    token,
+    body: JSON.stringify({}),
+  });
+}
+
 export const relayBaseUrl = BASE;
