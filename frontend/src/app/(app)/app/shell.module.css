@@ -1,0 +1,156 @@
+.page {
+  min-height: 100vh;
+  padding: 2rem 1.25rem 4rem;
+  background: linear-gradient(180deg, var(--paper-soft), var(--paper));
+}
+
+.shell {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+  display: grid;
+  gap: 1.5rem;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid color-mix(in oklab, var(--line) 76%, var(--ink) 24%);
+  border-radius: 1rem;
+  background: linear-gradient(90deg, color-mix(in oklab, var(--paper-soft) 97%, white 3%), color-mix(in oklab, var(--paper) 93%, var(--paper-warm) 7%));
+  box-shadow: var(--shadow-md);
+}
+
+.brandmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-decoration: none;
+}
+
+.dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 999px;
+  background: var(--accent-coral);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent-coral) 22%, transparent);
+}
+
+.brandWord {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 0.84rem;
+  color: var(--ink);
+}
+
+/* ─── Nav ─── */
+.nav {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.2rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--paper-soft) 78%, white 22%);
+}
+
+.navLink {
+  padding: 0.42rem 0.85rem;
+  border-radius: 999px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: background 180ms, border-color 180ms;
+}
+
+.navLink:hover {
+  border-color: var(--line);
+}
+
+.navLinkActive {
+  background: var(--accent-butter);
+  border-color: color-mix(in oklab, var(--accent-coral) 35%, var(--line));
+}
+
+/* ─── User cluster ─── */
+.user {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.4rem 0.25rem 0.3rem;
+  border-radius: 999px;
+  background: var(--paper-soft);
+  border: 1px solid var(--line);
+}
+
+.avatar {
+  width: 1.85rem;
+  height: 1.85rem;
+  border-radius: 999px;
+  display: block;
+  object-fit: cover;
+}
+
+.userMeta {
+  display: grid;
+  line-height: 1.1;
+  max-width: 12rem;
+}
+
+.userName {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.74rem;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.userEmail {
+  font-family: var(--font-body);
+  font-size: 0.7rem;
+  color: var(--ink-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.signOut {
+  margin-left: 0.4rem;
+  padding: 0.4rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--paper-soft);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 180ms, background 180ms;
+}
+
+.signOut:hover {
+  border-color: var(--accent-coral);
+  background: color-mix(in oklab, var(--accent-coral) 10%, var(--paper-soft));
+}
+
+/* ─── Main ─── */
+.main {
+  display: grid;
+  gap: 2rem;
+}
+
+@media (max-width: 760px) {
+  .header { flex-wrap: wrap; }
+  .nav { order: 3; flex-basis: 100%; justify-content: center; }
+  .userMeta { display: none; }
+}

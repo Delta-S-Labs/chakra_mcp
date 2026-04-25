@@ -30,7 +30,7 @@ tasks:
     cmds:
       - task: install:frontend
       - task: install:render-tool
-      - echo "✓ Dependencies installed. Run `task dev` to start the frontend."
+      - 'echo "Dependencies installed. Run task dev:all to start everything."'
 
   install:frontend:
     desc: Install frontend dependencies via pnpm
@@ -53,12 +53,74 @@ tasks:
     cmds:
       - pnpm dev
 
+  dev:all:
+    desc: Start Postgres + chakramcp-app backend + frontend (3 terminals via parallel)
+    deps: [db:up]
+    cmds:
+      - 'echo "Postgres up on :5432. Now run task dev:backend in one terminal and task dev in another."'
+      - 'echo "(future: combine into a single supervised process via overmind/foreman)"'
+
   dev:backend:
-    desc: Run the Rust relay locally (Phase 1 not yet scaffolded)
+    desc: Run the chakramcp-app service (port APP_PORT, default 8080)
     dir: "{{.BACKEND_DIR}}"
     cmds:
-      - 'echo "Backend not scaffolded yet. See docs/chakramcp-build-spec.md for Phase 1."'
-      - 'echo "Stub will become cargo run"'
+      - cargo run -p chakramcp-app
+
+  dev:relay:
+    desc: Run the chakramcp-relay service (Phase 1.5, not yet scaffolded)
+    dir: "{{.BACKEND_DIR}}"
+    cmds:
+      - 'echo "chakramcp-relay not scaffolded yet — Phase 1.5"'
+
+  # ─── Database ────────────────────────────────────────────
+
+  db:up:
+    desc: Start local Postgres (Docker)
+    dir: "{{.BACKEND_DIR}}"
+    cmds:
+      - docker compose up -d postgres
+      - 'echo "postgres on localhost:5432 · db=chakramcp · user=chakramcp"'
+
+  db:down:
+    desc: Stop local Postgres (preserves data)
+    dir: "{{.BACKEND_DIR}}"
+    cmds:
+      - docker compose down
+
+  db:nuke:
+    desc: Stop Postgres and delete all data
+    dir: "{{.BACKEND_DIR}}"
+    cmds:
+      - docker compose down -v
+
+  db:psql:
+    desc: Open psql against local Postgres
+    cmds:
+      - 'docker exec -it chakramcp-postgres psql -U chakramcp -d chakramcp'
+
+  db:migrate:
+    desc: Run pending migrations against local Postgres (sqlx)
+    dir: "{{.BACKEND_DIR}}"
+    cmds:
+      - cargo run -p chakramcp-app -- --migrate-only 2>/dev/null || cargo run -p chakramcp-app & sleep 2; pkill -f chakramcp-app
+
+  backend:check:
+    desc: cargo check across the backend workspace (no build artifacts)
+    dir: "{{.BACKEND_DIR}}"
+    cmds:
+      - cargo check --workspace
+
+  backend:build:
+    desc: cargo build (debug) across the backend workspace
+    dir: "{{.BACKEND_DIR}}"
+    cmds:
+      - cargo build --workspace
+
+  backend:test:
+    desc: cargo test across the backend workspace
+    dir: "{{.BACKEND_DIR}}"
+    cmds:
+      - cargo test --workspace
 
   # ─── Build & verify ───────────────────────────────────────
 

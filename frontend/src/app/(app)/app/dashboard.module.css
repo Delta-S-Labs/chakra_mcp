@@ -1,105 +1,3 @@
-.page {
-  min-height: 100vh;
-  padding: 2rem 1.25rem 4rem;
-  background: linear-gradient(180deg, var(--paper-soft), var(--paper));
-}
-
-.shell {
-  width: min(1180px, 100%);
-  margin: 0 auto;
-  display: grid;
-  gap: 2rem;
-}
-
-/* ─── Header ─── */
-.header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.75rem 1rem;
-  border: 1px solid color-mix(in oklab, var(--line) 76%, var(--ink) 24%);
-  border-radius: 1.2rem;
-  background: linear-gradient(90deg, color-mix(in oklab, var(--paper-soft) 97%, white 3%), color-mix(in oklab, var(--paper) 93%, var(--paper-warm) 7%));
-  box-shadow: var(--shadow-md);
-}
-
-.brandmark {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.55rem;
-  text-decoration: none;
-}
-
-.dot {
-  width: 0.6rem;
-  height: 0.6rem;
-  border-radius: 999px;
-  background: var(--accent-coral);
-  box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent-coral) 22%, transparent);
-}
-
-.brandWord {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 0.85rem;
-  color: var(--ink);
-}
-
-.user {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.65rem;
-  padding: 0.3rem 0.5rem 0.3rem 0.4rem;
-  border-radius: 999px;
-  background: var(--paper-soft);
-  border: 1px solid var(--line);
-}
-
-.avatar {
-  width: 2rem;
-  height: 2rem;
-  border-radius: 999px;
-  display: block;
-  object-fit: cover;
-}
-
-.userMeta {
-  display: grid;
-  line-height: 1.1;
-}
-.userName {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 0.78rem;
-  color: var(--ink);
-}
-.userEmail {
-  font-family: var(--font-body);
-  font-size: 0.74rem;
-  color: var(--ink-muted);
-}
-
-.signOut {
-  margin-left: 0.5rem;
-  padding: 0.45rem 0.85rem;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: var(--paper-soft);
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 0.7rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ink);
-  cursor: pointer;
-  transition: border-color 180ms, background 180ms;
-}
-.signOut:hover {
-  border-color: var(--accent-coral);
-  background: color-mix(in oklab, var(--accent-coral) 10%, var(--paper-soft));
-}
-
 /* ─── Welcome ─── */
 .welcome {
   display: grid;
@@ -135,7 +33,91 @@
   margin: 0;
 }
 
-/* ─── Placeholder tiles ─── */
+/* ─── Backend-error notice ─── */
+.notice {
+  padding: 0.85rem 1rem;
+  border-radius: 0.85rem;
+  border: 1px dashed color-mix(in oklab, var(--accent-coral) 60%, var(--line));
+  background: color-mix(in oklab, var(--accent-butter) 22%, var(--paper-soft));
+  font-family: var(--font-body);
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: var(--ink);
+}
+.notice strong {
+  font-family: var(--font-display);
+  font-weight: 700;
+  margin-right: 0.4rem;
+}
+.notice p { margin: 0.4rem 0 0; color: var(--ink-soft); }
+.notice code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  padding: 0.04rem 0.34rem;
+  border-radius: 0.3rem;
+  background: color-mix(in oklab, var(--paper-warm) 60%, var(--paper-soft));
+}
+
+/* ─── Section ─── */
+.section {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.sectionTitle {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.4rem;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin: 0;
+  padding: 0 0.5rem;
+}
+
+/* ─── Account tiles ─── */
+.accountList {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.85rem;
+}
+
+.accountTile {
+  padding: 1rem 1.1rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  background: var(--paper-soft);
+  display: grid;
+  gap: 0.35rem;
+}
+
+.accountTile h3 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin: 0;
+}
+
+.accountTile p {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+}
+
+.accountTile code {
+  font-family: var(--font-mono);
+  font-size: 0.84em;
+  padding: 0.04rem 0.32rem;
+  border-radius: 0.28rem;
+  background: color-mix(in oklab, var(--accent-butter) 38%, transparent);
+  color: var(--ink);
+}
+
+.tileMeta { font-family: var(--font-body); }
+
+/* ─── Placeholder tiles (Phase 1.5+ surfaces) ─── */
 .placeholders {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -194,3 +176,7 @@
   text-transform: uppercase;
   color: var(--ink-muted);
 }
+
+/* fallback (used by the auth-failed render in layout) */
+.shell { width: min(1180px, 100%); margin: 0 auto; padding: 2rem 1rem; }
+.page { min-height: 100vh; }

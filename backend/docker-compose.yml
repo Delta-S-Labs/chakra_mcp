@@ -1,0 +1,29 @@
+# Local Postgres for ChakraMCP backend services.
+#
+# Run via: `task db:up` from the repo root.
+# Stop with: `task db:down`. Wipe data with: `task db:nuke`.
+#
+# Both `chakramcp-app` and `chakramcp-relay` connect to the same database
+# (`chakramcp`); each service owns its own tables and reads across with
+# discipline.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: chakramcp-postgres
+    environment:
+      POSTGRES_USER: chakramcp
+      POSTGRES_PASSWORD: chakramcp
+      POSTGRES_DB: chakramcp
+    ports:
+      - "5432:5432"
+    volumes:
+      - chakramcp-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chakramcp -d chakramcp"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  chakramcp-pgdata:

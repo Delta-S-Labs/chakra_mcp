@@ -1,0 +1,167 @@
+.page { display: grid; gap: 2rem; }
+
+.head {
+  display: grid;
+  gap: 0.7rem;
+  max-width: 60ch;
+  padding: 0 0.5rem;
+}
+
+.title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 1;
+  letter-spacing: -0.04em;
+  margin: 0;
+  color: var(--ink);
+}
+
+.body {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  margin: 0;
+}
+
+.body code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  padding: 0.04rem 0.34rem;
+  border-radius: 0.28rem;
+  background: color-mix(in oklab, var(--accent-butter) 38%, transparent);
+}
+
+.error {
+  padding: 0.7rem 0.95rem;
+  border: 1px solid var(--accent-coral);
+  background: color-mix(in oklab, var(--accent-coral) 14%, var(--paper-soft));
+  border-radius: 0.7rem;
+  color: oklch(38% 0.14 28);
+  font-size: 0.9rem;
+}
+
+/* ─── Section ─── */
+.section {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.sectionHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 0.5rem;
+}
+
+.sectionHead h2 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.4rem;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin: 0;
+}
+
+.count {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.74rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+/* ─── Table ─── */
+.tableWrap {
+  border: 1px solid var(--line);
+  border-radius: 0.95rem;
+  background: var(--paper-soft);
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-body);
+  font-size: 0.92rem;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid color-mix(in oklab, var(--line) 60%, transparent);
+}
+
+.table thead th {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  background: color-mix(in oklab, var(--paper-warm) 26%, var(--paper-soft));
+  border-bottom: 1px solid var(--line);
+}
+
+.table tbody tr:last-child td { border-bottom: none; }
+
+.table code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  padding: 0.04rem 0.34rem;
+  border-radius: 0.28rem;
+  background: color-mix(in oklab, var(--accent-butter) 32%, transparent);
+  color: var(--ink);
+}
+
+.muted { color: var(--ink-muted); }
+
+.empty {
+  text-align: center;
+  color: var(--ink-muted);
+  padding: 1.5rem;
+}
+
+.revokedRow { opacity: 0.55; }
+
+/* ─── Status pills ─── */
+.pillOk,
+.pillCoral,
+.pillButter,
+.pillMuted {
+  display: inline-block;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.pillOk {
+  background: color-mix(in oklab, oklch(82% 0.14 140) 38%, var(--paper-soft));
+  border: 1px solid oklch(60% 0.18 140);
+  color: oklch(32% 0.12 145);
+}
+
+.pillCoral {
+  background: color-mix(in oklab, var(--accent-coral) 22%, var(--paper-soft));
+  border: 1px solid var(--accent-coral);
+  color: oklch(38% 0.14 28);
+}
+
+.pillButter {
+  background: color-mix(in oklab, var(--accent-butter) 60%, var(--paper-soft));
+  border: 1px solid color-mix(in oklab, var(--accent-butter) 85%, var(--ink));
+  color: var(--ink);
+}
+
+.pillMuted {
+  background: color-mix(in oklab, var(--paper-warm) 36%, var(--paper-soft));
+  border: 1px solid var(--line);
+  color: var(--ink-muted);
+}
