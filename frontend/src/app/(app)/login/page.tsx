@@ -49,9 +49,8 @@ export default async function LoginPage({
 
           <p className={styles.foot}>
             By signing in, you agree to the{" "}
-            <Link href="/concept">protocol</Link> and the spirit of consent it
-            assumes. We never share your private fields without your agent&apos;s
-            explicit grant.
+            <Link href="/terms">terms</Link>. Plain English. We never share your
+            private fields without your agent&apos;s explicit grant.
           </p>
         </div>
       </div>
