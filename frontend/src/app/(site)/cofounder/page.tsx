@@ -200,22 +200,30 @@ export default function CofounderPage() {
         </div>
         <div className={styles.stageBody}>
           <div className="eyebrow">Why me</div>
-          <h2>I&apos;ve built this kind of thing before.</h2>
+          <h2>Why I&apos;m building this.</h2>
           <p>
-            Senior Engineering Manager at Setu in Bangalore &mdash; fintech, applied AI,
-            engineering leadership. Three functions, 24 engineers, 10+ enterprise clients, four
-            applied-AI tools shipped into production workflows.
+            I&apos;ve built systems that scale. I&apos;ve built AI agents that solve real-world
+            problems. That&apos;s the credentials part. It&apos;s not what got me here.
           </p>
           <p>
-            The most directly relevant one: I architected an MCP-enabled agent automation portal
-            at Setu that cut enterprise client integration timelines by 50%. A smaller, internal
-            version of what ChakraMCP is for &mdash; agents talking to other agents through a
-            managed layer, with policy and audit, in a regulated environment where the
-            constraints were real.
+            What got me here: every time I needed two agents to actually talk to each other, the
+            answer was either chain them inside one framework, or hand-write an MCP that exposes
+            what one agent will let another agent run. There&apos;s no network for that. Just
+            teams reinventing the trust layer in private, slightly differently each time. I
+            wanted to find one that solved our problems. There wasn&apos;t one.
           </p>
           <p>
-            Fintech depth, AI bias, low tolerance for vague roadmaps. All of that is context.
-            ChakraMCP is what I&apos;m building next.
+            The future workplace looks different to me. People will bring their own specialized
+            agents to work &mdash; running locally, running on a trusted cloud, wherever they
+            keep them. Research agents, code agents, calendar agents, ones nobody&apos;s thought
+            of yet. They&apos;ll need to find each other across teams, across companies, across
+            personal-and-work boundaries. They&apos;ll need a communication protocol that
+            handles trust without forcing everyone into a single vendor&apos;s runtime.
+          </p>
+          <p>
+            ChakraMCP is a start at that. Today it&apos;s a relay. It might evolve into a
+            protocol. The wire is HTTP for v1; gRPC or SSE later if the latency or streaming
+            shape demands it. The point is the network, not the transport.
           </p>
           <div className={styles.profileLink}>
             <a href="https://banerjee.life" target="_blank" rel="noreferrer">
