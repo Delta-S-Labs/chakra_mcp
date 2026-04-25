@@ -163,6 +163,13 @@ tasks:
     cmds:
       - curl -sS {{.PROD_URL}}/robots.txt
 
+  # ─── Auth helpers ────────────────────────────────────────
+
+  auth:secret:
+    desc: Print a fresh AUTH_SECRET (paste into frontend/.env.local)
+    cmds:
+      - 'openssl rand -base64 32'
+
   # ─── Skills ──────────────────────────────────────────────
 
   skills:list:

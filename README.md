@@ -92,6 +92,32 @@ chrome are imported directly from `frontend/src/styles/`. No Tailwind.
 - `/brand` — identity, tokens, downloadable Claude Code skill.
 - `/cofounder` — the recruitment pitch.
 
+**Relay web app (auth-gated):**
+- `/login` — GitHub + Google sign-in via [NextAuth.js v5](https://authjs.dev/),
+  with optional reCAPTCHA v2 (toggle via `CAPTCHA_ENABLED`).
+- `/app` — dashboard. Agent management, friendships, grants, audit (live
+  surfaces land once Rust backend Phase 1 ships).
+- A proxy (`frontend/src/proxy.ts`) redirects unauthenticated `/app/*`
+  requests to `/login?from=…`, and authenticated `/login` visits to `/app`.
+
+### Configure auth locally
+
+The relay app needs OAuth apps registered with GitHub and Google (locally —
+production uses the same flow with real domains).
+
+1. **GitHub OAuth App** — register at [github.com/settings/developers](https://github.com/settings/developers).
+   - Authorization callback URL: `http://localhost:3000/api/auth/callback/github`
+2. **Google OAuth Client** — Google Cloud Console → APIs & Services →
+   Credentials → Create OAuth client ID (Web application).
+   - Authorized redirect URI: `http://localhost:3000/api/auth/callback/google`
+3. **reCAPTCHA v2** — register a site at [google.com/recaptcha/admin](https://www.google.com/recaptcha/admin).
+   - Or set `CAPTCHA_ENABLED=false` for private deployments that don't need it.
+4. **Generate `AUTH_SECRET`** — `openssl rand -base64 32`.
+
+Drop all of those into [`frontend/.env.local`](frontend/.env.example) (Next.js
+reads `.env.local` from the directory containing `next.config.ts` — *not*
+the repo root, where backend/AI secrets live instead).
+
 ## Backend
 
 Rust + Axum + sqlx + Postgres. Deployed on AWS (ECS Fargate + RDS). Full spec in
@@ -121,15 +147,22 @@ task install
 task dev
 ```
 
-For the relay web app (when it lands), you'll also need:
+Visit [http://localhost:3000](http://localhost:3000) for the marketing site,
+[http://localhost:3000/app](http://localhost:3000/app) for the relay app
+(redirects to `/login` if not signed in).
 
-- A GitHub OAuth App ([register here](https://github.com/settings/developers))
-- A Google OAuth Client ([Google Cloud Console](https://console.cloud.google.com/apis/credentials))
-- reCAPTCHA v2 site + secret keys ([here](https://www.google.com/recaptcha/admin)) —
-  optional, can be disabled via `CAPTCHA_ENABLED=false` for private deployments
-  that don't need it.
+### Two .env.local files
 
-All of those go in `.env.local`. Templates are in [`.env.example`](.env.example).
+The repo uses two `.env.local` files so each runtime reads exactly what it
+needs:
+
+| File | What goes here | Read by |
+|---|---|---|
+| `.env.local` (repo root) | AI keys (NVIDIA, Bedrock, Anthropic, OpenAI), backend secrets (DATABASE_URL, JWT_SECRET) | Example agents, eventual Rust backend |
+| `frontend/.env.local` | NextAuth + GitHub/Google OAuth + reCAPTCHA + Next.js public vars | Next.js (frontend) |
+
+Templates: [`.env.example`](.env.example) and [`frontend/.env.example`](frontend/.env.example).
+Both `.env*.local` files are gitignored.
 
 ## License
 
@@ -153,12 +186,12 @@ green before merge to `main`.
 | What | State |
 |---|---|
 | Marketing site | ✅ Live |
-| Design system | ✅ Shipped |
+| Design system | ✅ Shipped (logo v3 composite) |
 | 4 portfolio examples | ✅ Shipped |
 | Render pipeline | ✅ Shipped |
+| Example agents (Python/Rust/TS) | ✅ Scaffolded — relay calls stubbed pending Phase 1 |
+| Relay web app + auth | ✅ /login + /app live (GitHub + Google + reCAPTCHA) |
 | Relay backend Phase 1 | ⏳ Spec done, not scaffolded |
-| Relay web app + auth | ⏳ Pending scaffolding |
-| Example agents | ⏳ Pending scaffolding |
 
 ## Contact
 
