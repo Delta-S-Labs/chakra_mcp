@@ -4,7 +4,14 @@ import { useMemo, useState } from "react";
 import type { Invocation, InvocationStatus } from "@/lib/relay";
 import styles from "./audit.module.css";
 
-const STATUSES: InvocationStatus[] = ["succeeded", "failed", "timeout", "rejected"];
+const STATUSES: InvocationStatus[] = [
+  "pending",
+  "in_progress",
+  "succeeded",
+  "failed",
+  "timeout",
+  "rejected",
+];
 const DIRECTIONS = [
   { id: "all", label: "All" },
   { id: "outbound", label: "Outbound" },
@@ -112,12 +119,16 @@ function Row({
         </div>
         <div className={styles.rowMeta}>
           <span>{new Date(item.created_at).toLocaleString()}</span>
-          <span>·</span>
-          <span>{item.elapsed_ms}ms</span>
-          {item.http_status != null && (
+          {item.elapsed_ms > 0 && (
             <>
               <span>·</span>
-              <span>HTTP {item.http_status}</span>
+              <span>{item.elapsed_ms}ms</span>
+            </>
+          )}
+          {item.claimed_at && item.status === "in_progress" && (
+            <>
+              <span>·</span>
+              <span>claimed {new Date(item.claimed_at).toLocaleTimeString()}</span>
             </>
           )}
           {item.error_message && (
@@ -163,6 +174,8 @@ function StatusBadge({ status }: { status: InvocationStatus }) {
   const cls =
     status === "succeeded"
       ? styles.badgeOk
+      : status === "in_progress" || status === "pending"
+      ? styles.badgeWarn
       : status === "rejected"
       ? styles.badgeWarn
       : styles.badgeBad;

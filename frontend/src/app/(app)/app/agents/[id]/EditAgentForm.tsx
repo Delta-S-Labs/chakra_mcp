@@ -9,7 +9,6 @@ export function EditAgentForm({ token, agent }: { token: string; agent: Agent })
   const router = useRouter();
   const [displayName, setDisplayName] = useState(agent.display_name);
   const [description, setDescription] = useState(agent.description);
-  const [endpointUrl, setEndpointUrl] = useState(agent.endpoint_url ?? "");
   const [visibility, setVisibility] = useState<Visibility>(agent.visibility);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,7 +24,6 @@ export function EditAgentForm({ token, agent }: { token: string; agent: Agent })
         display_name: displayName.trim(),
         description: description.trim(),
         visibility,
-        endpoint_url: endpointUrl.trim() || null,
       });
       setSaved(true);
       router.refresh();
@@ -91,16 +89,6 @@ export function EditAgentForm({ token, agent }: { token: string; agent: Agent })
             type="text"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-          />
-        </label>
-
-        <label className={`${styles.field} ${styles.fieldFull}`}>
-          <span className={styles.fieldLabel}>Endpoint URL</span>
-          <input
-            type="url"
-            placeholder="https://example.com/hooks/agent"
-            value={endpointUrl}
-            onChange={(e) => setEndpointUrl(e.target.value)}
           />
         </label>
 

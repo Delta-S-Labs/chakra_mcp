@@ -1,32 +1,34 @@
-//! Sync invoke + audit log.
+//! Async, inbox-pull invocations.
 //!
 //! POST /v1/invoke
-//!   The grantee's owner asks the relay to deliver `input` to the
-//!   granter's webhook for `capability_name`. The relay:
-//!     1. validates the grant is active and matches the (granter,
-//!        grantee, capability) triple,
-//!     2. checks the granter exposes an endpoint URL,
-//!     3. HMAC-signs the payload with WEBHOOK_SIGNING_SECRET,
-//!     4. POSTs to that URL with a 30s deadline,
-//!     5. records the attempt — success, failure, timeout, or
-//!        pre-flight rejection — in `relay_invocations`.
-//!   The granter's response body (if 2xx + JSON) is returned to the
-//!   caller as the invoke response.
+//!   Grantee asks the relay to deliver `input` to the granter for
+//!   capability `C`. The relay validates the grant, enqueues a row in
+//!   `pending`, and returns the invocation id immediately. No outbound
+//!   HTTP — the granter side will pull it from their inbox.
 //!
-//! GET /v1/invocations
-//!   Audit log. Members of either side (granter or grantee account)
-//!   can read their own rows. Filterable by direction and agent_id.
-
-use std::time::Duration;
+//! GET /v1/inbox?agent_id=…&limit=…
+//!   The granter's owner pulls oldest pending invocations targeting the
+//!   named agent and atomically marks them `in_progress` (so two
+//!   concurrent pollers don't claim the same row). They then run the
+//!   work locally and report the result.
+//!
+//! POST /v1/invocations/{id}/result
+//!   The granter side reports succeeded or failed with output / error.
+//!   Only the user who claimed the row (or another member of the
+//!   granter's account) can post a result, and only while it's
+//!   in_progress.
+//!
+//! GET /v1/invocations / GET /v1/invocations/{id}
+//!   Audit + status polling. The grantee polls /{id} until status is
+//!   terminal (succeeded | failed | timeout | rejected), then reads
+//!   output_preview / error_message off the row.
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
 use chrono::{DateTime, Utc};
-use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sha2::Sha256;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -35,8 +37,9 @@ use chakramcp_shared::error::{ApiError, ApiResult};
 use crate::auth::{user_is_member, AuthUser};
 use crate::state::RelayState;
 
-const INVOKE_TIMEOUT_SECS: u64 = 30;
 const PREVIEW_BYTE_LIMIT: usize = 16 * 1024;
+const INBOX_DEFAULT_LIMIT: i64 = 25;
+const INBOX_MAX_LIMIT: i64 = 100;
 
 // ─── DTOs ────────────────────────────────────────────────
 
@@ -53,9 +56,6 @@ pub struct InvokeRequest {
 pub struct InvokeResponse {
     pub invocation_id: Uuid,
     pub status: String,
-    pub http_status: Option<i32>,
-    pub elapsed_ms: i32,
-    pub output: Option<Value>,
     pub error: Option<String>,
 }
 
@@ -70,12 +70,12 @@ pub struct InvocationDto {
     pub capability_id: Option<Uuid>,
     pub capability_name: String,
     pub status: String,
-    pub http_status: Option<i32>,
     pub elapsed_ms: i32,
     pub error_message: Option<String>,
     pub input_preview: Option<Value>,
     pub output_preview: Option<Value>,
     pub created_at: DateTime<Utc>,
+    pub claimed_at: Option<DateTime<Utc>>,
     /// True when the requesting user is on the granter side.
     pub i_served: bool,
     /// True when the requesting user is on the grantee side.
@@ -88,6 +88,20 @@ pub struct ListQuery {
     pub direction: Option<String>,
     pub agent_id: Option<Uuid>,
     pub status: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct InboxQuery {
+    pub agent_id: Uuid,
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResultRequest {
+    /// "succeeded" or "failed".
+    pub status: String,
+    pub output: Option<Value>,
+    pub error: Option<String>,
 }
 
 // ─── Helpers ─────────────────────────────────────────────
@@ -104,16 +118,8 @@ fn truncate_for_audit(value: &Value) -> Value {
     }
 }
 
-fn sign_payload(secret: &str, body: &[u8]) -> String {
-    type HmacSha256 = Hmac<Sha256>;
-    let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC accepts any key length");
-    mac.update(body);
-    let sig = mac.finalize().into_bytes();
-    format!("sha256={}", hex::encode(sig))
-}
-
 #[allow(clippy::too_many_arguments)]
-async fn record(
+async fn record_terminal(
     db: &PgPool,
     grant_id: Option<Uuid>,
     granter_agent_id: Option<Uuid>,
@@ -122,20 +128,18 @@ async fn record(
     capability_name: &str,
     invoked_by_user_id: Uuid,
     status: &str,
-    http_status: Option<i32>,
     elapsed_ms: i32,
     error_message: Option<&str>,
     input_preview: Option<&Value>,
-    output_preview: Option<&Value>,
 ) -> Result<Uuid, ApiError> {
     let id = Uuid::now_v7();
     sqlx::query!(
         r#"
         INSERT INTO relay_invocations
             (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
-             capability_name, invoked_by_user_id, status, http_status,
-             elapsed_ms, error_message, input_preview, output_preview)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+             capability_name, invoked_by_user_id, status, elapsed_ms,
+             error_message, input_preview)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         "#,
         id,
         grant_id,
@@ -145,34 +149,31 @@ async fn record(
         capability_name,
         invoked_by_user_id,
         status,
-        http_status,
         elapsed_ms,
         error_message,
         input_preview.cloned().unwrap_or(Value::Null),
-        output_preview.cloned().unwrap_or(Value::Null),
     )
     .execute(db)
     .await?;
     Ok(id)
 }
 
-// ─── POST /v1/invoke ─────────────────────────────────────
+// ─── POST /v1/invoke (enqueue) ───────────────────────────
 pub async fn invoke(
     State(state): State<RelayState>,
     user: AuthUser,
     Json(req): Json<InvokeRequest>,
 ) -> Result<(StatusCode, Json<InvokeResponse>), ApiError> {
-    let started = std::time::Instant::now();
     let input_preview = truncate_for_audit(&req.input);
 
-    // 1. Resolve the grant + agents + capability + endpoint in one shot.
+    // Resolve the grant + agents + capability.
     let row = sqlx::query!(
         r#"
         SELECT
             g.id as grant_id, g.status as grant_status,
             g.granter_agent_id, g.grantee_agent_id, g.capability_id,
             g.expires_at,
-            ga.endpoint_url as granter_endpoint, ga.account_id as granter_account_id,
+            ga.account_id as granter_account_id,
             ea.account_id as grantee_account_id,
             cap.name as capability_name
         FROM grants g
@@ -188,18 +189,15 @@ pub async fn invoke(
     .ok_or(ApiError::NotFound)?;
 
     if row.grantee_agent_id != req.grantee_agent_id {
-        // Pre-flight audit row, then 400.
-        let elapsed = started.elapsed().as_millis() as i32;
-        let id = record(
+        let id = record_terminal(
             &state.db, Some(row.grant_id), Some(row.granter_agent_id),
             Some(row.grantee_agent_id), Some(row.capability_id), &row.capability_name,
-            user.user_id, "rejected", None, elapsed,
+            user.user_id, "rejected", 0,
             Some("grantee_agent_id does not match the grant"),
-            Some(&input_preview), None,
+            Some(&input_preview),
         ).await?;
         return Ok((StatusCode::BAD_REQUEST, Json(InvokeResponse {
-            invocation_id: id, status: "rejected".into(), http_status: None,
-            elapsed_ms: elapsed, output: None,
+            invocation_id: id, status: "rejected".into(),
             error: Some("grantee_agent_id does not match the grant".into()),
         })));
     }
@@ -209,161 +207,224 @@ pub async fn invoke(
         return Err(ApiError::Forbidden);
     }
 
-    // Grant must be active (and not expired).
+    // Grant must be active and not expired.
     if row.grant_status != "active" {
-        let elapsed = started.elapsed().as_millis() as i32;
         let msg = format!("grant is {}; only active grants can be invoked", row.grant_status);
-        let id = record(
+        let id = record_terminal(
             &state.db, Some(row.grant_id), Some(row.granter_agent_id),
             Some(row.grantee_agent_id), Some(row.capability_id), &row.capability_name,
-            user.user_id, "rejected", None, elapsed,
-            Some(&msg), Some(&input_preview), None,
+            user.user_id, "rejected", 0, Some(&msg), Some(&input_preview),
         ).await?;
         return Ok((StatusCode::CONFLICT, Json(InvokeResponse {
-            invocation_id: id, status: "rejected".into(), http_status: None,
-            elapsed_ms: elapsed, output: None, error: Some(msg),
+            invocation_id: id, status: "rejected".into(), error: Some(msg),
         })));
     }
     if let Some(exp) = row.expires_at {
         if exp <= Utc::now() {
-            let elapsed = started.elapsed().as_millis() as i32;
             let msg = "grant has expired".to_string();
-            let id = record(
+            let id = record_terminal(
                 &state.db, Some(row.grant_id), Some(row.granter_agent_id),
                 Some(row.grantee_agent_id), Some(row.capability_id), &row.capability_name,
-                user.user_id, "rejected", None, elapsed,
-                Some(&msg), Some(&input_preview), None,
+                user.user_id, "rejected", 0, Some(&msg), Some(&input_preview),
             ).await?;
             return Ok((StatusCode::CONFLICT, Json(InvokeResponse {
-                invocation_id: id, status: "rejected".into(), http_status: None,
-                elapsed_ms: elapsed, output: None, error: Some(msg),
+                invocation_id: id, status: "rejected".into(), error: Some(msg),
             })));
         }
     }
 
-    // Granter must expose an endpoint.
-    let endpoint = match row.granter_endpoint.as_deref() {
-        Some(e) if !e.is_empty() => e.to_string(),
-        _ => {
-            let elapsed = started.elapsed().as_millis() as i32;
-            let msg = "granter agent has no endpoint_url configured".to_string();
-            let id = record(
-                &state.db, Some(row.grant_id), Some(row.granter_agent_id),
-                Some(row.grantee_agent_id), Some(row.capability_id), &row.capability_name,
-                user.user_id, "rejected", None, elapsed,
-                Some(&msg), Some(&input_preview), None,
-            ).await?;
-            return Ok((StatusCode::CONFLICT, Json(InvokeResponse {
-                invocation_id: id, status: "rejected".into(), http_status: None,
-                elapsed_ms: elapsed, output: None, error: Some(msg),
-            })));
-        }
-    };
+    // Enqueue the invocation. Granter side will pull it from /v1/inbox.
+    let id = Uuid::now_v7();
+    sqlx::query!(
+        r#"
+        INSERT INTO relay_invocations
+            (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
+             capability_name, invoked_by_user_id, status, input_preview)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8)
+        "#,
+        id,
+        row.grant_id,
+        row.granter_agent_id,
+        row.grantee_agent_id,
+        row.capability_id,
+        row.capability_name,
+        user.user_id,
+        input_preview,
+    )
+    .execute(&state.db)
+    .await?;
 
-    let secret = state.config.webhook_signing_secret.as_deref().ok_or_else(|| {
-        ApiError::Internal(anyhow::anyhow!(
-            "WEBHOOK_SIGNING_SECRET is not configured on this relay"
-        ))
-    })?;
+    Ok((StatusCode::ACCEPTED, Json(InvokeResponse {
+        invocation_id: id, status: "pending".into(), error: None,
+    })))
+}
 
-    // 2. Build + sign the webhook body.
-    let webhook_body = serde_json::json!({
-        "invocation": {
-            "grant_id": row.grant_id,
-            "granter_agent_id": row.granter_agent_id,
-            "grantee_agent_id": row.grantee_agent_id,
-            "capability": row.capability_name,
-        },
-        "input": req.input,
-    });
-    let body_bytes = serde_json::to_vec(&webhook_body)
-        .map_err(|e| ApiError::Internal(anyhow::anyhow!("json encode failed: {e}")))?;
-    let signature = sign_payload(secret, &body_bytes);
+// ─── GET /v1/inbox?agent_id=X[&limit=N] ──────────────────
+pub async fn inbox(
+    State(state): State<RelayState>,
+    user: AuthUser,
+    Query(q): Query<InboxQuery>,
+) -> ApiResult<Json<Vec<InvocationDto>>> {
+    let limit = q.limit.unwrap_or(INBOX_DEFAULT_LIMIT).clamp(1, INBOX_MAX_LIMIT);
 
-    // 3. Deliver.
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(INVOKE_TIMEOUT_SECS))
-        .build()
-        .map_err(|e| ApiError::Internal(anyhow::anyhow!("reqwest build failed: {e}")))?;
-
-    let resp = client
-        .post(&endpoint)
-        .header("content-type", "application/json")
-        .header("x-chakramcp-signature", &signature)
-        .header("x-chakramcp-grant", row.grant_id.to_string())
-        .body(body_bytes)
-        .send()
-        .await;
-
-    let elapsed_ms = started.elapsed().as_millis() as i32;
-
-    match resp {
-        Err(err) if err.is_timeout() => {
-            let msg = format!("webhook timed out after {INVOKE_TIMEOUT_SECS}s");
-            let id = record(
-                &state.db, Some(row.grant_id), Some(row.granter_agent_id),
-                Some(row.grantee_agent_id), Some(row.capability_id), &row.capability_name,
-                user.user_id, "timeout", None, elapsed_ms,
-                Some(&msg), Some(&input_preview), None,
-            ).await?;
-            Ok((StatusCode::GATEWAY_TIMEOUT, Json(InvokeResponse {
-                invocation_id: id, status: "timeout".into(), http_status: None,
-                elapsed_ms, output: None, error: Some(msg),
-            })))
-        }
-        Err(err) => {
-            let msg = format!("webhook request failed: {err}");
-            let id = record(
-                &state.db, Some(row.grant_id), Some(row.granter_agent_id),
-                Some(row.grantee_agent_id), Some(row.capability_id), &row.capability_name,
-                user.user_id, "failed", None, elapsed_ms,
-                Some(&msg), Some(&input_preview), None,
-            ).await?;
-            Ok((StatusCode::BAD_GATEWAY, Json(InvokeResponse {
-                invocation_id: id, status: "failed".into(), http_status: None,
-                elapsed_ms, output: None, error: Some(msg),
-            })))
-        }
-        Ok(r) => {
-            let http_status = r.status().as_u16() as i32;
-            let body = r.text().await.unwrap_or_default();
-            let parsed: Option<Value> = if body.is_empty() {
-                None
-            } else {
-                serde_json::from_str(&body).ok()
-            };
-
-            if (200..300).contains(&http_status) {
-                let preview = parsed.as_ref().map(truncate_for_audit);
-                let id = record(
-                    &state.db, Some(row.grant_id), Some(row.granter_agent_id),
-                    Some(row.grantee_agent_id), Some(row.capability_id), &row.capability_name,
-                    user.user_id, "succeeded", Some(http_status), elapsed_ms,
-                    None, Some(&input_preview), preview.as_ref(),
-                ).await?;
-                Ok((StatusCode::OK, Json(InvokeResponse {
-                    invocation_id: id, status: "succeeded".into(),
-                    http_status: Some(http_status), elapsed_ms, output: parsed, error: None,
-                })))
-            } else {
-                let msg = format!("webhook returned HTTP {http_status}");
-                let body_value = parsed
-                    .clone()
-                    .unwrap_or_else(|| Value::String(body.chars().take(2048).collect()));
-                let preview = truncate_for_audit(&body_value);
-                let id = record(
-                    &state.db, Some(row.grant_id), Some(row.granter_agent_id),
-                    Some(row.grantee_agent_id), Some(row.capability_id), &row.capability_name,
-                    user.user_id, "failed", Some(http_status), elapsed_ms,
-                    Some(&msg), Some(&input_preview), Some(&preview),
-                ).await?;
-                Ok((StatusCode::BAD_GATEWAY, Json(InvokeResponse {
-                    invocation_id: id, status: "failed".into(),
-                    http_status: Some(http_status), elapsed_ms, output: parsed, error: Some(msg),
-                })))
-            }
-        }
+    // Caller must be a member of the agent's account.
+    let agent_account = sqlx::query_scalar!(
+        r#"SELECT account_id FROM agents WHERE id = $1"#,
+        q.agent_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(ApiError::NotFound)?;
+    if !user_is_member(&state.db, user.user_id, agent_account).await? {
+        return Err(ApiError::Forbidden);
     }
+
+    // Atomically claim the oldest pending rows for this agent.
+    // FOR UPDATE SKIP LOCKED lets concurrent pollers safely pull
+    // disjoint batches without blocking each other.
+    let mut tx = state.db.begin().await?;
+    let claimed = sqlx::query!(
+        r#"
+        WITH picked AS (
+            SELECT id FROM relay_invocations
+            WHERE granter_agent_id = $1
+              AND status = 'pending'
+            ORDER BY created_at ASC
+            LIMIT $2
+            FOR UPDATE SKIP LOCKED
+        )
+        UPDATE relay_invocations i
+        SET status = 'in_progress',
+            claimed_at = now(),
+            claimed_by_user_id = $3
+        FROM picked
+        WHERE i.id = picked.id
+        RETURNING i.id
+        "#,
+        q.agent_id,
+        limit,
+        user.user_id,
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    tx.commit().await?;
+
+    if claimed.is_empty() {
+        return Ok(Json(vec![]));
+    }
+
+    let ids: Vec<Uuid> = claimed.into_iter().map(|r| r.id).collect();
+    let rows = sqlx::query!(
+        r#"
+        SELECT
+            i.id, i.grant_id, i.granter_agent_id, i.grantee_agent_id,
+            i.capability_id, i.capability_name, i.status,
+            i.elapsed_ms, i.error_message, i.input_preview, i.output_preview,
+            i.created_at, i.claimed_at,
+            ga.display_name as "granter_display_name?",
+            ea.display_name as "grantee_display_name?"
+        FROM relay_invocations i
+        LEFT JOIN agents ga ON ga.id = i.granter_agent_id
+        LEFT JOIN agents ea ON ea.id = i.grantee_agent_id
+        WHERE i.id = ANY($1)
+        ORDER BY i.created_at ASC
+        "#,
+        &ids,
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(Json(
+        rows.into_iter()
+            .map(|r| InvocationDto {
+                id: r.id,
+                grant_id: r.grant_id,
+                granter_agent_id: r.granter_agent_id,
+                granter_display_name: r.granter_display_name,
+                grantee_agent_id: r.grantee_agent_id,
+                grantee_display_name: r.grantee_display_name,
+                capability_id: r.capability_id,
+                capability_name: r.capability_name,
+                status: r.status,
+                elapsed_ms: r.elapsed_ms,
+                error_message: r.error_message,
+                input_preview: r.input_preview,
+                output_preview: r.output_preview,
+                created_at: r.created_at,
+                claimed_at: r.claimed_at,
+                i_served: true,
+                i_invoked: false,
+            })
+            .collect(),
+    ))
+}
+
+// ─── POST /v1/invocations/{id}/result ────────────────────
+pub async fn report_result(
+    State(state): State<RelayState>,
+    user: AuthUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<ResultRequest>,
+) -> ApiResult<Json<InvocationDto>> {
+    if !matches!(req.status.as_str(), "succeeded" | "failed") {
+        return Err(ApiError::InvalidRequest(
+            "status must be 'succeeded' or 'failed'".into(),
+        ));
+    }
+
+    let row = sqlx::query!(
+        r#"
+        SELECT i.status, i.created_at, i.claimed_at,
+               ga.account_id as "granter_account_id?"
+        FROM relay_invocations i
+        LEFT JOIN agents ga ON ga.id = i.granter_agent_id
+        WHERE i.id = $1
+        "#,
+        id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(ApiError::NotFound)?;
+
+    if row.status != "in_progress" {
+        return Err(ApiError::Conflict(format!(
+            "invocation is {}; only in_progress can be completed",
+            row.status
+        )));
+    }
+
+    // Auth: caller must be a member of the granter's account. The agent
+    // could be deleted in the meantime; if so, granter_account_id is
+    // null and no one can report a result — surface as forbidden.
+    let granter_account = row.granter_account_id.ok_or(ApiError::Forbidden)?;
+    if !user_is_member(&state.db, user.user_id, granter_account).await? {
+        return Err(ApiError::Forbidden);
+    }
+
+    // Wall time from enqueue to result.
+    let elapsed_ms = (Utc::now() - row.created_at).num_milliseconds().clamp(0, i32::MAX as i64) as i32;
+    let output_preview = req.output.as_ref().map(truncate_for_audit);
+
+    sqlx::query!(
+        r#"
+        UPDATE relay_invocations
+        SET status = $2,
+            elapsed_ms = $3,
+            error_message = $4,
+            output_preview = $5
+        WHERE id = $1 AND status = 'in_progress'
+        "#,
+        id,
+        req.status,
+        elapsed_ms,
+        req.error.as_deref(),
+        output_preview.unwrap_or(Value::Null),
+    )
+    .execute(&state.db)
+    .await?;
+
+    let r = fetch_one(&state.db, user.user_id, id).await?;
+    Ok(Json(r))
 }
 
 // ─── GET /v1/invocations ─────────────────────────────────
@@ -379,7 +440,7 @@ pub async fn list(
         ));
     }
     if let Some(s) = q.status.as_deref() {
-        if !matches!(s, "rejected" | "succeeded" | "failed" | "timeout") {
+        if !matches!(s, "pending" | "in_progress" | "rejected" | "succeeded" | "failed" | "timeout") {
             return Err(ApiError::InvalidRequest("invalid status".into()));
         }
     }
@@ -391,9 +452,9 @@ pub async fn list(
         r#"
         SELECT
             i.id, i.grant_id, i.granter_agent_id, i.grantee_agent_id,
-            i.capability_id, i.capability_name, i.status, i.http_status,
+            i.capability_id, i.capability_name, i.status,
             i.elapsed_ms, i.error_message, i.input_preview, i.output_preview,
-            i.created_at,
+            i.created_at, i.claimed_at,
             ga.display_name as "granter_display_name?",
             ea.display_name as "grantee_display_name?",
             EXISTS(
@@ -442,12 +503,12 @@ pub async fn list(
                 capability_id: r.capability_id,
                 capability_name: r.capability_name,
                 status: r.status,
-                http_status: r.http_status,
                 elapsed_ms: r.elapsed_ms,
                 error_message: r.error_message,
                 input_preview: r.input_preview,
                 output_preview: r.output_preview,
                 created_at: r.created_at,
+                claimed_at: r.claimed_at,
                 i_served: r.i_served.unwrap_or(false),
                 i_invoked: r.i_invoked.unwrap_or(false),
             })
@@ -461,13 +522,17 @@ pub async fn get_one(
     user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<InvocationDto>> {
+    Ok(Json(fetch_one(&state.db, user.user_id, id).await?))
+}
+
+async fn fetch_one(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<InvocationDto, ApiError> {
     let r = sqlx::query!(
         r#"
         SELECT
             i.id, i.grant_id, i.granter_agent_id, i.grantee_agent_id,
-            i.capability_id, i.capability_name, i.status, i.http_status,
+            i.capability_id, i.capability_name, i.status,
             i.elapsed_ms, i.error_message, i.input_preview, i.output_preview,
-            i.created_at,
+            i.created_at, i.claimed_at,
             ga.display_name as "granter_display_name?",
             ea.display_name as "grantee_display_name?",
             EXISTS(
@@ -483,10 +548,10 @@ pub async fn get_one(
         LEFT JOIN agents ea ON ea.id = i.grantee_agent_id
         WHERE i.id = $2
         "#,
-        user.user_id,
+        user_id,
         id,
     )
-    .fetch_optional(&state.db)
+    .fetch_optional(db)
     .await?
     .ok_or(ApiError::NotFound)?;
 
@@ -496,7 +561,7 @@ pub async fn get_one(
         return Err(ApiError::NotFound);
     }
 
-    Ok(Json(InvocationDto {
+    Ok(InvocationDto {
         id: r.id,
         grant_id: r.grant_id,
         granter_agent_id: r.granter_agent_id,
@@ -506,13 +571,13 @@ pub async fn get_one(
         capability_id: r.capability_id,
         capability_name: r.capability_name,
         status: r.status,
-        http_status: r.http_status,
         elapsed_ms: r.elapsed_ms,
         error_message: r.error_message,
         input_preview: r.input_preview,
         output_preview: r.output_preview,
         created_at: r.created_at,
+        claimed_at: r.claimed_at,
         i_served,
         i_invoked,
-    }))
+    })
 }

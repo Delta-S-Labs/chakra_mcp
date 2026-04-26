@@ -1,0 +1,261 @@
+.page { display: grid; gap: 2rem; }
+
+.head {
+  display: grid;
+  gap: 0.7rem;
+  max-width: 60ch;
+  padding: 0 0.5rem;
+}
+
+.title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 1;
+  letter-spacing: -0.04em;
+  margin: 0;
+  color: var(--ink);
+}
+
+.body {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  margin: 0;
+}
+
+.body code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  padding: 0.04rem 0.34rem;
+  border-radius: 0.28rem;
+  background: color-mix(in oklab, var(--accent-butter) 38%, transparent);
+}
+
+.error {
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--accent-coral);
+  background: color-mix(in oklab, var(--accent-coral) 14%, var(--paper-soft));
+  border-radius: 0.55rem;
+  font-size: 0.88rem;
+  color: oklch(38% 0.14 28);
+}
+
+.notice {
+  padding: 0.85rem 1rem;
+  border: 1px dashed var(--line);
+  border-radius: 0.7rem;
+  background: var(--paper-soft);
+  font-size: 0.92rem;
+  color: var(--ink);
+}
+
+.empty {
+  font-family: var(--font-body);
+  font-size: 0.94rem;
+  color: var(--ink-muted);
+  margin: 0;
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.6rem;
+  align-items: end;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--paper-soft);
+}
+
+.field { display: grid; gap: 0.3rem; }
+.fieldLabel {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.field select,
+.field textarea {
+  font: inherit;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--paper);
+  color: var(--ink);
+}
+.field textarea {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  resize: vertical;
+}
+
+.create {
+  padding: 0.6rem 1rem;
+  border-radius: 0.55rem;
+  background: var(--accent-coral);
+  color: var(--paper-soft);
+  border: 1px solid color-mix(in oklab, var(--accent-coral) 70%, var(--ink));
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.create:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.dangerBtn {
+  padding: 0.6rem 1rem;
+  border-radius: 0.55rem;
+  background: transparent;
+  color: var(--accent-coral);
+  border: 1px solid color-mix(in oklab, var(--accent-coral) 50%, var(--line));
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.dangerBtn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.row {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.95rem 1.05rem;
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  background: var(--paper-soft);
+}
+
+.rowHead { display: grid; gap: 0.3rem; }
+
+.rowName {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.96rem;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.capCode {
+  font-family: var(--font-mono);
+  font-size: 0.84rem;
+  padding: 0.06rem 0.4rem;
+  border-radius: 0.32rem;
+  background: color-mix(in oklab, var(--accent-butter) 50%, var(--paper));
+  border: 1px solid color-mix(in oklab, var(--accent-butter) 65%, var(--line));
+  color: oklch(35% 0.07 70);
+  font-weight: 600;
+}
+
+.arrow { color: var(--ink-muted); font-weight: 400; }
+
+.rowMeta {
+  font-family: var(--font-body);
+  font-size: 0.84rem;
+  color: var(--ink-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.section { display: grid; gap: 0.3rem; }
+
+.sectionTitle {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.pre {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  line-height: 1.4;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--paper);
+  color: var(--ink);
+  overflow-x: auto;
+  margin: 0;
+  white-space: pre;
+}
+
+.errorText {
+  font-family: var(--font-body);
+  font-size: 0.92rem;
+  color: oklch(45% 0.13 28);
+  margin: 0;
+}
+
+.respond {
+  display: grid;
+  gap: 0.7rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--line);
+}
+
+.respondTabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+
+.actions { display: flex; gap: 0.5rem; }
+
+.badge {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.18rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--ink-muted);
+  background: color-mix(in oklab, var(--paper-warm) 36%, var(--paper-soft));
+}
+.badgeOk {
+  background: color-mix(in oklab, oklch(75% 0.18 145) 28%, var(--paper-soft));
+  border-color: color-mix(in oklab, oklch(75% 0.18 145) 60%, var(--line));
+  color: oklch(35% 0.13 145);
+}
+.badgeWarn {
+  background: color-mix(in oklab, var(--accent-butter) 60%, var(--paper-soft));
+  border-color: color-mix(in oklab, var(--accent-butter) 70%, var(--line));
+  color: oklch(36% 0.07 70);
+}
+.badgeBad {
+  background: color-mix(in oklab, var(--accent-coral) 22%, var(--paper-soft));
+  border-color: color-mix(in oklab, var(--accent-coral) 60%, var(--line));
+  color: oklch(38% 0.14 28);
+}
+.badgeNeutral {
+  background: color-mix(in oklab, var(--paper-warm) 50%, var(--paper-soft));
+  color: var(--ink-muted);
+}
+
+@media (max-width: 720px) {
+  .controls { grid-template-columns: 1fr; }
+  .respondTabs { grid-template-columns: 1fr; }
+}

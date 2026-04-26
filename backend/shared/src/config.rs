@@ -14,11 +14,6 @@ pub struct SharedConfig {
     /// false (private deployments don't need this); the hosted public
     /// network sets it to true.
     pub survey_enabled: bool,
-    /// HMAC-SHA256 secret the relay uses to sign outbound webhook
-    /// deliveries to agent endpoints. Receivers verify with the same
-    /// secret. Required only by the relay service; the app boots
-    /// without it.
-    pub webhook_signing_secret: Option<String>,
     pub log_filter: String,
 }
 
@@ -41,10 +36,6 @@ impl SharedConfig {
             .map(|s| matches!(s.trim().to_lowercase().as_str(), "true" | "1" | "yes" | "on"))
             .unwrap_or(false);
 
-        let webhook_signing_secret = env::var("WEBHOOK_SIGNING_SECRET")
-            .ok()
-            .filter(|s| !s.trim().is_empty());
-
         let log_filter = env::var("RUST_LOG")
             .unwrap_or_else(|_| "info,chakramcp_app=debug,chakramcp_relay=debug,sqlx=warn".to_string());
 
@@ -53,7 +44,6 @@ impl SharedConfig {
             jwt_secret,
             admin_email,
             survey_enabled,
-            webhook_signing_secret,
             log_filter,
         })
     }

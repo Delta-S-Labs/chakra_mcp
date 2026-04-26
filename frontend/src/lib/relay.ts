@@ -365,9 +365,15 @@ export function revokeGrant(token: string, id: string, body: RevokeGrantRequest 
   });
 }
 
-// ─── Invoke + audit log ──────────────────────────────────
+// ─── Invoke + inbox + audit log ──────────────────────────
 
-export type InvocationStatus = "rejected" | "succeeded" | "failed" | "timeout";
+export type InvocationStatus =
+  | "pending"
+  | "in_progress"
+  | "succeeded"
+  | "failed"
+  | "rejected"
+  | "timeout";
 
 export interface InvokeRequest {
   grant_id: string;
@@ -375,12 +381,10 @@ export interface InvokeRequest {
   input: unknown;
 }
 
+/** Returned synchronously by POST /v1/invoke — the work is enqueued. */
 export interface InvokeResponse {
   invocation_id: string;
   status: InvocationStatus;
-  http_status: number | null;
-  elapsed_ms: number;
-  output: unknown | null;
   error: string | null;
 }
 
@@ -394,15 +398,28 @@ export interface Invocation {
   capability_id: string | null;
   capability_name: string;
   status: InvocationStatus;
-  http_status: number | null;
   elapsed_ms: number;
   error_message: string | null;
   input_preview: unknown | null;
   output_preview: unknown | null;
   created_at: string;
+  claimed_at: string | null;
   i_served: boolean;
   i_invoked: boolean;
 }
+
+export interface ReportResultRequest {
+  status: "succeeded" | "failed";
+  output?: unknown;
+  error?: string | null;
+}
+
+export const TERMINAL_STATUSES: ReadonlySet<InvocationStatus> = new Set([
+  "succeeded",
+  "failed",
+  "rejected",
+  "timeout",
+]);
 
 export function invoke(token: string, body: InvokeRequest) {
   return request<InvokeResponse>("/v1/invoke", {
@@ -410,6 +427,27 @@ export function invoke(token: string, body: InvokeRequest) {
     token,
     body: JSON.stringify(body),
   });
+}
+
+export function pullInbox(token: string, agentId: string, limit?: number) {
+  const qs = new URLSearchParams({ agent_id: agentId });
+  if (limit) qs.set("limit", String(limit));
+  return request<Invocation[]>(`/v1/inbox?${qs.toString()}`, { token });
+}
+
+export function reportResult(
+  token: string,
+  invocationId: string,
+  body: ReportResultRequest,
+) {
+  return request<Invocation>(
+    `/v1/invocations/${encodeURIComponent(invocationId)}/result`,
+    { method: "POST", token, body: JSON.stringify(body) },
+  );
+}
+
+export function getInvocation(token: string, id: string) {
+  return request<Invocation>(`/v1/invocations/${encodeURIComponent(id)}`, { token });
 }
 
 export function listInvocations(

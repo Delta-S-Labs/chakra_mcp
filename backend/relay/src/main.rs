@@ -100,10 +100,15 @@ fn router(state: RelayState) -> Router {
         )
         .route("/v1/grants/{id}", get(handlers::grants::get_one))
         .route("/v1/grants/{id}/revoke", post(handlers::grants::revoke))
-        // ─── Invoke + audit log ────────────────────────
+        // ─── Invoke + inbox + audit log ────────────────
         .route("/v1/invoke", post(handlers::invoke::invoke))
+        .route("/v1/inbox", get(handlers::invoke::inbox))
         .route("/v1/invocations", get(handlers::invoke::list))
         .route("/v1/invocations/{id}", get(handlers::invoke::get_one))
+        .route(
+            "/v1/invocations/{id}/result",
+            post(handlers::invoke::report_result),
+        )
         .with_state(state)
         .layer(cors)
         .layer(TraceLayer::new_for_http())

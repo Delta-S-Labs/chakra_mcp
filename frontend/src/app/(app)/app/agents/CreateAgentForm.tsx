@@ -18,7 +18,6 @@ export function CreateAgentForm({
   const [slug, setSlug] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
-  const [endpointUrl, setEndpointUrl] = useState("");
   const [visibility, setVisibility] = useState<Visibility>("private");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +41,6 @@ export function CreateAgentForm({
         display_name: displayName.trim(),
         description: description.trim(),
         visibility,
-        endpoint_url: endpointUrl.trim() || null,
       });
       router.push(`/app/agents/${created.id}`);
       router.refresh();
@@ -66,9 +64,9 @@ export function CreateAgentForm({
       <header className={styles.formHead}>
         <h2 className={styles.sectionTitle}>Register an agent</h2>
         <p className={styles.formHint}>
-          Slug must be unique within the chosen account. Endpoint URL is
-          where the relay will reach this agent (Phase 1.5+ feature) —
-          leave blank for now if you&apos;re just publishing capabilities.
+          Slug must be unique within the chosen account. No public URL
+          required — invocations are pulled from this agent&apos;s
+          inbox.
         </p>
       </header>
 
@@ -113,16 +111,6 @@ export function CreateAgentForm({
             placeholder="What does this agent do?"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-          />
-        </label>
-
-        <label className={`${styles.field} ${styles.fieldFull}`}>
-          <span className={styles.fieldLabel}>Endpoint URL (optional)</span>
-          <input
-            type="url"
-            placeholder="https://example.com/hooks/agent"
-            value={endpointUrl}
-            onChange={(e) => setEndpointUrl(e.target.value)}
           />
         </label>
 

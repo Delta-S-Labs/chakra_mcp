@@ -1,9 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { invoke, revokeGrant, type Grant, type GrantStatus, type InvokeResponse } from "@/lib/relay";
+import {
+  getInvocation,
+  invoke,
+  revokeGrant,
+  TERMINAL_STATUSES,
+  type Grant,
+  type GrantStatus,
+  type Invocation,
+} from "@/lib/relay";
 import styles from "./grants.module.css";
+
+const POLL_INTERVAL_MS = 1500;
+const POLL_MAX_ATTEMPTS = 120; // 3 minutes
 
 export function GrantsList({
   token,
@@ -43,9 +54,14 @@ function GrantRow({ token, grant }: { token: string | null; grant: Grant }) {
   const [reason, setReason] = useState("");
   const [invokeOpen, setInvokeOpen] = useState(false);
   const [invokeInput, setInvokeInput] = useState("{}");
-  const [invokeResult, setInvokeResult] = useState<InvokeResponse | null>(null);
+  const [tracked, setTracked] = useState<Invocation | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const pollRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (pollRef.current != null) window.clearTimeout(pollRef.current);
+  }, []);
 
   async function handleRevoke() {
     if (!token) {
@@ -64,6 +80,32 @@ function GrantRow({ token, grant }: { token: string | null; grant: Grant }) {
     }
   }
 
+  function startPolling(invocationId: string) {
+    if (!token) return;
+    let attempts = 0;
+    const tick = async () => {
+      attempts += 1;
+      try {
+        const fresh = await getInvocation(token, invocationId);
+        setTracked(fresh);
+        if (TERMINAL_STATUSES.has(fresh.status)) {
+          pollRef.current = null;
+          return;
+        }
+        if (attempts >= POLL_MAX_ATTEMPTS) {
+          setError("Still pending after 3 minutes — check the Audit log later.");
+          pollRef.current = null;
+          return;
+        }
+        pollRef.current = window.setTimeout(tick, POLL_INTERVAL_MS);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Polling failed.");
+        pollRef.current = null;
+      }
+    };
+    pollRef.current = window.setTimeout(tick, POLL_INTERVAL_MS);
+  }
+
   async function handleInvoke() {
     if (!token) {
       setError("Sign in again — no backend token.");
@@ -77,7 +119,7 @@ function GrantRow({ token, grant }: { token: string | null; grant: Grant }) {
       return;
     }
     setError(null);
-    setInvokeResult(null);
+    setTracked(null);
     setPending(true);
     try {
       const resp = await invoke(token, {
@@ -85,7 +127,30 @@ function GrantRow({ token, grant }: { token: string | null; grant: Grant }) {
         grantee_agent_id: grant.grantee.id,
         input: parsed,
       });
-      setInvokeResult(resp);
+      // Synthesize a thin Invocation row from the enqueue response so
+      // the UI has something to render before the first poll lands.
+      setTracked({
+        id: resp.invocation_id,
+        grant_id: grant.id,
+        granter_agent_id: grant.granter.id,
+        granter_display_name: grant.granter.display_name,
+        grantee_agent_id: grant.grantee.id,
+        grantee_display_name: grant.grantee.display_name,
+        capability_id: grant.capability_id,
+        capability_name: grant.capability_name,
+        status: resp.status,
+        elapsed_ms: 0,
+        error_message: resp.error,
+        input_preview: parsed,
+        output_preview: null,
+        created_at: new Date().toISOString(),
+        claimed_at: null,
+        i_served: false,
+        i_invoked: true,
+      });
+      if (!TERMINAL_STATUSES.has(resp.status)) {
+        startPolling(resp.invocation_id);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Invoke failed.");
     } finally {
@@ -156,8 +221,9 @@ function GrantRow({ token, grant }: { token: string | null; grant: Grant }) {
         <div className={styles.inlineForm}>
           <div className={styles.formHint}>
             Send JSON to <strong>{grant.granter.display_name}</strong>&apos;s{" "}
-            <code>{grant.capability_name}</code> webhook. The relay HMAC-signs
-            the payload.
+            <code>{grant.capability_name}</code>. The relay enqueues it; the
+            granter pulls from their inbox and reports back. We poll for the
+            result here.
           </div>
           <textarea
             rows={3}
@@ -180,15 +246,29 @@ function GrantRow({ token, grant }: { token: string | null; grant: Grant }) {
               disabled={pending}
               onClick={() => {
                 setInvokeOpen(false);
-                setInvokeResult(null);
+                setTracked(null);
+                if (pollRef.current != null) {
+                  window.clearTimeout(pollRef.current);
+                  pollRef.current = null;
+                }
               }}
             >
               Close
             </button>
           </div>
-          {invokeResult && (
+          {tracked && (
             <pre className={styles.invokeResult}>
-              {JSON.stringify(invokeResult, null, 2)}
+              {JSON.stringify(
+                {
+                  invocation_id: tracked.id,
+                  status: tracked.status,
+                  elapsed_ms: tracked.elapsed_ms,
+                  output: tracked.output_preview,
+                  error: tracked.error_message,
+                },
+                null,
+                2,
+              )}
             </pre>
           )}
         </div>
