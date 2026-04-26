@@ -1,12 +1,12 @@
 //! `chakramcp login` — OAuth 2.1 + PKCE flow with a loopback redirect
 //! per RFC 8252. The CLI:
-//!   1. Reads /.well-known/oauth-authorization-server from the server
-//!   2. Dynamically registers itself if it doesn't have a client_id yet
+//!   1. Reads /.well-known/oauth-authorization-server from the active network
+//!   2. Dynamically registers itself if it doesn't have a client_id stashed
 //!   3. Generates a PKCE pair and a random state
-//!   4. Binds a TCP listener on a free port and opens the user's browser
-//!      to the authorization endpoint with redirect_uri pointing here
-//!   5. Captures the ?code=…&state=… on the loopback callback
-//!   6. POSTs to /token with the verifier; saves the access token to config
+//!   4. Binds a TCP listener on a free port, opens the user's browser to
+//!      the authorization endpoint with redirect_uri pointing here
+//!   5. Captures the ?code=… on the loopback callback
+//!   6. POSTs to /token with the verifier; saves the access token
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::config::CliConfig;
+use crate::ui;
 
 const CLIENT_NAME: &str = "ChakraMCP CLI";
 
@@ -48,14 +49,24 @@ struct TokenResponse {
     expires_in: i64,
 }
 
-pub async fn login(cfg: &mut CliConfig) -> Result<String> {
+/// Run the OAuth flow on a specific network. Mutates the network's
+/// auth + oauth_client_id and persists the whole config.
+pub async fn login(cfg: &mut CliConfig, network_name: &str) -> Result<String> {
     let http = reqwest::Client::builder()
         .user_agent(concat!("chakramcp-cli/", env!("CARGO_PKG_VERSION")))
         .timeout(Duration::from_secs(30))
         .build()?;
 
-    // 1. Discovery.
-    let meta_url = format!("{}/.well-known/oauth-authorization-server", cfg.server.app_url.trim_end_matches('/'));
+    let app_url = cfg
+        .network(network_name)
+        .ok_or_else(|| anyhow!("no network named '{network_name}'"))?
+        .app_url
+        .clone();
+
+    let meta_url = format!(
+        "{}/.well-known/oauth-authorization-server",
+        app_url.trim_end_matches('/')
+    );
     let meta: ServerMetadata = http
         .get(&meta_url)
         .send()
@@ -65,40 +76,41 @@ pub async fn login(cfg: &mut CliConfig) -> Result<String> {
         .json()
         .await?;
 
-    // 2. Bind the loopback callback on a free port up front so we can use
-    //    the resolved port in the redirect_uri at registration time.
+    // Bind the loopback callback up front so the registered redirect_uri
+    // can include the resolved port.
     let listener = TcpListener::bind("127.0.0.1:0")
         .context("binding loopback callback listener")?;
     let port = listener.local_addr()?.port();
     let redirect_uri = format!("http://127.0.0.1:{port}/callback");
 
-    // 3. Register the CLI as an OAuth client (or reuse a previous registration
-    //    if the redirect_uri matches).
-    let client_id = match (&cfg.server.oauth_client_id, meta.registration_endpoint.as_ref()) {
-        (Some(id), _) => id.clone(),
-        (None, Some(reg_endpoint)) => {
-            let resp: RegisterResponse = http
-                .post(reg_endpoint)
-                .json(&RegisterRequest {
-                    client_name: CLIENT_NAME,
-                    redirect_uris: vec![redirect_uri.clone()],
-                    token_endpoint_auth_method: "none",
-                    scope: "relay.full",
-                })
-                .send()
-                .await?
-                .error_for_status()?
-                .json()
-                .await?;
-            cfg.server.oauth_client_id = Some(resp.client_id.clone());
-            resp.client_id
-        }
-        (None, None) => {
-            bail!("server doesn't advertise registration_endpoint and we have no client_id stashed")
+    let client_id = {
+        let net = cfg.network_mut(network_name).unwrap();
+        match (net.oauth_client_id.as_ref(), meta.registration_endpoint.as_ref()) {
+            (Some(id), _) => id.clone(),
+            (None, Some(reg_endpoint)) => {
+                let resp: RegisterResponse = http
+                    .post(reg_endpoint)
+                    .json(&RegisterRequest {
+                        client_name: CLIENT_NAME,
+                        redirect_uris: vec![redirect_uri.clone()],
+                        token_endpoint_auth_method: "none",
+                        scope: "relay.full",
+                    })
+                    .send()
+                    .await?
+                    .error_for_status()?
+                    .json()
+                    .await?;
+                net.oauth_client_id = Some(resp.client_id.clone());
+                resp.client_id
+            }
+            (None, None) => {
+                bail!("server doesn't advertise registration_endpoint and we have no client_id stashed")
+            }
         }
     };
 
-    // 4. PKCE pair + state.
+    // PKCE pair + state.
     let mut verifier_bytes = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut verifier_bytes);
     let verifier = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(verifier_bytes);
@@ -125,16 +137,29 @@ pub async fn login(cfg: &mut CliConfig) -> Result<String> {
         u.to_string()
     };
 
-    eprintln!("Opening browser to sign you in…");
-    eprintln!("  {auth_url}");
-    if let Err(err) = webbrowser::open(&auth_url) {
-        eprintln!(
-            "Couldn't auto-open the browser ({err}). Open the URL above manually."
-        );
+    let pb = ui::spinner("opening your browser…");
+    if webbrowser::open(&auth_url).is_err() {
+        pb.finish_and_clear();
+        ui::note(&format!("couldn't auto-open the browser — open this URL manually:"));
+        eprintln!("    {auth_url}");
+        let pb2 = ui::spinner("waiting for sign-in…");
+        let code = capture_callback(listener, &state)?;
+        pb2.finish_and_clear();
+        return finish_token_exchange(
+            &http, &meta, cfg, network_name, &client_id, &redirect_uri, &verifier, &code,
+        )
+        .await;
     }
+    pb.set_message("waiting for sign-in…");
+    let code = capture_callback(listener, &state)?;
+    pb.finish_and_clear();
+    finish_token_exchange(
+        &http, &meta, cfg, network_name, &client_id, &redirect_uri, &verifier, &code,
+    )
+    .await
+}
 
-    // 5. Capture the callback. Single-shot — we accept exactly one connection
-    //    and respond with a tiny success page.
+fn capture_callback(listener: TcpListener, expected_state: &str) -> Result<String> {
     listener
         .set_nonblocking(false)
         .context("setting listener blocking mode")?;
@@ -145,7 +170,6 @@ pub async fn login(cfg: &mut CliConfig) -> Result<String> {
     let n = sock.read(&mut buf).context("reading callback request")?;
     let req = String::from_utf8_lossy(&buf[..n]);
     let request_line = req.lines().next().unwrap_or("");
-
     let path_and_query = request_line.split_whitespace().nth(1).unwrap_or("/");
     let parsed = url::Url::parse(&format!("http://localhost{path_and_query}"))?;
     let returned_state = parsed
@@ -162,9 +186,10 @@ pub async fn login(cfg: &mut CliConfig) -> Result<String> {
         .find(|(k, _)| k == "error")
         .map(|(_, v)| v.into_owned());
 
-    let body = match (&code, &oauth_error) {
-        (Some(_), _) => SUCCESS_HTML,
-        _ => FAILED_HTML,
+    let body = if code.is_some() && oauth_error.is_none() {
+        SUCCESS_HTML
+    } else {
+        FAILED_HTML
     };
     let response = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
@@ -178,20 +203,31 @@ pub async fn login(cfg: &mut CliConfig) -> Result<String> {
     if let Some(err) = oauth_error {
         bail!("OAuth flow returned error: {err}");
     }
-    if returned_state != state {
+    if returned_state != expected_state {
         bail!("state mismatch on OAuth callback — possible CSRF; aborting");
     }
-    let code = code.ok_or_else(|| anyhow!("OAuth callback missing 'code' parameter"))?;
+    code.ok_or_else(|| anyhow!("OAuth callback missing 'code' parameter"))
+}
 
-    // 6. Exchange.
+#[allow(clippy::too_many_arguments)]
+async fn finish_token_exchange(
+    http: &reqwest::Client,
+    meta: &ServerMetadata,
+    cfg: &mut CliConfig,
+    network_name: &str,
+    client_id: &str,
+    redirect_uri: &str,
+    verifier: &str,
+    code: &str,
+) -> Result<String> {
     let token: TokenResponse = http
         .post(&meta.token_endpoint)
         .form(&[
             ("grant_type", "authorization_code"),
-            ("code", &code),
-            ("client_id", &client_id),
-            ("redirect_uri", &redirect_uri),
-            ("code_verifier", &verifier),
+            ("code", code),
+            ("client_id", client_id),
+            ("redirect_uri", redirect_uri),
+            ("code_verifier", verifier),
         ])
         .send()
         .await?
@@ -202,10 +238,17 @@ pub async fn login(cfg: &mut CliConfig) -> Result<String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs() as i64;
-    cfg.auth.access_token = Some(token.access_token.clone());
-    cfg.auth.access_token_expires_at = Some(now + token.expires_in);
-    // Clear any stale API key so Bearer order is deterministic.
-    cfg.auth.api_key = None;
+
+    let net = cfg
+        .network_mut(network_name)
+        .ok_or_else(|| anyhow!("network '{network_name}' vanished mid-flow"))?;
+    net.auth.access_token = Some(token.access_token.clone());
+    net.auth.access_token_expires_at = Some(now + token.expires_in);
+    net.auth.api_key = None;
+
+    if cfg.active.as_deref() != Some(network_name) {
+        cfg.active = Some(network_name.to_string());
+    }
     cfg.save()?;
 
     Ok(token.access_token)

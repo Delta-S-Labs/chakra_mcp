@@ -7,17 +7,18 @@
 //! Output is pretty-printed JSON to stdout so it pipes straight into jq
 //! or your agent code. Human messages go to stderr.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::{Parser, Subcommand};
-use serde_json::json;
 
 mod auth;
 mod client;
 mod commands;
 mod config;
+mod onboarding;
+mod ui;
 
 use crate::client::ApiClient;
-use crate::config::CliConfig;
+use crate::config::{AuthConfig, CliConfig};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -28,13 +29,9 @@ use crate::config::CliConfig;
                   Sign in with `chakramcp login` (OAuth) or `chakramcp configure --api-key …`."
 )]
 struct Cli {
-    /// Override the app service URL (default: from config or http://localhost:8080).
-    #[arg(long, env = "CHAKRAMCP_APP_URL", global = true)]
-    app_url: Option<String>,
-
-    /// Override the relay service URL (default: from config or http://localhost:8090).
-    #[arg(long, env = "CHAKRAMCP_RELAY_URL", global = true)]
-    relay_url: Option<String>,
+    /// Override the network to use for this command (defaults to the active one).
+    #[arg(long, env = "CHAKRAMCP_NETWORK", global = true)]
+    network: Option<String>,
 
     #[command(subcommand)]
     cmd: Cmd,
@@ -43,13 +40,21 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Cmd {
     /// Sign in via OAuth in the browser.
-    Login,
+    Login {
+        /// Sign in to a specific network (defaults to the active one or runs the wizard).
+        #[arg(long)]
+        network: Option<String>,
+    },
     /// Configure an API key (alternative to `login`).
     Configure(commands::configure::Args),
-    /// Forget any saved credentials.
+    /// Forget any saved credentials for the active network.
     Logout,
     /// Show the currently signed-in user.
     Whoami,
+
+    /// Manage configured networks (public, self-hosted, local dev).
+    #[command(subcommand)]
+    Networks(commands::networks::Cmd),
 
     /// Manage the agents you own.
     #[command(subcommand)]
@@ -77,7 +82,7 @@ enum Cmd {
 #[tokio::main]
 async fn main() {
     if let Err(err) = run().await {
-        eprintln!("chakramcp: {err:#}");
+        ui::err(&format!("{err:#}"));
         std::process::exit(1);
     }
 }
@@ -86,39 +91,45 @@ async fn run() -> Result<()> {
     let cli = Cli::parse();
     let mut cfg = CliConfig::load()?;
 
-    if let Some(u) = cli.app_url {
-        cfg.server.app_url = u;
-    }
-    if let Some(u) = cli.relay_url {
-        cfg.server.relay_url = u;
+    if let Some(name) = cli.network.clone() {
+        if cfg.network(&name).is_none() {
+            anyhow::bail!(
+                "no network named '{name}' — see `chakramcp networks list`"
+            );
+        }
+        cfg.active = Some(name);
     }
 
     match cli.cmd {
-        Cmd::Login => {
-            auth::login(&mut cfg).await.context("login failed")?;
-            // Confirm by calling /v1/me.
-            let api = ApiClient::new(cfg.clone())?;
-            let me: serde_json::Value = api.get_app("/v1/me").await?;
-            eprintln!(
-                "Signed in as {}.",
-                me.pointer("/user/email").and_then(|v| v.as_str()).unwrap_or("?")
-            );
+        Cmd::Login { network } => {
+            let outcome = onboarding::run_login(&mut cfg, network).await?;
+            if let Some(email) = outcome.display_account {
+                ui::closing(&outcome.network, &email);
+            }
         }
         Cmd::Configure(args) => commands::configure::run(args, &mut cfg).await?,
         Cmd::Logout => {
-            cfg.auth = config::AuthConfig::default();
-            cfg.save()?;
-            eprintln!("Logged out.");
+            if let Some(net) = cfg.active_network_mut() {
+                let name = net.name.clone();
+                net.auth = AuthConfig::default();
+                cfg.save()?;
+                ui::ok(&format!("logged out of '{name}'"));
+            } else {
+                ui::note("no active network — nothing to do");
+            }
         }
         Cmd::Whoami => {
             let api = ApiClient::new(cfg)?;
+            let net = api.network()?;
             let me: serde_json::Value = api.get_app("/v1/me").await?;
-            print(&json!({
-                "auth": api.config().auth_kind(),
+            print(&serde_json::json!({
+                "network": net.name,
+                "auth": net.auth_kind(),
                 "user": me.get("user"),
                 "memberships": me.get("memberships"),
             }))?;
         }
+        Cmd::Networks(cmd) => commands::networks::run(cmd, &mut cfg)?,
         Cmd::Agents(cmd) => commands::agents::run(cmd, ApiClient::new(cfg)?).await?,
         Cmd::Network => {
             let api = ApiClient::new(cfg)?;
@@ -147,7 +158,8 @@ pub fn read_json_arg(s: &str) -> Result<serde_json::Value> {
             std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)?;
             buf
         } else {
-            std::fs::read_to_string(path).with_context(|| format!("reading {path}"))?
+            std::fs::read_to_string(path)
+                .map_err(|e| anyhow::anyhow!("reading {path}: {e}"))?
         };
         Ok(serde_json::from_str(&raw)?)
     } else {

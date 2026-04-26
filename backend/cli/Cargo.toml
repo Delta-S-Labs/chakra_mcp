@@ -25,3 +25,6 @@ toml = "0.8"
 directories = "5"
 url = "2"
 webbrowser = "1"
+owo-colors = "4"
+dialoguer = { version = "0.11", default-features = false, features = ["password"] }
+indicatif = "0.17"
