@@ -3,3 +3,4 @@ pub mod capabilities;
 pub mod friendships;
 pub mod grants;
 pub mod health;
+pub mod invoke;

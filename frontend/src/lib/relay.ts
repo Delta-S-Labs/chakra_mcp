@@ -365,4 +365,67 @@ export function revokeGrant(token: string, id: string, body: RevokeGrantRequest 
   });
 }
 
+// ─── Invoke + audit log ──────────────────────────────────
+
+export type InvocationStatus = "rejected" | "succeeded" | "failed" | "timeout";
+
+export interface InvokeRequest {
+  grant_id: string;
+  grantee_agent_id: string;
+  input: unknown;
+}
+
+export interface InvokeResponse {
+  invocation_id: string;
+  status: InvocationStatus;
+  http_status: number | null;
+  elapsed_ms: number;
+  output: unknown | null;
+  error: string | null;
+}
+
+export interface Invocation {
+  id: string;
+  grant_id: string | null;
+  granter_agent_id: string | null;
+  granter_display_name: string | null;
+  grantee_agent_id: string | null;
+  grantee_display_name: string | null;
+  capability_id: string | null;
+  capability_name: string;
+  status: InvocationStatus;
+  http_status: number | null;
+  elapsed_ms: number;
+  error_message: string | null;
+  input_preview: unknown | null;
+  output_preview: unknown | null;
+  created_at: string;
+  i_served: boolean;
+  i_invoked: boolean;
+}
+
+export function invoke(token: string, body: InvokeRequest) {
+  return request<InvokeResponse>("/v1/invoke", {
+    method: "POST",
+    token,
+    body: JSON.stringify(body),
+  });
+}
+
+export function listInvocations(
+  token: string,
+  opts: {
+    direction?: "all" | "outbound" | "inbound";
+    agent_id?: string;
+    status?: InvocationStatus;
+  } = {},
+) {
+  const qs = new URLSearchParams();
+  if (opts.direction) qs.set("direction", opts.direction);
+  if (opts.agent_id) qs.set("agent_id", opts.agent_id);
+  if (opts.status) qs.set("status", opts.status);
+  const q = qs.toString();
+  return request<Invocation[]>(`/v1/invocations${q ? `?${q}` : ""}`, { token });
+}
+
 export const relayBaseUrl = BASE;

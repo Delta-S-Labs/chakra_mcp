@@ -310,6 +310,20 @@
   gap: 0.4rem;
 }
 
+.invokeResult {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  line-height: 1.4;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--paper);
+  margin: 0;
+  overflow-x: auto;
+  white-space: pre;
+  max-height: 18rem;
+}
+
 @media (max-width: 720px) {
   .fields { grid-template-columns: 1fr; }
   .row { grid-template-columns: 1fr; }

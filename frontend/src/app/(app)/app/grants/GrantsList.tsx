@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { revokeGrant, type Grant, type GrantStatus } from "@/lib/relay";
+import { invoke, revokeGrant, type Grant, type GrantStatus, type InvokeResponse } from "@/lib/relay";
 import styles from "./grants.module.css";
 
 export function GrantsList({
@@ -41,6 +41,9 @@ function GrantRow({ token, grant }: { token: string | null; grant: Grant }) {
   const router = useRouter();
   const [revokeOpen, setRevokeOpen] = useState(false);
   const [reason, setReason] = useState("");
+  const [invokeOpen, setInvokeOpen] = useState(false);
+  const [invokeInput, setInvokeInput] = useState("{}");
+  const [invokeResult, setInvokeResult] = useState<InvokeResponse | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,6 +59,35 @@ function GrantRow({ token, grant }: { token: string | null; grant: Grant }) {
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't revoke.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function handleInvoke() {
+    if (!token) {
+      setError("Sign in again — no backend token.");
+      return;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(invokeInput);
+    } catch {
+      setError("Input must be valid JSON.");
+      return;
+    }
+    setError(null);
+    setInvokeResult(null);
+    setPending(true);
+    try {
+      const resp = await invoke(token, {
+        grant_id: grant.id,
+        grantee_agent_id: grant.grantee.id,
+        input: parsed,
+      });
+      setInvokeResult(resp);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Invoke failed.");
     } finally {
       setPending(false);
     }
@@ -95,16 +127,70 @@ function GrantRow({ token, grant }: { token: string | null; grant: Grant }) {
         )}
       </div>
 
-      {grant.status === "active" && grant.i_granted && (
+      {grant.status === "active" && (grant.i_granted || grant.i_received) && (
         <div className={styles.rowActions}>
-          <button
-            type="button"
-            className={styles.dangerBtn}
-            disabled={pending}
-            onClick={() => setRevokeOpen((v) => !v)}
-          >
-            Revoke
-          </button>
+          {grant.i_received && (
+            <button
+              type="button"
+              className={styles.create}
+              disabled={pending}
+              onClick={() => setInvokeOpen((v) => !v)}
+            >
+              Invoke
+            </button>
+          )}
+          {grant.i_granted && (
+            <button
+              type="button"
+              className={styles.dangerBtn}
+              disabled={pending}
+              onClick={() => setRevokeOpen((v) => !v)}
+            >
+              Revoke
+            </button>
+          )}
+        </div>
+      )}
+
+      {invokeOpen && (
+        <div className={styles.inlineForm}>
+          <div className={styles.formHint}>
+            Send JSON to <strong>{grant.granter.display_name}</strong>&apos;s{" "}
+            <code>{grant.capability_name}</code> webhook. The relay HMAC-signs
+            the payload.
+          </div>
+          <textarea
+            rows={3}
+            value={invokeInput}
+            onChange={(e) => setInvokeInput(e.target.value)}
+            placeholder='{"key":"value"}'
+          />
+          <div className={styles.inlineActions}>
+            <button
+              type="button"
+              className={styles.create}
+              disabled={pending}
+              onClick={handleInvoke}
+            >
+              {pending ? "Sending…" : "Send"}
+            </button>
+            <button
+              type="button"
+              className={styles.secondaryBtn}
+              disabled={pending}
+              onClick={() => {
+                setInvokeOpen(false);
+                setInvokeResult(null);
+              }}
+            >
+              Close
+            </button>
+          </div>
+          {invokeResult && (
+            <pre className={styles.invokeResult}>
+              {JSON.stringify(invokeResult, null, 2)}
+            </pre>
+          )}
         </div>
       )}
 
