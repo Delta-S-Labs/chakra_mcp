@@ -1,0 +1,68 @@
+name: CLI CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/cli/**"
+      - "backend/Cargo.toml"
+      - "backend/Cargo.lock"
+      - ".github/workflows/cli-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "backend/cli/**"
+      - "backend/Cargo.toml"
+      - "backend/Cargo.lock"
+      - ".github/workflows/cli-ci.yml"
+
+concurrency:
+  group: cli-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: aarch64-apple-darwin
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+          key: cli-${{ matrix.target }}
+
+      # CLI doesn't pull in chakramcp-shared / sqlx, so the build needs no
+      # DATABASE_URL even though the rest of the workspace does.
+      - name: Build CLI
+        run: cargo build -p chakramcp-cli --target ${{ matrix.target }}
+
+      - name: Clippy (CLI)
+        run: cargo clippy -p chakramcp-cli --target ${{ matrix.target }} -- -D warnings
+
+      - name: Format
+        if: matrix.os == 'ubuntu-22.04'
+        run: cargo fmt -p chakramcp-cli --check

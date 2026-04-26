@@ -1,0 +1,32 @@
+{
+  "name": "@chakramcp/cli",
+  "version": "0.0.0",
+  "description": "Command-line client for the ChakraMCP relay (Rust binary, distributed via npm).",
+  "license": "MIT",
+  "homepage": "https://chakramcp.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Delta-S-Labs/chakra_mcp.git",
+    "directory": "packaging/cli/npm"
+  },
+  "bugs": {
+    "url": "https://github.com/Delta-S-Labs/chakra_mcp/issues"
+  },
+  "bin": {
+    "chakramcp": "bin/chakramcp.js"
+  },
+  "files": [
+    "bin/",
+    "install.js",
+    "README.md"
+  ],
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

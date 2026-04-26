@@ -1,0 +1,236 @@
+name: CLI Release
+
+# Triggered by pushing a tag of the form `cli-vX.Y.Z`. Cuts a GitHub
+# Release with cross-compiled binaries for mac (arm + intel), linux
+# (x64 + arm64), and windows (x64), then optionally updates the
+# Homebrew tap and publishes the npm wrapper.
+#
+# Manual trigger (`workflow_dispatch`) is supported for re-runs;
+# provide the version (e.g. `0.1.0`) and the workflow will operate as
+# if the tag `cli-v<version>` had been pushed.
+
+on:
+  push:
+    tags: ['cli-v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g. 0.1.0)'
+        required: true
+
+permissions:
+  contents: write   # needs write to create the release
+
+jobs:
+  resolve-version:
+    name: Resolve version
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
+    steps:
+      - id: v
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ver="${{ github.event.inputs.version }}"
+          else
+            ver="${GITHUB_REF_NAME#cli-v}"
+          fi
+          if [ -z "$ver" ]; then
+            echo "::error::could not resolve version"
+            exit 1
+          fi
+          echo "version=$ver"            >> "$GITHUB_OUTPUT"
+          echo "tag=cli-v$ver"           >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build (${{ matrix.target }})
+    needs: resolve-version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            runner: macos-14
+            ext: ""
+            archive: tar.gz
+          - target: x86_64-apple-darwin
+            runner: macos-13
+            ext: ""
+            archive: tar.gz
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-22.04
+            ext: ""
+            archive: tar.gz
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-22.04-arm
+            ext: ""
+            archive: tar.gz
+          - target: x86_64-pc-windows-msvc
+            runner: windows-2022
+            ext: ".exe"
+            archive: zip
+
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+          key: cli-release-${{ matrix.target }}
+
+      - name: Build (release)
+        working-directory: backend
+        run: cargo build -p chakramcp-cli --release --target ${{ matrix.target }}
+
+      - name: Package (unix tarball)
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        run: |
+          set -e
+          ver="${{ needs.resolve-version.outputs.version }}"
+          tgt="${{ matrix.target }}"
+          name="chakramcp-${ver}-${tgt}"
+          mkdir -p dist staging
+          cp "backend/target/${tgt}/release/chakramcp" "staging/chakramcp"
+          chmod +x staging/chakramcp
+          tar -czf "dist/${name}.tar.gz" -C staging chakramcp
+          shasum -a 256 "dist/${name}.tar.gz" | awk '{print $1}' > "dist/${name}.tar.gz.sha256"
+
+      - name: Package (windows zip)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          $ver = "${{ needs.resolve-version.outputs.version }}"
+          $tgt = "${{ matrix.target }}"
+          $name = "chakramcp-$ver-$tgt"
+          New-Item -ItemType Directory -Path dist, staging | Out-Null
+          Copy-Item "backend/target/$tgt/release/chakramcp.exe" "staging/chakramcp.exe"
+          Compress-Archive -Path "staging/chakramcp.exe" -DestinationPath "dist/$name.zip"
+          $hash = (Get-FileHash "dist/$name.zip" -Algorithm SHA256).Hash.ToLower()
+          Set-Content -Path "dist/$name.zip.sha256" -Value $hash -NoNewline
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs: [resolve-version, build]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v6
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ver="${{ needs.resolve-version.outputs.version }}"
+          tag="${{ needs.resolve-version.outputs.tag }}"
+          # Tolerate re-runs on an existing tag.
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/* --clobber
+          else
+            gh release create "$tag" dist/* \
+              --title "CLI ${ver}" \
+              --generate-notes
+          fi
+
+  homebrew:
+    name: Update Homebrew tap
+    needs: [resolve-version, release]
+    runs-on: ubuntu-22.04
+    # Skip silently when the tap PAT isn't configured yet — first
+    # release in a fresh repo will run without this side-effect.
+    if: ${{ vars.HOMEBREW_TAP_REPO != '' }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v6
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Render formula
+        env:
+          VERSION: ${{ needs.resolve-version.outputs.version }}
+          TAG: ${{ needs.resolve-version.outputs.tag }}
+          OWNER_REPO: ${{ github.repository }}
+        run: |
+          set -e
+          read_sha() { cat "dist/chakramcp-${VERSION}-$1.tar.gz.sha256"; }
+          mac_arm=$(read_sha aarch64-apple-darwin)
+          mac_x64=$(read_sha x86_64-apple-darwin)
+          lin_x64=$(read_sha x86_64-unknown-linux-gnu)
+          lin_arm=$(read_sha aarch64-unknown-linux-gnu)
+          mkdir -p tap-build/Formula
+          sed \
+            -e "s|@VERSION@|${VERSION}|g" \
+            -e "s|@TAG@|${TAG}|g" \
+            -e "s|@OWNER_REPO@|${OWNER_REPO}|g" \
+            -e "s|@MAC_ARM_SHA@|${mac_arm}|g" \
+            -e "s|@MAC_X64_SHA@|${mac_x64}|g" \
+            -e "s|@LINUX_X64_SHA@|${lin_x64}|g" \
+            -e "s|@LINUX_ARM_SHA@|${lin_arm}|g" \
+            packaging/cli/homebrew/chakramcp.rb.template > tap-build/Formula/chakramcp.rb
+          cat tap-build/Formula/chakramcp.rb
+
+      - name: Push to tap repo
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAP_REPO: ${{ vars.HOMEBREW_TAP_REPO }}
+          VERSION: ${{ needs.resolve-version.outputs.version }}
+        run: |
+          set -e
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${TAP_REPO}.git" tap
+          mkdir -p tap/Formula
+          cp tap-build/Formula/chakramcp.rb tap/Formula/chakramcp.rb
+          cd tap
+          git config user.name  'chakramcp-release-bot'
+          git config user.email 'release-bot@users.noreply.github.com'
+          if git diff --quiet; then
+            echo "No formula change; skipping push."
+            exit 0
+          fi
+          git add Formula/chakramcp.rb
+          git commit -m "chakramcp ${VERSION}"
+          git push origin HEAD:main
+
+  npm:
+    name: Publish npm wrapper
+    needs: [resolve-version, release]
+    runs-on: ubuntu-22.04
+    if: ${{ env.NPM_TOKEN_SET == 'true' }}
+    env:
+      NPM_TOKEN_SET: ${{ secrets.NPM_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Bump version
+        working-directory: packaging/cli/npm
+        run: |
+          ver="${{ needs.resolve-version.outputs.version }}"
+          npm version "$ver" --no-git-tag-version --allow-same-version
+
+      - name: Publish
+        working-directory: packaging/cli/npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
