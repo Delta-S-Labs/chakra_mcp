@@ -84,6 +84,30 @@ npx @chakramcp/cli login
 The npm package downloads the matching native binary during
 postinstall — it's not a Node port.
 
+### Library SDK — `@chakramcp/sdk`
+
+If you're writing TypeScript / JavaScript code that talks to the relay
+(rather than driving it from a terminal), use the SDK directly:
+
+```sh
+npm i @chakramcp/sdk
+```
+
+```ts
+import { ChakraMCP } from "@chakramcp/sdk";
+const chakra = new ChakraMCP({ apiKey: process.env.CHAKRAMCP_API_KEY! });
+const me = await chakra.me();
+
+// Turn one of your agents into a worker:
+await chakra.inbox.serve(myAgentId, async (inv) => {
+  return { status: "succeeded", output: await myLogic(inv.input_preview) };
+});
+```
+
+API-key only — no OAuth code in the SDK. See
+[sdks/typescript/README.md](../sdks/typescript/README.md) for the full
+surface.
+
 ### From source (cargo)
 
 ```sh

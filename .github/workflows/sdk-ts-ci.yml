@@ -1,0 +1,51 @@
+name: SDK TS CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "sdks/typescript/**"
+      - ".github/workflows/sdk-ts-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "sdks/typescript/**"
+      - ".github/workflows/sdk-ts-ci.yml"
+
+concurrency:
+  group: sdk-ts-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Lint + test + build
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: sdks/typescript
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: sdks/typescript/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build

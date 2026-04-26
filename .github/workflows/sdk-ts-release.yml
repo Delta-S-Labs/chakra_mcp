@@ -1,0 +1,67 @@
+name: SDK TS Release
+
+# Triggered by `sdk-ts-vX.Y.Z` tags. Bumps the package version to
+# match, builds, runs tests, and publishes to npm. Skips silently
+# if NPM_TOKEN isn't configured.
+
+on:
+  push:
+    tags: ['sdk-ts-v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g. 0.1.0)'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish @chakramcp/sdk
+    runs-on: ubuntu-22.04
+    if: ${{ env.NPM_TOKEN_SET == 'true' }}
+    env:
+      NPM_TOKEN_SET: ${{ secrets.NPM_TOKEN != '' }}
+    defaults:
+      run:
+        working-directory: sdks/typescript
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: sdks/typescript/pnpm-lock.yaml
+          registry-url: https://registry.npmjs.org
+
+      - name: Resolve version
+        id: v
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ver="${{ github.event.inputs.version }}"
+          else
+            ver="${GITHUB_REF_NAME#sdk-ts-v}"
+          fi
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Bump version
+        run: pnpm pkg set version="${{ steps.v.outputs.version }}"
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
