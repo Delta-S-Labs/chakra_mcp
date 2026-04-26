@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO oauth_links (id, user_id, provider, provider_user_id, raw_profile)\n        VALUES ($1, $2, $3, $4, $5)\n        ON CONFLICT (provider, provider_user_id) DO UPDATE SET\n            raw_profile = EXCLUDED.raw_profile,\n            user_id = EXCLUDED.user_id\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "098a6598a870f460109c00895a0c2717b0f7ecf56326388dbb23a4fe6a761d8d"
+}

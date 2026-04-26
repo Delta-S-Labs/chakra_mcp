@@ -335,6 +335,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "chakramcp-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "chakramcp-app",
+ "chakramcp-relay",
+ "chakramcp-shared",
+ "clap",
+ "directories",
+ "hex",
+ "rand 0.8.6",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+]
+
+[[package]]
 name = "chakramcp-shared"
 version = "0.1.0"
 dependencies = [

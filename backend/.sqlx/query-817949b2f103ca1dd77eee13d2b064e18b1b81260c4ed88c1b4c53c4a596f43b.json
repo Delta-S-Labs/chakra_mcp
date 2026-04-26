@@ -1,0 +1,56 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n          a.id,\n          a.slug,\n          a.display_name,\n          a.account_type,\n          a.created_at,\n          (SELECT COUNT(*) FROM account_memberships m WHERE m.account_id = a.id) as \"member_count!\",\n          (SELECT u.email FROM users u WHERE u.id = a.owner_user_id) as owner_email\n        FROM accounts a\n        ORDER BY a.created_at DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "display_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "account_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "member_count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "owner_email",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "817949b2f103ca1dd77eee13d2b064e18b1b81260c4ed88c1b4c53c4a596f43b"
+}

@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT i.id, i.status, i.elapsed_ms, i.error_message,\n               i.input_preview, i.output_preview,\n               i.created_at, i.claimed_at, i.capability_name,\n               EXISTS(\n                   SELECT 1 FROM account_memberships m\n                   JOIN agents a ON a.account_id = m.account_id\n                   WHERE m.user_id = $1\n                     AND (a.id = i.granter_agent_id OR a.id = i.grantee_agent_id)\n               ) as \"may_view!\"\n        FROM relay_invocations i\n        WHERE i.id = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "elapsed_ms",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "error_message",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "input_preview",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
+        "name": "output_preview",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "claimed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "capability_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "may_view!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "4f2ebfb99338343d120df6d01395b68369aedb99295b9f40ec4ec700b55a2fc5"
+}

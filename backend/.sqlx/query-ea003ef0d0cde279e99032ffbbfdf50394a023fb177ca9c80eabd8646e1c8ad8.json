@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            g.id as grant_id, g.status as grant_status,\n            g.granter_agent_id, g.grantee_agent_id, g.capability_id,\n            g.expires_at,\n            ga.account_id as granter_account_id,\n            ea.account_id as grantee_account_id,\n            cap.name as capability_name\n        FROM grants g\n        JOIN agents ga ON ga.id = g.granter_agent_id\n        JOIN agents ea ON ea.id = g.grantee_agent_id\n        JOIN agent_capabilities cap ON cap.id = g.capability_id\n        WHERE g.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "grant_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "grant_status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "granter_agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "grantee_agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "capability_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "granter_account_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 7,
+        "name": "grantee_account_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 8,
+        "name": "capability_name",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "ea003ef0d0cde279e99032ffbbfdf50394a023fb177ca9c80eabd8646e1c8ad8"
+}

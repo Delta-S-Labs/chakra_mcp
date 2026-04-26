@@ -84,25 +84,46 @@ jobs:
           workspaces: backend
           key: cli-release-${{ matrix.target }}
 
-      - name: Build (release)
+      - name: Build CLI (release)
         working-directory: backend
         run: cargo build -p chakramcp-cli --release --target ${{ matrix.target }}
 
-      - name: Package (unix tarball)
+      # Server binary is unix-only (depends on postgresql via brew on
+      # mac/linux; no equivalent brew-services story on Windows).
+      - name: Build server (unix only)
+        if: matrix.archive == 'tar.gz'
+        working-directory: backend
+        env:
+          # The server binary's compile uses sqlx::query! macros via
+          # chakramcp-app — those are checked at compile time against
+          # a live DATABASE_URL OR an offline cache. We use offline.
+          SQLX_OFFLINE: "true"
+        run: cargo build -p chakramcp-server --release --target ${{ matrix.target }}
+
+      - name: Package (unix tarballs — CLI + server)
         if: matrix.archive == 'tar.gz'
         shell: bash
         run: |
           set -e
           ver="${{ needs.resolve-version.outputs.version }}"
           tgt="${{ matrix.target }}"
+          mkdir -p dist staging-cli staging-server
+
+          # CLI
+          cp "backend/target/${tgt}/release/chakramcp" "staging-cli/chakramcp"
+          chmod +x staging-cli/chakramcp
           name="chakramcp-${ver}-${tgt}"
-          mkdir -p dist staging
-          cp "backend/target/${tgt}/release/chakramcp" "staging/chakramcp"
-          chmod +x staging/chakramcp
-          tar -czf "dist/${name}.tar.gz" -C staging chakramcp
+          tar -czf "dist/${name}.tar.gz" -C staging-cli chakramcp
           shasum -a 256 "dist/${name}.tar.gz" | awk '{print $1}' > "dist/${name}.tar.gz.sha256"
 
-      - name: Package (windows zip)
+          # Server
+          cp "backend/target/${tgt}/release/chakramcp-server" "staging-server/chakramcp-server"
+          chmod +x staging-server/chakramcp-server
+          sname="chakramcp-server-${ver}-${tgt}"
+          tar -czf "dist/${sname}.tar.gz" -C staging-server chakramcp-server
+          shasum -a 256 "dist/${sname}.tar.gz" | awk '{print $1}' > "dist/${sname}.tar.gz.sha256"
+
+      - name: Package (windows zip — CLI only)
         if: matrix.archive == 'zip'
         shell: pwsh
         run: |
@@ -163,31 +184,45 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Render formula
+      - name: Render formulas
         env:
           VERSION: ${{ needs.resolve-version.outputs.version }}
           TAG: ${{ needs.resolve-version.outputs.tag }}
           OWNER_REPO: ${{ github.repository }}
         run: |
           set -e
-          read_sha() { cat "dist/chakramcp-${VERSION}-$1.tar.gz.sha256"; }
-          mac_arm=$(read_sha aarch64-apple-darwin)
-          mac_x64=$(read_sha x86_64-apple-darwin)
-          lin_x64=$(read_sha x86_64-unknown-linux-gnu)
-          lin_arm=$(read_sha aarch64-unknown-linux-gnu)
           mkdir -p Formula
+
+          # CLI formula — sha256s come from the chakramcp-* tarballs.
+          cli_sha() { cat "dist/chakramcp-${VERSION}-$1.tar.gz.sha256"; }
           sed \
             -e "s|@VERSION@|${VERSION}|g" \
             -e "s|@TAG@|${TAG}|g" \
             -e "s|@OWNER_REPO@|${OWNER_REPO}|g" \
-            -e "s|@MAC_ARM_SHA@|${mac_arm}|g" \
-            -e "s|@MAC_X64_SHA@|${mac_x64}|g" \
-            -e "s|@LINUX_X64_SHA@|${lin_x64}|g" \
-            -e "s|@LINUX_ARM_SHA@|${lin_arm}|g" \
+            -e "s|@MAC_ARM_SHA@|$(cli_sha aarch64-apple-darwin)|g" \
+            -e "s|@MAC_X64_SHA@|$(cli_sha x86_64-apple-darwin)|g" \
+            -e "s|@LINUX_X64_SHA@|$(cli_sha x86_64-unknown-linux-gnu)|g" \
+            -e "s|@LINUX_ARM_SHA@|$(cli_sha aarch64-unknown-linux-gnu)|g" \
             packaging/cli/homebrew/chakramcp.rb.template > Formula/chakramcp.rb
-          cat Formula/chakramcp.rb
 
-      - name: Open PR with formula bump
+          # Server formula — sha256s come from the chakramcp-server-* tarballs.
+          srv_sha() { cat "dist/chakramcp-server-${VERSION}-$1.tar.gz.sha256"; }
+          sed \
+            -e "s|@VERSION@|${VERSION}|g" \
+            -e "s|@TAG@|${TAG}|g" \
+            -e "s|@OWNER_REPO@|${OWNER_REPO}|g" \
+            -e "s|@MAC_ARM_SHA@|$(srv_sha aarch64-apple-darwin)|g" \
+            -e "s|@MAC_X64_SHA@|$(srv_sha x86_64-apple-darwin)|g" \
+            -e "s|@LINUX_X64_SHA@|$(srv_sha x86_64-unknown-linux-gnu)|g" \
+            -e "s|@LINUX_ARM_SHA@|$(srv_sha aarch64-unknown-linux-gnu)|g" \
+            packaging/server/homebrew/chakramcp-server.rb.template > Formula/chakramcp-server.rb
+
+          echo "── Formula/chakramcp.rb ──"
+          cat Formula/chakramcp.rb
+          echo "── Formula/chakramcp-server.rb ──"
+          cat Formula/chakramcp-server.rb
+
+      - name: Open PR with formula bumps
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.resolve-version.outputs.version }}
@@ -195,21 +230,20 @@ jobs:
           set -e
           git config user.name  'chakramcp-release-bot'
           git config user.email 'release-bot@users.noreply.github.com'
-          if git diff --quiet -- Formula/chakramcp.rb; then
-            echo "Formula already up to date for ${VERSION}; nothing to do."
+          if git diff --quiet -- Formula/; then
+            echo "Formulas already up to date for ${VERSION}; nothing to do."
             exit 0
           fi
           branch="release-bot/homebrew-${VERSION}"
           git checkout -b "$branch"
-          git add Formula/chakramcp.rb
-          git commit -m "chakramcp ${VERSION}"
+          git add Formula/chakramcp.rb Formula/chakramcp-server.rb
+          git commit -m "chakramcp ${VERSION} (cli + server)"
           git push -u origin "$branch" --force-with-lease
-          # Create the PR (or update an existing one if the branch was reused).
           if gh pr view "$branch" --json number >/dev/null 2>&1; then
             echo "PR already open for $branch."
           else
             gh pr create \
-              --title "chakramcp CLI ${VERSION}" \
+              --title "chakramcp ${VERSION} (cli + server)" \
               --body "Auto-generated by .github/workflows/cli-release.yml after the cli-v${VERSION} release." \
               --base main \
               --head "$branch"

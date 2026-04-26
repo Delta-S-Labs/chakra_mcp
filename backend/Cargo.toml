@@ -5,6 +5,7 @@ members = [
   "app",
   "relay",
   "cli",
+  "server",
 ]
 
 [workspace.package]

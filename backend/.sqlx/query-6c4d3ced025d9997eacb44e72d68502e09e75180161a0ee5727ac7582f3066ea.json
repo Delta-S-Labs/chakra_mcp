@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE friendships\n        SET status = 'rejected',\n            response_message = COALESCE($2, response_message),\n            decided_at = now()\n        WHERE id = $1 AND status = 'proposed'\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6c4d3ced025d9997eacb44e72d68502e09e75180161a0ee5727ac7582f3066ea"
+}

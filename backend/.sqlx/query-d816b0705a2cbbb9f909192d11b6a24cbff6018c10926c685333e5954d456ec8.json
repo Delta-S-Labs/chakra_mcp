@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT i.id, i.capability_name, i.input_preview,\n               i.created_at, i.claimed_at,\n               i.grantee_agent_id, ea.display_name as \"grantee_display_name?\"\n        FROM relay_invocations i\n        LEFT JOIN agents ea ON ea.id = i.grantee_agent_id\n        WHERE i.id = ANY($1)\n        ORDER BY i.created_at ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "capability_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "input_preview",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "claimed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "grantee_agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 6,
+        "name": "grantee_display_name?",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "d816b0705a2cbbb9f909192d11b6a24cbff6018c10926c685333e5954d456ec8"
+}

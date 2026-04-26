@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO friendships\n            (id, proposer_agent_id, target_agent_id, status, proposer_message, counter_of_id)\n        VALUES ($1, $2, $3, 'proposed', $4, $5)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2c2a97b63d501f81bc6a4b441ea4d4d8afdb8d8a64db1fc0244ba14631fd2b9e"
+}

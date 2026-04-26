@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO surveys (id, user_id, use_case, agent_types, frameworks, scale, notes)\n        VALUES ($1, $2, $3, $4, $5, $6, $7)\n        ON CONFLICT (user_id) DO UPDATE SET\n            use_case    = EXCLUDED.use_case,\n            agent_types = EXCLUDED.agent_types,\n            frameworks  = EXCLUDED.frameworks,\n            scale       = EXCLUDED.scale,\n            notes       = EXCLUDED.notes,\n            completed_at = now()\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "TextArray",
+        "TextArray",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8c4bd7bdf5d6ec9e5686ed2f3eacc870f89fc14a021949965283c71e74c9f79e"
+}

@@ -1,0 +1,79 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT f.id, f.status,\n               f.proposer_agent_id, pa.display_name as proposer_display_name,\n               f.target_agent_id, ta.display_name as target_display_name,\n               f.proposer_message, f.response_message,\n               f.created_at, f.updated_at\n        FROM friendships f\n        JOIN agents pa ON pa.id = f.proposer_agent_id\n        JOIN agents ta ON ta.id = f.target_agent_id\n        WHERE\n            (\n                ($2::boolean AND pa.account_id IN (SELECT account_id FROM account_memberships WHERE user_id = $1))\n             OR ($3::boolean AND ta.account_id IN (SELECT account_id FROM account_memberships WHERE user_id = $1))\n            )\n            AND ($4::text IS NULL OR f.status = $4)\n        ORDER BY f.updated_at DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "proposer_agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "proposer_display_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "target_agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "target_display_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "proposer_message",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "response_message",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool",
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "9fa3337389879aeb729ec8edf5516e7da53142bc6d47bbf3c44ee3320a03f157"
+}

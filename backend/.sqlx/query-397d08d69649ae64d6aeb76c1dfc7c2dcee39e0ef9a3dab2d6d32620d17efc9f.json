@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH picked AS (\n            SELECT id FROM relay_invocations\n            WHERE granter_agent_id = $1\n              AND status = 'pending'\n            ORDER BY created_at ASC\n            LIMIT $2\n            FOR UPDATE SKIP LOCKED\n        )\n        UPDATE relay_invocations i\n        SET status = 'in_progress',\n            claimed_at = now(),\n            claimed_by_user_id = $3\n        FROM picked\n        WHERE i.id = picked.id\n        RETURNING i.id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "397d08d69649ae64d6aeb76c1dfc7c2dcee39e0ef9a3dab2d6d32620d17efc9f"
+}

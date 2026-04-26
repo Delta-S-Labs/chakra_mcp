@@ -1,0 +1,157 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            g.id, g.status, g.capability_id,\n            g.granted_at, g.expires_at, g.revoked_at, g.revoke_reason,\n            ga.id   as g_agent_id,   ga.slug as g_agent_slug,   ga.display_name as g_agent_display_name,\n            gacc.id as g_acct_id,    gacc.slug as g_acct_slug,  gacc.display_name as g_acct_display_name,\n            ea.id   as e_agent_id,   ea.slug as e_agent_slug,   ea.display_name as e_agent_display_name,\n            eacc.id as e_acct_id,    eacc.slug as e_acct_slug,  eacc.display_name as e_acct_display_name,\n            cap.name as capability_name, cap.visibility as capability_visibility,\n            EXISTS(SELECT 1 FROM account_memberships m WHERE m.account_id = ga.account_id AND m.user_id = $1) as \"i_granted!\",\n            EXISTS(SELECT 1 FROM account_memberships m WHERE m.account_id = ea.account_id AND m.user_id = $1) as \"i_received!\"\n        FROM grants g\n        JOIN agents ga ON ga.id = g.granter_agent_id\n        JOIN accounts gacc ON gacc.id = ga.account_id\n        JOIN agents ea ON ea.id = g.grantee_agent_id\n        JOIN accounts eacc ON eacc.id = ea.account_id\n        JOIN agent_capabilities cap ON cap.id = g.capability_id\n        WHERE\n            (\n                ($2::boolean AND EXISTS(SELECT 1 FROM account_memberships m WHERE m.account_id = ga.account_id AND m.user_id = $1))\n             OR ($3::boolean AND EXISTS(SELECT 1 FROM account_memberships m WHERE m.account_id = ea.account_id AND m.user_id = $1))\n            )\n            AND ($4::text IS NULL OR g.status = $4)\n        ORDER BY g.granted_at DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "capability_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "granted_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "revoked_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "revoke_reason",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "g_agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 8,
+        "name": "g_agent_slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "g_agent_display_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "g_acct_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 11,
+        "name": "g_acct_slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "g_acct_display_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "e_agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 14,
+        "name": "e_agent_slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 15,
+        "name": "e_agent_display_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 16,
+        "name": "e_acct_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 17,
+        "name": "e_acct_slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 18,
+        "name": "e_acct_display_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 19,
+        "name": "capability_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 20,
+        "name": "capability_visibility",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 21,
+        "name": "i_granted!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 22,
+        "name": "i_received!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool",
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "116d9fd660c771fc05ce4df2e421507ec17aaaf1d61e6146e00919415413db52"
+}

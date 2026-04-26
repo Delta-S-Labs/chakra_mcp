@@ -1,0 +1,84 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT g.id, g.status,\n               g.granter_agent_id, ga.display_name as granter_display_name,\n               g.grantee_agent_id, ea.display_name as grantee_display_name,\n               g.capability_id, cap.name as capability_name,\n               g.granted_at, g.expires_at, g.revoked_at\n        FROM grants g\n        JOIN agents ga ON ga.id = g.granter_agent_id\n        JOIN agents ea ON ea.id = g.grantee_agent_id\n        JOIN agent_capabilities cap ON cap.id = g.capability_id\n        WHERE\n            ($2::boolean AND ga.account_id IN (SELECT account_id FROM account_memberships WHERE user_id = $1))\n         OR ($3::boolean AND ea.account_id IN (SELECT account_id FROM account_memberships WHERE user_id = $1))\n        ORDER BY g.granted_at DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "granter_agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "granter_display_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "grantee_agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "grantee_display_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "capability_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 7,
+        "name": "capability_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "granted_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "revoked_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "b269c8f94ea3dbaecaf54fa26955e068b1bad8bb9247f84997fc4d159263403f"
+}

@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT a.id\n        FROM accounts a\n        JOIN account_memberships m ON m.account_id = a.id\n        WHERE a.slug = $1 AND m.user_id = $2\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "2d71b786b48b85141a748b8b6c49768d5c34beb5f6bbde2e0bc854249f9b8cd0"
+}

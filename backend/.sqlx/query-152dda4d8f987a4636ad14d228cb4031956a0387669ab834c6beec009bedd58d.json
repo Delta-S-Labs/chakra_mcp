@@ -1,0 +1,119 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            i.id, i.grant_id, i.granter_agent_id, i.grantee_agent_id,\n            i.capability_id, i.capability_name, i.status,\n            i.elapsed_ms, i.error_message, i.input_preview, i.output_preview,\n            i.created_at, i.claimed_at,\n            ga.display_name as \"granter_display_name?\",\n            ea.display_name as \"grantee_display_name?\",\n            EXISTS(\n                SELECT 1 FROM account_memberships m\n                WHERE m.user_id = $1 AND m.account_id = ga.account_id\n            ) as \"i_served?\",\n            EXISTS(\n                SELECT 1 FROM account_memberships m\n                WHERE m.user_id = $1 AND m.account_id = ea.account_id\n            ) as \"i_invoked?\"\n        FROM relay_invocations i\n        LEFT JOIN agents ga ON ga.id = i.granter_agent_id\n        LEFT JOIN agents ea ON ea.id = i.grantee_agent_id\n        WHERE i.id = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "grant_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "granter_agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "grantee_agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "capability_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "capability_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "elapsed_ms",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "error_message",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "input_preview",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 10,
+        "name": "output_preview",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "claimed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "granter_display_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "grantee_display_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 15,
+        "name": "i_served?",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 16,
+        "name": "i_invoked?",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "152dda4d8f987a4636ad14d228cb4031956a0387669ab834c6beec009bedd58d"
+}

@@ -1,6 +1,27 @@
-# Installing the chakramcp CLI
+# Installing chakramcp
 
-The CLI is a single Rust binary. Pick whichever channel fits your stack.
+Two things ship from this repo:
+
+| What            | When you want it                                        | How to install                          |
+|-----------------|---------------------------------------------------------|-----------------------------------------|
+| `chakramcp`     | A CLI to interact with a network (your own, or hosted). | `brew install chakramcp` (and friends)  |
+| `chakramcp-server` | A self-hosted private network on your own box.        | `brew install chakramcp-server`         |
+
+Both ship from the same Homebrew tap (which is just this repo). Tap once, install whichever you need:
+
+```sh
+brew tap delta-s-labs/chakramcp https://github.com/Delta-S-Labs/chakra_mcp
+brew install chakramcp           # CLI only
+brew install chakramcp-server    # self-host the relay locally
+```
+
+`brew upgrade <name>` works on either after each merged release PR.
+
+---
+
+## CLI (`chakramcp`)
+
+A single Rust binary. Pick whichever channel fits your stack.
 
 ## macOS / Linux
 
@@ -109,6 +130,72 @@ chakramcp configure --api-key ck_… --network prod
 Either path stores credentials in `~/.chakramcp/config.toml`
 (mode 0600 on Unix).
 
+---
+
+## Self-hosted server (`chakramcp-server`)
+
+`chakramcp-server` runs the user-facing API + the inter-agent relay in
+one supervised process, sharing one Postgres database. It's the right
+choice when you want a private ChakraMCP network on a laptop, a VPS,
+or inside your VPC — agents stay on your network, no traffic leaves
+the host.
+
+### Homebrew (macOS / Linux)
+
+```sh
+brew tap delta-s-labs/chakramcp https://github.com/Delta-S-Labs/chakra_mcp
+brew install chakramcp-server   # pulls in postgresql@16 as a dependency
+
+# One-time bootstrap:
+brew services start postgresql@16
+createdb chakramcp
+chakramcp-server init           # writes ~/.chakramcp/server.toml with a fresh JWT secret
+chakramcp-server migrate        # applies SQL migrations
+
+# Run it (foreground for logs):
+chakramcp-server start
+
+# — or as a background service:
+brew services start chakramcp-server
+```
+
+The app surface answers on `http://localhost:8080`, the relay on
+`http://localhost:8090`. Point your CLI at it:
+
+```sh
+chakramcp networks add private \
+  --app-url http://localhost:8080 \
+  --relay-url http://localhost:8090
+chakramcp login --network private
+```
+
+### Configuration
+
+`chakramcp-server init` writes `~/.chakramcp/server.toml` (mode 0600
+on Unix). Every value can also come from env vars — env wins over the
+file when both are set, so production deploys behind a process
+manager work the same as bare-metal:
+
+| Setting              | TOML key             | Env var              | Default                              |
+|----------------------|----------------------|----------------------|--------------------------------------|
+| Postgres DSN         | `database_url`       | `DATABASE_URL`       | (required)                           |
+| JWT signing secret   | `jwt_secret`         | `JWT_SECRET`         | (required)                           |
+| Bootstrap admin email| `admin_email`        | `ADMIN_EMAIL`        | unset                                |
+| First-login survey   | `survey_enabled`     | `SURVEY_ENABLED`     | `false`                              |
+| App port             | `app_port`           | `APP_PORT`           | `8080`                               |
+| Relay port           | `relay_port`         | `RELAY_PORT`         | `8090`                               |
+| Frontend public URL  | `frontend_base_url`  | `FRONTEND_BASE_URL`  | `http://localhost:3000`              |
+| App public URL       | `app_base_url`       | `APP_BASE_URL`       | `http://localhost:8080`              |
+| Relay public URL     | `relay_base_url`     | `RELAY_BASE_URL`     | `http://localhost:8090`              |
+| Log filter           | `log_filter`         | `RUST_LOG`           | `info,…=debug,sqlx=warn`             |
+
+The web UI (`frontend/`) isn't bundled into `chakramcp-server` — it
+runs as a separate Next.js process. If you want it, clone the repo
+and run `pnpm dev` under `frontend/`. For headless / agent use, the
+backend pair alone is sufficient.
+
+---
+
 ## Releasing a new version (maintainers)
 
 ```sh
@@ -121,9 +208,12 @@ git tag cli-v0.2.0
 git push origin cli-v0.2.0
 ```
 
-The `CLI Release` workflow cross-compiles for all five targets,
-attaches signed tarballs to the GitHub Release, bumps the Homebrew
-formula in the tap repo, and publishes the npm wrapper.
+The `CLI Release` workflow cross-compiles `chakramcp` for all five
+targets and `chakramcp-server` for the four unix targets (Windows
+isn't supported for the server because `brew services` + Postgres
+don't have a clean Windows analogue). It attaches signed tarballs to
+the GitHub Release, opens a PR with bumped `Formula/chakramcp.rb` +
+`Formula/chakramcp-server.rb`, and publishes the npm wrapper.
 
 Required org-level config (only the npm one is needed; the formula
 lives in this same repo and uses the auto-provided GITHUB_TOKEN):
