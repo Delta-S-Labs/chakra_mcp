@@ -59,6 +59,15 @@ fn router(state: AppState) -> Router {
         // ─── Public ────────────────────────────────────
         .route("/healthz", get(handlers::health::healthz))
         .route("/readyz", get(handlers::health::readyz))
+        // ─── OAuth 2.1 (MCP server auth) ───────────────
+        .route(
+            "/.well-known/oauth-authorization-server",
+            get(handlers::oauth::metadata),
+        )
+        .route("/oauth/register", post(handlers::oauth::register))
+        .route("/oauth/clients/{client_id}", get(handlers::oauth::get_client))
+        .route("/oauth/issue-code", post(handlers::oauth::issue_code))
+        .route("/oauth/token", post(handlers::oauth::token))
         // ─── Sign-in callback from frontend ────────────
         .route("/v1/users/upsert", post(handlers::users::upsert))
         // ─── Email + password auth ─────────────────────

@@ -109,6 +109,12 @@ fn router(state: RelayState) -> Router {
             "/v1/invocations/{id}/result",
             post(handlers::invoke::report_result),
         )
+        // ─── MCP server ────────────────────────────────
+        .route(
+            "/.well-known/oauth-protected-resource",
+            get(handlers::mcp::protected_resource_metadata),
+        )
+        .route("/mcp", post(handlers::mcp::handle))
         .with_state(state)
         .layer(cors)
         .layer(TraceLayer::new_for_http())

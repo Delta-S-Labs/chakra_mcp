@@ -13,16 +13,31 @@ import { auth } from "@/auth";
 
 const PUBLIC_AUTH_PATHS = new Set(["/login", "/signup"]);
 const isInvitePath = (pathname: string) => pathname.startsWith("/invites/");
+const isOAuthPath = (pathname: string) => pathname.startsWith("/oauth/");
 
 export default auth((req) => {
-  const { pathname } = req.nextUrl;
+  const { pathname, search } = req.nextUrl;
   // /invites/<token> renders for both signed-in and signed-out users; the
   // page itself decides what to render. Always pass through.
   if (isInvitePath(pathname)) {
     return NextResponse.next();
   }
-  const isPublicAuth = PUBLIC_AUTH_PATHS.has(pathname);
   const isLoggedIn = !!req.auth;
+
+  // OAuth consent: if signed out, send to /login with the original
+  // /oauth/authorize?... preserved as `from`. The login page already
+  // honours `from` and bounces back after sign-in.
+  if (isOAuthPath(pathname)) {
+    if (!isLoggedIn) {
+      const url = req.nextUrl.clone();
+      url.pathname = "/login";
+      url.searchParams.set("from", `${pathname}${search}`);
+      return NextResponse.redirect(url);
+    }
+    return NextResponse.next();
+  }
+
+  const isPublicAuth = PUBLIC_AUTH_PATHS.has(pathname);
 
   if (!isLoggedIn && !isPublicAuth) {
     const url = req.nextUrl.clone();
@@ -44,5 +59,12 @@ export default auth((req) => {
 // marketing site (/, /concept, /brand, /cofounder, /terms) and render
 // targets stay public.
 export const config = {
-  matcher: ["/app", "/app/:path*", "/login", "/signup", "/invites/:path*"],
+  matcher: [
+    "/app",
+    "/app/:path*",
+    "/login",
+    "/signup",
+    "/invites/:path*",
+    "/oauth/:path*",
+  ],
 };

@@ -313,4 +313,41 @@ export function adminListApiKeys(token: string) {
   return request<AdminApiKey[]>("/v1/admin/api-keys", { token });
 }
 
+// ─── OAuth (MCP server consent flow) ─────────────────────
+
+export interface OAuthClientPreview {
+  client_id: string;
+  client_name: string;
+  redirect_uris: string[];
+  client_uri: string | null;
+  scope: string;
+}
+
+export function getOAuthClient(clientId: string) {
+  return request<OAuthClientPreview>(
+    `/oauth/clients/${encodeURIComponent(clientId)}`,
+  );
+}
+
+export interface IssueCodeRequest {
+  client_id: string;
+  redirect_uri: string;
+  code_challenge: string;
+  code_challenge_method?: "S256";
+  scope?: string;
+}
+
+export interface IssueCodeResponse {
+  code: string;
+  expires_in: number;
+}
+
+export function issueOAuthCode(token: string, body: IssueCodeRequest) {
+  return request<IssueCodeResponse>("/oauth/issue-code", {
+    method: "POST",
+    token,
+    body: JSON.stringify(body),
+  });
+}
+
 export const apiBaseUrl = BASE;

@@ -14,6 +14,15 @@ pub struct SharedConfig {
     /// false (private deployments don't need this); the hosted public
     /// network sets it to true.
     pub survey_enabled: bool,
+    /// Public-facing base URL for the user-facing app (where the OAuth
+    /// consent page lives). Used to build authorization_endpoint in
+    /// the OAuth discovery doc.
+    pub frontend_base_url: String,
+    /// Public-facing base URL for the chakramcp-app service (token,
+    /// register endpoints).
+    pub app_base_url: String,
+    /// Public-facing base URL for the chakramcp-relay service.
+    pub relay_base_url: String,
     pub log_filter: String,
 }
 
@@ -36,6 +45,13 @@ impl SharedConfig {
             .map(|s| matches!(s.trim().to_lowercase().as_str(), "true" | "1" | "yes" | "on"))
             .unwrap_or(false);
 
+        let frontend_base_url = env::var("FRONTEND_BASE_URL")
+            .unwrap_or_else(|_| "http://localhost:3000".to_string());
+        let app_base_url = env::var("APP_BASE_URL")
+            .unwrap_or_else(|_| "http://localhost:8080".to_string());
+        let relay_base_url = env::var("RELAY_BASE_URL")
+            .unwrap_or_else(|_| "http://localhost:8090".to_string());
+
         let log_filter = env::var("RUST_LOG")
             .unwrap_or_else(|_| "info,chakramcp_app=debug,chakramcp_relay=debug,sqlx=warn".to_string());
 
@@ -44,6 +60,9 @@ impl SharedConfig {
             jwt_secret,
             admin_email,
             survey_enabled,
+            frontend_base_url,
+            app_base_url,
+            relay_base_url,
             log_filter,
         })
     }
