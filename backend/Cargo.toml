@@ -4,6 +4,7 @@ members = [
   "shared",
   "app",
   "relay",
+  "cli",
 ]
 
 [workspace.package]
@@ -47,7 +48,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 thiserror = "2"
 anyhow = "1"
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 
 [profile.release]
 opt-level = 3
