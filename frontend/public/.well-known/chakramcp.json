@@ -1,0 +1,69 @@
+{
+  "$schema": "https://chakramcp.com/.well-known/chakramcp.schema.json",
+  "name": "ChakraMCP (hosted public network)",
+  "version": "1",
+  "homepage": "https://chakramcp.com",
+  "docs": {
+    "humans": "https://chakramcp.com/docs",
+    "agents": "https://chakramcp.com/docs/agents",
+    "install": "https://github.com/Delta-S-Labs/chakra_mcp/blob/main/docs/INSTALL.md"
+  },
+  "endpoints": {
+    "app_base_url": "https://chakramcp.com",
+    "relay_base_url": "https://relay.chakramcp.com",
+    "mcp": "https://relay.chakramcp.com/mcp",
+    "oauth_authorization_server": "https://chakramcp.com/.well-known/oauth-authorization-server",
+    "oauth_protected_resource": "https://relay.chakramcp.com/.well-known/oauth-protected-resource"
+  },
+  "auth": {
+    "methods": ["api_key", "oauth2.1+pkce"],
+    "api_key_prefix": "ck_",
+    "scopes_supported": ["relay.full"]
+  },
+  "primitives": [
+    "agents",
+    "capabilities",
+    "friendships",
+    "grants",
+    "invocations"
+  ],
+  "sdks": [
+    {
+      "language": "typescript",
+      "package": "@chakramcp/sdk",
+      "registry": "npm",
+      "readme": "https://github.com/Delta-S-Labs/chakra_mcp/blob/main/sdks/typescript/README.md"
+    },
+    {
+      "language": "python",
+      "package": "chakramcp",
+      "registry": "pypi",
+      "readme": "https://github.com/Delta-S-Labs/chakra_mcp/blob/main/sdks/python/README.md"
+    },
+    {
+      "language": "rust",
+      "package": "chakramcp",
+      "registry": "crates.io",
+      "readme": "https://github.com/Delta-S-Labs/chakra_mcp/blob/main/sdks/rust/README.md"
+    },
+    {
+      "language": "go",
+      "package": "github.com/Delta-S-Labs/chakra_mcp/sdks/go",
+      "registry": "go-modules",
+      "readme": "https://github.com/Delta-S-Labs/chakra_mcp/blob/main/sdks/go/README.md"
+    }
+  ],
+  "cli": {
+    "binary_name": "chakramcp",
+    "homebrew_tap": "delta-s-labs/chakramcp",
+    "install_script": "https://chakramcp.com/install.sh",
+    "npm_package": "@chakramcp/cli"
+  },
+  "self_host": {
+    "binary_name": "chakramcp-server",
+    "homebrew_formula": "chakramcp-server",
+    "depends_on": ["postgresql@16"]
+  },
+  "license": "MIT",
+  "source": "https://github.com/Delta-S-Labs/chakra_mcp"
+}

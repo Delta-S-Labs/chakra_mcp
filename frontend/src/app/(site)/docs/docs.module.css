@@ -1,0 +1,274 @@
+/* Shared prose styling for /docs/* pages. Mirrors the marketing chrome
+ * but tuned for long-form content: tighter measure, denser line-height,
+ * code blocks that don't fight the cream background.
+ */
+
+.shell {
+  max-width: 72ch;
+  margin: 0 auto;
+  padding: 4rem 1.5rem 6rem;
+  font-family: var(--font-body);
+  color: var(--ink);
+}
+
+.shell.wide {
+  max-width: 92ch;
+}
+
+.eyebrow {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.74rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin: 0 0 0.7rem;
+}
+
+.title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(2rem, 4.5vw, 3.4rem);
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+  margin: 0 0 1rem;
+  color: var(--ink);
+}
+
+.lede {
+  font-size: 1.1rem;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  margin: 0 0 2.4rem;
+}
+
+.h2 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.55rem;
+  letter-spacing: -0.02em;
+  margin: 3rem 0 0.8rem;
+  color: var(--ink);
+  scroll-margin-top: 5rem;
+}
+.h2:first-of-type {
+  margin-top: 1.4rem;
+}
+
+.h3 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.15rem;
+  margin: 2.2rem 0 0.5rem;
+  color: var(--ink);
+  scroll-margin-top: 5rem;
+}
+
+.shell p {
+  font-size: 1rem;
+  line-height: 1.7;
+  margin: 0 0 1.05rem;
+}
+
+.shell ul,
+.shell ol {
+  font-size: 1rem;
+  line-height: 1.7;
+  padding-left: 1.5rem;
+  margin: 0 0 1.05rem;
+}
+
+.shell li {
+  margin: 0.25rem 0;
+}
+
+.shell code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  padding: 0.05rem 0.36rem;
+  border-radius: 0.32rem;
+  background: color-mix(in oklab, var(--accent-butter) 38%, transparent);
+  color: oklch(33% 0.06 70);
+}
+
+.pre {
+  font-family: var(--font-mono);
+  font-size: 0.84rem;
+  line-height: 1.55;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  background: var(--paper);
+  color: var(--ink);
+  margin: 0 0 1.5rem;
+  overflow-x: auto;
+  white-space: pre;
+}
+.pre code {
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+  color: inherit;
+}
+
+.kbd {
+  font-family: var(--font-mono);
+  font-size: 0.84em;
+  padding: 0.04rem 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 0.32rem;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 1px 0 0 var(--line);
+}
+
+.callout {
+  margin: 1rem 0 1.5rem;
+  padding: 0.85rem 1rem;
+  border-left: 3px solid var(--accent-coral);
+  background: color-mix(in oklab, var(--accent-coral) 8%, var(--paper-soft));
+  border-radius: 0 0.5rem 0.5rem 0;
+  font-size: 0.94rem;
+}
+
+.callout.note {
+  border-left-color: color-mix(in oklab, var(--accent-butter) 70%, var(--ink));
+  background: color-mix(in oklab, var(--accent-butter) 28%, var(--paper-soft));
+}
+
+.callout p:last-child {
+  margin-bottom: 0;
+}
+
+.shell a {
+  color: var(--accent-coral);
+  text-decoration: none;
+  border-bottom: 1px dashed currentColor;
+}
+
+.shell a:hover {
+  border-bottom-style: solid;
+}
+
+/* ─── Cards (used on /docs landing) ───────────────────── */
+
+.cardGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+  gap: 1rem;
+  margin: 1rem 0 2.5rem;
+}
+
+.card {
+  display: block;
+  padding: 1.2rem 1.3rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--paper-soft);
+  text-decoration: none !important;
+  border-bottom: 1px solid var(--line) !important;
+  color: var(--ink) !important;
+  transition: border-color 120ms ease, transform 120ms ease;
+}
+
+.card:hover {
+  border-color: color-mix(in oklab, var(--accent-coral) 60%, var(--line)) !important;
+  transform: translate3d(0, -1px, 0);
+}
+
+.cardLabel {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin: 0 0 0.4rem;
+}
+
+.cardTitle {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.1rem;
+  letter-spacing: -0.01em;
+  margin: 0 0 0.45rem;
+  color: var(--ink);
+}
+
+.cardBody {
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  margin: 0;
+}
+
+/* ─── Side-by-side language panels (for /docs/agents) ─── */
+
+.langTabs {
+  display: flex;
+  gap: 0.4rem;
+  margin: 0 0 0.5rem;
+  flex-wrap: wrap;
+}
+
+.langTab {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+.langTab.active {
+  background: var(--accent-coral);
+  color: var(--paper-soft);
+  border-color: color-mix(in oklab, var(--accent-coral) 70%, var(--ink));
+}
+
+/* TOC sidebar at >960px */
+
+@media (min-width: 960px) {
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 220px;
+    gap: 3rem;
+    max-width: 92ch;
+    margin: 0 auto;
+  }
+  .toc {
+    align-self: start;
+    position: sticky;
+    top: 5rem;
+    font-size: 0.86rem;
+  }
+  .tocTitle {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.66rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+    margin: 0 0 0.6rem;
+  }
+  .tocList {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .tocList li {
+    margin: 0.25rem 0;
+  }
+  .tocList a {
+    color: var(--ink-soft);
+    text-decoration: none !important;
+    border-bottom: none !important;
+  }
+  .tocList a:hover {
+    color: var(--accent-coral);
+  }
+}

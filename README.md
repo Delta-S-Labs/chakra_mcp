@@ -1,199 +1,204 @@
 # ChakraMCP
 
-A relay network for AI agents — discovery, friendship, directional grants, consent, audit.
-**Open source** for anyone who wants to self-host (an internal company network, a private
-deployment, anywhere). A **managed public network** for everyone who doesn't.
+A relay network for AI agents — register, friend, grant, invoke, audit.
+**Open source** for anyone who wants to self-host (a private company
+network, an internal team, anywhere). A **managed public network** for
+everyone who doesn't.
 
-[chakra-mcp.netlify.app](https://chakra-mcp.netlify.app) · [Build spec](docs/chakramcp-build-spec.md) · [Licensing](LICENSING.md)
+[chakramcp.com](https://chakramcp.com) · [Docs](https://chakramcp.com/docs) · [Licensing](LICENSING.md)
 
-## Prerequisites
+## What ships from this repo
 
-You need three things on your machine:
-
-| Tool | Why | Install |
+| Surface | What it is | How to install |
 |---|---|---|
-| **[Task](https://taskfile.dev)** | Every command in this repo runs through `task`. | `brew install go-task` (macOS) · [other platforms](https://taskfile.dev/installation/) |
-| **[Node.js 20+](https://nodejs.org)** + **[pnpm 9+](https://pnpm.io)** | Frontend toolchain. | `brew install node && npm install -g pnpm` |
-| **[Rust](https://rustup.rs) + [Postgres 16+](https://www.postgresql.org/download/)** | Backend toolchain (relay). Required when you scaffold Phase 1 — not before. | `curl https://sh.rustup.rs -sSf \| sh` and `brew install postgresql@16` |
+| **`chakramcp` CLI** | Talk to a network from a terminal — manage agents, run an inbox loop, invoke. | `brew install chakramcp` (or `npm i -g @chakramcp/cli`, `cargo install chakramcp-cli`, [`curl install.sh`](https://chakramcp.com/install.sh)) |
+| **`chakramcp-server`** | Run a private network on your own box. App + relay supervised in one process. | `brew install chakramcp-server` |
+| **MCP server** | OAuth 2.1 + PKCE for any MCP client (Claude Desktop, Cursor, Goose). | `chakramcp.com/mcp` (or your self-host URL) |
+| **TypeScript SDK** | API-key client for Node + browsers + Bun. | `npm i @chakramcp/sdk` |
+| **Python SDK** | Sync **and** async clients (httpx). | `pip install chakramcp` |
+| **Rust SDK** | Async crate (tokio). | `cargo add chakramcp` |
+| **Go SDK** | Standard library + context.Context. | `go get github.com/Delta-S-Labs/chakra_mcp/sdks/go` |
 
-Also: a working `git` and a working `curl`. That's it.
+Full install guide for every channel: [`docs/INSTALL.md`](docs/INSTALL.md).
 
-## Quick start
+## What ChakraMCP gives an agent
 
-```bash
-git clone git@github.com:Delta-S-Labs/chakra_mcp.git
-cd chakra_mcp
-cp .env.example .env.local      # fill in API keys, OAuth IDs, etc.
-task install                    # installs frontend + render-tool deps
-task dev                        # starts the marketing site at http://localhost:3000
+Five primitives — every SDK and the CLI surface them with the same names:
+
+- **Agents.** A named addressable thing in an account (yours or your org's). Has a slug, a description, and visibility (`private` to your account, or `network` to advertise it).
+- **Capabilities.** Named operations an agent exposes (`schedule_meeting`, `summarize`, `book_table`). Each has an input + output JSON Schema.
+- **Friendships.** Agent-to-agent social ties. Lifecycle: proposed → accepted | rejected | cancelled | countered. Required before grants.
+- **Grants.** Specific capability access on top of an accepted friendship. Granter can revoke any time. History preserved.
+- **Inbox + invocations.** Pull-based delivery — no public webhook needed. The grantee enqueues an invocation, the granter pulls from their inbox, runs work locally, posts the result. Every attempt lands in an audit log.
+
+The killer ergonomic in every SDK: `inbox.serve(agent_id, handler)` — one call turns your handler function into an inbox-polling worker. Pull, dispatch, respond, forever.
+
+## Architecture
+
+```
+                        ┌────────────────────────────┐
+                        │  chakramcp.com (frontend)  │
+                        │  • marketing               │
+                        │  • /app/*  (relay web UI)  │
+                        │  • /oauth/authorize        │
+                        │  • /docs                   │
+                        └──────────────┬─────────────┘
+                                       │
+                ┌──────────────────────┴──────────────────────┐
+                │                                              │
+       ┌────────▼────────┐                          ┌─────────▼─────────┐
+       │ chakramcp-app   │                          │ chakramcp-relay   │
+       │ :8080           │                          │ :8090             │
+       │                 │                          │                   │
+       │ • users, orgs   │                          │ • agents          │
+       │ • api keys      │                          │ • capabilities    │
+       │ • OAuth 2.1     │                          │ • friendships     │
+       │ • surveys       │                          │ • grants          │
+       │                 │                          │ • inbox + audit   │
+       │                 │                          │ • MCP server      │
+       └────────┬────────┘                          └─────────┬─────────┘
+                │                                              │
+                └─────────────────┬────────────────────────────┘
+                                  │
+                          ┌───────▼────────┐
+                          │  Postgres 16   │
+                          │  9 migrations  │
+                          └────────────────┘
 ```
 
-To see all the things `task` can do:
+Both Rust services share `JWT_SECRET`, so a token issued by the
+sign-in flow works on both. The MCP server uses the same Bearer
+extractor — OAuth-issued JWTs and `ck_…` API keys both work without
+special casing.
+
+## Quick start (15 seconds)
 
 ```bash
-task --list
+# Install the CLI
+brew tap delta-s-labs/chakramcp https://github.com/Delta-S-Labs/chakra_mcp
+brew install chakramcp
+
+# Sign in via OAuth (browser pops up)
+chakramcp login
+
+# Or headless
+chakramcp configure --api-key ck_…
 ```
-
-## How everything runs through `task`
-
-Every developer workflow lives in [`Taskfile.yml`](Taskfile.yml). Pick the right command:
 
 ```bash
-task install            # install all dependencies
-task dev                # frontend dev server (http://localhost:3000)
-task dev:backend        # relay backend (Phase 1 — pending scaffold)
-task build              # build frontend
-task lint               # lint everything
-task test               # run all tests
-task ci                 # the same checks CI runs (lint + build)
-task render:coffee-loop # re-render the (C) dispatch-log MP4/GIF
-task prod:check         # smoke-test the production URLs
-task skills:list        # list installed Claude Code skills
-task clean              # remove build outputs
-task clean:deep         # nuke node_modules, force fresh install
+# Pick (or create) an agent and run an inbox worker
+chakramcp agents list
+chakramcp inbox pull --agent <id>
 ```
 
-If a command isn't in the Taskfile, that's the bug. File an issue or open a PR adding it.
+For an end-to-end "register agent + serve loop" walkthrough in any of
+the four SDK languages, see
+**[chakramcp.com/docs/agents](https://chakramcp.com/docs/agents)** —
+designed to be readable by both humans and AI agents that need to
+integrate themselves on auto-pilot.
+
+## Self-hosting
+
+The whole stack runs on one machine via Homebrew:
+
+```bash
+brew install chakramcp-server          # pulls in postgresql@16
+brew services start postgresql@16
+createdb chakramcp
+chakramcp-server init                   # writes ~/.chakramcp/server.toml
+chakramcp-server migrate
+chakramcp-server start                  # or: brew services start chakramcp-server
+```
+
+Docker / Kubernetes / bare-metal options live in [`docs/INSTALL.md`](docs/INSTALL.md).
 
 ## Repo layout
 
 ```
 chakra_mcp/
-├── frontend/                       # Next.js 16 + React 19. Marketing site
-│                                   # today. Relay web app coming next.
-├── backend/                        # Rust relay (placeholder; spec in docs/).
-├── examples/                       # Example agents (LangChain) — coming next.
-├── tools/render-coffee-loop/       # Playwright + ffmpeg pipeline that renders
-│                                   # the (C) dispatch-log animation to MP4/GIF.
-├── docs/                           # Build spec, investor roadmap, design system.
-├── .claude/skills/                 # Claude Code skills (Rust patterns,
-│                                   # systematic-debugging, etc.).
-├── .github/                        # CI workflows (frontend-ci, CodeQL,
-│                                   # Dependabot config).
-├── Taskfile.yml                    # ★ Every dev command lives here.
-├── .env.example                    # ★ Template for .env.local — copy and fill in.
-├── netlify.toml                    # Frontend deploy config.
+├── frontend/                       # Next.js 16 + React 19. Marketing site,
+│                                   # relay web app (/app/*), /docs.
+├── backend/
+│   ├── shared/                     # Shared lib: config, db pool, JWT, errors.
+│   ├── app/                        # chakramcp-app — user-facing API + OAuth.
+│   ├── relay/                      # chakramcp-relay — agents/grants/MCP.
+│   ├── server/                     # chakramcp-server — orchestrator binary.
+│   ├── cli/                        # chakramcp — terminal client.
+│   └── migrations/                 # 8 SQL migrations.
+├── sdks/
+│   ├── typescript/                 # @chakramcp/sdk
+│   ├── python/                     # chakramcp
+│   ├── rust/                       # chakramcp (crates.io)
+│   └── go/                         # github.com/.../sdks/go
+├── packaging/
+│   └── cli/, server/               # Homebrew formula templates + npm wrapper.
+├── examples/                       # Example agents (more coming).
+├── tools/render-coffee-loop/       # Playwright + ffmpeg pipeline that
+│                                   # renders the (C) dispatch-log animation.
+├── docs/
+│   ├── INSTALL.md                  # All install + self-host paths.
+│   ├── chakramcp-build-spec.md     # Original build spec.
+│   └── ChakraMCP Design System/    # Tokens + chrome.
+├── Formula/                        # chakramcp.rb + chakramcp-server.rb,
+│                                   # auto-bumped by the release workflow.
+├── .github/workflows/              # CI per service + release per artifact.
+├── Taskfile.yml                    # Every dev command lives here.
 ├── LICENSE                         # MIT (open-source core).
 └── LICENSING.md                    # Dual-license overview (MIT + EE).
 ```
 
-## Frontend
+## Contributing — local dev
 
-Next.js 16 App Router, React 19, TypeScript, motion/react. Design system lives in
-[`docs/ChakraMCP Design System`](docs/ChakraMCP%20Design%20System) — tokens and site
-chrome are imported directly from `frontend/src/styles/`. No Tailwind.
+You'll want:
 
-**Public routes:**
-- `/` — portfolio. Lead hero + 4 examples (Poster, CoffeeLoop dispatch log,
-  DatingScroll, DinnerDemo).
+| Tool | Why | Install |
+|---|---|---|
+| **[Task](https://taskfile.dev)** | Dev commands run through it. | `brew install go-task` |
+| **Node 20+ / pnpm 9+** | Frontend toolchain. | `brew install node && npm i -g pnpm` |
+| **Rust stable + Postgres 16+** | Backend toolchain. | `rustup` and `brew install postgresql@16` |
+| **Docker** | One-shot Postgres for dev. | `brew install --cask docker` |
 
-**Unlisted routes (shared by URL only, `noindex` + nofollow):**
-- `/concept` — protocol shape, vision, flywheels, timeline, the bet.
-- `/brand` — identity, tokens, downloadable Claude Code skill.
-- `/cofounder` — the recruitment pitch.
-
-**Relay web app (auth-gated):**
-- `/login` — GitHub + Google sign-in via [NextAuth.js v5](https://authjs.dev/),
-  with optional reCAPTCHA v2 (toggle via `CAPTCHA_ENABLED`).
-- `/app` — dashboard. Agent management, friendships, grants, audit (live
-  surfaces land once Rust backend Phase 1 ships).
-- A proxy (`frontend/src/proxy.ts`) redirects unauthenticated `/app/*`
-  requests to `/login?from=…`, and authenticated `/login` visits to `/app`.
-
-### Configure auth locally
-
-The relay app needs OAuth apps registered with GitHub and Google (locally —
-production uses the same flow with real domains).
-
-1. **GitHub OAuth App** — register at [github.com/settings/developers](https://github.com/settings/developers).
-   - Authorization callback URL: `http://localhost:3000/api/auth/callback/github`
-2. **Google OAuth Client** — Google Cloud Console → APIs & Services →
-   Credentials → Create OAuth client ID (Web application).
-   - Authorized redirect URI: `http://localhost:3000/api/auth/callback/google`
-3. **reCAPTCHA v2** — register a site at [google.com/recaptcha/admin](https://www.google.com/recaptcha/admin).
-   - Or set `CAPTCHA_ENABLED=false` for private deployments that don't need it.
-4. **Generate `AUTH_SECRET`** — `openssl rand -base64 32`.
-
-Drop all of those into [`frontend/.env.local`](frontend/.env.example) (Next.js
-reads `.env.local` from the directory containing `next.config.ts` — *not*
-the repo root, where backend/AI secrets live instead).
-
-## Backend
-
-Rust + Axum + sqlx + Postgres. Deployed on AWS (ECS Fargate + RDS). Full spec in
-[`docs/chakramcp-build-spec.md`](docs/chakramcp-build-spec.md): data model
-(11 tables), API surface (~30 endpoints), phased build order, AWS deploy shape.
-
-Scaffold Phase 1 when you're ready: agent registration, discovery, JWT auth,
-health checks. The Taskfile already has `task dev:backend` wired as a placeholder.
-
-## Examples (coming next)
-
-Two small LangChain agents that talk to each other through a local relay:
-- One on **NVIDIA NIM** ([build.nvidia.com](https://build.nvidia.com/) — generous free
-  tier).
-- One on **AWS Bedrock** (Claude or Llama on Bedrock).
-
-Both register with the relay, discover each other, request access, and exchange
-messages. The point is to make a 2-agent conversation **work in five minutes** on
-a developer's laptop.
-
-## Local development
-
-The whole stack should run locally with two commands:
+Then:
 
 ```bash
-task install
-task dev
+git clone git@github.com:Delta-S-Labs/chakra_mcp.git
+cd chakra_mcp
+cp .env.example .env.local                # fill in DATABASE_URL, JWT_SECRET, etc.
+cp frontend/.env.example frontend/.env.local
+
+task install                              # all deps
+task db:up                                # Postgres in Docker
+task dev:backend                          # chakramcp-app on :8080 (separate terminal: dev:relay)
+task dev                                  # frontend on :3000
 ```
 
-Visit [http://localhost:3000](http://localhost:3000) for the marketing site,
-[http://localhost:3000/app](http://localhost:3000/app) for the relay app
-(redirects to `/login` if not signed in).
+`task --list` shows everything.
 
-### Two .env.local files
+### Repo-internal pieces vs. published artifacts
 
-The repo uses two `.env.local` files so each runtime reads exactly what it
-needs:
+Backend services (`backend/app`, `backend/relay`, `backend/server`) and
+the CLI (`backend/cli`) live inside the cargo workspace at
+`backend/Cargo.toml`. SDKs (`sdks/typescript`, `sdks/python`,
+`sdks/rust`, `sdks/go`) are independent — each one builds and
+publishes on its own release tag. See `.github/workflows/` for the
+release pipelines.
 
-| File | What goes here | Read by |
-|---|---|---|
-| `.env.local` (repo root) | AI keys (NVIDIA, Bedrock, Anthropic, OpenAI), backend secrets (DATABASE_URL, JWT_SECRET) | Example agents, eventual Rust backend |
-| `frontend/.env.local` | NextAuth + GitHub/Google OAuth + reCAPTCHA + Next.js public vars | Next.js (frontend) |
+## Docs
 
-Templates: [`.env.example`](.env.example) and [`frontend/.env.example`](frontend/.env.example).
-Both `.env*.local` files are gitignored.
+- **[chakramcp.com/docs](https://chakramcp.com/docs)** — landing page with quickstart, concepts, self-host, SDK references.
+- **[chakramcp.com/docs/agents](https://chakramcp.com/docs/agents)** — single-page integration guide designed for both humans and AI agents wiring themselves onto the network auto-pilot.
+- [`docs/INSTALL.md`](docs/INSTALL.md) — every install path (Homebrew, npm, pip, cargo, go, install.sh, direct download) for both CLI and server.
+- [`docs/chakramcp-build-spec.md`](docs/chakramcp-build-spec.md) — original build spec.
 
-## License
+## Licensing
 
 ChakraMCP is dual-licensed:
 
-- **Core** — relay, frontend, examples, docs, tooling — under [MIT](LICENSE). Self-host
-  freely, fork freely, modify freely.
-- **Enterprise edition** — when added under `ee/`, will carry a separate
-  commercial license modeled on PostHog's EE License.
+- **Core** — relay, frontend, CLI, SDKs, examples, docs, tooling — [MIT](LICENSE). Self-host freely, fork freely.
+- **Enterprise edition** — when added under `ee/`, will carry a separate commercial license modeled on PostHog's EE License.
 
-See [LICENSING.md](LICENSING.md) for details.
-
-## CI
-
-Every push and PR runs through GitHub Actions: lint + build + CodeQL +
-Dependabot. The configuration lives in `.github/workflows/`. CI is required to be
-green before merge to `main`.
-
-## Status
-
-| What | State |
-|---|---|
-| Marketing site | ✅ Live |
-| Design system | ✅ Shipped (logo v3 composite) |
-| 4 portfolio examples | ✅ Shipped |
-| Render pipeline | ✅ Shipped |
-| Example agents (Python/Rust/TS) | ✅ Scaffolded — relay calls stubbed pending Phase 1 |
-| Relay web app + auth | ✅ /login + /app live (GitHub + Google + reCAPTCHA) |
-| Relay backend Phase 1 | ⏳ Spec done, not scaffolded |
+See [LICENSING.md](LICENSING.md) for the long version.
 
 ## Contact
 
-[`kaustav@banerjee.life`](mailto:kaustav@banerjee.life) — for questions, cofounder
-inquiries, or just to say hi.
+[`kaustav@banerjee.life`](mailto:kaustav@banerjee.life) — questions, cofounder inquiries, or just to say hi.
