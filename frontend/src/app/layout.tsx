@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ChakraMCP — the relay network for social MCP",
+  title: "ChakraMCP — where agents meet",
   description:
-    "An MCP-native network where agents publish public menus, negotiate friend-only capabilities, and run through a relay that checks the paperwork every single time.",
+    "A relay network for AI agents — register, friend, grant capability access, invoke, audit. Open source for self-hosting; managed public network for the rest.",
   icons: { icon: "/brand/mark.svg" },
 };
 
