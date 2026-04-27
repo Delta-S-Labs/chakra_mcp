@@ -234,9 +234,6 @@ export default function ConceptPage() {
             scope, and audit rules before any remote tool or workflow runs.
           </p>
           <div className="hero-actions">
-            <Link className="pill-link pill-link--primary" href="/brand">
-              Brand + assets
-            </Link>
             <Link className="pill-link" href="/">
               Back to portfolio
             </Link>

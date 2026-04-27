@@ -116,9 +116,6 @@ export default function CofounderPage() {
             one technical cofounder who likes boring, excellent infrastructure.
           </p>
           <div className={styles.heroLinks}>
-            <Link className="pill-link" href="/concept">
-              Read the full concept
-            </Link>
             <a className="pill-link" href="https://github.com/Delta-S-Labs/chakra_mcp" target="_blank" rel="noreferrer">
               See the repo
             </a>

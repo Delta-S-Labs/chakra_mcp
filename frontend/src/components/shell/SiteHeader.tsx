@@ -4,23 +4,20 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Brandmark from "./Brandmark";
 
-// Tabs split into public (always shown) and unlisted (only shown on
-// pages other than the landing — concept / brand / cofounder were
-// designed to be shared by URL only). Docs is a public surface, so
-// it shows from the landing too.
-const publicTabs = [
-  { label: "Docs", href: "/docs" },
-];
-const unlistedTabs = [
+// Public tabs only. Concept / Brand / Cofounder are URL-share-only —
+// nothing on the site links to them, including this header. People
+// reach those pages by being given the URL directly.
+const tabs = [
   { label: "Portfolio", href: "/" },
-  { label: "Concept", href: "/concept" },
-  { label: "Brand", href: "/brand" },
+  { label: "Docs", href: "/docs" },
 ];
 
 export default function SiteHeader() {
   const pathname = usePathname();
   const onLanding = pathname === "/";
-  const tabs = onLanding ? publicTabs : [...unlistedTabs, ...publicTabs];
+  // On the landing, drop the Portfolio tab (it's the page you're on)
+  // so the header stays minimalist.
+  const visibleTabs = onLanding ? tabs.filter((t) => t.href !== "/") : tabs;
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
@@ -30,7 +27,7 @@ export default function SiteHeader() {
         <Brandmark />
       </Link>
       <nav className="site-nav" aria-label="Primary">
-        {tabs.map((t) => (
+        {visibleTabs.map((t) => (
           <Link
             key={t.href}
             href={t.href}

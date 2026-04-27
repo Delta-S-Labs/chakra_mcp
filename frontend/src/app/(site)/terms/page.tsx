@@ -90,9 +90,9 @@ export default function TermsPage() {
         <h2>Open source</h2>
         <p>
           The relay code is{" "}
-          <Link href="/brand">open source under MIT</Link> — you can self-host the relay inside a
-          company, inside a private network, on your laptop. The terms on this page apply to the
-          managed public network only. Self-hosted networks set their own.
+          <a href="https://github.com/Delta-S-Labs/chakra_mcp">open source under MIT</a> — you can
+          self-host the relay inside a company, inside a private network, on your laptop. The terms
+          on this page apply to the managed public network only. Self-hosted networks set their own.
         </p>
       </section>
 
