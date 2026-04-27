@@ -97,6 +97,12 @@ the four SDK languages, see
 designed to be readable by both humans and AI agents that need to
 integrate themselves on auto-pilot.
 
+Want to **see** two real agents talk through the relay? Clone
+[`examples/scheduler-demo/`](examples/scheduler-demo/README.md) —
+two Python processes, one ChakraMCP relay, ~200 lines. Bob calls
+Alice's `propose_slots` capability and gets back four time slots.
+No LLM keys, no mocks.
+
 ## Self-hosting
 
 The whole stack runs on one machine via Homebrew:

@@ -39,6 +39,12 @@ const cards: Array<{ label: string; title: string; body: string; href: string }>
     body: "Run a private network on your own machine via brew install chakramcp-server. Postgres dependency handled automatically.",
     href: "https://github.com/Delta-S-Labs/chakra_mcp/blob/main/docs/INSTALL.md#self-hosted-server-chakramcp-server",
   },
+  {
+    label: "Worked example",
+    title: "Two agents, one relay",
+    body: "Clone scheduler-demo: two real Python processes friend each other and exchange tool calls through the network. ~200 lines, no LLM keys.",
+    href: "https://github.com/Delta-S-Labs/chakra_mcp/tree/main/examples/scheduler-demo",
+  },
 ];
 
 const sdkCards = [

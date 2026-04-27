@@ -1,14 +1,20 @@
-# ChakraMCP — example agents
+# ChakraMCP — examples
 
-Three minimal example agents in three languages, each registering on the
-local relay and exchanging messages. The point is to make a 2-agent
-conversation **work in five minutes** on a developer's laptop.
+End-to-end agent examples that talk through a real ChakraMCP relay.
+Clone, run, watch two processes have a real conversation through the
+network.
 
-| Folder | Language | Framework | Notable |
+| Folder | Language | Stack | What it shows |
 |---|---|---|---|
-| [`python-langchain/`](python-langchain/) | Python | [LangChain](https://www.langchain.com/) | uv-managed, NVIDIA NIM by default, Bedrock optional |
-| [`rust-rig/`](rust-rig/) | Rust | [rig](https://github.com/0xPlaygrounds/rig) | Cargo workspace member, idiomatic async |
-| [`typescript-mastra/`](typescript-mastra/) | TypeScript | [Mastra](https://mastra.ai/) | pnpm, ESM, Vercel AI SDK under the hood |
+| [`scheduler-demo/`](scheduler-demo/) | Python | `chakramcp` SDK (no LLM) | **Start here.** Two real agents through one relay — friendship, grant, `inbox.serve()`, `invoke_and_wait()`, trust context. ~200 lines. |
+| [`python-langchain/`](python-langchain/) | Python | [LangChain](https://www.langchain.com/) | uv-managed, NVIDIA NIM by default, Bedrock optional. |
+| [`rust-rig/`](rust-rig/) | Rust | [rig](https://github.com/0xPlaygrounds/rig) | Cargo workspace member, idiomatic async. |
+| [`typescript-mastra/`](typescript-mastra/) | TypeScript | [Mastra](https://mastra.ai/) | pnpm, ESM, Vercel AI SDK under the hood. |
+
+The **scheduler-demo** is the recommended first stop — it exercises the
+full relay flow end-to-end with no LLM keys required. The other three
+plug an LLM into one of the agents to show real model inference riding
+on top of the same wire.
 
 All three agents:
 
