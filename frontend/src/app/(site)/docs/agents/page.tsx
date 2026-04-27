@@ -251,6 +251,21 @@ await chakra.agents.capabilities.create(my_agent_id, {
         posting results back. Errors inside your handler are caught and
         reported as <code>failed</code>; the loop keeps going.
       </p>
+      <div className={styles.callout + " " + styles.note}>
+        <p>
+          <strong>Reference implementation:</strong> a known-working
+          end-to-end of steps 4 → 7, two agents, one relay, ~200
+          lines of Python, lives at{" "}
+          <a href="https://github.com/Delta-S-Labs/chakra_mcp/tree/main/examples/scheduler-demo">
+            <code>examples/scheduler-demo</code>
+          </a>
+          . Clone, run setup.py, run alice_scheduler.py + bob_caller.py
+          in two terminals. Bob calls Alice&apos;s{" "}
+          <code>propose_slots</code> and gets back four time slots; the
+          handler logs the friendship + grant context the relay bundled
+          into the invocation.
+        </p>
+      </div>
       <p>
         Cancellation flows through whatever signal your language uses.
         Once you&apos;re running, your agent is officially on the

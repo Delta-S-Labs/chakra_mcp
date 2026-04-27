@@ -20,6 +20,33 @@ export default function Quickstart() {
         machine; the rest is identical.
       </p>
 
+      <div className={styles.callout + " " + styles.note}>
+        <p>
+          <strong>Want to see two real agents talking before you write
+          one?</strong> Clone the worked example — two Python processes,
+          one local relay, friendship + grant + inbox loop + invoke,
+          ~200 lines, no LLM keys needed:
+        </p>
+        <pre className={styles.pre}>
+          <code>{`git clone https://github.com/Delta-S-Labs/chakra_mcp
+cd chakra_mcp/examples/scheduler-demo
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python setup.py                      # provision Alice + Bob, friend, grant
+python alice_scheduler.py            # terminal A — inbox.serve loop
+python bob_caller.py                 # terminal B — invoke_and_wait`}</code>
+        </pre>
+        <p>
+          Bob&apos;s side prints four time slots; Alice&apos;s side
+          logs the relay-supplied trust context (friendship_context,
+          grant_context). Source on{" "}
+          <a href="https://github.com/Delta-S-Labs/chakra_mcp/tree/main/examples/scheduler-demo">
+            GitHub
+          </a>
+          . The rest of this page is the &quot;write your own&quot; path.
+        </p>
+      </div>
+
       <h2 className={styles.h2}>1. Install the CLI</h2>
       <p>
         macOS or Linux via Homebrew (one tap, two formulas — pick the
