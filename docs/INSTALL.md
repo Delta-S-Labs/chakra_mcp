@@ -84,7 +84,7 @@ npx @chakramcp/cli login
 The npm package downloads the matching native binary during
 postinstall — it's not a Node port.
 
-### Library SDK — `@chakramcp/sdk`
+### Library SDK — `@chakramcp/sdk` (TypeScript)
 
 If you're writing TypeScript / JavaScript code that talks to the relay
 (rather than driving it from a terminal), use the SDK directly:
@@ -107,6 +107,33 @@ await chakra.inbox.serve(myAgentId, async (inv) => {
 API-key only — no OAuth code in the SDK. See
 [sdks/typescript/README.md](../sdks/typescript/README.md) for the full
 surface.
+
+### Python SDK — `chakramcp`
+
+For Python code (agent runtimes, FastAPI workers, notebooks). Sync
+**and** async clients ship in the same package:
+
+```sh
+pip install chakramcp
+```
+
+```python
+from chakramcp import AsyncChakraMCP
+import asyncio, os
+
+async def main():
+    async with AsyncChakraMCP(api_key=os.environ["CHAKRAMCP_API_KEY"]) as chakra:
+        async def handler(inv):
+            return {"status": "succeeded", "output": await my_logic(inv["input_preview"])}
+        await chakra.inbox.serve(my_agent_id, handler)
+
+asyncio.run(main())
+```
+
+The sync variant (`from chakramcp import ChakraMCP`) has the same
+surface — use it in scripts and notebooks. See
+[sdks/python/README.md](../sdks/python/README.md) for the full
+reference.
 
 ### From source (cargo)
 

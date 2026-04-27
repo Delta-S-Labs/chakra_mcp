@@ -1,0 +1,74 @@
+name: SDK Python Release
+
+# Triggered by `sdk-py-vX.Y.Z` tags. Bumps __version__ to match,
+# builds, runs tests, publishes to PyPI via trusted-publishing
+# (no API token needed once configured at pypi.org).
+
+on:
+  push:
+    tags: ['sdk-py-v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g. 0.1.0)'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish chakramcp
+    runs-on: ubuntu-22.04
+    # PyPI trusted-publishing is the recommended path — register
+    # this workflow as a trusted publisher at
+    # https://pypi.org/manage/account/publishing/ and OIDC handles auth.
+    permissions:
+      id-token: write
+      contents: read
+    defaults:
+      run:
+        working-directory: sdks/python
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Resolve version
+        id: v
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ver="${{ github.event.inputs.version }}"
+          else
+            ver="${GITHUB_REF_NAME#sdk-py-v}"
+          fi
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+
+      - name: Bump __version__
+        run: |
+          ver="${{ steps.v.outputs.version }}"
+          # Replace the first __version__ assignment in __init__.py.
+          python - <<PY
+          import re, pathlib
+          p = pathlib.Path("src/chakramcp/__init__.py")
+          src = p.read_text()
+          new = re.sub(r'__version__\s*=\s*"[^"]*"', f'__version__ = "${ver}"', src, count=1)
+          p.write_text(new)
+          PY
+
+      - run: pip install -e ".[dev]" build
+
+      - name: Test
+        run: pytest -v
+
+      - name: Build sdist + wheel
+        run: python -m build
+
+      # Trusted publishing — no PYPI_API_TOKEN needed once the
+      # publisher is registered at PyPI.
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: sdks/python/dist/
