@@ -14,10 +14,9 @@ const tabs = [
 
 export default function SiteHeader() {
   const pathname = usePathname();
+  // Landing keeps the brandmark only — no nav. Every other page
+  // surfaces the public tabs.
   const onLanding = pathname === "/";
-  // On the landing, drop the Portfolio tab (it's the page you're on)
-  // so the header stays minimalist.
-  const visibleTabs = onLanding ? tabs.filter((t) => t.href !== "/") : tabs;
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
@@ -26,17 +25,19 @@ export default function SiteHeader() {
       <Link href="/" aria-label="ChakraMCP home" style={{ textDecoration: "none" }}>
         <Brandmark />
       </Link>
-      <nav className="site-nav" aria-label="Primary">
-        {visibleTabs.map((t) => (
-          <Link
-            key={t.href}
-            href={t.href}
-            className={"nav-link" + (isActive(t.href) ? " active" : "")}
-          >
-            {t.label}
-          </Link>
-        ))}
-      </nav>
+      {!onLanding && (
+        <nav className="site-nav" aria-label="Primary">
+          {tabs.map((t) => (
+            <Link
+              key={t.href}
+              href={t.href}
+              className={"nav-link" + (isActive(t.href) ? " active" : "")}
+            >
+              {t.label}
+            </Link>
+          ))}
+        </nav>
+      )}
     </header>
   );
 }
