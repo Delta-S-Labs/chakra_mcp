@@ -1,0 +1,62 @@
+name: SDK Rust Release
+
+# Triggered by `sdk-rust-vX.Y.Z` tags. Bumps Cargo.toml version,
+# runs tests, publishes to crates.io. Skips silently if CRATES_IO_TOKEN
+# isn't configured.
+
+on:
+  push:
+    tags: ['sdk-rust-v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g. 0.1.0)'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish chakramcp (crates.io)
+    runs-on: ubuntu-22.04
+    if: ${{ env.CRATES_TOKEN_SET == 'true' }}
+    env:
+      CRATES_TOKEN_SET: ${{ secrets.CRATES_IO_TOKEN != '' }}
+    defaults:
+      run:
+        working-directory: sdks/rust
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sdks/rust
+          key: sdk-rust-release
+
+      - name: Resolve version
+        id: v
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ver="${{ github.event.inputs.version }}"
+          else
+            ver="${GITHUB_REF_NAME#sdk-rust-v}"
+          fi
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+
+      - name: Bump Cargo.toml version
+        run: |
+          ver="${{ steps.v.outputs.version }}"
+          sed -i.bak -E "0,/^version = \".*\"/{s//version = \"${ver}\"/}" Cargo.toml
+          rm -f Cargo.toml.bak
+          grep '^version' Cargo.toml
+
+      - name: Test
+        run: cargo test --all-targets
+
+      - name: Publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+        run: cargo publish --token "$CARGO_REGISTRY_TOKEN"

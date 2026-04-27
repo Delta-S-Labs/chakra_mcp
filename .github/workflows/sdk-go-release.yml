@@ -1,0 +1,60 @@
+name: SDK Go Release
+
+# Go modules don't have a "publish" step in the npm/PyPI sense — proxy.golang.org
+# resolves modules from VCS tags directly. So this workflow exists to:
+#   * validate the release tag is shaped right
+#   * run tests one final time at the tag
+#   * trigger the proxy to cache the new version (warm pkg.go.dev)
+#
+# The tag must be of the form `sdks/go/vX.Y.Z` (Go's submodule tag
+# convention) — tools downstream of this workflow assume that.
+
+on:
+  push:
+    tags: ['sdks/go/v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g. 0.1.0)'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Validate + warm proxy
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: sdks/go
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.23"
+          cache-dependency-path: sdks/go/go.sum
+
+      - name: Resolve version
+        id: v
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ver="${{ github.event.inputs.version }}"
+          else
+            ver="${GITHUB_REF_NAME#sdks/go/v}"
+          fi
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+
+      - name: Vet + build + test
+        run: |
+          go vet ./...
+          go build ./...
+          go test -race ./...
+
+      - name: Warm proxy.golang.org cache
+        run: |
+          ver="${{ steps.v.outputs.version }}"
+          # Best-effort — fails gracefully if the tag isn't visible to
+          # the proxy yet. Re-running the workflow later is fine.
+          curl -fsSL "https://proxy.golang.org/github.com/!delta-!s-!labs/chakra_mcp/sdks/go/@v/v${ver}.info" || true

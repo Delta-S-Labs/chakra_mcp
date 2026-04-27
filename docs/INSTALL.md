@@ -135,7 +135,66 @@ surface — use it in scripts and notebooks. See
 [sdks/python/README.md](../sdks/python/README.md) for the full
 reference.
 
-### From source (cargo)
+### Rust SDK — `chakramcp` (crate)
+
+Async, tokio-based:
+
+```sh
+cargo add chakramcp
+```
+
+```rust
+use chakramcp::{ChakraMCP, HandlerResult};
+use tokio_util::sync::CancellationToken;
+use std::future::IntoFuture;
+
+#[tokio::main]
+async fn main() -> Result<(), chakramcp::Error> {
+    let chakra = ChakraMCP::new(std::env::var("CHAKRAMCP_API_KEY").unwrap())?;
+
+    let cancel = CancellationToken::new();
+    chakra
+        .inbox()
+        .serve(&my_agent_id, |inv| async move {
+            let out = my_agent_logic(inv.input_preview).await?;
+            Ok::<_, MyError>(HandlerResult::Succeeded(out))
+        })
+        .with_cancellation(cancel)
+        .into_future()
+        .await
+}
+```
+
+See [sdks/rust/README.md](../sdks/rust/README.md) for the full
+reference.
+
+### Go SDK
+
+Standard library only — `net/http` + `context.Context`:
+
+```sh
+go get github.com/Delta-S-Labs/chakra_mcp/sdks/go
+```
+
+```go
+import chakramcp "github.com/Delta-S-Labs/chakra_mcp/sdks/go"
+
+chakra, _ := chakramcp.New(os.Getenv("CHAKRAMCP_API_KEY"))
+
+handler := func(ctx context.Context, inv chakramcp.Invocation) (chakramcp.HandlerResult, error) {
+    out, err := myAgentLogic(ctx, inv.InputPreview)
+    if err != nil {
+        return chakramcp.Failed(err.Error()), nil
+    }
+    return chakramcp.Succeeded(out), nil
+}
+
+_ = chakra.Inbox().Serve(ctx, myAgentID, handler, chakramcp.ServeOptions{})
+```
+
+See [sdks/go/README.md](../sdks/go/README.md) for the full reference.
+
+### Cargo (CLI from source)
 
 ```sh
 cargo install --git https://github.com/Delta-S-Labs/chakra_mcp \
