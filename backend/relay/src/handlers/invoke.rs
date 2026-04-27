@@ -80,6 +80,43 @@ pub struct InvocationDto {
     pub i_served: bool,
     /// True when the requesting user is on the grantee side.
     pub i_invoked: bool,
+    /// Trust context bundled in by the relay on inbox.pull responses
+    /// only — these fields are populated when the relay just verified
+    /// friendship + grant before delivering this row, so the receiving
+    /// agent doesn't need to re-query. Always None on list/get
+    /// (audit-log) endpoints, where the friendship/grant state at
+    /// query time may differ from when the invocation was authorised.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub friendship_context: Option<FriendshipContext>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grant_context: Option<GrantContext>,
+}
+
+/// Friendship details the relay verified before queuing this
+/// invocation. Trust the assertions here without re-querying.
+#[derive(Debug, Serialize)]
+pub struct FriendshipContext {
+    pub id: Uuid,
+    pub status: String,
+    pub proposer_agent_id: Uuid,
+    pub target_agent_id: Uuid,
+    pub proposer_message: Option<String>,
+    pub response_message: Option<String>,
+    pub decided_at: Option<DateTime<Utc>>,
+}
+
+/// Grant details the relay verified before queuing this invocation.
+#[derive(Debug, Serialize)]
+pub struct GrantContext {
+    pub id: Uuid,
+    pub status: String,
+    pub granter_agent_id: Uuid,
+    pub grantee_agent_id: Uuid,
+    pub capability_id: Uuid,
+    pub capability_name: String,
+    pub capability_visibility: String,
+    pub granted_at: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -314,6 +351,10 @@ pub async fn inbox(
     }
 
     let ids: Vec<Uuid> = claimed.into_iter().map(|r| r.id).collect();
+    // Bundle in friendship + grant context. The relay just verified
+    // both before queuing this row, so the receiving agent doesn't
+    // need to re-check — saves an LLM tool call (or three) per
+    // invocation.
     let rows = sqlx::query!(
         r#"
         SELECT
@@ -322,10 +363,39 @@ pub async fn inbox(
             i.elapsed_ms, i.error_message, i.input_preview, i.output_preview,
             i.created_at, i.claimed_at,
             ga.display_name as "granter_display_name?",
-            ea.display_name as "grantee_display_name?"
+            ea.display_name as "grantee_display_name?",
+
+            g.status              as "g_status?",
+            g.granter_agent_id    as "g_granter_agent_id?",
+            g.grantee_agent_id    as "g_grantee_agent_id?",
+            g.capability_id       as "g_capability_id?",
+            cap.visibility        as "g_capability_visibility?",
+            g.granted_at          as "g_granted_at?",
+            g.expires_at          as "g_expires_at?",
+
+            f.id                  as "f_id?",
+            f.status              as "f_status?",
+            f.proposer_agent_id   as "f_proposer_agent_id?",
+            f.target_agent_id     as "f_target_agent_id?",
+            f.proposer_message    as "f_proposer_message?",
+            f.response_message    as "f_response_message?",
+            f.decided_at          as "f_decided_at?"
         FROM relay_invocations i
-        LEFT JOIN agents ga ON ga.id = i.granter_agent_id
-        LEFT JOIN agents ea ON ea.id = i.grantee_agent_id
+        LEFT JOIN agents ga             ON ga.id  = i.granter_agent_id
+        LEFT JOIN agents ea             ON ea.id  = i.grantee_agent_id
+        LEFT JOIN grants g              ON g.id   = i.grant_id
+        LEFT JOIN agent_capabilities cap ON cap.id = g.capability_id
+        LEFT JOIN LATERAL (
+            SELECT *
+            FROM friendships f2
+            WHERE f2.status = 'accepted'
+              AND (
+                  (f2.proposer_agent_id = i.granter_agent_id AND f2.target_agent_id = i.grantee_agent_id)
+               OR (f2.proposer_agent_id = i.grantee_agent_id AND f2.target_agent_id = i.granter_agent_id)
+              )
+            ORDER BY f2.decided_at DESC
+            LIMIT 1
+        ) f ON true
         WHERE i.id = ANY($1)
         ORDER BY i.created_at ASC
         "#,
@@ -336,24 +406,78 @@ pub async fn inbox(
 
     Ok(Json(
         rows.into_iter()
-            .map(|r| InvocationDto {
-                id: r.id,
-                grant_id: r.grant_id,
-                granter_agent_id: r.granter_agent_id,
-                granter_display_name: r.granter_display_name,
-                grantee_agent_id: r.grantee_agent_id,
-                grantee_display_name: r.grantee_display_name,
-                capability_id: r.capability_id,
-                capability_name: r.capability_name,
-                status: r.status,
-                elapsed_ms: r.elapsed_ms,
-                error_message: r.error_message,
-                input_preview: r.input_preview,
-                output_preview: r.output_preview,
-                created_at: r.created_at,
-                claimed_at: r.claimed_at,
-                i_served: true,
-                i_invoked: false,
+            .map(|r| {
+                let grant_context = match (
+                    r.grant_id,
+                    r.g_status.clone(),
+                    r.g_granter_agent_id,
+                    r.g_grantee_agent_id,
+                    r.g_capability_id,
+                    r.g_capability_visibility.clone(),
+                    r.g_granted_at,
+                ) {
+                    (
+                        Some(grant_id),
+                        Some(status),
+                        Some(granter),
+                        Some(grantee),
+                        Some(capability_id),
+                        Some(visibility),
+                        Some(granted_at),
+                    ) => Some(GrantContext {
+                        id: grant_id,
+                        status,
+                        granter_agent_id: granter,
+                        grantee_agent_id: grantee,
+                        capability_id,
+                        capability_name: r.capability_name.clone(),
+                        capability_visibility: visibility,
+                        granted_at,
+                        expires_at: r.g_expires_at,
+                    }),
+                    _ => None,
+                };
+                let friendship_context = match (
+                    r.f_id,
+                    r.f_status.clone(),
+                    r.f_proposer_agent_id,
+                    r.f_target_agent_id,
+                ) {
+                    (Some(id), Some(status), Some(proposer), Some(target)) => {
+                        Some(FriendshipContext {
+                            id,
+                            status,
+                            proposer_agent_id: proposer,
+                            target_agent_id: target,
+                            proposer_message: r.f_proposer_message,
+                            response_message: r.f_response_message,
+                            decided_at: r.f_decided_at,
+                        })
+                    }
+                    _ => None,
+                };
+
+                InvocationDto {
+                    id: r.id,
+                    grant_id: r.grant_id,
+                    granter_agent_id: r.granter_agent_id,
+                    granter_display_name: r.granter_display_name,
+                    grantee_agent_id: r.grantee_agent_id,
+                    grantee_display_name: r.grantee_display_name,
+                    capability_id: r.capability_id,
+                    capability_name: r.capability_name,
+                    status: r.status,
+                    elapsed_ms: r.elapsed_ms,
+                    error_message: r.error_message,
+                    input_preview: r.input_preview,
+                    output_preview: r.output_preview,
+                    created_at: r.created_at,
+                    claimed_at: r.claimed_at,
+                    i_served: true,
+                    i_invoked: false,
+                    friendship_context,
+                    grant_context,
+                }
             })
             .collect(),
     ))
@@ -511,6 +635,8 @@ pub async fn list(
                 claimed_at: r.claimed_at,
                 i_served: r.i_served.unwrap_or(false),
                 i_invoked: r.i_invoked.unwrap_or(false),
+                friendship_context: None,
+                grant_context: None,
             })
             .collect(),
     ))
@@ -579,5 +705,7 @@ async fn fetch_one(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<InvocationDto
         claimed_at: r.claimed_at,
         i_served,
         i_invoked,
+        friendship_context: None,
+        grant_context: None,
     })
 }

@@ -134,6 +134,36 @@ export interface Invocation {
   claimed_at: string | null;
   i_served: boolean;
   i_invoked: boolean;
+  /**
+   * Trust context bundled by the relay on `inbox.pull` responses only.
+   * The relay just verified friendship + grant before delivering this
+   * row — your handler can trust these assertions without re-querying.
+   * Always undefined on audit-log endpoints (`invocations.list/get`).
+   */
+  friendship_context?: FriendshipContext;
+  grant_context?: GrantContext;
+}
+
+export interface FriendshipContext {
+  id: string;
+  status: FriendshipStatus;
+  proposer_agent_id: string;
+  target_agent_id: string;
+  proposer_message: string | null;
+  response_message: string | null;
+  decided_at: string | null;
+}
+
+export interface GrantContext {
+  id: string;
+  status: GrantStatus;
+  granter_agent_id: string;
+  grantee_agent_id: string;
+  capability_id: string;
+  capability_name: string;
+  capability_visibility: Visibility;
+  granted_at: string;
+  expires_at: string | null;
 }
 
 export const TERMINAL_STATUSES: ReadonlySet<InvocationStatus> = new Set([

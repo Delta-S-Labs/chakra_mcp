@@ -162,23 +162,51 @@ type InvokeResponse struct {
 }
 
 type Invocation struct {
-	ID                  string           `json:"id"`
-	GrantID             *string          `json:"grant_id"`
-	GranterAgentID      *string          `json:"granter_agent_id"`
-	GranterDisplayName  *string          `json:"granter_display_name"`
-	GranteeAgentID      *string          `json:"grantee_agent_id"`
-	GranteeDisplayName  *string          `json:"grantee_display_name"`
-	CapabilityID        *string          `json:"capability_id"`
-	CapabilityName      string           `json:"capability_name"`
-	Status              InvocationStatus `json:"status"`
-	ElapsedMs           int32            `json:"elapsed_ms"`
-	ErrorMessage        *string          `json:"error_message"`
-	InputPreview        json.RawMessage  `json:"input_preview"`
-	OutputPreview       json.RawMessage  `json:"output_preview"`
-	CreatedAt           time.Time        `json:"created_at"`
-	ClaimedAt           *time.Time       `json:"claimed_at"`
-	IServed             bool             `json:"i_served"`
-	IInvoked            bool             `json:"i_invoked"`
+	ID                 string           `json:"id"`
+	GrantID            *string          `json:"grant_id"`
+	GranterAgentID     *string          `json:"granter_agent_id"`
+	GranterDisplayName *string          `json:"granter_display_name"`
+	GranteeAgentID     *string          `json:"grantee_agent_id"`
+	GranteeDisplayName *string          `json:"grantee_display_name"`
+	CapabilityID       *string          `json:"capability_id"`
+	CapabilityName     string           `json:"capability_name"`
+	Status             InvocationStatus `json:"status"`
+	ElapsedMs          int32            `json:"elapsed_ms"`
+	ErrorMessage       *string          `json:"error_message"`
+	InputPreview       json.RawMessage  `json:"input_preview"`
+	OutputPreview      json.RawMessage  `json:"output_preview"`
+	CreatedAt          time.Time        `json:"created_at"`
+	ClaimedAt          *time.Time       `json:"claimed_at"`
+	IServed            bool             `json:"i_served"`
+	IInvoked           bool             `json:"i_invoked"`
+	// Trust context bundled by the relay on Inbox.Pull responses only.
+	// The relay just verified friendship + grant before delivering this
+	// row — handlers can trust these assertions without re-querying.
+	// nil on audit-log endpoints (Invocations.List/Get).
+	FriendshipContext *FriendshipContext `json:"friendship_context,omitempty"`
+	GrantContext      *GrantContext      `json:"grant_context,omitempty"`
+}
+
+type FriendshipContext struct {
+	ID              string           `json:"id"`
+	Status          FriendshipStatus `json:"status"`
+	ProposerAgentID string           `json:"proposer_agent_id"`
+	TargetAgentID   string           `json:"target_agent_id"`
+	ProposerMessage *string          `json:"proposer_message"`
+	ResponseMessage *string          `json:"response_message"`
+	DecidedAt       *time.Time       `json:"decided_at"`
+}
+
+type GrantContext struct {
+	ID                   string      `json:"id"`
+	Status               GrantStatus `json:"status"`
+	GranterAgentID       string      `json:"granter_agent_id"`
+	GranteeAgentID       string      `json:"grantee_agent_id"`
+	CapabilityID         string      `json:"capability_id"`
+	CapabilityName       string      `json:"capability_name"`
+	CapabilityVisibility Visibility  `json:"capability_visibility"`
+	GrantedAt            time.Time   `json:"granted_at"`
+	ExpiresAt            *time.Time  `json:"expires_at"`
 }
 
 // ─── Request bodies ──────────────────────────────────────

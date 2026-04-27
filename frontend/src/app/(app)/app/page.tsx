@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getMe } from "@/lib/api";
@@ -91,30 +92,26 @@ export default async function AppDashboard() {
       </section>
 
       <section className={styles.placeholders}>
-        <article className={styles.tile}>
-          <div className={styles.tileEyebrow}>Soon</div>
+        <Link className={styles.tile} href="/app/agents">
+          <div className={styles.tileEyebrow}>Open</div>
           <h2>Agents</h2>
           <p>Register agents you own. Publish capabilities. Toggle visibility.</p>
-          <span className={styles.tileBadge}>Pending Phase 1.5</span>
-        </article>
-        <article className={styles.tile}>
-          <div className={styles.tileEyebrow}>Soon</div>
+        </Link>
+        <Link className={styles.tile} href="/app/friendships">
+          <div className={styles.tileEyebrow}>Open</div>
           <h2>Friendships</h2>
           <p>Inbound and outbound proposals. Counteroffer, accept, reject.</p>
-          <span className={styles.tileBadge}>Pending Phase 1.5</span>
-        </article>
-        <article className={styles.tile}>
-          <div className={styles.tileEyebrow}>Soon</div>
-          <h2>Grants &amp; consent</h2>
-          <p>Active directional grants, consent records, revocation history.</p>
-          <span className={styles.tileBadge}>Pending Phase 1.5</span>
-        </article>
-        <article className={styles.tile}>
-          <div className={styles.tileEyebrow}>Soon</div>
+        </Link>
+        <Link className={styles.tile} href="/app/grants">
+          <div className={styles.tileEyebrow}>Open</div>
+          <h2>Grants</h2>
+          <p>Active directional grants, capability access, revocation history.</p>
+        </Link>
+        <Link className={styles.tile} href="/app/audit">
+          <div className={styles.tileEyebrow}>Open</div>
           <h2>Audit log</h2>
-          <p>Every relay call, every actor context, every outcome.</p>
-          <span className={styles.tileBadge}>Pending Phase 1.5</span>
-        </article>
+          <p>Every relay invocation, every actor context, every outcome.</p>
+        </Link>
       </section>
     </>
   );

@@ -119,7 +119,43 @@ class InvokeResponse(TypedDict):
     error: str | None
 
 
-class Invocation(TypedDict):
+class FriendshipContext(TypedDict):
+    """Trust context for a friendship — bundled in inbox responses."""
+
+    id: str
+    status: FriendshipStatus
+    proposer_agent_id: str
+    target_agent_id: str
+    proposer_message: str | None
+    response_message: str | None
+    decided_at: str | None
+
+
+class GrantContext(TypedDict):
+    """Trust context for a grant — bundled in inbox responses."""
+
+    id: str
+    status: GrantStatus
+    granter_agent_id: str
+    grantee_agent_id: str
+    capability_id: str
+    capability_name: str
+    capability_visibility: Visibility
+    granted_at: str
+    expires_at: str | None
+
+
+class Invocation(TypedDict, total=False):
+    """Inbox / audit-log row.
+
+    The ``friendship_context`` and ``grant_context`` keys are populated
+    only on inbox responses (``inbox.pull`` / ``inbox.serve``) — the
+    relay just verified both before delivering, so handlers can trust
+    these assertions without re-querying. They're absent on audit-log
+    endpoints (``invocations.list / get``), where the live state of
+    the friendship/grant may have drifted since the row was created.
+    """
+
     id: str
     grant_id: str | None
     granter_agent_id: str | None
@@ -137,6 +173,8 @@ class Invocation(TypedDict):
     claimed_at: str | None
     i_served: bool
     i_invoked: bool
+    friendship_context: FriendshipContext  # only set on inbox responses
+    grant_context: GrantContext  # only set on inbox responses
 
 
 # ─── Request bodies ──────────────────────────────────────

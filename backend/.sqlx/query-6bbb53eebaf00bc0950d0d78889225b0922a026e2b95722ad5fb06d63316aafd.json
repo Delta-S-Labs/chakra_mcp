@@ -1,0 +1,190 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            i.id, i.grant_id, i.granter_agent_id, i.grantee_agent_id,\n            i.capability_id, i.capability_name, i.status,\n            i.elapsed_ms, i.error_message, i.input_preview, i.output_preview,\n            i.created_at, i.claimed_at,\n            ga.display_name as \"granter_display_name?\",\n            ea.display_name as \"grantee_display_name?\",\n\n            g.status              as \"g_status?\",\n            g.granter_agent_id    as \"g_granter_agent_id?\",\n            g.grantee_agent_id    as \"g_grantee_agent_id?\",\n            g.capability_id       as \"g_capability_id?\",\n            cap.visibility        as \"g_capability_visibility?\",\n            g.granted_at          as \"g_granted_at?\",\n            g.expires_at          as \"g_expires_at?\",\n\n            f.id                  as \"f_id?\",\n            f.status              as \"f_status?\",\n            f.proposer_agent_id   as \"f_proposer_agent_id?\",\n            f.target_agent_id     as \"f_target_agent_id?\",\n            f.proposer_message    as \"f_proposer_message?\",\n            f.response_message    as \"f_response_message?\",\n            f.decided_at          as \"f_decided_at?\"\n        FROM relay_invocations i\n        LEFT JOIN agents ga             ON ga.id  = i.granter_agent_id\n        LEFT JOIN agents ea             ON ea.id  = i.grantee_agent_id\n        LEFT JOIN grants g              ON g.id   = i.grant_id\n        LEFT JOIN agent_capabilities cap ON cap.id = g.capability_id\n        LEFT JOIN LATERAL (\n            SELECT *\n            FROM friendships f2\n            WHERE f2.status = 'accepted'\n              AND (\n                  (f2.proposer_agent_id = i.granter_agent_id AND f2.target_agent_id = i.grantee_agent_id)\n               OR (f2.proposer_agent_id = i.grantee_agent_id AND f2.target_agent_id = i.granter_agent_id)\n              )\n            ORDER BY f2.decided_at DESC\n            LIMIT 1\n        ) f ON true\n        WHERE i.id = ANY($1)\n        ORDER BY i.created_at ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "grant_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "granter_agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "grantee_agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "capability_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "capability_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "elapsed_ms",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "error_message",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "input_preview",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 10,
+        "name": "output_preview",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "claimed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "granter_display_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "grantee_display_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 15,
+        "name": "g_status?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 16,
+        "name": "g_granter_agent_id?",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 17,
+        "name": "g_grantee_agent_id?",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 18,
+        "name": "g_capability_id?",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 19,
+        "name": "g_capability_visibility?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 20,
+        "name": "g_granted_at?",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 21,
+        "name": "g_expires_at?",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 22,
+        "name": "f_id?",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 23,
+        "name": "f_status?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 24,
+        "name": "f_proposer_agent_id?",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 25,
+        "name": "f_target_agent_id?",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 26,
+        "name": "f_proposer_message?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 27,
+        "name": "f_response_message?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 28,
+        "name": "f_decided_at?",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "6bbb53eebaf00bc0950d0d78889225b0922a026e2b95722ad5fb06d63316aafd"
+}

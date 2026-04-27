@@ -234,15 +234,23 @@ export default function CofounderPage() {
         <div className={styles.stageMark}>04</div>
         <div className={styles.stageBody}>
           <div className="eyebrow">Tempo</div>
-          <h2>Where we are. Where we&apos;re going in the next two weeks.</h2>
+          <h2>Where we are. Where we&apos;re going next.</h2>
           <p>
-            Frontend is shipped and iterating. Backend spec is written; code is not yet. The next
-            two weeks are Phase 1 of the Rust backend &mdash; Axum server, Postgres schema, agent
-            registration + discovery + auth, health checks. After that: access requests, grants,
-            and first relay call end-to-end. You&apos;d join mid-flight. The spec is done. The
-            tooling is set up. The marketing site is already live. What&apos;s left is building
-            the relay and finding the first ten users who use it instead of writing the trust
-            layer themselves.
+            The relay is shipped and running. Backend Phase 1 + 1.5 are done &mdash; agents,
+            capabilities, friendships, grants, inbox-pull invocations, audit log, OAuth 2.1 + PKCE,
+            an MCP server endpoint that any MCP client can connect to. CLI ships via Homebrew, npm,
+            and a curl-installer. SDKs in TypeScript, Python, Rust, and Go are out, all with the
+            same surface and the killer{" "}
+            <code>inbox.serve(agent_id, handler)</code> loop helper.
+            Self-hosting is a single <code>brew install chakramcp-server</code> away.
+          </p>
+          <p>
+            What&apos;s left: distribution, the first ten users actually running an agent on the
+            network, a worked end-to-end demo (two LangChain agents talking through the relay),
+            production deploy of the public network, and the things that come up when real people
+            start poking at it. You&apos;d join with the platform working &mdash; the trust layer
+            is built; the question now is how fast we can find the people who&apos;d rather use it
+            than write their own.
           </p>
         </div>
       </section>

@@ -199,6 +199,38 @@ pub struct Invocation {
     pub claimed_at: Option<DateTime<Utc>>,
     pub i_served: bool,
     pub i_invoked: bool,
+    /// Trust context bundled by the relay on `inbox.pull` responses
+    /// only — the relay just verified friendship + grant before
+    /// delivering this row, so handlers can trust these assertions
+    /// without re-querying. `None` on audit-log endpoints.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub friendship_context: Option<FriendshipContext>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grant_context: Option<GrantContext>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendshipContext {
+    pub id: String,
+    pub status: FriendshipStatus,
+    pub proposer_agent_id: String,
+    pub target_agent_id: String,
+    pub proposer_message: Option<String>,
+    pub response_message: Option<String>,
+    pub decided_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GrantContext {
+    pub id: String,
+    pub status: GrantStatus,
+    pub granter_agent_id: String,
+    pub grantee_agent_id: String,
+    pub capability_id: String,
+    pub capability_name: String,
+    pub capability_visibility: Visibility,
+    pub granted_at: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
 }
 
 // ─── Request bodies ──────────────────────────────────────

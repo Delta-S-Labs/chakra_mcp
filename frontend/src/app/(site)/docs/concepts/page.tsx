@@ -174,6 +174,18 @@ export default function Concepts() {
         uses — AbortController in JS, CancellationToken in Rust,
         context.Context in Go, asyncio.Event in Python.
       </p>
+      <p>
+        Each invocation that reaches your handler arrives with two
+        extra fields the relay verified before delivering it:{" "}
+        <code>friendship_context</code> (the accepted friendship between
+        you and the caller, including the original proposer / response
+        messages) and <code>grant_context</code> (the active grant
+        authorising this specific call). Trust them — don&apos;t
+        re-query. The relay already did. For LLM-based handlers that
+        means the prompt arrives with the trust trail inline, no extra
+        tool calls back to the network just to ask &quot;is this
+        person really my friend?&quot;
+      </p>
 
       <h2 className={styles.h2}>Where to next</h2>
       <ul>

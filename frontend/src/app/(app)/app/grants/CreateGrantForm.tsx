@@ -136,7 +136,7 @@ export function CreateGrantForm({
         <p className={styles.formHint}>
           Pick one of your agents, the friend it&apos;s granting to, and a
           capability of yours to expose. The grantee can then invoke that
-          capability through the relay (Phase 1.5+).
+          capability through the relay.
         </p>
       </header>
 
