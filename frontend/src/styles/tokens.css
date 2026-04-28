@@ -1,36 +1,36 @@
-/* ChakraMCP — colors & type */
+/* ChakraMCP - colors & type */
 /* Load fonts from Google Fonts (Archivo Expanded + Afacad) */
 @import url('https://fonts.googleapis.com/css2?family=Afacad:wght@400;500;600;700&family=Archivo+Expanded:wght@500;600;700;800&display=swap');
 
 :root {
-  /* ——— Type families ——— */
+  /* --- Type families --- */
   --font-display: 'Archivo Expanded', 'Archivo', system-ui, sans-serif;
   --font-body: 'Afacad', 'Inter', system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
 
-  /* ——— Color — paper (backgrounds) ——— */
-  --paper:       oklch(96% 0.014 72);   /* cream — default page bg */
+  /* --- Color - paper (backgrounds) --- */
+  --paper:       oklch(96% 0.014 72);   /* cream - default page bg */
   --paper-warm:  oklch(93% 0.030 45);   /* warmer cream for cards / hover */
   --paper-soft:  oklch(98% 0.010 70);   /* near-white, still warm */
 
-  /* ——— Color — ink (text) ——— */
+  /* --- Color - ink (text) --- */
   --ink:         oklch(24% 0.030 18);   /* primary text, dark brown-black */
   --ink-soft:    oklch(42% 0.025 22);   /* secondary text */
   --ink-muted:   oklch(58% 0.020 28);   /* captions, labels */
   --line:        oklch(78% 0.020 38);   /* hairlines, dividers */
 
-  /* ——— Color — accents ——— */
-  --accent-coral:  oklch(63% 0.19 28);   /* terra cotta — primary accent */
-  --accent-lime:   oklch(86% 0.16 128);  /* unexpected lime — secondary */
-  --accent-butter: oklch(91% 0.13 96);   /* butter yellow — highlights */
-  --accent-ink:    oklch(30% 0.03 18);   /* deep ink — dark panels */
+  /* --- Color - accents --- */
+  --accent-coral:  oklch(63% 0.19 28);   /* terra cotta - primary accent */
+  --accent-lime:   oklch(86% 0.16 128);  /* unexpected lime - secondary */
+  --accent-butter: oklch(91% 0.13 96);   /* butter yellow - highlights */
+  --accent-ink:    oklch(30% 0.03 18);   /* deep ink - dark panels */
 
   /* Soft tints for backgrounds */
   --tint-coral:  color-mix(in oklab, var(--accent-coral) 18%, var(--paper-soft));
   --tint-lime:   color-mix(in oklab, var(--accent-lime) 30%, var(--paper-soft));
   --tint-butter: color-mix(in oklab, var(--accent-butter) 46%, var(--paper-soft));
 
-  /* ——— Spacing (base scale) ——— */
+  /* --- Spacing (base scale) --- */
   --space-2xs: 0.25rem;  /*  4px */
   --space-xs:  0.5rem;   /*  8px */
   --space-sm:  0.75rem;  /* 12px */
@@ -41,7 +41,7 @@
   --space-3xl: 4rem;     /* 64px */
   --space-4xl: 6rem;     /* 96px */
 
-  /* ——— Radii ——— */
+  /* --- Radii --- */
   --radius-xs: 0.45rem;
   --radius-sm: 0.9rem;
   --radius-md: 1.15rem;
@@ -49,21 +49,21 @@
   --radius-xl: 1.6rem;   /* large feature cards */
   --radius-pill: 999px;
 
-  /* ——— Elevation / shadow ——— */
+  /* --- Elevation / shadow --- */
   --shadow-soft: 0 28px 50px color-mix(in oklab, var(--ink) 10%, transparent);
   --shadow-xs:   0 2px 6px color-mix(in oklab, var(--ink) 6%, transparent);
   --shadow-sm:   0 10px 24px color-mix(in oklab, var(--ink) 8%, transparent);
   --shadow-md:   0 18px 38px color-mix(in oklab, var(--ink) 8%, transparent);
   --shadow-butter: 0 10px 24px color-mix(in oklab, var(--accent-butter) 38%, transparent);
 
-  /* ——— Motion ——— */
+  /* --- Motion --- */
   --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
   --ease-gentle: cubic-bezier(0.32, 0.72, 0, 1);
   --dur-fast: 140ms;
   --dur-med:  220ms;
   --dur-slow: 420ms;
 
-  /* ——— Semantic type ——— */
+  /* --- Semantic type --- */
   --fg-1: var(--ink);
   --fg-2: var(--ink-soft);
   --fg-3: var(--ink-muted);
@@ -72,7 +72,7 @@
   --bg-3: var(--paper-warm);
 }
 
-/* ——— Page base ——— */
+/* --- Page base --- */
 html, body {
   background: var(--paper);
   color: var(--ink);
@@ -82,7 +82,7 @@ html, body {
   text-rendering: optimizeLegibility;
 }
 
-/* ——— Display / headlines (Archivo Expanded, tight negative tracking) ——— */
+/* --- Display / headlines (Archivo Expanded, tight negative tracking) --- */
 .h-display, h1.h-display {
   font-family: var(--font-display);
   font-weight: 800;
@@ -118,7 +118,7 @@ h3, .h3 {
   margin: 0;
 }
 
-/* ——— Eyebrow / label (display, uppercase, spaced) ——— */
+/* --- Eyebrow / label (display, uppercase, spaced) --- */
 .eyebrow, .label-display {
   font-family: var(--font-display);
   font-weight: 700;
@@ -128,7 +128,7 @@ h3, .h3 {
   color: var(--ink-soft);
 }
 
-/* ——— Body ——— */
+/* --- Body --- */
 p, .p {
   font-family: var(--font-body);
   font-size: 1.0625rem;
@@ -151,7 +151,7 @@ p, .p {
   color: var(--ink-muted);
 }
 
-/* ——— Code / mono ——— */
+/* --- Code / mono --- */
 code, pre, .mono {
   font-family: var(--font-mono);
   font-size: 0.9em;

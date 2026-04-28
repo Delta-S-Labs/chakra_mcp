@@ -22,7 +22,7 @@ export function CreateGrantForm({
 }) {
   const router = useRouter();
 
-  // Each of my agents has a set of network friends — agents on the other
+  // Each of my agents has a set of network friends - agents on the other
   // side of an accepted friendship. Keyed by my-agent id.
   const friendsByAgent = useMemo(() => {
     const m = new Map<string, Array<{ id: string; label: string }>>();
@@ -95,7 +95,7 @@ export function CreateGrantForm({
     return (
       <div className={styles.notice}>
         Your agents don&apos;t have any accepted friendships yet. Head to{" "}
-        <strong>Friendships</strong> and propose one — friendships are the
+        <strong>Friendships</strong> and propose one - friendships are the
         prerequisite for granting capability access.
       </div>
     );
@@ -106,7 +106,7 @@ export function CreateGrantForm({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!token) {
-      setError("Sign in again — no backend token.");
+      setError("Sign in again - no backend token.");
       return;
     }
     if (!granteeId || !capId) {

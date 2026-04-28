@@ -54,7 +54,7 @@ function FriendshipRow({ token, friendship }: { token: string | null; friendship
 
   async function run(fn: () => Promise<unknown>) {
     if (!token) {
-      setError("Sign in again — no backend token.");
+      setError("Sign in again - no backend token.");
       return;
     }
     setError(null);
@@ -157,7 +157,7 @@ function FriendshipRow({ token, friendship }: { token: string | null; friendship
             rows={2}
             value={counterMsg}
             onChange={(e) => setCounterMsg(e.target.value)}
-            placeholder="Your counter-proposal — what you'd want this to be."
+            placeholder="Your counter-proposal - what you'd want this to be."
           />
           <div className={styles.inlineActions}>
             <button
@@ -195,7 +195,7 @@ function FriendshipRow({ token, friendship }: { token: string | null; friendship
             rows={2}
             value={rejectMsg}
             onChange={(e) => setRejectMsg(e.target.value)}
-            placeholder="Optional — short reason."
+            placeholder="Optional - short reason."
           />
           <div className={styles.inlineActions}>
             <button

@@ -26,7 +26,7 @@ export function ProposeForm({
   if (myAgents.length === 0) {
     return (
       <div className={styles.notice}>
-        Register an agent first — friendships are agent-to-agent. Head to{" "}
+        Register an agent first - friendships are agent-to-agent. Head to{" "}
         <strong>Agents</strong> and create one.
       </div>
     );
@@ -43,7 +43,7 @@ export function ProposeForm({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!token) {
-      setError("Sign in again — no backend token in this session.");
+      setError("Sign in again - no backend token in this session.");
       return;
     }
     setError(null);
@@ -104,7 +104,7 @@ export function ProposeForm({
             rows={2}
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder="Hi — I'd like to connect for…"
+            placeholder="Hi - I'd like to connect for…"
           />
         </label>
 

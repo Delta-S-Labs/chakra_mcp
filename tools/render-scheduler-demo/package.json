@@ -1,0 +1,13 @@
+{
+  "name": "render-scheduler-demo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Offline renderer: produces a 2-terminal MP4 + GIF showing the scheduler-demo flow. Run `pnpm install && pnpm render`.",
+  "type": "module",
+  "scripts": {
+    "render": "node render.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.48.0"
+  }
+}

@@ -5,7 +5,7 @@ import { getMe } from "@/lib/api";
 import styles from "./dashboard.module.css";
 
 /**
- * /app — relay app dashboard.
+ * /app - relay app dashboard.
  *
  * Reads the session from NextAuth, then pulls the canonical user +
  * memberships from the backend `/v1/me` endpoint. If the backend reports
@@ -28,7 +28,7 @@ export default async function AppDashboard() {
       backendError = err instanceof Error ? err.message : "Backend unavailable.";
     }
   } else {
-    backendError = "No backend token in session — sign in again.";
+    backendError = "No backend token in session - sign in again.";
   }
 
   // redirect() throws NEXT_REDIRECT; keep it outside the try/catch above so it
@@ -47,7 +47,7 @@ export default async function AppDashboard() {
         <h1 className={styles.title}>You&apos;re in.</h1>
         <p className={styles.body}>
           Hi {name?.split(" ")[0] ?? "there"}. You&apos;re signed in to the relay
-          app.{session?.user?.is_admin ? " Admin tab is visible — you can review users, orgs, and API keys." : ""}
+          app.{session?.user?.is_admin ? " Admin tab is visible - you can review users, orgs, and API keys." : ""}
         </p>
       </section>
 
@@ -85,7 +85,7 @@ export default async function AppDashboard() {
           ))}
           {!personal && orgs.length === 0 && !backendError && (
             <article className={styles.accountTile}>
-              <p>No accounts yet — try signing out and back in to bootstrap.</p>
+              <p>No accounts yet - try signing out and back in to bootstrap.</p>
             </article>
           )}
         </div>

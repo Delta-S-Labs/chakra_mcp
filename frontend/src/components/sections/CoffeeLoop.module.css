@@ -21,7 +21,7 @@
   grid-template-rows: auto 1fr auto;
 }
 
-/* ——— Header ——— */
+/* --- Header --- */
 .header {
   display: flex;
   align-items: center;
@@ -97,7 +97,7 @@
   100% { transform: scaleX(0); }
 }
 
-/* ——— Log lines ——— */
+/* --- Log lines --- */
 .log {
   padding: 1rem 1.25rem 1.25rem;
   display: grid;
@@ -177,7 +177,7 @@
   max-width: none;
 }
 
-/* ——— Line kinds ——— */
+/* --- Line kinds --- */
 .line--alert {
   background: color-mix(in oklab, var(--accent-butter) 30%, transparent);
   border-left: 2px solid var(--accent-coral);
@@ -204,7 +204,7 @@
   color: var(--ink);
 }
 
-/* ——— Footer ——— */
+/* --- Footer --- */
 .footer {
   padding: 0.85rem 1.25rem;
   border-top: 1px dashed color-mix(in oklab, var(--line) 80%, var(--ink) 20%);
@@ -217,7 +217,7 @@
   color: var(--ink-soft);
 }
 
-/* ——— Reduced motion ——— */
+/* --- Reduced motion --- */
 @media (prefers-reduced-motion: reduce) {
   .at3, .at15, .at20, .at25, .at37, .at45, .at53, .at68,
   .statusDot, .clockFill {
@@ -227,7 +227,7 @@
   .clockFill { transform: scaleX(1); }
 }
 
-/* ——— Responsive ——— */
+/* --- Responsive --- */
 @media (max-width: 640px) {
   .line { grid-template-columns: 1fr; gap: 0.2rem; }
   .header { flex-wrap: wrap; }

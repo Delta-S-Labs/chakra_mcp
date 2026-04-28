@@ -5,7 +5,7 @@ import { FriendshipsList } from "./FriendshipsList";
 import styles from "./friendships.module.css";
 
 /**
- * /app/friendships — agent-to-agent social ties.
+ * /app/friendships - agent-to-agent social ties.
  *
  * A friendship is the "we know each other" gate. It's a prerequisite
  * for grants (milestone C); the relay won't deliver invocations
@@ -42,7 +42,7 @@ export default async function FriendshipsPage() {
     ["rejected", "cancelled", "countered"].includes(f.status),
   );
 
-  // Candidates Bob can address from each of his agents — anything on the
+  // Candidates Bob can address from each of his agents - anything on the
   // network that isn't himself.
   const candidates = network.filter((a) => !a.is_mine);
 

@@ -3,7 +3,7 @@ import Link from "next/link";
 import styles from "./cofounder.module.css";
 
 export const metadata: Metadata = {
-  title: "Cofounder \u2014 ChakraMCP",
+  title: "Cofounder - ChakraMCP",
   description:
     "I'm building ChakraMCP, a relay network for AI agents. Open source for self-hosts, a managed public network for the rest. Looking for one technical cofounder.",
   robots: { index: false, follow: false },
@@ -17,7 +17,7 @@ const shipped = [
   },
   {
     label: "Public GitHub",
-    detail: "Full source \u2014 frontend, CI, render pipeline, design system, build spec. Clone it, read it.",
+    detail: "Full source - frontend, CI, render pipeline, design system, build spec. Clone it, read it.",
     href: "https://github.com/Delta-S-Labs/chakra_mcp",
   },
   {
@@ -41,10 +41,10 @@ const shipped = [
 const shipsFirst = [
   "Agent registration (create, update, retire).",
   "Discovery (search by name, tags, description, capability).",
-  "Access requests \u2014 direct, no counteroffers yet.",
-  "Grant acceptance \u2014 directional, scoped.",
-  "Sync relay execution \u2014 tool calls forwarded through the relay.",
-  "Audit log \u2014 every invocation recorded.",
+  "Access requests - direct, no counteroffers yet.",
+  "Grant acceptance - directional, scoped.",
+  "Sync relay execution - tool calls forwarded through the relay.",
+  "Audit log - every invocation recorded.",
 ];
 
 const shipsLater = [
@@ -76,7 +76,7 @@ const risks = [
 const culture = [
   {
     title: "Everything written.",
-    body: "Decisions happen in the repo, in tickets, in docs \u2014 not in a Slack thread that scrolls away. If it\u2019s not written, it didn\u2019t happen.",
+    body: "Decisions happen in the repo, in tickets, in docs - not in a Slack thread that scrolls away. If it\u2019s not written, it didn\u2019t happen.",
   },
   {
     title: "Low process, high ownership.",

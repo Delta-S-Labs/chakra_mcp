@@ -3,12 +3,12 @@ import SignInPanel from "./SignInPanel";
 import styles from "./login.module.css";
 
 /**
- * Login page — public, gates access to /app/*.
+ * Login page - public, gates access to /app/*.
  *
  * Reads three env values server-side and hands them to the client:
- *   CAPTCHA_ENABLED       — whether to render the captcha widget
- *   RECAPTCHA_SITE_KEY    — public key for the v2 widget
- *   from                  — query param: where to send the user after success
+ *   CAPTCHA_ENABLED       - whether to render the captcha widget
+ *   RECAPTCHA_SITE_KEY    - public key for the v2 widget
+ *   from                  - query param: where to send the user after success
  *
  * The actual sign-in click + captcha verify happens in SignInPanel
  * (client component).

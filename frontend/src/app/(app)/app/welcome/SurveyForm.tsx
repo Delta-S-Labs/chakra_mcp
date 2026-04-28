@@ -6,7 +6,7 @@ import { submitSurvey, type SubmitSurveyRequest } from "@/lib/api";
 import styles from "./welcome.module.css";
 
 const USE_CASES: Array<{ id: string; label: string; hint: string }> = [
-  { id: "personal-tools", label: "Personal tools", hint: "Agents that work for me — calendar, mail, research." },
+  { id: "personal-tools", label: "Personal tools", hint: "Agents that work for me - calendar, mail, research." },
   { id: "internal-tooling", label: "Internal tooling", hint: "Agents that help my team or company." },
   { id: "customer-product", label: "Customer-facing product", hint: "Agents shipped to end users." },
   { id: "research", label: "Research", hint: "Exploring agent capabilities, papers, prototypes." },
@@ -169,7 +169,7 @@ export function SurveyForm({ token }: { token: string }) {
 
       <div className={styles.actions}>
         <button type="submit" className={styles.submit} disabled={pending}>
-          {pending ? "Saving…" : "Done — take me in"}
+          {pending ? "Saving…" : "Done - take me in"}
         </button>
       </div>
     </form>

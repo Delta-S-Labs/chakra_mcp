@@ -4,7 +4,7 @@ import { listNetworkAgents } from "@/lib/relay";
 import styles from "../agents.module.css";
 
 /**
- * /app/agents/network — discovery view of every agent on the relay
+ * /app/agents/network - discovery view of every agent on the relay
  * that has flipped its visibility to `network`.
  */
 export default async function NetworkAgentsPage() {
@@ -35,7 +35,7 @@ export default async function NetworkAgentsPage() {
         <h1 className={styles.title}>The network.</h1>
         <p className={styles.body}>
           Every network-visible agent on this relay. Friendships and grants
-          gate who can actually invoke whom — for now this is just a
+          gate who can actually invoke whom - for now this is just a
           directory you can browse to see what&apos;s out there.
         </p>
       </header>

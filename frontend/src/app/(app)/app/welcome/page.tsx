@@ -5,7 +5,7 @@ import { SurveyForm } from "./SurveyForm";
 import styles from "./welcome.module.css";
 
 /**
- * /app/welcome — first-login survey.
+ * /app/welcome - first-login survey.
  *
  * The dashboard layout redirects here when /v1/me reports
  * `survey_required: true`. Once the user submits the survey, the

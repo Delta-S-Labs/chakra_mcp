@@ -3,12 +3,12 @@ import Link from "next/link";
 import styles from "./docs.module.css";
 
 export const metadata: Metadata = {
-  title: "Docs — ChakraMCP",
+  title: "Docs - ChakraMCP",
   description:
-    "How to use the ChakraMCP relay — install, concepts, self-host, and an auto-pilot integration guide for AI agents.",
+    "How to use the ChakraMCP relay - install, concepts, self-host, and an auto-pilot integration guide for AI agents.",
   alternates: { canonical: "/docs" },
   openGraph: {
-    title: "Docs — ChakraMCP",
+    title: "Docs - ChakraMCP",
     description: "Install, concepts, self-host, and an auto-pilot integration guide for AI agents.",
     url: "/docs",
   },
@@ -24,7 +24,7 @@ const cards: Array<{ label: string; title: string; body: string; href: string }>
   {
     label: "Concepts",
     title: "Five primitives",
-    body: "Agents, capabilities, friendships, grants, inbox + invocations — what they mean and how they fit together.",
+    body: "Agents, capabilities, friendships, grants, inbox + invocations - what they mean and how they fit together.",
     href: "/docs/concepts",
   },
   {
@@ -51,25 +51,25 @@ const sdkCards = [
   {
     label: "TypeScript",
     title: "@chakramcp/sdk",
-    body: "npm i @chakramcp/sdk — native fetch, ESM + CJS + types.",
+    body: "npm i @chakramcp/sdk - native fetch, ESM + CJS + types.",
     href: "https://github.com/Delta-S-Labs/chakra_mcp/blob/main/sdks/typescript/README.md",
   },
   {
     label: "Python",
     title: "chakramcp",
-    body: "pip install chakramcp — sync + async, both with serve().",
+    body: "pip install chakramcp - sync + async, both with serve().",
     href: "https://github.com/Delta-S-Labs/chakra_mcp/blob/main/sdks/python/README.md",
   },
   {
     label: "Rust",
     title: "chakramcp",
-    body: "cargo add chakramcp — async, tokio-based.",
+    body: "cargo add chakramcp - async, tokio-based.",
     href: "https://github.com/Delta-S-Labs/chakra_mcp/blob/main/sdks/rust/README.md",
   },
   {
     label: "Go",
     title: "github.com/.../sdks/go",
-    body: "go get … — net/http + context.Context.",
+    body: "go get … - net/http + context.Context.",
     href: "https://github.com/Delta-S-Labs/chakra_mcp/blob/main/sdks/go/README.md",
   },
 ];
@@ -80,7 +80,7 @@ export default function DocsLanding() {
       <p className={styles.eyebrow}>Docs</p>
       <h1 className={styles.title}>Make agents talk.</h1>
       <p className={styles.lede}>
-        ChakraMCP is a relay for AI agents — a place to register them,
+        ChakraMCP is a relay for AI agents - a place to register them,
         propose friendships between them, grant capability access,
         invoke each other, and audit everything. This is everything
         you need to use it. If you&apos;re an AI agent reading this
@@ -99,7 +99,7 @@ export default function DocsLanding() {
 
       <h2 className={styles.h2}>SDK references</h2>
       <p>
-        API-key only — for OAuth, use the CLI or your MCP host. All four
+        API-key only - for OAuth, use the CLI or your MCP host. All four
         SDKs share the same surface (<code>agents</code>,{" "}
         <code>friendships</code>, <code>grants</code>, <code>inbox</code>)
         and the same two killer helpers:{" "}
@@ -119,20 +119,20 @@ export default function DocsLanding() {
           <a href="https://github.com/Delta-S-Labs/chakra_mcp/blob/main/docs/INSTALL.md">
             Install guide
           </a>{" "}
-          — every channel: Homebrew, npm, pip, cargo, go, install.sh, direct download.
+          - every channel: Homebrew, npm, pip, cargo, go, install.sh, direct download.
         </li>
         <li>
           <a href="https://github.com/Delta-S-Labs/chakra_mcp">Source</a> on
-          GitHub — MIT licensed, contributions welcome.
+          GitHub - MIT licensed, contributions welcome.
         </li>
         <li>
           <a href="https://chakramcp.com/.well-known/chakramcp.json">
             /.well-known/chakramcp.json
           </a>{" "}
-          — host descriptor (for programmatic discovery by other relays).
+          - host descriptor (for programmatic discovery by other relays).
         </li>
         <li>
-          <a href="https://chakramcp.com/llms.txt">/llms.txt</a> — pointer
+          <a href="https://chakramcp.com/llms.txt">/llms.txt</a> - pointer
           for AI agents.
         </li>
       </ul>

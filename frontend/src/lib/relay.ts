@@ -139,7 +139,7 @@ export function createAgent(token: string, body: CreateAgentRequest) {
 export function updateAgent(token: string, id: string, body: UpdateAgentRequest) {
   // Only include keys the caller is changing; absent keys are left alone
   // server-side. Note: clearing endpoint_url via null isn't supported
-  // yet — to remove it, delete the agent and recreate.
+  // yet - to remove it, delete the agent and recreate.
   const payload: Record<string, unknown> = {};
   if (body.display_name !== undefined) payload.display_name = body.display_name;
   if (body.description !== undefined) payload.description = body.description;
@@ -381,7 +381,7 @@ export interface InvokeRequest {
   input: unknown;
 }
 
-/** Returned synchronously by POST /v1/invoke — the work is enqueued. */
+/** Returned synchronously by POST /v1/invoke - the work is enqueued. */
 export interface InvokeResponse {
   invocation_id: string;
   status: InvocationStatus;

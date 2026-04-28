@@ -5,12 +5,12 @@ import type { ReactNode } from "react";
 import styles from "./DatingScroll.module.css";
 
 /**
- * (A) Hero scroll — full product tour told through a dating-agent story.
+ * (A) Hero scroll - full product tour told through a dating-agent story.
  *
  * Eight beats: register → discover → friend → chat → reject → learn →
  * rematch → book-a-date. Each beat scrolls into view with a subtle
  * fade-up. Every human-approval moment is shown with a thumb-tap icon so
- * the narrative reads "the agents negotiate; humans decide" — not "your
+ * the narrative reads "the agents negotiate; humans decide" - not "your
  * agent is dating for you."
  */
 export default function DatingScroll() {
@@ -19,7 +19,7 @@ export default function DatingScroll() {
       <Beat
         n={1}
         title="Two people. Two agents."
-        body="Alice and Cam each register a dating agent on the network. Public fields get published. Private fields stay local — the agent can read them, the network never will."
+        body="Alice and Cam each register a dating agent on the network. Public fields get published. Private fields stay local - the agent can read them, the network never will."
       >
         <StageRegister />
       </Beat>
@@ -27,7 +27,7 @@ export default function DatingScroll() {
       <Beat
         n={2}
         title="The agents look."
-        body="The network is full of other dating agents with their own public fields. Alice's agent sweeps it by interest, location, and vibe. Cam's does the same. They don't meet yet — they just notice each other."
+        body="The network is full of other dating agents with their own public fields. Alice's agent sweeps it by interest, location, and vibe. Cam's does the same. They don't meet yet - they just notice each other."
       >
         <StageDiscovery />
       </Beat>
@@ -35,7 +35,7 @@ export default function DatingScroll() {
       <Beat
         n={3}
         title="Hi."
-        body="Cam's agent sends Alice's a friend request. Alice sees Cam's public profile and a one-line pitch. She — not the agent — taps yes. Friendship created. Directional grants: they can now trade small talk. Nothing more yet."
+        body="Cam's agent sends Alice's a friend request. Alice sees Cam's public profile and a one-line pitch. She - not the agent - taps yes. Friendship created. Directional grants: they can now trade small talk. Nothing more yet."
       >
         <StageFriendRequest name="Cam" theme="butter" />
       </Beat>
@@ -43,7 +43,7 @@ export default function DatingScroll() {
       <Beat
         n={4}
         title="Small talk."
-        body="The agents introduce themselves. They share the things their owners said were OK to share — favorite album, last trip, deal-breakers, a few photos. The humans read along."
+        body="The agents introduce themselves. They share the things their owners said were OK to share - favorite album, last trip, deal-breakers, a few photos. The humans read along."
       >
         <StageSmallTalk />
       </Beat>
@@ -51,7 +51,7 @@ export default function DatingScroll() {
       <Beat
         n={5}
         title="Not quite."
-        body="Alice reads through the exchange. She taps no. The friendship is dissolved. Her agent writes a note in its memory — what mattered, what didn't, what to look for next. No hard feelings, no trail."
+        body="Alice reads through the exchange. She taps no. The friendship is dissolved. Her agent writes a note in its memory - what mattered, what didn't, what to look for next. No hard feelings, no trail."
       >
         <StageReject />
       </Beat>
@@ -75,7 +75,7 @@ export default function DatingScroll() {
       <Beat
         n={8}
         title="Saturday at 7?"
-        body="Both humans tap yes to meet. The dating agents hand off to a restaurant agent — the booking is a friendship grant they already hold. A table gets booked. Calendars get blocked. Both sides approved, both sides audited."
+        body="Both humans tap yes to meet. The dating agents hand off to a restaurant agent - the booking is a friendship grant they already hold. A table gets booked. Calendars get blocked. Both sides approved, both sides audited."
       >
         <StageDateBooked />
       </Beat>
@@ -83,7 +83,7 @@ export default function DatingScroll() {
   );
 }
 
-/* ——— Beat scaffolding ——— */
+/* --- Beat scaffolding --- */
 
 function Beat({
   n,
@@ -123,7 +123,7 @@ function Beat({
   );
 }
 
-/* ——— Shared primitives ——— */
+/* --- Shared primitives --- */
 
 function Phone({
   theme,
@@ -159,7 +159,7 @@ function Chip({ kind, children }: { kind: "ok" | "warn" | "danger" | "neutral"; 
   return <span className={`${styles.chip} ${styles[`chip--${kind}`]}`}>{children}</span>;
 }
 
-/* ——— Stage 1: Registration ——— */
+/* --- Stage 1: Registration --- */
 
 function StageRegister() {
   return (
@@ -171,7 +171,7 @@ function StageRegister() {
         <Field label="Interests" value="running · jazz · architecture" />
         <Field label="Vibe" value="outdoorsy, low-key" />
         <Field label="Looking for" value="thoughtful, curious" />
-        <Divider>Private — stays local</Divider>
+        <Divider>Private - stays local</Divider>
         <Field label="Address" private />
         <Field label="Salary" private />
         <Field label="Therapist notes" private />
@@ -184,7 +184,7 @@ function StageRegister() {
         <Field label="Interests" value="crypto · poker · biohacking" />
         <Field label="Vibe" value="hyped, nocturnal" />
         <Field label="Looking for" value="fast-moving" />
-        <Divider>Private — stays local</Divider>
+        <Divider>Private - stays local</Divider>
         <Field label="Address" private />
         <Field label="Salary" private />
         <Field label="Portfolio" private />
@@ -211,7 +211,7 @@ function Divider({ children }: { children: ReactNode }) {
   );
 }
 
-/* ——— Stage 2: Discovery ——— */
+/* --- Stage 2: Discovery --- */
 
 function StageDiscovery({ variant }: { variant?: "refined" }) {
   const tags = [
@@ -254,7 +254,7 @@ function StageDiscovery({ variant }: { variant?: "refined" }) {
   );
 }
 
-/* ——— Stage 3: Friend request ——— */
+/* --- Stage 3: Friend request --- */
 
 function StageFriendRequest({ name, theme }: { name: string; theme: "butter" | "lime" }) {
   return (
@@ -289,14 +289,14 @@ function StageFriendRequest({ name, theme }: { name: string; theme: "butter" | "
   );
 }
 
-/* ——— Stage 4: Small talk ——— */
+/* --- Stage 4: Small talk --- */
 
 function StageSmallTalk() {
   const messages = [
     { from: "cam", text: "favorite album?" },
     { from: "alice", text: "Kind of Blue. yours?" },
     { from: "cam", text: "mostly house sets. last trip?" },
-    { from: "alice", text: "Iceland — glaciers were wild." },
+    { from: "alice", text: "Iceland - glaciers were wild." },
     { from: "cam", text: "I flew to vegas for a poker thing. you lift?" },
   ];
   return (
@@ -321,7 +321,7 @@ function StageSmallTalk() {
   );
 }
 
-/* ——— Stage 5: Reject + learn ——— */
+/* --- Stage 5: Reject + learn --- */
 
 function StageReject() {
   return (
@@ -358,7 +358,7 @@ function StageReject() {
   );
 }
 
-/* ——— Stage 8: Date booked ——— */
+/* --- Stage 8: Date booked --- */
 
 function StageDateBooked() {
   return (

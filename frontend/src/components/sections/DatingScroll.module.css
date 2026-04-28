@@ -1,4 +1,4 @@
-/* ——— Root ——— */
+/* --- Root --- */
 .root {
   display: grid;
   gap: 0;
@@ -9,7 +9,7 @@
   box-shadow: var(--shadow-sm);
 }
 
-/* ——— Each beat ——— */
+/* --- Each beat --- */
 .beat {
   display: grid;
   grid-template-columns: minmax(0, 0.42fr) minmax(0, 0.58fr);
@@ -58,7 +58,7 @@
   min-width: 0;
 }
 
-/* ——— Stage layouts ——— */
+/* --- Stage layouts --- */
 .dualStage {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -91,7 +91,7 @@
   align-items: start;
 }
 
-/* ——— Phone ——— */
+/* --- Phone --- */
 .phone {
   display: grid;
   grid-template-rows: auto 1fr;
@@ -147,7 +147,7 @@
   border-bottom: 1px dashed color-mix(in oklab, var(--line) 80%, var(--ink) 20%);
 }
 
-/* ——— Field rows ——— */
+/* --- Field rows --- */
 .field {
   display: grid;
   grid-template-columns: 6.6rem 1fr;
@@ -198,7 +198,7 @@
   border-top: 1px dashed color-mix(in oklab, var(--accent-coral) 50%, transparent);
 }
 
-/* ——— Chip ——— */
+/* --- Chip --- */
 .chip {
   display: inline-flex;
   align-items: center;
@@ -236,7 +236,7 @@
   color: var(--ink);
 }
 
-/* ——— Discovery stage ——— */
+/* --- Discovery stage --- */
 .discovery {
   position: relative;
   width: 100%;
@@ -320,7 +320,7 @@
   text-decoration-color: var(--ink-muted);
 }
 
-/* ——— Friend request profile card ——— */
+/* --- Friend request profile card --- */
 .profileCard {
   display: grid;
   grid-template-columns: 3rem 1fr;
@@ -368,7 +368,7 @@
   font-style: italic;
 }
 
-/* ——— Choice buttons (✓ / ✕) ——— */
+/* --- Choice buttons (✓ / ✕) --- */
 .choiceRow {
   display: flex;
   gap: 0.6rem;
@@ -400,7 +400,7 @@
   color: oklch(38% 0.14 28);
 }
 
-/* ——— Thumb tap overlay ——— */
+/* --- Thumb tap overlay --- */
 .thumbTap {
   position: absolute;
   inset: -10px;
@@ -436,7 +436,7 @@
   50% { transform: scale(1); opacity: 1; }
 }
 
-/* ——— Chat (small talk) ——— */
+/* --- Chat (small talk) --- */
 .chatLabel {
   display: flex;
   align-items: center;
@@ -474,7 +474,7 @@
   border-bottom-right-radius: 0.25rem;
 }
 
-/* ——— Review / reject ——— */
+/* --- Review / reject --- */
 .reviewSummary {
   display: grid;
   gap: 0.4rem;
@@ -496,7 +496,7 @@
   color: var(--ink-muted);
 }
 
-/* ——— Agent memory sticky note ——— */
+/* --- Agent memory sticky note --- */
 .memoryNote {
   position: relative;
   padding: 1rem 1.1rem 1.1rem;
@@ -538,7 +538,7 @@
   border-top: 1px dashed color-mix(in oklab, var(--ink) 30%, transparent);
 }
 
-/* ——— Booked (stage 8) ——— */
+/* --- Booked (stage 8) --- */
 .proposalSummary {
   display: grid;
   gap: 0.35rem;
@@ -621,7 +621,7 @@
   color: var(--ink);
 }
 
-/* ——— Responsive ——— */
+/* --- Responsive --- */
 @media (max-width: 900px) {
   .beat { grid-template-columns: 1fr; gap: 1.25rem; padding: 2rem 1.2rem; min-height: auto; }
   .bookedStage { grid-template-columns: 1fr; gap: 1rem; }

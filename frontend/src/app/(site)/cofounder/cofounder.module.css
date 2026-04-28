@@ -1,4 +1,4 @@
-/* ——— Page scaffold ——— */
+/* --- Page scaffold --- */
 .hero,
 .stage,
 .ask {
@@ -6,7 +6,7 @@
   margin: 0 auto;
 }
 
-/* ——— Hero ——— */
+/* --- Hero --- */
 .hero {
   padding: 2rem 0 1rem;
 }
@@ -39,7 +39,7 @@
   margin-top: 0.6rem;
 }
 
-/* ——— Stage (numbered chapter, matches /concept pattern) ——— */
+/* --- Stage (numbered chapter, matches /concept pattern) --- */
 .stage {
   display: grid;
   grid-template-columns: 112px minmax(0, 1fr);
@@ -84,7 +84,7 @@
   max-width: 72ch;
 }
 
-/* ——— Profile interlude (Why me) ——— */
+/* --- Profile interlude (Why me) --- */
 .profile {
   width: min(1180px, calc(100% - 1.5rem));
   margin: 0 auto;
@@ -122,7 +122,7 @@
   text-underline-offset: 4px;
 }
 
-/* ——— Portraits (shared visual with /concept) ——— */
+/* --- Portraits (shared visual with /concept) --- */
 .portraits {
   display: grid;
   gap: 1.2rem;
@@ -149,7 +149,7 @@
   padding: 0.4rem 0 0 0.4rem;
 }
 
-/* ——— What's shipped ——— */
+/* --- What's shipped --- */
 .shippedList {
   list-style: none;
   padding: 0;
@@ -187,7 +187,7 @@
   line-height: 1.5;
 }
 
-/* ——— Ships grid (shared with /concept) ——— */
+/* --- Ships grid (shared with /concept) --- */
 .shipsGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -245,7 +245,7 @@
 .shipsCross { font-family: var(--font-display); font-weight: 800; color: var(--ink-muted); text-align: center; }
 .shipsLater li { color: var(--ink-muted); }
 
-/* ——— Risks ——— */
+/* --- Risks --- */
 .risks {
   display: grid;
   gap: 0.85rem;
@@ -263,7 +263,7 @@
   max-width: none;
 }
 
-/* ——— Tech stack ——— */
+/* --- Tech stack --- */
 .stackGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -320,7 +320,7 @@
   color: var(--ink);
 }
 
-/* ——— What I'm looking for ——— */
+/* --- What I'm looking for --- */
 .workingList {
   list-style: none;
   padding: 0;
@@ -349,7 +349,7 @@
   margin-bottom: 0.3rem;
 }
 
-/* ——— Culture ——— */
+/* --- Culture --- */
 .cultureGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -376,7 +376,7 @@
   max-width: none;
 }
 
-/* ——— The ask ——— */
+/* --- The ask --- */
 .ask {
   margin-top: 2rem;
   padding-bottom: 2rem;
@@ -420,7 +420,7 @@
   margin: 0;
 }
 
-/* ——— Responsive ——— */
+/* --- Responsive --- */
 @media (max-width: 820px) {
   .stage,
   .profile { grid-template-columns: 1fr; gap: 1rem; padding: 2.4rem 0; }

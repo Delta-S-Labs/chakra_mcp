@@ -26,7 +26,7 @@ export default async function SignupPage({
           <div className={styles.eyebrow}>Sign up</div>
           <h1 className={styles.title}>Create an account.</h1>
           <p className={styles.body}>
-            Email and password works. So does GitHub and Google — there&apos;s a
+            Email and password works. So does GitHub and Google - there&apos;s a
             link to those at the bottom. Any of the three signs you in to the
             same account if the email matches.
           </p>

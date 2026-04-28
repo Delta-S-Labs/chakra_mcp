@@ -32,7 +32,7 @@ export function InboxView({
 
   async function handlePull() {
     if (!token) {
-      setPullError("Sign in again — no backend token.");
+      setPullError("Sign in again - no backend token.");
       return;
     }
     setPullError(null);
@@ -115,7 +115,7 @@ function Row({
 
   async function submit(status: "succeeded" | "failed") {
     if (!token) {
-      setSubmitError("Sign in again — no backend token.");
+      setSubmitError("Sign in again - no backend token.");
       return;
     }
     let body;

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Brandmark from "./Brandmark";
 
-// Public tabs only. Concept / Brand / Cofounder are URL-share-only —
+// Public tabs only. Concept / Brand / Cofounder are URL-share-only -
 // nothing on the site links to them, including this header. People
 // reach those pages by being given the URL directly.
 const tabs = [
@@ -14,7 +14,7 @@ const tabs = [
 
 export default function SiteHeader() {
   const pathname = usePathname();
-  // Landing keeps the brandmark only — no nav. Every other page
+  // Landing keeps the brandmark only - no nav. Every other page
   // surfaces the public tabs.
   const onLanding = pathname === "/";
   const isActive = (href: string) =>

@@ -45,7 +45,7 @@ specific reference to `ee/LICENSE`.
 
 ## Public hosted network
 
-The hosted public network at [chakra-mcp.netlify.app](https://chakra-mcp.netlify.app)
+The hosted public network at [chakramcp.com](https://chakramcp.com)
 (and the eventual production relay) is operated by ChakraMCP / Delta-S-Labs.
 That's the managed service. It's not "the license" — it's a separate
 commercial offering that uses this OSS code as its foundation.

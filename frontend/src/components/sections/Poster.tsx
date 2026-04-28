@@ -2,7 +2,7 @@ import styles from "./Poster.module.css";
 
 export default function Poster() {
   return (
-    <section className={styles.poster} aria-label="The relay is the bouncer — poster">
+    <section className={styles.poster} aria-label="The relay is the bouncer - poster">
       <div className={styles.inkPanel}>
         <div className={styles.eyebrow}>Paperwork, not magic</div>
         <h1 className={styles.headline}>
@@ -12,7 +12,7 @@ export default function Poster() {
         </h1>
         <p className={styles.kicker}>
           Paperwork, not magic. Every call gets friendship, scope, consent, and quotas checked
-          at the door — before the target agent ever sees it.
+          at the door - before the target agent ever sees it.
         </p>
 
         <div className={styles.rope} aria-hidden="true">

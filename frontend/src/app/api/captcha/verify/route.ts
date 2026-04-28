@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
  * Body: { token: string }
  *
  * Verifies a Google reCAPTCHA v2 token against the siteverify endpoint.
- * Server-side only — the secret never touches the browser. Gated by
+ * Server-side only - the secret never touches the browser. Gated by
  * CAPTCHA_ENABLED so private deployments can no-op this entirely.
  */
 

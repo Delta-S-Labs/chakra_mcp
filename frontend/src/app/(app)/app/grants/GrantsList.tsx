@@ -65,7 +65,7 @@ function GrantRow({ token, grant }: { token: string | null; grant: Grant }) {
 
   async function handleRevoke() {
     if (!token) {
-      setError("Sign in again — no backend token.");
+      setError("Sign in again - no backend token.");
       return;
     }
     setError(null);
@@ -93,7 +93,7 @@ function GrantRow({ token, grant }: { token: string | null; grant: Grant }) {
           return;
         }
         if (attempts >= POLL_MAX_ATTEMPTS) {
-          setError("Still pending after 3 minutes — check the Audit log later.");
+          setError("Still pending after 3 minutes - check the Audit log later.");
           pollRef.current = null;
           return;
         }
@@ -108,7 +108,7 @@ function GrantRow({ token, grant }: { token: string | null; grant: Grant }) {
 
   async function handleInvoke() {
     if (!token) {
-      setError("Sign in again — no backend token.");
+      setError("Sign in again - no backend token.");
       return;
     }
     let parsed: unknown;
@@ -280,7 +280,7 @@ function GrantRow({ token, grant }: { token: string | null; grant: Grant }) {
             rows={2}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            placeholder="Optional — short reason."
+            placeholder="Optional - short reason."
           />
           <div className={styles.inlineActions}>
             <button

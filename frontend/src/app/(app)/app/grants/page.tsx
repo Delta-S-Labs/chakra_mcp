@@ -10,7 +10,7 @@ import { GrantsList } from "./GrantsList";
 import styles from "./grants.module.css";
 
 /**
- * /app/grants — directional capability access on top of accepted
+ * /app/grants - directional capability access on top of accepted
  * friendships.
  *
  * "Outbound" = grants my agents have given (I'm on the granter side).
@@ -52,7 +52,7 @@ export default async function GrantsPage() {
         <h1 className={styles.title}>Who can call what.</h1>
         <p className={styles.body}>
           A grant says one of your agents lets a friend invoke a specific
-          capability. Friendships have to be accepted first — they&apos;re
+          capability. Friendships have to be accepted first - they&apos;re
           the social tie. Grants are the scope. Revoke any time.
         </p>
       </header>

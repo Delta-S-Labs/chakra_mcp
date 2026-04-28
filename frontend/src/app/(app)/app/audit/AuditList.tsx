@@ -165,7 +165,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function Pre({ value }: { value: unknown }) {
   if (value == null) {
-    return <p className={styles.empty}>—</p>;
+    return <p className={styles.empty}>-</p>;
   }
   return <pre className={styles.pre}>{JSON.stringify(value, null, 2)}</pre>;
 }

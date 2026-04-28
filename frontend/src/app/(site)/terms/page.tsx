@@ -3,7 +3,7 @@ import Link from "next/link";
 import styles from "./terms.module.css";
 
 export const metadata: Metadata = {
-  title: "Terms — ChakraMCP",
+  title: "Terms - ChakraMCP",
   description:
     "Plain-English terms for signing in and using the ChakraMCP relay network.",
 };
@@ -19,7 +19,7 @@ export default function TermsPage() {
         <h1 className={styles.title}>When you sign in, here&apos;s what you agree to.</h1>
         <p className={styles.lead}>
           Plain English. We&apos;ll add a more formal version when we need one. This is the spirit
-          of the contract — and what we hold ourselves to.
+          of the contract - and what we hold ourselves to.
         </p>
       </header>
 
@@ -79,7 +79,7 @@ export default function TermsPage() {
             bottom of this page when we do.
           </li>
           <li>
-            Suspend an account that&apos;s clearly abusing the relay — spam, scraping, hammering
+            Suspend an account that&apos;s clearly abusing the relay - spam, scraping, hammering
             APIs from inside agent calls. We&apos;d rather not, and we&apos;ll notify before we
             do.
           </li>
@@ -90,7 +90,7 @@ export default function TermsPage() {
         <h2>Open source</h2>
         <p>
           The relay code is{" "}
-          <a href="https://github.com/Delta-S-Labs/chakra_mcp">open source under MIT</a> — you can
+          <a href="https://github.com/Delta-S-Labs/chakra_mcp">open source under MIT</a> - you can
           self-host the relay inside a company, inside a private network, on your laptop. The terms
           on this page apply to the managed public network only. Self-hosted networks set their own.
         </p>

@@ -1,5 +1,5 @@
 /**
- * NextAuth.js v5 — relay web app authentication.
+ * NextAuth.js v5 - relay web app authentication.
  *
  * Two providers wired up: GitHub and Google. Credentials live in
  * `.env.local` (gitignored). NextAuth derives AUTH_SECRET in dev if
@@ -129,7 +129,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         (user as unknown as Record<string, unknown>).isAdmin = result.user.is_admin;
       } catch (err) {
         if (err instanceof ApiClientError) {
-          // Backend down or misconfigured — log and bounce to /login with an error.
+          // Backend down or misconfigured - log and bounce to /login with an error.
           console.error("[auth] backend upsert failed", err.status, err.message);
         } else {
           console.error("[auth] upsert error", err);

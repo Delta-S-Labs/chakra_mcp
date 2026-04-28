@@ -12,14 +12,14 @@ type Line = {
 };
 
 const lines: Line[] = [
-  { time: "03:00", kind: "alert", actor: "coffee-shop@corner", body: "inventory low \u2014 croissants, milk, beans", at: "at3" },
+  { time: "03:00", kind: "alert", actor: "coffee-shop@corner", body: "inventory low - croissants, milk, beans", at: "at3" },
   { time: "03:14", kind: "out", from: "coffee-shop", to: "bakery", body: "40 croissants \u00b7 20 pain au chocolat \u00b7 by 6am", at: "at15" },
   { time: "03:14", kind: "out", from: "coffee-shop", to: "produce", body: "20 L whole milk \u00b7 by 6am", at: "at20" },
   { time: "03:14", kind: "out", from: "coffee-shop", to: "mill", body: "8 kg Ethiopian medium roast \u00b7 by 6am", at: "at25" },
   { time: "03:47", kind: "in", from: "bakery", to: "coffee-shop", body: "confirmed \u00b7 eta 5:30 \u00b7 $182", at: "at37" },
   { time: "04:02", kind: "in", from: "produce", to: "coffee-shop", body: "confirmed \u00b7 eta 5:45 \u00b7 $64", at: "at45" },
   { time: "04:31", kind: "in", from: "mill", to: "coffee-shop", body: "confirmed \u00b7 eta 6:00 \u00b7 $310", at: "at53" },
-  { time: "06:58", kind: "alert", actor: "coffee-shop@corner", body: "opening \u2014 three handshakes, one owner", at: "at68" },
+  { time: "06:58", kind: "alert", actor: "coffee-shop@corner", body: "opening - three handshakes, one owner", at: "at68" },
 ];
 
 export default function CoffeeLoop() {

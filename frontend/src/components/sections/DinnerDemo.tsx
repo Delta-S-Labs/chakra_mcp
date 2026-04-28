@@ -4,7 +4,7 @@ import { useState } from "react";
 import styles from "./DinnerDemo.module.css";
 
 /**
- * (B) Interactive — Alice & Bob pick dinner.
+ * (B) Interactive - Alice & Bob pick dinner.
  *
  * The load-bearing UX beat: directional grants, visible.
  * Each agent declares what it WILL share and what it WON'T.
@@ -245,7 +245,7 @@ export default function DinnerDemo() {
   );
 }
 
-/* ——— Agent pane ——— */
+/* --- Agent pane --- */
 function AgentPane({
   agent,
   active,
@@ -285,7 +285,7 @@ function AgentPane({
   );
 }
 
-/* ——— Relay lane (center, shows the handshake) ——— */
+/* --- Relay lane (center, shows the handshake) --- */
 function RelayLane({ step }: { step: Step }) {
   return (
     <div className={`${styles.lane} ${styles[`lane--${step}`]}`}>

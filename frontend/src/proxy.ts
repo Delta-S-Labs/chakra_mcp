@@ -1,5 +1,5 @@
 /**
- * Proxy — gate the /app/* routes behind a session.
+ * Proxy - gate the /app/* routes behind a session.
  *
  * Public auth pages: /login, /signup. Anyone hitting an unauthenticated
  * /app/* URL gets bounced to /login. Logged-in users hitting /login or

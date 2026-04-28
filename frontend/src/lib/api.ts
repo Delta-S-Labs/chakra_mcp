@@ -87,7 +87,7 @@ export interface ApiKey {
 
 export interface CreateApiKeyResponse {
   api_key: ApiKey;
-  /** Plaintext — shown exactly once on creation. */
+  /** Plaintext - shown exactly once on creation. */
   plaintext: string;
 }
 

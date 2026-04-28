@@ -1,4 +1,4 @@
-/* Website UI kit \u2014 lifted from the Agent Telepathy codebase and renamed for ChakraMCP */
+/* Website UI kit - lifted from the Agent Telepathy codebase and renamed for ChakraMCP */
 body {
   margin: 0;
   min-width: 320px;
@@ -28,7 +28,7 @@ body::before {
 .site-header { position: sticky; top: 0.75rem; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; padding: 0.85rem 1rem; margin-top: 0.5rem; border: 1px solid color-mix(in oklab, var(--line) 76%, var(--ink) 24%); border-radius: 1.4rem; background: linear-gradient(90deg, color-mix(in oklab, var(--paper-soft) 97%, white 3%), color-mix(in oklab, var(--paper) 93%, var(--paper-warm) 7%)); backdrop-filter: blur(14px); box-shadow: var(--shadow-md); }
 .brand-lockup { display: grid; gap: 0.2rem; }
 .brand-mark { font-family: var(--font-display); font-weight: 800; font-size: 0.78rem; letter-spacing: 0.02em; display: inline-flex; align-items: center; gap: 0.45rem; }
-.brand-mark::before { content: ''; width: 0.58rem; height: 0.58rem; border-radius: 999px; background: var(--accent-coral); box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent-coral) 18%, transparent); }
+.brand-mark-icon { display: inline-block; flex-shrink: 0; }
 .brand-kicker { color: var(--ink-soft); font-size: 1rem; }
 
 .site-nav { display: flex; gap: 0.5rem; padding: 0.26rem; border: 1px solid var(--line); border-radius: 999px; background: color-mix(in oklab, var(--paper-soft) 78%, white 22%); }

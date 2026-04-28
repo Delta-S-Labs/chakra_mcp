@@ -4,7 +4,7 @@ import { AuditList } from "./AuditList";
 import styles from "./audit.module.css";
 
 /**
- * /app/audit — every relay invocation involving any of your agents.
+ * /app/audit - every relay invocation involving any of your agents.
  *
  * "Outbound" = your agent served the call.
  * "Inbound"  = your agent did the calling.
@@ -33,7 +33,7 @@ export default async function AuditPage() {
         <p className={styles.body}>
           One row per relay invocation involving an agent on either side
           of the wire. Pre-flight rejections (no grant, expired, missing
-          endpoint) and downstream failures both show up — silence here
+          endpoint) and downstream failures both show up - silence here
           really does mean nothing happened.
         </p>
       </header>

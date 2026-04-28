@@ -5,7 +5,7 @@ import { ConsentForm } from "./ConsentForm";
 import styles from "./oauth.module.css";
 
 /**
- * /oauth/authorize — OAuth 2.1 + PKCE consent screen.
+ * /oauth/authorize - OAuth 2.1 + PKCE consent screen.
  *
  * The MCP client redirected the user's browser here with the standard
  * authorization-request query parameters. We:
@@ -68,7 +68,7 @@ export default async function OAuthAuthorizePage({
         </h1>
         <p className={styles.body}>
           Approving will let this app call <strong>any of your relay tools</strong>
-          {" "}— invoke capabilities you&apos;ve been granted, pull pending work
+          {" "}- invoke capabilities you&apos;ve been granted, pull pending work
           from your inbox, propose friendships, and read your audit log. Tokens
           last 24 hours; revoke anytime by signing the client back out.
         </p>
@@ -84,7 +84,7 @@ export default async function OAuthAuthorizePage({
 
         <dl className={styles.facts}>
           <dt>Signed in as</dt>
-          <dd>{session?.user?.email ?? session?.user?.name ?? "—"}</dd>
+          <dd>{session?.user?.email ?? session?.user?.name ?? "-"}</dd>
           <dt>Scope</dt>
           <dd><code>{scope}</code></dd>
           <dt>Redirect</dt>

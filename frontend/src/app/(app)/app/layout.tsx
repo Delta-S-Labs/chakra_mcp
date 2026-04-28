@@ -7,7 +7,7 @@ import styles from "./shell.module.css";
 /**
  * Layout for `/app` and its children.
  *
- * Renders the app shell — top bar with brandmark, user menu, sign-out
+ * Renders the app shell - top bar with brandmark, user menu, sign-out
  * button. Children render in <main>.
  *
  * Middleware ensures we never reach here without a session, but we

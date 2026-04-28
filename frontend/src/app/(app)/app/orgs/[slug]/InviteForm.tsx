@@ -70,7 +70,7 @@ export function InviteForm({ slug, token }: { slug: string; token: string }) {
       {created && (
         <div className={styles.invite}>
           <div className={styles.inviteHead}>
-            Invite ready for <strong>{created.email}</strong> — expires{" "}
+            Invite ready for <strong>{created.email}</strong> - expires{" "}
             {new Date(created.expires_at).toLocaleDateString()}.
           </div>
           <code className={styles.inviteUrl}>{inviteUrl}</code>

@@ -15,7 +15,7 @@ export default async function AgentDetailPage({
   const session = await auth();
   const token = session?.backendToken ?? null;
   if (!token) {
-    return <div className={styles.error}>Sign in again — no backend token in this session.</div>;
+    return <div className={styles.error}>Sign in again - no backend token in this session.</div>;
   }
 
   let agent: Awaited<ReturnType<typeof getAgent>>;
@@ -32,7 +32,7 @@ export default async function AgentDetailPage({
   try {
     capabilities = await listCapabilities(token, id);
   } catch {
-    // non-fatal — show the header anyway
+    // non-fatal - show the header anyway
   }
 
   return (

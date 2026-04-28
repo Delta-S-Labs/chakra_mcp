@@ -21,7 +21,7 @@ export function ApiKeysClient({ initial, backendError, token }: Props) {
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!token) {
-      setError("No backend token in session — sign in again.");
+      setError("No backend token in session - sign in again.");
       return;
     }
     setError(null);
@@ -47,7 +47,7 @@ export function ApiKeysClient({ initial, backendError, token }: Props) {
 
   function handleRevoke(id: string) {
     if (!token) {
-      setError("No backend token in session — sign in again.");
+      setError("No backend token in session - sign in again.");
       return;
     }
     if (!confirm("Revoke this key? Apps using it will stop working immediately.")) return;
@@ -73,7 +73,7 @@ export function ApiKeysClient({ initial, backendError, token }: Props) {
       {justCreated && (
         <div className={styles.created}>
           <div className={styles.createdHead}>
-            New key for <strong>{justCreated.name}</strong> — copy now, won&apos;t show again.
+            New key for <strong>{justCreated.name}</strong> - copy now, won&apos;t show again.
           </div>
           <code className={styles.createdValue}>{justCreated.plaintext}</code>
           <button
@@ -101,7 +101,7 @@ export function ApiKeysClient({ initial, backendError, token }: Props) {
           <span className={styles.fieldLabel}>Expires in (days)</span>
           <input
             type="text"
-            placeholder="90 — empty for never"
+            placeholder="90 - empty for never"
             value={days}
             onChange={(e) => setDays(e.target.value)}
           />

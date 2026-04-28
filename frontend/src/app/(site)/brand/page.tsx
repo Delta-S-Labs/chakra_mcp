@@ -3,19 +3,19 @@ import Image from "next/image";
 import styles from "./brand.module.css";
 
 export const metadata: Metadata = {
-  title: "Brand \u2014 ChakraMCP",
+  title: "Brand - ChakraMCP",
   description:
     "Brand identity, voice, colors, type, logo, and a downloadable Claude Code skill for building on the ChakraMCP brand.",
   robots: { index: false, follow: false },
 };
 
 const swatches = [
-  { name: "paper", value: "var(--paper)", note: "Default page background \u2014 cream." },
-  { name: "paper-warm", value: "var(--paper-warm)", note: "Warmer cream \u2014 cards, hover states." },
-  { name: "ink", value: "var(--ink)", note: "Primary text \u2014 dark brown-black." },
-  { name: "accent-coral", value: "var(--accent-coral)", note: "Primary accent \u2014 terra cotta." },
-  { name: "accent-lime", value: "var(--accent-lime)", note: "Unexpected lime \u2014 secondary." },
-  { name: "accent-butter", value: "var(--accent-butter)", note: "Butter yellow \u2014 highlights." },
+  { name: "paper", value: "var(--paper)", note: "Default page background - cream." },
+  { name: "paper-warm", value: "var(--paper-warm)", note: "Warmer cream - cards, hover states." },
+  { name: "ink", value: "var(--ink)", note: "Primary text - dark brown-black." },
+  { name: "accent-coral", value: "var(--accent-coral)", note: "Primary accent - terra cotta." },
+  { name: "accent-lime", value: "var(--accent-lime)", note: "Unexpected lime - secondary." },
+  { name: "accent-butter", value: "var(--accent-butter)", note: "Butter yellow - highlights." },
 ];
 
 const voiceRules = [
@@ -24,7 +24,7 @@ const voiceRules = [
     dont: "No \u201cempower\u201d, no \u201cleverage\u201d, no \u201crevolutionary.\u201d",
   },
   {
-    do: "Metaphors rooted in physical venues \u2014 \u201cthe relay is the bouncer.\u201d",
+    do: "Metaphors rooted in physical venues - \u201cthe relay is the bouncer.\u201d",
     dont: "No abstract AI-speak. No \u201cunlock synergies.\u201d",
   },
   {
@@ -50,13 +50,13 @@ const downloads = [
     file: "mark-composite.svg",
     path: "/brand/mark-composite.svg",
     description:
-      "v3 composite — floating hub with seven satellites + pulsing chakra + relay arc. Hero-scale lockup. Use on big surfaces (decks, OG, posters).",
+      "v3 composite - floating hub with seven satellites + pulsing chakra + relay arc. Hero-scale lockup. Use on big surfaces (decks, OG, posters).",
   },
   {
     name: "Simple mark (SVG)",
     file: "mark.svg",
     path: "/brand/mark.svg",
-    description: "The coral dot, alone. Use at 16px and up — favicons, inline mentions.",
+    description: "The coral dot, alone. Use at 16px and up - favicons, inline mentions.",
   },
   {
     name: "Wordmark (SVG)",
@@ -139,6 +139,31 @@ export default function BrandPage() {
         </aside>
       </section>
 
+      <section className={`concept-stage ${styles.compositeStage}`}>
+        <div className="chapter-marker">00</div>
+        <div className="concept-stage__body">
+          <div className="section-head">
+            <div className="eyebrow">Composite lockup</div>
+            <h2>Hub. Chakra. Relay arc.</h2>
+            <p>
+              The full mark for big surfaces - decks, OG cards, posters.
+              A floating hub with seven satellites talks to a chakra,
+              connected by the relay arc. Coral does the heavy lifting,
+              lime and butter call out the satellites.
+            </p>
+          </div>
+          <div className={styles.compositeArt}>
+            <Image
+              src="/brand/mark-composite.svg"
+              alt="ChakraMCP composite lockup: hub with seven satellites linked by a relay arc to a chakra ring."
+              width={1200}
+              height={800}
+              priority
+            />
+          </div>
+        </div>
+      </section>
+
       <section className="concept-stage">
         <div className="chapter-marker">01</div>
         <div className="concept-stage__body">
@@ -169,11 +194,11 @@ export default function BrandPage() {
           </div>
           <div className={styles.typeSpecimen}>
             <div className={styles.typeRow}>
-              <span className="eyebrow">Display \u2014 Archivo Expanded 800</span>
+              <span className="eyebrow">Display - Archivo Expanded 800</span>
               <span className={styles.typeDisplay}>The relay is the bouncer.</span>
             </div>
             <div className={styles.typeRow}>
-              <span className="eyebrow">Body \u2014 Afacad 400</span>
+              <span className="eyebrow">Body - Afacad 400</span>
               <p className={styles.typeBody}>
                 Every remote call passes through the relay. Friendship state, grant scope, consent
                 records, quotas, and audit policy all get checked before the target agent ever
@@ -181,8 +206,8 @@ export default function BrandPage() {
               </p>
             </div>
             <div className={styles.typeRow}>
-              <span className="eyebrow">Mono \u2014 system mono</span>
-              <code className={styles.typeMono}>POST /v1/proposals \u2014 200 OK</code>
+              <span className="eyebrow">Mono - system mono</span>
+              <code className={styles.typeMono}>POST /v1/proposals - 200 OK</code>
             </div>
           </div>
         </div>
@@ -219,7 +244,7 @@ export default function BrandPage() {
             <div className="eyebrow">Downloads</div>
             <h2>Assets and a skill you can run in Claude Code.</h2>
             <p>
-              The brand kit is a zip. The skill is a single markdown file with frontmatter \u2014
+              The brand kit is a zip. The skill is a single markdown file with frontmatter -
               drop it in your <code>.claude/skills/</code> folder and Claude will know how to build
               on the ChakraMCP brand.
             </p>

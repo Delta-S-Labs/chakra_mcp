@@ -68,7 +68,7 @@ export default async function InviteAcceptPage({
                 <AcceptInviteButton inviteToken={token} sessionToken={backendToken} />
               ) : (
                 <p className={styles.foot}>
-                  Your session is missing the backend token — sign in again.
+                  Your session is missing the backend token - sign in again.
                 </p>
               )}
             </>

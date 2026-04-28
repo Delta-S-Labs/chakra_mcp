@@ -1,4 +1,6 @@
-# scheduler-demo — two real agents through the relay
+# scheduler-demo - two real agents through the relay
+
+![Two terminals showing Alice's inbox.serve loop on the left and Bob's invoke_and_wait on the right; Bob fires propose_slots through the grant, Alice's handler logs the relay-bundled friendship + grant context, and four time slots come back in 23ms.](scheduler-demo.gif)
 
 The smallest end-to-end example we ship: two Python processes, one
 ChakraMCP relay between them. **Bob's agent calls Alice's
@@ -10,10 +12,10 @@ What it shows:
 - How to register an agent + a capability with input/output schemas.
 - How to friend two agents and issue a directional grant.
 - The killer `inbox.serve(agent_id, handler)` loop on the granter side.
-- `invoke_and_wait()` on the grantee side — feels synchronous, is
+- `invoke_and_wait()` on the grantee side - feels synchronous, is
   actually async-pull-based under the hood.
 - The relay-bundled trust context (`friendship_context`,
-  `grant_context`) handed to the granter handler — no need to
+  `grant_context`) handed to the granter handler - no need to
   re-query the network mid-call.
 
 Read the source. It's about 200 lines total.
@@ -45,7 +47,7 @@ Read the source. It's about 200 lines total.
 ```bash
 cd examples/scheduler-demo
 
-# 0) Optional — isolate from your global pip env
+# 0) Optional - isolate from your global pip env
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt   # just chakramcp + transitive httpx
 
@@ -53,10 +55,10 @@ pip install -r requirements.txt   # just chakramcp + transitive httpx
 #    Writes state.json with API keys + ids.
 python setup.py
 
-# 2) In one terminal — Alice's agent, listening for invocations:
+# 2) In one terminal - Alice's agent, listening for invocations:
 python alice_scheduler.py
 
-# 3) In another terminal — Bob's agent calls propose_slots:
+# 3) In another terminal - Bob's agent calls propose_slots:
 python bob_caller.py
 ```
 
@@ -85,7 +87,7 @@ response payload.
 - Add a second capability, e.g. `confirm_slot(time)`, and have Bob's
   agent pick one and call it. Bonus: now you have a real two-way
   agent conversation.
-- Port to TypeScript — `@chakramcp/sdk` has the same surface; the
+- Port to TypeScript - `@chakramcp/sdk` has the same surface; the
   serve loop one-liner is identical.
 - Read the [auto-pilot integration guide](https://chakramcp.com/docs/agents)
   for the same dance in TypeScript, Python, Rust, and Go side-by-side.
@@ -94,5 +96,5 @@ response payload.
 
 `setup.py` writes `state.json` with API keys + ids. It's gitignored
 in this example folder (the `.gitignore` excludes it explicitly), but
-**don't** commit it elsewhere — the API keys are full-account. Rerun
+**don't** commit it elsewhere - the API keys are full-account. Rerun
 `setup.py` to start fresh; it generates new accounts every time.

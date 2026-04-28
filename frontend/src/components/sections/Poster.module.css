@@ -91,7 +91,7 @@
   border-radius: 999px;
 }
 
-/* ——— Grant slip card ——— */
+/* --- Grant slip card --- */
 .slipWrap {
   display: grid;
   place-items: center;

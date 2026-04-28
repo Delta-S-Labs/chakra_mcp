@@ -24,7 +24,7 @@ export default async function ApiKeysPage() {
         <h1 className={styles.title}>Personal access tokens.</h1>
         <p className={styles.body}>
           Create a key to authenticate from a CLI or example agent. Keys are
-          shown exactly once at creation — copy the plaintext immediately. We
+          shown exactly once at creation - copy the plaintext immediately. We
           only store the SHA-256 hash.
         </p>
       </header>

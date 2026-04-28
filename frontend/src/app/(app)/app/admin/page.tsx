@@ -25,7 +25,7 @@ export default async function AdminPage() {
     backendError = err instanceof Error ? err.message : "Backend unavailable.";
   }
 
-  const fmt = (s: string | null | undefined) => (s ? new Date(s).toLocaleString() : "—");
+  const fmt = (s: string | null | undefined) => (s ? new Date(s).toLocaleString() : "-");
 
   return (
     <div className={styles.page}>
@@ -34,7 +34,7 @@ export default async function AdminPage() {
         <h1 className={styles.title}>Network operator console.</h1>
         <p className={styles.body}>
           Visible only to the user whose email matches <code>ADMIN_EMAIL</code> on
-          the backend. Read-only for now — actions (suspend, transfer ownership,
+          the backend. Read-only for now - actions (suspend, transfer ownership,
           revoke) land in the next slice.
         </p>
       </header>
@@ -120,7 +120,7 @@ export default async function AdminPage() {
                     )}
                   </td>
                   <td>{o.member_count}</td>
-                  <td className={styles.muted}>{o.owner_email ?? "—"}</td>
+                  <td className={styles.muted}>{o.owner_email ?? "-"}</td>
                   <td className={styles.muted}>{fmt(o.created_at)}</td>
                 </tr>
               ))}

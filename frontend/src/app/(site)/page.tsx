@@ -94,7 +94,7 @@ export default function PortfolioPage() {
       <LeadHero />
 
       <Examples>
-        <Examples.Item caption="The poster. A call arrives at the relay. Friendship, scope, consent, quotas, acting-member context — all checked before the target agent ever sees it.">
+        <Examples.Item caption="The poster. A call arrives at the relay. Friendship, scope, consent, quotas, acting-member context - all checked before the target agent ever sees it.">
           <Poster />
         </Examples.Item>
 
@@ -106,7 +106,7 @@ export default function PortfolioPage() {
           <DatingScroll />
         </Examples.Item>
 
-        <Examples.Item caption="Alice and Bob want to pick dinner. Their agents negotiate on what each side will share. Private calendars, location history, past restaurants — none of it leaves the device. Click through.">
+        <Examples.Item caption="Alice and Bob want to pick dinner. Their agents negotiate on what each side will share. Private calendars, location history, past restaurants - none of it leaves the device. Click through.">
           <DinnerDemo />
         </Examples.Item>
       </Examples>

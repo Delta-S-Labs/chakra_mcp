@@ -4,7 +4,7 @@ import RelayDiagram from "@/components/shell/RelayDiagram";
 import styles from "./concept.module.css";
 
 export const metadata: Metadata = {
-  title: "Concept \u2014 ChakraMCP",
+  title: "Concept - ChakraMCP",
   description:
     "The protocol shape: object model, proposal lifecycle, consent modes, relay behavior, and what we build next on top of the relay.",
   robots: { index: false, follow: false },
@@ -72,7 +72,7 @@ const visionLayers = [
   {
     eyebrow: "Layer 2 \u00b7 Next",
     title: "Managed agent runtime.",
-    body: "A creator-friendly platform where you describe an agent and we handle everything else \u2014 the runtime, sandboxed execution, session continuity, error recovery, scaling. Creators never touch a server.",
+    body: "A creator-friendly platform where you describe an agent and we handle everything else - the runtime, sandboxed execution, session continuity, error recovery, scaling. Creators never touch a server.",
     bullets: [
       "Three tiers of tools: platform-provided, creator-authenticated, user-authenticated.",
       "Three LLM modes: bring-your-own keys, user-picks-the-model, platform-wrapped.",
@@ -85,9 +85,9 @@ const visionLayers = [
     title: "Token economy.",
     body: "A universal platform currency that flows between every participant. Earn by watching ads or renting idle device compute. Spend on AI usage. Creators accumulate tokens from agent usage and cash out through standard payment rails (Stripe, bank transfer).",
     bullets: [
-      "Phase 1 \u2014 Internal credit. Ads for tokens. Creator payouts via revenue share.",
-      "Phase 2 \u2014 Fiat on-ramp. Buy tokens with money. No withdrawal yet.",
-      "Phase 3 \u2014 Real liquidity. Tokens become withdrawable, potentially tradeable.",
+      "Phase 1 - Internal credit. Ads for tokens. Creator payouts via revenue share.",
+      "Phase 2 - Fiat on-ramp. Buy tokens with money. No withdrawal yet.",
+      "Phase 3 - Real liquidity. Tokens become withdrawable, potentially tradeable.",
       "No crypto on day one. Build the economy first. Tokenize when volume justifies it.",
     ],
   },
@@ -97,7 +97,7 @@ const visionLayers = [
     body: "A discovery and distribution platform where creators publish agents, users find and use them, and the token economy handles the revenue flow. Think YouTube but for AI agents.",
     bullets: [
       "Ad revenue share during free-tier agent sessions.",
-      "In-agent purchases with a 10% platform cut \u2014 lower than Apple, lower than Google.",
+      "In-agent purchases with a 10% platform cut - lower than Apple, lower than Google.",
       "Creator-sourced advertisers: creators bring their own brand relationships onto the platform.",
       "Anti-fraud protections on ratings and reviews.",
     ],
@@ -110,7 +110,7 @@ const visionLayers = [
       "Lightweight cross-platform runtime distributed via Tauri or similar.",
       "Model distribution via torrent-style P2P to avoid bandwidth costs.",
       "Result verification through probabilistic cross-checking.",
-      "Only suitable for latency-tolerant workloads \u2014 not for real-time chat.",
+      "Only suitable for latency-tolerant workloads - not for real-time chat.",
     ],
   },
 ];
@@ -165,10 +165,10 @@ const timeline = [
 const shipsFirst = [
   "Agent registration (create, update, retire).",
   "Discovery (search by name, tags, description, capability).",
-  "Access requests \u2014 direct, no counteroffers yet.",
-  "Grant acceptance \u2014 directional, scoped.",
-  "Sync relay execution \u2014 tool calls forwarded through the relay.",
-  "Audit log \u2014 every invocation recorded.",
+  "Access requests - direct, no counteroffers yet.",
+  "Grant acceptance - directional, scoped.",
+  "Sync relay execution - tool calls forwarded through the relay.",
+  "Audit log - every invocation recorded.",
 ];
 
 const shipsLater = [
@@ -206,7 +206,7 @@ const revenuePhases = [
     phase: "Phase 3",
     title: "Platform economics",
     items: [
-      "In-agent purchases \u2014 10% platform cut, 90% creator.",
+      "In-agent purchases - 10% platform cut, 90% creator.",
       "Creator-sourced advertiser collaborations.",
       "Token purchases via fiat on-ramp.",
       "Enterprise API access for high-volume integrators.",
@@ -323,7 +323,7 @@ export default function ConceptPage() {
             <h2>The relay is the spine. Everything else is muscle.</h2>
             <p>
               Each layer depends on the one beneath it. Each layer makes the ones above it more
-              valuable. The relay is infrastructure \u2014 it is not the product users see, not the
+              valuable. The relay is infrastructure - it is not the product users see, not the
               business model, and not the thing that generates revenue. But nothing above it can
               exist without it.
             </p>
@@ -512,7 +512,7 @@ export default function ConceptPage() {
         <div className={styles.betInner}>
           <div className="eyebrow">The bet</div>
           <h2 className={styles.betHeadline}>
-            Attention is a valid currency for AI access \u2014 the same way it funds music, video,
+            Attention is a valid currency for AI access - the same way it funds music, video,
             and news.
           </h2>
           <p>
@@ -523,7 +523,7 @@ export default function ConceptPage() {
             cannot replicate.
           </p>
           <p>
-            ChakraMCP is the foundation \u2014 the trust and communication layer that makes
+            ChakraMCP is the foundation - the trust and communication layer that makes
             agent-to-agent collaboration possible without a human babysitting every handshake.
             Everything we build on top of it is in service of one idea:
           </p>

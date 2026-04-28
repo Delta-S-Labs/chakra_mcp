@@ -25,7 +25,7 @@ export function CreateAgentForm({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!token) {
-      setError("Sign in again — no backend token in this session.");
+      setError("Sign in again - no backend token in this session.");
       return;
     }
     if (!accountId) {
@@ -65,7 +65,7 @@ export function CreateAgentForm({
         <h2 className={styles.sectionTitle}>Register an agent</h2>
         <p className={styles.formHint}>
           Slug must be unique within the chosen account. No public URL
-          required — invocations are pulled from this agent&apos;s
+          required - invocations are pulled from this agent&apos;s
           inbox.
         </p>
       </header>

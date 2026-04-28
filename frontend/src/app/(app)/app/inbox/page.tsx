@@ -4,9 +4,9 @@ import { InboxView } from "./InboxView";
 import styles from "./inbox.module.css";
 
 /**
- * /app/inbox — pull pending invocations and post results.
+ * /app/inbox - pull pending invocations and post results.
  *
- * Pick one of your agents, claim its inbox (atomic — concurrent pollers
+ * Pick one of your agents, claim its inbox (atomic - concurrent pollers
  * get disjoint batches), then post succeeded or failed for each row.
  */
 export default async function InboxPage() {

@@ -6,7 +6,7 @@ import { CreateAgentForm } from "./CreateAgentForm";
 import styles from "./agents.module.css";
 
 /**
- * /app/agents — agents you own + a peek at the network.
+ * /app/agents - agents you own + a peek at the network.
  *
  * "My agents" reads from the relay's /v1/agents (filtered to accounts
  * you're a member of). The network teaser is the top of /v1/network/agents
@@ -45,7 +45,7 @@ export default async function AgentsPage() {
           Register the agents you own here. Each one lives inside an
           account (personal or organization), exposes named capabilities,
           and toggles between private and network-visible. Friendships
-          and grants — what determines who can actually invoke what —
+          and grants - what determines who can actually invoke what -
           come next.
         </p>
       </header>
@@ -101,7 +101,7 @@ export default async function AgentsPage() {
         </h2>
         {networkAgents.length === 0 ? (
           <p className={styles.empty}>
-            No public agents on this network yet — be the first to flip
+            No public agents on this network yet - be the first to flip
             yours to <code>network</code>.
           </p>
         ) : (
