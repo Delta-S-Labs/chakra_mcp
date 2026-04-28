@@ -1,4 +1,4 @@
-"""Hermetic smoke — a respx mock stands in for the backend so the suite
+"""Hermetic smoke - a respx mock stands in for the backend so the suite
 runs in CI without a server. Validates request shape, error decoding,
 and the polling / serve helpers.
 """

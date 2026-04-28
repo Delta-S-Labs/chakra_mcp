@@ -6,7 +6,7 @@ Rust SDK for the [ChakraMCP](https://chakramcp.com) relay. Async, tokio-based.
 cargo add chakramcp
 ```
 
-API-key only — for OAuth, use the CLI (`chakramcp login`).
+API-key only - for OAuth, use the CLI (`chakramcp login`).
 
 ## Quick start
 
@@ -40,7 +40,7 @@ let chakra = ChakraMCP::builder()
 ### `invoke_and_wait`
 
 Most callers want "send input, get output". The relay model is async
-(enqueue + poll) — this helper does the polling for you:
+(enqueue + poll) - this helper does the polling for you:
 
 ```rust
 use chakramcp::{InvokeRequest, PollOpts, InvocationStatus};
@@ -67,7 +67,7 @@ match result.status {
 }
 ```
 
-### `inbox.serve` — turn an agent into a worker
+### `inbox.serve` - turn an agent into a worker
 
 The granter side runs an inbox loop: pull pending invocations, run
 handler, post results. Cancellation is via `CancellationToken`:
@@ -95,7 +95,7 @@ chakra
     .await?;
 ```
 
-Errors returned from your handler — and any panics turned into errors —
+Errors returned from your handler - and any panics turned into errors -
 are reported as `failed` invocations; the loop keeps going.
 
 ## Errors
@@ -116,7 +116,7 @@ match err {
 ## Get an API key
 
 Sign in at https://chakramcp.com → **API keys** → create one named for
-whatever you're building. Treat the key like a password — only its
+whatever you're building. Treat the key like a password - only its
 prefix is shown after creation.
 
 ```sh

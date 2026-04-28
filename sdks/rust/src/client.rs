@@ -16,7 +16,7 @@ pub(crate) const DEFAULT_APP_URL: &str = "https://chakramcp.com";
 pub(crate) const DEFAULT_RELAY_URL: &str = "https://relay.chakramcp.com";
 const USER_AGENT: &str = concat!("chakramcp-rust-sdk/", env!("CARGO_PKG_VERSION"));
 
-/// Top-level client. Cheap to clone — wraps an `Arc`-backed reqwest
+/// Top-level client. Cheap to clone - wraps an `Arc`-backed reqwest
 /// client internally so handing it to multiple tasks is fine.
 #[derive(Clone)]
 pub struct ChakraMCP {
@@ -42,7 +42,7 @@ impl ChakraMCP {
         &self.relay_url
     }
 
-    /// Sub-client constructors. Free to call repeatedly — they wrap
+    /// Sub-client constructors. Free to call repeatedly - they wrap
     /// the parent by reference.
     pub fn agents(&self) -> AgentsClient<'_> {
         AgentsClient::new(self)
@@ -232,7 +232,7 @@ fn trim_url(url: String) -> Result<String> {
 
 pub(crate) async fn decode<T: DeserializeOwned>(resp: Response) -> Result<T> {
     if resp.status() == StatusCode::NO_CONTENT {
-        // T might be Option-like or () — try to deserialize from null.
+        // T might be Option-like or () - try to deserialize from null.
         return serde_json::from_value(serde_json::Value::Null).map_err(Into::into);
     }
     let status = resp.status();

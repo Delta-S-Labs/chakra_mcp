@@ -181,7 +181,7 @@ type Invocation struct {
 	IInvoked           bool             `json:"i_invoked"`
 	// Trust context bundled by the relay on Inbox.Pull responses only.
 	// The relay just verified friendship + grant before delivering this
-	// row — handlers can trust these assertions without re-querying.
+	// row - handlers can trust these assertions without re-querying.
 	// nil on audit-log endpoints (Invocations.List/Get).
 	FriendshipContext *FriendshipContext `json:"friendship_context,omitempty"`
 	GrantContext      *GrantContext      `json:"grant_context,omitempty"`

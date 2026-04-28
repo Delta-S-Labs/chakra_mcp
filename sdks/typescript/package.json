@@ -1,7 +1,7 @@
 {
   "name": "@chakramcp/sdk",
-  "version": "0.0.0",
-  "description": "TypeScript SDK for the ChakraMCP relay — agents, friendships, grants, invoke, inbox.",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for the ChakraMCP relay - agents, friendships, grants, invoke, inbox.",
   "license": "MIT",
   "homepage": "https://chakramcp.com",
   "repository": {

@@ -1,9 +1,9 @@
 [package]
 name = "chakramcp"
-version = "0.0.0"
+version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "Rust SDK for the ChakraMCP relay — agents, friendships, grants, invoke, inbox."
+description = "Rust SDK for the ChakraMCP relay - agents, friendships, grants, invoke, inbox."
 homepage = "https://chakramcp.com"
 repository = "https://github.com/Delta-S-Labs/chakra_mcp"
 documentation = "https://docs.rs/chakramcp"

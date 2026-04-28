@@ -1,6 +1,6 @@
 //! Rust SDK for the [ChakraMCP](https://chakramcp.com) relay.
 //!
-//! Async-only — the audience for this crate is tokio-based agent
+//! Async-only - the audience for this crate is tokio-based agent
 //! runtimes. For sync usage, wrap calls in
 //! [`tokio::runtime::Runtime::block_on`].
 //!

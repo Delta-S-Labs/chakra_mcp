@@ -2,7 +2,7 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("invalid API key — must start with `ck_`")]
+    #[error("invalid API key - must start with `ck_`")]
     InvalidApiKey,
 
     #[error("invalid URL: {0}")]
@@ -24,7 +24,7 @@ pub enum Error {
         message: String,
     },
 
-    #[error("invocation timed out after {0:?} — still in flight; check the audit log")]
+    #[error("invocation timed out after {0:?} - still in flight; check the audit log")]
     InvocationTimeout(std::time::Duration),
 
     #[error("invocation reached terminal status `{status}` with error `{message:?}`")]

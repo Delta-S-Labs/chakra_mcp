@@ -95,7 +95,7 @@ func (in *InboxClient) Serve(ctx context.Context, agentID string, handler Handle
 			}
 			continue
 		}
-		// Process in parallel — invocations are independent.
+		// Process in parallel - invocations are independent.
 		var wg sync.WaitGroup
 		for _, inv := range invs {
 			wg.Add(1)

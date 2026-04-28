@@ -1,5 +1,5 @@
 /**
- * @chakramcp/sdk — typed client for the ChakraMCP relay.
+ * @chakramcp/sdk - typed client for the ChakraMCP relay.
  *
  * Quick start:
  *
@@ -52,7 +52,7 @@ import {
 } from "./types.js";
 
 export interface ChakraMCPOptions {
-  /** API key — `ck_…`. Required. */
+  /** API key - `ck_…`. Required. */
   apiKey: string;
   /** Override the chakramcp-app base URL (default: https://chakramcp.com). */
   appUrl?: string;
@@ -107,7 +107,7 @@ export class ChakraMCP {
   }
 
   /**
-   * Enqueue an invocation. Returns immediately with the invocation id —
+   * Enqueue an invocation. Returns immediately with the invocation id -
    * use `invokeAndWait` to also poll for the terminal result.
    */
   async invoke(args: InvokeRequest): Promise<InvokeResponse> {
@@ -122,7 +122,7 @@ export class ChakraMCP {
    * Enqueue an invocation and poll until status is terminal.
    *
    * Defaults: poll every 1500ms, time out after 3 minutes. The returned
-   * Invocation has the terminal status — caller is expected to inspect
+   * Invocation has the terminal status - caller is expected to inspect
    * `status` and either consume `output_preview` or surface
    * `error_message`.
    */
@@ -146,7 +146,7 @@ export class ChakraMCP {
       if (TERMINAL_STATUSES.has(fresh.status)) return fresh;
     }
     throw new Error(
-      `invokeAndWait timed out after ${timeout}ms — invocation ${enqueued.invocation_id} is still in flight; \`chakra.invocations.get(id)\` later or check the audit log`,
+      `invokeAndWait timed out after ${timeout}ms - invocation ${enqueued.invocation_id} is still in flight; \`chakra.invocations.get(id)\` later or check the audit log`,
     );
   }
 
@@ -367,7 +367,7 @@ export class InboxClient {
         await sleep(interval, opts.signal);
         continue;
       }
-      // Process in parallel — invocations are independent.
+      // Process in parallel - invocations are independent.
       await Promise.all(
         batch.map(async (inv) => {
           try {
@@ -392,7 +392,7 @@ export class InboxClient {
 
 /**
  * Sleep for `ms` milliseconds. Resolves early (does NOT reject) on
- * abort — callers check `signal.aborted` themselves on the next
+ * abort - callers check `signal.aborted` themselves on the next
  * iteration, which is the pattern serve() and invokeAndWait() use.
  */
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {

@@ -67,8 +67,8 @@ impl<'a> InboxClient<'a> {
     /// CancellationToken first.
     ///
     /// The handler is `FnMut(Invocation) -> Future<Output = Result<HandlerResult, _>>`.
-    /// Errors raised by the handler — both Err returns and panics
-    /// turned into errors — are reported as `failed` invocations and
+    /// Errors raised by the handler - both Err returns and panics
+    /// turned into errors - are reported as `failed` invocations and
     /// the loop continues.
     pub fn serve<F, Fut, E>(
         self,
@@ -134,7 +134,7 @@ where
             } {
                 Ok(b) => b,
                 Err(_) => {
-                    // Transient pull errors — sleep and retry.
+                    // Transient pull errors - sleep and retry.
                     if cancel
                         .run_until_cancelled(tokio::time::sleep(self.poll_interval))
                         .await

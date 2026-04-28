@@ -200,7 +200,7 @@ pub struct Invocation {
     pub i_served: bool,
     pub i_invoked: bool,
     /// Trust context bundled by the relay on `inbox.pull` responses
-    /// only — the relay just verified friendship + grant before
+    /// only - the relay just verified friendship + grant before
     /// delivering this row, so handlers can trust these assertions
     /// without re-querying. `None` on audit-log endpoints.
     #[serde(default, skip_serializing_if = "Option::is_none")]

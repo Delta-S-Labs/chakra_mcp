@@ -125,7 +125,7 @@ class AsyncChakraMCP:
             if fresh["status"] in TERMINAL_STATUSES:
                 return fresh
         raise TimeoutError(
-            f"invoke_and_wait timed out after {timeout_s}s — invocation "
+            f"invoke_and_wait timed out after {timeout_s}s - invocation "
             f"{enqueued['invocation_id']} is still in flight"
         )
 

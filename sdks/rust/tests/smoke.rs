@@ -1,4 +1,4 @@
-//! Hermetic smoke — `httpmock` stands in for the backend so the suite
+//! Hermetic smoke - `httpmock` stands in for the backend so the suite
 //! runs in CI without a server. Validates Bearer auth, error envelope
 //! decoding, and the polling + serve helpers.
 

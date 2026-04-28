@@ -122,7 +122,7 @@ class ChakraMCP:
     ) -> Invocation:
         """Enqueue an invocation and poll until status is terminal.
 
-        Raises :py:class:`TimeoutError` after ``timeout_s`` seconds —
+        Raises :py:class:`TimeoutError` after ``timeout_s`` seconds -
         the invocation may still be in flight; check it later via
         ``chakra.invocations.get(id)`` or the audit log.
         """
@@ -136,7 +136,7 @@ class ChakraMCP:
             if fresh["status"] in TERMINAL_STATUSES:
                 return fresh
         raise TimeoutError(
-            f"invoke_and_wait timed out after {timeout_s}s — invocation "
+            f"invoke_and_wait timed out after {timeout_s}s - invocation "
             f"{enqueued['invocation_id']} is still in flight"
         )
 

@@ -1,6 +1,6 @@
 """Type definitions mirroring the relay/app DTOs.
 
-We use TypedDict throughout so the SDK has zero runtime overhead — at
+We use TypedDict throughout so the SDK has zero runtime overhead - at
 runtime these are plain dicts; IDEs + mypy give you autocomplete and
 type checking for free. Callers can still wrap them in pydantic models
 or dataclasses if they want runtime validation; we don't impose that.
@@ -120,7 +120,7 @@ class InvokeResponse(TypedDict):
 
 
 class FriendshipContext(TypedDict):
-    """Trust context for a friendship — bundled in inbox responses."""
+    """Trust context for a friendship - bundled in inbox responses."""
 
     id: str
     status: FriendshipStatus
@@ -132,7 +132,7 @@ class FriendshipContext(TypedDict):
 
 
 class GrantContext(TypedDict):
-    """Trust context for a grant — bundled in inbox responses."""
+    """Trust context for a grant - bundled in inbox responses."""
 
     id: str
     status: GrantStatus
@@ -149,7 +149,7 @@ class Invocation(TypedDict, total=False):
     """Inbox / audit-log row.
 
     The ``friendship_context`` and ``grant_context`` keys are populated
-    only on inbox responses (``inbox.pull`` / ``inbox.serve``) — the
+    only on inbox responses (``inbox.pull`` / ``inbox.serve``) - the
     relay just verified both before delivering, so handlers can trust
     these assertions without re-querying. They're absent on audit-log
     endpoints (``invocations.list / get``), where the live state of

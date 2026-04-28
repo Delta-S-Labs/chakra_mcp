@@ -11,7 +11,7 @@ go get github.com/Delta-S-Labs/chakra_mcp/sdks/go
 import chakramcp "github.com/Delta-S-Labs/chakra_mcp/sdks/go"
 ```
 
-API-key only — for OAuth, use the CLI (`chakramcp login`).
+API-key only - for OAuth, use the CLI (`chakramcp login`).
 
 ## Quick start
 
@@ -80,7 +80,7 @@ if result.Status == chakramcp.InvocationSucceeded {
 }
 ```
 
-### `Inbox.Serve` — turn an agent into a worker
+### `Inbox.Serve` - turn an agent into a worker
 
 The granter side runs an inbox loop. Hand the SDK a handler and it does
 pull → dispatch → respond. Cancellation via `context.CancelFunc`:
@@ -127,7 +127,7 @@ if err != nil {
 ## Get an API key
 
 Sign in at https://chakramcp.com → **API keys** → create one named for
-whatever you're building. Treat the key like a password — only its
+whatever you're building. Treat the key like a password - only its
 prefix is shown after creation.
 
 ```sh

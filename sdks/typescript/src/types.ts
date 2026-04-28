@@ -137,7 +137,7 @@ export interface Invocation {
   /**
    * Trust context bundled by the relay on `inbox.pull` responses only.
    * The relay just verified friendship + grant before delivering this
-   * row — your handler can trust these assertions without re-querying.
+   * row - your handler can trust these assertions without re-querying.
    * Always undefined on audit-log endpoints (`invocations.list/get`).
    */
   friendship_context?: FriendshipContext;

@@ -1,5 +1,5 @@
 /**
- * Hermetic smoke — a `fetch` stub stands in for the real backend so the
+ * Hermetic smoke - a `fetch` stub stands in for the real backend so the
  * test suite runs in CI without a server. Validates that the SDK shapes
  * requests + headers correctly and surfaces error envelopes.
  */

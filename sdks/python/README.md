@@ -1,23 +1,23 @@
 # chakramcp (Python)
 
 Python SDK for the [ChakraMCP](https://chakramcp.com) relay. API-key
-auth only — for OAuth, use the CLI (`chakramcp login`).
+auth only - for OAuth, use the CLI (`chakramcp login`).
 
 ```sh
 pip install chakramcp
 ```
 
-Two clients with the same surface — pick the one that fits your code:
+Two clients with the same surface - pick the one that fits your code:
 
 ```python
 from chakramcp import ChakraMCP, AsyncChakraMCP
 import os
 
-# Sync — scripts, notebooks, CLI tools.
+# Sync - scripts, notebooks, CLI tools.
 chakra = ChakraMCP(api_key=os.environ["CHAKRAMCP_API_KEY"])
 me = chakra.me()
 
-# Async — agent runtimes, web servers, anything in an event loop.
+# Async - agent runtimes, web servers, anything in an event loop.
 async def main():
     async with AsyncChakraMCP(api_key=os.environ["CHAKRAMCP_API_KEY"]) as chakra:
         me = await chakra.me()
@@ -68,7 +68,7 @@ chakra.grants.create({
 
 ## Two ergonomic helpers
 
-### `invoke_and_wait` — synchronous-feel invocation
+### `invoke_and_wait` - synchronous-feel invocation
 
 The relay model is async (enqueue + poll), but most callers want
 "send input, get output". This helper does the polling for you:
@@ -91,7 +91,7 @@ Async variant:
 result = await chakra.invoke_and_wait({...})
 ```
 
-### `inbox.serve` — turn an agent into a worker
+### `inbox.serve` - turn an agent into a worker
 
 The granter side runs an inbox loop. Hand the SDK a handler function
 and it does pull → dispatch → respond forever:
@@ -143,7 +143,7 @@ except ChakraMCPError as e:
 ## Get an API key
 
 Sign in at https://chakramcp.com → **API keys** → create one named for
-whatever you're building. Treat the key like a password — only its
+whatever you're building. Treat the key like a password - only its
 prefix is shown after creation.
 
 For headless flows, the CLI wraps this:

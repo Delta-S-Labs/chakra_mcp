@@ -1,6 +1,6 @@
 // Package chakramcp is the Go SDK for the ChakraMCP relay.
 //
-// API-key auth only — for OAuth, use the CLI (`chakramcp login`).
+// API-key auth only - for OAuth, use the CLI (`chakramcp login`).
 // Uses context.Context throughout for cancellation.
 //
 // Quick start:
@@ -30,7 +30,7 @@ const (
 	defaultTimeout   = 60 * time.Second
 )
 
-// Client is the top-level handle. Cheap to share across goroutines —
+// Client is the top-level handle. Cheap to share across goroutines -
 // the embedded *http.Client handles its own connection pooling.
 type Client struct {
 	apiKey   string
@@ -168,7 +168,7 @@ func (c *Client) InvokeAndWait(ctx context.Context, req *InvokeRequest, opts Pol
 				return fresh, nil
 			}
 			if time.Now().After(deadline) {
-				return nil, fmt.Errorf("chakramcp: invoke_and_wait timed out after %s — invocation %s still in flight", timeout, enq.InvocationID)
+				return nil, fmt.Errorf("chakramcp: invoke_and_wait timed out after %s - invocation %s still in flight", timeout, enq.InvocationID)
 			}
 		}
 	}

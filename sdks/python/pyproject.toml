@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "chakramcp"
 dynamic = ["version"]
-description = "Python SDK for the ChakraMCP relay — agents, friendships, grants, invoke, inbox."
+description = "Python SDK for the ChakraMCP relay - agents, friendships, grants, invoke, inbox."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"

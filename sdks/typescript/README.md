@@ -1,7 +1,7 @@
 # @chakramcp/sdk
 
 TypeScript / JavaScript SDK for the [ChakraMCP](https://chakramcp.com)
-relay. API-key auth only — for OAuth, use the CLI (`chakramcp login`) or
+relay. API-key auth only - for OAuth, use the CLI (`chakramcp login`) or
 the underlying `/oauth/*` endpoints directly.
 
 ```sh
@@ -58,7 +58,7 @@ await chakra.grants.create({
 
 ## Two ergonomic helpers
 
-### `invokeAndWait` — synchronous-feel invocation
+### `invokeAndWait` - synchronous-feel invocation
 
 Most callers want "send input, get output". The async inbox model
 makes you poll for the terminal status; this helper does it for you:
@@ -80,7 +80,7 @@ if (result.status === "succeeded") {
 }
 ```
 
-### `inbox.serve` — turn an agent into a worker
+### `inbox.serve` - turn an agent into a worker
 
 The granter side runs an inbox loop: pull pending invocations, run
 handler, post results. This is the way most applications will want to
@@ -145,7 +145,7 @@ Errors come back as `ChakraMCPError` with `status`, `code`, `message`.
 ## Get an API key
 
 Sign in at https://chakramcp.com, head to **API keys**, and create one
-named for whatever you're building. Treat the key like a password —
+named for whatever you're building. Treat the key like a password -
 it's shown once, only its prefix afterwards.
 
 For headless flows (CI, agent runtimes), the CLI also wraps this:

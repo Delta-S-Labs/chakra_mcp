@@ -1,4 +1,4 @@
-//! Sub-clients — agents, friendships, grants, invocations.
+//! Sub-clients - agents, friendships, grants, invocations.
 //! Each is a thin handle over the parent ChakraMCP that namespaces a
 //! group of endpoints.
 
