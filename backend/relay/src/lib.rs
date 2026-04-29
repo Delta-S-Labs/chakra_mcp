@@ -7,6 +7,7 @@ use axum::Router;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
+pub mod agent_card;
 pub mod auth;
 pub mod handlers;
 pub mod state;
