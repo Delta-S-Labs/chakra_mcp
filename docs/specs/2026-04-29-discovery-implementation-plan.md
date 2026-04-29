@@ -293,38 +293,167 @@ backend/relay/src/
 
 ---
 
-## Phase D10 — Discovery API + frontend
+## Phase D10a — Discovery search infrastructure (perf-first)
 
-**What:** The user-facing discovery experience.
+**What:** The query layer for discovery, designed for speed under combined filters at 100k+ agents. Frontend lands in D10b; this phase is API + indexes + pagination only.
 
-**Backend (Rust):**
+### Pagination contract
 
-- `backend/relay/src/handlers/discovery.rs`:
-  - `GET /v1/discovery/agents` with all filters (q, capability_schema, tags, friendship, mode, verified, include_dormant)
-  - `GET /v1/discovery/agents/<account>/<slug>`
-  - `GET /v1/discovery/agents/<account>/<slug>/capabilities`
-  - `GET /v1/discovery/recents` (auth required)
-  - `GET /v1/discovery/trending` (public)
+**Cursor-based, not offset-based.** Offset-based pagination is O(N) at the database level for deep pages and produces inconsistent results under concurrent writes. Cursor-based gives predictable performance regardless of position.
 
-- JSONB containment query for `capability_schema` filter using existing GIN index.
-- Trust status fields populated when caller bearer is present.
+- Default page size: 20. Max: 100. Configurable per request (`limit` query param).
+- Cursor: opaque base64-encoded JSON `{rank_score, agent_id}` (rank_score depends on the active sort; agent_id is the stable tiebreaker UUID).
+- Response envelope:
+
+  ```json
+  {
+    "agents": [...],
+    "next_cursor": "eyJyYW5rIjowLjk1LCJpZCI6IjAxOWRkMC..." | null,
+    "total_estimate": 1247    // present only on first page; HLL-based for unauthed, exact for authed (cheap given filters)
+  }
+  ```
+
+- Stable secondary sort key (agent UUID) on every query so concurrent writes don't cause cursor drift.
+
+### Filter strategy + indexing
+
+| Filter | Source data | Query strategy | Index |
+|---|---|---|---|
+| `q` (free text) | display_name, description, account display_name, capability descriptions | Postgres FTS (`tsvector` column, refreshed via trigger on row updates) | GIN on `tsvector` — added in this phase, NOT in D1 |
+| `capability_schema` | capabilities.{output,input}_schema | JSONB containment (`@>`) | `idx_capabilities_*_schema_jsonb` (already in D1) |
+| `tags` | agents.tags | GIN array containment | `idx_agents_tags_gin` (already in D1) |
+| `friendship` | friendships table joined via account_id | Inner join with caller's account, filter `status = accepted` | composite (caller_account_id, target_account_id) index on friendships (already exists pre-A2A) |
+| `mode` | agents.mode | `WHERE mode = ?` | btree on `(mode, tombstoned_at)` partial index — added in this phase |
+| `verified` | accounts.verified_at IS NOT NULL | `WHERE accounts.verified_at IS NOT NULL` | partial btree on `accounts(id) WHERE verified_at IS NOT NULL` — added in this phase |
+| `include_dormant` | agents.last_polled_at / last_card_fetched_at | filter at handler level after main query | reuses health-state computation (D11) |
+
+**Trigger-maintained `tsvector` column on agents:**
+
+```sql
+ALTER TABLE agents ADD COLUMN search_vec tsvector;
+CREATE TRIGGER agents_search_vec_update BEFORE INSERT OR UPDATE ...
+CREATE INDEX idx_agents_search_vec ON agents USING GIN (search_vec);
+```
+
+Updated when `display_name`, `description`, `tags`, or any owned capability description changes. The trigger keeps it consistent without a refresh job.
+
+### Pre-computed denormalization
+
+To make recents/trending/friends-of cheap, two counter-cache columns updated by background job (not in transaction; eventual consistency is fine):
+
+```sql
+ALTER TABLE agents ADD COLUMN friend_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE agents ADD COLUMN recent_invocations_7d INTEGER NOT NULL DEFAULT 0;
+```
+
+Refreshed once per minute by a tokio-scheduled job that runs cheap aggregate queries against `friendships` and `relay_log`. Stale by up to 60s — acceptable.
+
+### Query timeout + result envelope on timeout
+
+- Server-side query timeout: 1000ms default, 2000ms hard cap (configurable in server.toml).
+- On timeout, return partial results with HTTP 200 plus header `X-ChakraMCP-Search-Truncated: true`. Frontend shows a "results truncated; refine your query" notice. Avoids blank-page-on-slow-query.
+
+### Caching
+
+- Public discovery responses (no caller auth, no `friendship` filter) cacheable at edge with `Cache-Control: public, max-age=60, stale-while-revalidate=300`.
+- Authenticated responses per-user, app-layer Redis cache with 30s TTL, invalidated on friendship.* / grant.* / agent.tombstone events.
+- Cache key includes the full normalized filter set + caller identity.
+
+### Recents endpoint
+
+Cheap query against `relay_log` for caller's last-N distinct target agents in the past 7 days, ordered by `MAX(created_at)`. Cached per-user 30s. Index on `relay_log(requester_account_id, created_at DESC)` already in migration doc.
+
+### Trending endpoint
+
+Pre-computed materialized view refreshed every 5 minutes:
+
+```sql
+CREATE MATERIALIZED VIEW trending_agents AS
+  SELECT a.id, a.account_id, a.slug,
+         COALESCE(recent_invocations_7d, 0) * 2 + COALESCE(friend_count, 0) AS score
+    FROM agents a
+   WHERE a.tombstoned_at IS NULL
+     AND a.visibility = 'network'
+     AND a.noindex = false
+   ORDER BY score DESC
+   LIMIT 200;
+CREATE UNIQUE INDEX ON trending_agents (id);
+```
+
+Refresh via `REFRESH MATERIALIZED VIEW CONCURRENTLY`. View is small and stays in shared buffers.
+
+### Rate limits
+
+- Unauthed `GET /v1/discovery/agents`: 30 req/IP/min.
+- Authed: 120 req/account/min.
+- Returns 429 with `Retry-After` header when exceeded.
+
+### Backend (Rust)
+
+- `backend/relay/src/handlers/discovery.rs` — handlers for the five endpoints
+- `backend/relay/src/discovery/query_builder.rs` — composes Postgres queries from filter sets, defends against bad filter combos
+- `backend/relay/src/discovery/cursor.rs` — opaque cursor encode/decode with HMAC against tampering
+- `backend/relay/src/discovery/cache.rs` — Redis layer with invalidation on event subscriptions
+
+**Endpoints (gated by `DISCOVERY_V2`):**
+- `GET /v1/discovery/agents` — search with all filters, cursor pagination
+- `GET /v1/discovery/agents/<account>/<slug>` — detail
+- `GET /v1/discovery/agents/<account>/<slug>/capabilities` — capability list
+- `GET /v1/discovery/recents` — caller's recents (auth required)
+- `GET /v1/discovery/trending` — public
+
+### Performance benchmarks (gating the D14 flip)
+
+A separate test target seeds the DB with realistic fixture data and runs query benchmarks via `cargo bench`:
+
+- 10k agents, 100k capabilities, 50k friendships:
+  - p99 single-filter `q` query: < 50ms
+  - p99 combined `q + capability_schema + verified=true`: < 200ms
+  - p99 `recents` for active caller: < 30ms
+  - p99 `trending`: < 10ms (it's a pre-aggregated view)
+- 100k agents (stretch goal): p99 < 500ms across all combinations
+
+**These benchmarks must pass before D14 flag flip.**
+
+### Tests
+
+- Unit: cursor encoding roundtrip; query builder for each filter combination; FTS trigger correctness on row updates
+- Integration: capability-shape search returns the agents whose schemas contain the filter; pagination consistency under concurrent writes (cursor doesn't drift)
+- Benchmark suite (separate from CI): the perf gates above
+
+**Commit boundary:** indexes + tsvector trigger; query builder; cursor; cache; benchmarks. ~5 commits.
+
+**Risk:** Medium. Postgres planner gotchas under combined GIN + btree indexes; needs `EXPLAIN ANALYZE` validation. Cursor stability under concurrent writes is a subtle correctness property.
+
+---
+
+## Phase D10b — Discovery frontend
+
+**What:** The user-facing pages that consume D10a's API.
 
 **Frontend (Next.js):**
 
-- `frontend/src/app/(site)/agents/page.tsx` — public directory (HTML + SSR for SEO)
+- `frontend/src/app/(site)/agents/page.tsx` — public directory (HTML + SSR for SEO; cursor pagination via URL `?cursor=...`)
 - `frontend/src/app/(site)/agents/[account]/page.tsx` — account directory page
-- `frontend/src/app/(site)/agents/[account]/[slug]/page.tsx` — agent home page (with OG metadata from cached card)
+- `frontend/src/app/(site)/agents/[account]/[slug]/page.tsx` — agent home page (OG metadata from cached card)
 - `frontend/src/app/(site)/agents/index.json/route.ts` — JSON paginated index for crawlers
-- `frontend/src/app/(app)/app/discovery/page.tsx` — logged-in discovery dashboard with recents, friends', trending sections + filters
+- `frontend/src/app/(app)/app/discovery/page.tsx` — logged-in dashboard with recents, friends', trending sections + filter sidebar
+
+**Frontend perf details:**
+
+- Server-side rendering with Next.js's revalidation (60s) for public directory pages → cacheable at the CDN.
+- Client-side filter changes hit `/v1/discovery/agents` with debounced input (200ms), AbortController on stale requests.
+- Filter sidebar: optimistic updates; clear "X results found" + "results truncated" banner when applicable.
+- Capability-shape search input: a JSON editor with schema validation; example schemas pre-loaded from popular agents.
 
 **Tests:**
-- Backend unit tests on each filter
-- Backend integration test for capability-shape search returning expected agents
-- Frontend snapshot/Playwright for the directory page rendering
 
-**Commit boundary:** backend handlers in one commit; frontend pages in another; integration commit ties them in.
+- Frontend snapshot / Playwright for the directory page rendering
+- Crawl test against the public directory: every linked agent home page returns 200, structured data validates
 
-**Risk:** Medium. Search performance under realistic data needs profiling before D14.
+**Commit boundary:** one commit per page tier, integration commit at end. ~4 commits.
+
+**Risk:** Low.
 
 ---
 
@@ -377,6 +506,72 @@ backend/relay/src/
 **Commit:** "Verified-account badge: DNS + Workspace SSO"
 
 **Risk:** Low. Optional opt-in feature; no critical-path code.
+
+---
+
+## Phase D13b — Website + messaging update (parallel to D13/D14)
+
+**What:** Update every public surface that describes ChakraMCP to position us as **a trust + policy layer on top of A2A** rather than a competing wire protocol. Done in parallel with D13/D14 so messaging matches shipped reality on the day of the flag flip.
+
+### Positioning shift
+
+| Old framing | New framing |
+|---|---|
+| "A relay network for AI agents — register, friend, grant, invoke, audit." | "A trust + policy layer for A2A — friendships, grants, consent, audit. Agents speak A2A; we enforce who can talk to whom." |
+| "Pull-based delivery — no public webhook needed." | "A2A-compatible pull mode via the inbox bridge — pull agents look like first-class A2A endpoints to callers, no public host needed." |
+| Architecture diagram: agents ↔ ChakraMCP relay (custom wire) | Architecture diagram: agents ↔ ChakraMCP relay (A2A wire) ↔ agents, with explicit "A2A" labels on the wire and a callout that MCP stays internal to each agent |
+
+The five primitives (Agents / Capabilities / Friendships / Grants / Inbox+Invocations) stay the same — that's the IP. Only the wire layer's framing changes.
+
+### Surfaces to update
+
+**Frontend (all in `frontend/src/`):**
+
+| File | Change |
+|---|---|
+| `app/(site)/page.tsx` (landing) | Hero tagline + value-prop section. Add an "A2A-compatible" badge. |
+| `app/(site)/docs/page.tsx` | Lede paragraph. Add a card linking to a new "Why A2A?" section. |
+| `app/(site)/docs/concepts/page.tsx` | Add a section "ChakraMCP and A2A: the layering" explaining the trust-layer-on-A2A model. |
+| `app/(site)/docs/agents/page.tsx` (autopilot) | Re-frame as "A2A-native integration with ChakraMCP trust mediation." Update code examples to show the new path-based URLs. |
+| `app/(site)/docs/quickstart/page.tsx` | Update step 5 (the inbox-loop snippet) to mention A2A under the hood; SDK code example unchanged. |
+| `components/sections/*.tsx` (Poster, LeadHero, RelayDiagram, CoffeeLoop labels) | Architecture diagrams show A2A as the wire. Update any text labels that describe a "ChakraMCP protocol." |
+| `app/(site)/cofounder/page.tsx` | Tempo section reflects the migration as a strategic win, not a pivot. |
+| `app/(site)/brand/page.tsx` | No change (visual brand only). |
+
+**Repo-level:**
+
+| File | Change |
+|---|---|
+| `README.md` | Hero paragraph + architecture ASCII art + "What ChakraMCP gives an agent" section. Add A2A reference. |
+| `docs/INSTALL.md` | One-line note that the relay speaks A2A; SDK installs unchanged. |
+| `frontend/public/llms.txt` | Update the project description for LLM autopilot consumption. |
+| `frontend/public/.well-known/chakramcp.json` (or wherever the host descriptor lives) | Add `a2a_compatible: true`, `a2a_version: "0.3"`, `a2a_card_pattern: "/agents/<account>/<slug>/.well-known/agent-card.json"` so generic A2A clients can self-discover us. |
+
+**SDK READMEs** (`sdks/{typescript,python}/README.md`):
+- One-paragraph "What ChakraMCP does for you" update mentioning A2A.
+- Code samples unchanged (signatures preserved).
+
+### Optional new surfaces
+
+**`docs/why-a2a.md` or `frontend/src/app/(site)/docs/a2a/page.tsx`:** a dedicated page explaining the layering — written for both humans (technical decision-makers) and LLM autopilot. Sections: "What A2A is", "What ChakraMCP adds on top", "How the relay enforces policy", "Migration history (we used to ship a custom wire; here's why we changed)."
+
+This is the single biggest acquisition surface for A2A community traffic. Worth doing well.
+
+### Acquisition implications
+
+- A2A clients in the wild that hit our relay and bounce on policy now get an error message that explicitly references A2A: "this agent is policy-gated by ChakraMCP — visit chakramcp.com to friend / register." Helps the bounce-back convert.
+- SEO: every agent's home page includes "A2A-compatible" + structured data so generic A2A directory crawlers find us.
+- Blog post / launch announcement timed with D14: "ChakraMCP runs on A2A now" — talks to both our existing users (the SDK signature is the same; here's what changed) and potential A2A-native users (here's a trust layer you can plug in).
+
+### Tests / verification
+
+- Render every public page in the preview server; check that no page still says "custom protocol" or implies we're competing with A2A.
+- LLM-readable surfaces (`/llms.txt`, `/.well-known/chakramcp.json`, `/docs/agents`) all consistent.
+- Crawl the rendered site and grep for old phrasings; confirm zero hits before flag flip.
+
+**Commit boundary:** one commit per surface tier (frontend, repo-level, SDK READMEs, optional new pages). 4–5 commits total.
+
+**Risk:** Low technically. **High** for messaging — every word matters for positioning. Recommend the marketing copy gets a separate review pass (independent of the spec/plan reviewers).
 
 ---
 
@@ -448,24 +643,26 @@ Rough ordering by effort, not committing to dates:
 
 | Phase | Weight | Notes |
 |---|---|---|
-| D0 | XS | doc-only |
+| D0 | XS | migration-doc patch |
 | D1 | S | schema + indexes |
-| D2 | L | foundation, security-sensitive |
-| D3 | XS | stubs |
-| D4 | M | policy logic + tests |
-| D5 | XL | core proxy + JWT + bridge |
-| D6 | M | translation shims; demo regression |
-| D7 | M | mDNS new territory |
+| D2 | L | agent-card service, security-sensitive |
+| D3 | XS | A2A endpoint stubs |
+| D4 | M | policy decision tree + tests |
+| D5 | XL | core proxy + JWT + inbox bridge |
+| D6 | M | SDK translation shims; demo regression |
+| D7 | M | mDNS publisher |
 | D8 | S | CLI updates |
 | D9 | M | slug lifecycle middleware |
-| D10 | L | API + frontend |
-| D11 | S | state machine |
-| D12 | S | catalog consolidation |
-| D13 | S | verification flows |
-| D14 | M | flip + monitoring |
-| D15 | S | cleanup |
+| **D10a** | **L** | **search infrastructure (perf-first, benchmarks gate D14)** |
+| D10b | M | discovery frontend pages |
+| D11 | S | health state machine |
+| D12 | S | error catalog |
+| D13 | S | verified-account badge |
+| D13b | M | website + messaging update (parallel to D13/D14) |
+| D14 | M | flag flip + monitoring + launch announcement |
+| D15 | S | tear-down of pre-A2A code |
 
-D5 is by far the biggest. Plan accordingly.
+D5 and D10a are the two heaviest. Plan accordingly. The D10a benchmarks (p99 < 200ms at 10k agents) are a pre-D14 gate, not a nice-to-have.
 
 ---
 
