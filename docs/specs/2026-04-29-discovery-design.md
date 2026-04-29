@@ -1,6 +1,8 @@
 # Discovery design — A2A migration
 
-**Date:** 2026-04-29 · **Revision:** 4 · **Status:** Approved by user; pending implementation plan
+**Date:** 2026-04-29 · **Revision:** 5 · **Status:** Approved by user; D1 + D2a shipped (D2a rev: canonical A2A v0.3 wire format)
+
+> **A2A wire compatibility** — every Agent Card we publish is fully wire-compatible with canonical [A2A v0.3](https://github.com/a2aproject/A2A) (`a2a.proto`). Field names, casing, plurality, required-vs-optional, security-scheme typing, signature shape (JWS / RFC 7515) all match the spec. Generic A2A clients parse our cards without ChakraMCP-specific knowledge. Capability JSON Schemas do NOT live in the card (A2A's `AgentSkill` has no schema fields) — they're served from our REST endpoint at `/v1/discovery/agents/<account>/<slug>/capabilities`. Forward-compat: every type uses `serde(flatten)` to preserve unknown fields across parse + re-serialize, so newer-spec extensions survive republish.
 **Supersedes:** discovery sections of `docs/chakramcp-build-spec.md`
 **Related:** `chakramcp-migration-to-a2a.md` (Phase 2 + Phase 3 + Phase 7)
 
@@ -121,30 +123,30 @@ If the agent's canonical card returns 5xx/4xx during refresh:
 
 Capability rows from a stale card are NOT removed automatically (avoids data loss on transient outages). Operator can force resync.
 
-### Signed Agent Cards (covered fields, key rotation)
+### Signed Agent Cards (JWS shape, key rotation)
 
-The relay holds a private Ed25519 signing key (`kid`-rotated). Every published card carries:
+The relay holds a private Ed25519 signing key (`kid`-rotated). Every published card carries one or more JWS-shaped entries in its `signatures` array (per the A2A v0.3 spec — `AgentCardSignature` is RFC 7515-shaped):
 
 ```json
-"signature": {
-  "alg": "EdDSA",
-  "kid": "relay-2026-04",
-  "covered_fields": ["name","description","url","skills","authentication","capabilities","version","kid"],
-  "value": "<base64>"
-}
+"signatures": [
+  {
+    "protected": "<base64url-encoded JSON header: { alg: 'EdDSA', kid: 'relay-2026-04' }>",
+    "signature": "<base64url-encoded signature bytes>"
+  }
+]
 ```
 
-The signature covers `name`, `description`, `url`, `skills`, `authentication`, `capabilities`, `version`, and `kid` itself. **The `url` field is in scope — replaying a signed card with a substituted URL fails verification.**
+The signature is computed over a canonical-JSON projection of the card body. The projection rules are formalized in the signer module (`backend/relay/src/agent_card/signer.rs`, D2b), but the contract is: **every field that callers need to trust is in scope**, including `supported_interfaces[].url`. Replaying a signed card with a substituted URL fails verification.
 
-JWKS at `chakramcp.com/.well-known/jwks.json` lists active keys with overlap. Rotation cadence: 90 days. Old `kid`s stay in JWKS for 30 days after retirement so cached cards remain verifiable. `kid` MUST be present on every card; clients MUST select the matching key from JWKS by `kid`.
+JWKS at `chakramcp.com/.well-known/jwks.json` lists active keys with overlap. Rotation cadence: 90 days. Old `kid`s stay in JWKS for 30 days after retirement so cached cards remain verifiable. The `kid` lives in the `protected` header (per RFC 7515, decoded clients pull it out before key lookup); MUST be present on every card.
 
-If an agent's canonical card is itself signed (A2A v1.0+), we preserve the original signature in `agent_card_cached.original_signature` for audit; our wrapping signature is the spec-correct one for the URL we publish.
+If an agent's canonical card is itself signed (A2A v1.0+), we preserve the upstream signature objects alongside ours by appending them to the `signatures` array (multiple signatures are explicitly allowed by the spec). Our wrapping signature is the one with our `kid` and binds the card to the URL we publish.
 
 A2A v0.x cards (unsigned) are accepted from upstream agents — we still sign our wrapped output. We never reject an upstream card on signature absence.
 
 ### Upstream auth-scheme handling on republish
 
-The relay **always** publishes `[ { "scheme": "http", "type": "bearer", "bearerFormat": "JWT" } ]` in the wrapped card's `authentication` field, regardless of what the upstream canonical card declares. Upstream `apiKey` / `oauth2` / `openIdConnect` declarations are not propagated to the published card. They have no effect on auth handling because all calls hit our relay first; the relay knows internally how to authenticate forward to the agent's canonical endpoint (the relay-issued JWT it presents to the target — see Override #3).
+The relay **always** publishes a single `chakramcp_bearer` entry in `security_schemes` (HTTP+Bearer+JWT) plus a corresponding `security_requirements` reference, regardless of what the upstream canonical card declares. Upstream `api_key` / `oauth2` / `open_id_connect` / `mutual_tls` schemes are not propagated. They have no effect on auth handling because all calls hit our relay first; the relay knows internally how to authenticate forward to the agent's canonical endpoint (the relay-issued JWT it presents to the target — see Override #3).
 
 When a republish happens against a card that declares a non-bearer upstream scheme, the relay emits an admin-side warning event (`chk.publish.unsupported_auth`, see error catalog) so the operator knows the upstream's declared schemes are being ignored. This is informational, not blocking.
 
@@ -158,13 +160,19 @@ Anyone can `GET` the card without auth. Cards are public discovery metadata. Edg
 
 ### Method call (gated)
 
-Cards declare:
+Cards declare a canonical A2A v0.3 security scheme + requirement (top-level fields, not a flat `authentication` array):
 
 ```json
-"authentication": [
-  { "scheme": "http", "type": "bearer", "bearerFormat": "JWT",
-    "description": "ChakraMCP-issued bearer token (API key or OAuth-issued JWT)." }
-]
+"security_schemes": {
+  "chakramcp_bearer": {
+    "http": {
+      "scheme": "Bearer",
+      "bearer_format": "JWT",
+      "description": "ChakraMCP-issued bearer token (API key or OAuth-issued JWT)."
+    }
+  }
+},
+"security_requirements": [ { "chakramcp_bearer": [] } ]
 ```
 
 Calls without a bearer or with an invalid bearer fail with structured A2A errors. Calls with a valid bearer go through the **10-step policy decision** (friendship, grant, consent — same algorithm as the migration doc Phase 7).
@@ -671,18 +679,43 @@ GET https://chakramcp.com/agents/acme-corp/alice-scheduler/.well-known/agent-car
   Cache-Control: public, max-age=300
 
   { "name": "Alice Scheduler",
-    "description": "Returns 30-min slots in the next N days",
-    "url": "https://chakramcp.com/agents/acme-corp/alice-scheduler/a2a/jsonrpc",
+    "description": "Returns 30-min slots in the next N days.",
+    "supported_interfaces": [
+      { "url": "https://chakramcp.com/agents/acme-corp/alice-scheduler/a2a/jsonrpc",
+        "protocol_binding": "JSONRPC",
+        "protocol_version": "0.3" }
+    ],
     "version": "0.1.0",
-    "capabilities": { "streaming": true },
-    "skills": [ { "id": "propose_slots", "description": "...",
-                  "inputSchema": {...}, "outputSchema": {...} } ],
-    "authentication": [ { "scheme": "http", "type": "bearer", "bearerFormat": "JWT" } ],
-    "signature": { "alg": "EdDSA", "kid": "relay-2026-04",
-                   "covered_fields": ["name","description","url","skills",
-                                      "authentication","capabilities","version","kid"],
-                   "value": "..." } }
+    "capabilities": { "streaming": false, "push_notifications": false },
+    "security_schemes": {
+      "chakramcp_bearer": {
+        "http": {
+          "scheme": "Bearer",
+          "bearer_format": "JWT",
+          "description": "ChakraMCP-issued bearer token (API key or OAuth-issued JWT)."
+        }
+      }
+    },
+    "security_requirements": [ { "chakramcp_bearer": [] } ],
+    "default_input_modes": ["application/json"],
+    "default_output_modes": ["application/json"],
+    "skills": [
+      { "id": "<capability-uuid>",
+        "name": "propose_slots",
+        "description": "Return a list of available 30-minute slots in the next N days.",
+        "tags": [],
+        "examples": [],
+        "input_modes": ["application/json"],
+        "output_modes": ["application/json"] }
+    ],
+    "signatures": [
+      { "protected": "<base64url JWS protected header with alg=EdDSA, kid=relay-2026-04>",
+        "signature": "<base64url signature bytes>" }
+    ]
+  }
 ```
+
+The card is **fully wire-compatible with canonical A2A v0.3**. Generic A2A clients (Google's reference SDK, openclaw-a2a-gateway) parse it without ChakraMCP-specific knowledge. Capability JSON Schemas do NOT live in the card — A2A's `AgentSkill` has no `inputSchema`/`outputSchema` fields. Schemas are exposed via our REST endpoint at `/v1/discovery/agents/<account>/<slug>/capabilities` (see "Discovery API surface").
 
 ### Stranger calls without auth
 
