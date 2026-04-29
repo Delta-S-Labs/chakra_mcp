@@ -222,11 +222,17 @@ pub async fn create(
     }
 
     let id = Uuid::now_v7();
+    // ON CONFLICT must match the partial unique index (`tombstoned_at IS NULL`)
+    // introduced by migration 0009 — old code targeted a full UNIQUE that was
+    // replaced. The predicate keeps the conflict scope to live (non-tombstoned)
+    // rows, which is exactly the semantics we want: re-registering after a
+    // tombstone is a separate explicit "untombstone" action, not an implicit
+    // upsert.
     let inserted = sqlx::query!(
         r#"
         INSERT INTO agents (id, account_id, created_by_user_id, slug, display_name, description, visibility, endpoint_url)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        ON CONFLICT (account_id, slug) DO NOTHING
+        ON CONFLICT (account_id, slug) WHERE tombstoned_at IS NULL DO NOTHING
         RETURNING id, account_id, slug, display_name, description, visibility, endpoint_url, created_at, updated_at
         "#,
         id,
