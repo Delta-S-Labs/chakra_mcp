@@ -1,6 +1,6 @@
 # Discovery design — A2A migration
 
-**Date:** 2026-04-29 · **Revision:** 3 · **Status:** Draft, pending user sign-off
+**Date:** 2026-04-29 · **Revision:** 4 · **Status:** Approved by user; pending implementation plan
 **Supersedes:** discovery sections of `docs/chakramcp-build-spec.md`
 **Related:** `chakramcp-migration-to-a2a.md` (Phase 2 + Phase 3 + Phase 7)
 
@@ -260,21 +260,23 @@ The bridge is the load-bearing piece that lets pull-mode agents participate in t
 
 1. **Caller** sends A2A `SendMessage` to `chakramcp.com/agents/<account>/<slug>/a2a/jsonrpc`.
 2. **Relay** runs the auth + policy decision tree above. On pass, if target is `mode = pull`, the call is **parked**: row inserted in `relay_log` with `policy_decision = 'authorized'`, `parked_at = now()`, `a2a_method = 'SendMessage'`. The relay returns A2A `Task` with `state: working` immediately to the caller.
-3. **Granter's SDK** polls `GET /v1/inbox?agent_id=<id>` (preserved endpoint). Response payload preserves the existing `Invocation` dict shape for backward compatibility — new fields are **additive only**. Existing fields (`id`, `capability_name`, `input_preview`, `friendship_context`, `grant_context`, etc.) are unchanged. New additive fields: `parked_a2a_request` (the raw A2A SendMessage body, for advanced users), `parked_at` (timestamp), `parking_deadline_at` (computed from `grants.grant_timeout_s` plus `parked_at`).
+3. **Granter's SDK** polls `GET /v1/inbox?agent_id=<id>` (preserved endpoint). Response payload preserves the existing `Invocation` dict shape for backward compatibility — new fields are **additive only**. Existing fields (`id`, `capability_name`, `input_preview`, `friendship_context`, `grant_context`, etc.) are unchanged. New additive fields: `parked_a2a_request` (the raw A2A SendMessage body, for advanced users), `parked_at` (timestamp), `parking_deadline_at` (computed from server-wide `inbox_bridge.parking_timeout_s` plus `parked_at`).
 4. **Granter's SDK** runs the user's handler, gets a result.
 5. **Granter's SDK** posts to `POST /v1/invocations/{id}/result`. The relay translates the result to A2A `Task.completed` or `Task.failed`.
 6. **Caller** is observing the task via A2A `GetTask` (the SDK's `invoke_and_wait` does this transparently). On state transition to terminal, caller receives the result.
 
 ### Parking timeouts
 
-Per-grant timeout column: `grants.grant_timeout_s INTEGER NULL`. NULL means "use the global default" (60 s, configurable in `~/.chakramcp/server.toml`). Bounded `[5, 600]` per grant.
+Single server-wide timeout: `inbox_bridge.parking_timeout_s` in `~/.chakramcp/server.toml`. Default 60 s, bounded `[5, 600]`. Applies to all parked calls regardless of caller, target, or capability.
+
+Rationale for not making this configurable per-grant or per-capability in v1: a 60 s default covers ~all capabilities; truly long-running work should use A2A's native `Task` + `GetTask` pattern (relay returns `state: working` immediately, caller polls), not extended parking. Per-capability or per-grant overrides can be added additively if a real need surfaces.
 
 | Parked duration | Action |
 |---|---|
 | `< 30 s` | normal |
 | `30 s – 5 min` | granter is `Stale` (see Health). Call still parked. |
-| `5 min – grant_timeout_s` | call held; bounded by grant timeout |
-| `≥ grant_timeout_s` | relay releases the call as A2A `Task.failed` with `data.code = chk.target.unreachable`; caller learns; granter's eventual response (if any) is ignored with audit-logged warning |
+| `5 min – parking_timeout_s` | call held; bounded by global timeout |
+| `≥ parking_timeout_s` | relay releases the call as A2A `Task.failed` with `data.code = chk.target.unreachable`; caller learns; granter's eventual response (if any) is ignored with audit-logged warning |
 
 ### State on grant revocation mid-park
 
@@ -608,9 +610,10 @@ CREATE INDEX idx_slug_aliases_active
   ON slug_aliases(scope, account_id, old_slug)
   WHERE expires_at > now();
 
--- grants per-grant timeout (for inbox-bridge parking)
-ALTER TABLE grants ADD COLUMN grant_timeout_s INTEGER NULL
-  CHECK (grant_timeout_s IS NULL OR grant_timeout_s BETWEEN 5 AND 600);
+-- (no schema delta on grants; inbox-bridge parking timeout is a server-
+--  wide config in ~/.chakramcp/server.toml: inbox_bridge.parking_timeout_s
+--  default 60 s, bounded [5, 600]. Per-grant or per-capability overrides
+--  can be added additively if a concrete need surfaces.)
 
 -- friendships forward-compat
 ALTER TABLE friendships ADD COLUMN provenance JSONB DEFAULT '{}';
