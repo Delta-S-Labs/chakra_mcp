@@ -78,6 +78,8 @@ pub fn router(state: RelayState) -> Router {
             get(handlers::mcp::protected_resource_metadata),
         )
         .route("/mcp", post(handlers::mcp::handle))
+        // ─── A2A: JWKS for verifying our Agent Card signatures ─
+        .route("/.well-known/jwks.json", get(handlers::jwks::get_jwks))
         .with_state(state)
         .layer(cors)
         .layer(TraceLayer::new_for_http())

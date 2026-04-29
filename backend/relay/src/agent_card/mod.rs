@@ -37,9 +37,13 @@
 //! See `docs/specs/2026-04-29-discovery-design.md` §"Agent Card hosting
 //! model" for the full design.
 
+pub mod keys;
+pub mod signer;
 pub mod synthesizer;
 pub mod types;
 
+pub use keys::{Jwks, JsonWebKey, KeyStore, KeyStoreError};
+pub use signer::{sign_card, verify_card, SignError, SigningKey, VerifyError, VerifyingKey};
 pub use synthesizer::{
     synthesize_pull_card, AgentRowForSynthesis, CapabilityRowForSynthesis, SynthesisError,
     SECURITY_SCHEME_NAME,

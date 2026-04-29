@@ -42,6 +42,8 @@ hex = "0.4"
 base64 = "0.22"
 argon2 = "0.5"
 password-hash = "0.5"
+# Ed25519 for Agent Card signing (JWS). `rand_core` matches rand 0.8.
+ed25519-dalek = { version = "2", features = ["rand_core"] }
 
 # Config / errors / logging
 dotenvy = "0.15"
