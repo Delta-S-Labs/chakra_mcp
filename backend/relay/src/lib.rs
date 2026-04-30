@@ -85,6 +85,15 @@ pub fn router(state: RelayState) -> Router {
             "/agents/{account_slug}/{agent_slug}/.well-known/agent-card.json",
             get(handlers::published_cards::get_agent_card),
         )
+        // ─── A2A: JSON-RPC + streaming endpoints (stubs until D5) ─
+        .route(
+            "/agents/{account_slug}/{agent_slug}/a2a/jsonrpc",
+            post(handlers::a2a::jsonrpc_stub),
+        )
+        .route(
+            "/agents/{account_slug}/{agent_slug}/a2a/stream",
+            post(handlers::a2a::stream_stub),
+        )
         .with_state(state)
         .layer(cors)
         .layer(TraceLayer::new_for_http())
