@@ -6,3 +6,4 @@ pub mod health;
 pub mod invoke;
 pub mod jwks;
 pub mod mcp;
+pub mod published_cards;

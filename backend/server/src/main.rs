@@ -228,6 +228,7 @@ struct ServerFile {
     frontend_base_url: Option<String>,
     app_base_url: Option<String>,
     relay_base_url: Option<String>,
+    discovery_v2_enabled: Option<bool>,
     app_port: Option<u16>,
     relay_port: Option<u16>,
     log_filter: Option<String>,
@@ -293,6 +294,12 @@ fn load_config(explicit_path: Option<PathBuf>) -> Result<ServerConfig> {
         .or(from_file.relay_base_url)
         .unwrap_or_else(|| "http://localhost:8090".into());
 
+    let discovery_v2_enabled = std::env::var("DISCOVERY_V2")
+        .ok()
+        .map(|s| matches!(s.trim().to_lowercase().as_str(), "true" | "1" | "yes" | "on"))
+        .or(from_file.discovery_v2_enabled)
+        .unwrap_or(false);
+
     let log_filter = std::env::var("RUST_LOG")
         .ok()
         .or(from_file.log_filter)
@@ -318,6 +325,7 @@ fn load_config(explicit_path: Option<PathBuf>) -> Result<ServerConfig> {
             frontend_base_url,
             app_base_url,
             relay_base_url,
+            discovery_v2_enabled,
             log_filter,
         },
         app_port,
@@ -354,6 +362,7 @@ impl Default for ServerFile {
             frontend_base_url: None,
             app_base_url: None,
             relay_base_url: None,
+            discovery_v2_enabled: None,
             app_port: None,
             relay_port: None,
             log_filter: None,
