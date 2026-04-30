@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO grants\n                  (id, granter_agent_id, grantee_agent_id, capability_id, status)\n               VALUES ($1, $2, $3, $4, 'active')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3a4cb1caae07083fe76ecd6a025696d4310a13d8549bfdba0a74e1aa92bf5a7e"
+}

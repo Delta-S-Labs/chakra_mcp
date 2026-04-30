@@ -1,48 +1,84 @@
-//! A2A JSON-RPC + streaming endpoint stubs.
+//! A2A JSON-RPC + streaming endpoints with auth + policy gate (D4).
 //!
 //! D2 publishes Agent Cards whose `supported_interfaces[].url` points
-//! at these routes. Until D4/D5 land the real auth-decision-and-forward
-//! pipeline, we expose stubs that resolve to a clean structured 501
-//! rather than 404 — generic A2A clients fetching our cards and
-//! attempting to call get a meaningful error code, not a routing miss.
+//! at these routes. This handler runs the full policy decision tree
+//! before responding:
 //!
-//! Lifecycle:
-//! - D3 (here): both routes return 501 with `data.code = chk.not_implemented_yet`.
-//! - D4: same routes gain auth-bearer parsing + the 10-step policy
-//!   decision tree, still returning 501 on the success branch.
-//! - D5: the success branch routes to the JWT minter + forwarder +
-//!   inbox bridge — push agents get proxied, pull agents parked.
+//! - Deny branches return JSON-RPC 2.0 error envelopes with the
+//!   stable `data.code` from the discovery design's error catalog.
+//!   Generic A2A clients learn the failure reason machine-readably.
+//! - The success branch still returns 501 — D5 lands the actual
+//!   forward (JWT-mint + proxy for push, inbox-bridge park for pull).
 
 use axum::{
-    extract::State,
-    http::{header, StatusCode},
+    extract::{Path, State},
+    http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
 
+use crate::policy::{evaluate, Decision, DenyReason};
 use crate::state::RelayState;
 
 /// `POST /agents/<account_slug>/<agent_slug>/a2a/jsonrpc`
-pub async fn jsonrpc_stub(State(state): State<RelayState>) -> Response {
+pub async fn jsonrpc_stub(
+    State(state): State<RelayState>,
+    Path((account_slug, agent_slug)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Response {
     if !state.config.discovery_v2_enabled {
-        return not_found();
+        return discovery_disabled();
     }
-    not_implemented()
+    let decision = evaluate(&state.db, &headers, &state, &account_slug, &agent_slug).await;
+    match decision {
+        Decision::Authorized(authz) => {
+            tracing::debug!(
+                caller_agent = %authz.caller_agent_id,
+                target_agent = %authz.target_agent_id,
+                grant = %authz.grant_id,
+                "A2A call authorized; D5 not yet implemented",
+            );
+            not_implemented()
+        }
+        Decision::Denied(reason) => deny_response(&reason),
+    }
 }
 
 /// `POST /agents/<account_slug>/<agent_slug>/a2a/stream`
-pub async fn stream_stub(State(state): State<RelayState>) -> Response {
+pub async fn stream_stub(
+    State(state): State<RelayState>,
+    Path((account_slug, agent_slug)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Response {
     if !state.config.discovery_v2_enabled {
-        return not_found();
+        return discovery_disabled();
     }
-    not_implemented()
+    // Streaming uses the same gate; only the post-pass forward differs.
+    match evaluate(&state.db, &headers, &state, &account_slug, &agent_slug).await {
+        Decision::Authorized(_) => not_implemented(),
+        Decision::Denied(reason) => deny_response(&reason),
+    }
+}
+
+fn deny_response(reason: &DenyReason) -> Response {
+    let http_status = jsonrpc_to_http(reason.jsonrpc_code());
+    (
+        http_status,
+        [(header::CONTENT_TYPE, "application/json")],
+        Json(serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": null,
+            "error": {
+                "code": reason.jsonrpc_code(),
+                "message": reason.message(),
+                "data": { "code": reason.data_code() }
+            }
+        })),
+    )
+        .into_response()
 }
 
 fn not_implemented() -> Response {
-    // JSON-RPC 2.0 envelope with our stable error code in `data.code`.
-    // Callers resolve the catalog at /.well-known/error-codes.json
-    // (D12) for human-readable details. Until then, the code is the
-    // contract.
     (
         StatusCode::NOT_IMPLEMENTED,
         [(header::CONTENT_TYPE, "application/json")],
@@ -51,18 +87,15 @@ fn not_implemented() -> Response {
             "id": null,
             "error": {
                 "code": -32601,
-                "message": "Method not implemented yet",
-                "data": {
-                    "code": "chk.not_implemented_yet",
-                    "ships_in": "D5",
-                }
+                "message": "method not implemented yet",
+                "data": { "code": "chk.not_implemented_yet", "ships_in": "D5" }
             }
         })),
     )
         .into_response()
 }
 
-fn not_found() -> Response {
+fn discovery_disabled() -> Response {
     (
         StatusCode::NOT_FOUND,
         [(header::CONTENT_TYPE, "application/json")],
@@ -74,183 +107,475 @@ fn not_found() -> Response {
         .into_response()
 }
 
+/// Map our JSON-RPC error code family to an appropriate HTTP status.
+/// Conventions:
+/// - -32000 (auth missing) → 401
+/// - -32001 (auth invalid) → 401
+/// - -32002 (friendship) / -32003 (grant) → 403
+/// - -32005 (unreachable) → 503
+/// - -32006 (target tombstoned/missing) → 404
+fn jsonrpc_to_http(code: i32) -> StatusCode {
+    match code {
+        -32000 | -32001 => StatusCode::UNAUTHORIZED,
+        -32002 | -32003 => StatusCode::FORBIDDEN,
+        -32005 => StatusCode::SERVICE_UNAVAILABLE,
+        -32006 => StatusCode::NOT_FOUND,
+        _ => StatusCode::OK,
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    //! Integration tests cover every branch of the decision tree
+    //! end-to-end via the production router. Each test seeds DB
+    //! state precisely to land in a specific branch, fires a real
+    //! HTTP request, and asserts the response code + data.code.
+
+    use super::*;
     use axum::body::Body;
-    use axum::http::{header, Request, StatusCode};
+    use axum::http::Request;
     use chakramcp_shared::config::SharedConfig;
     use http_body_util::BodyExt;
     use sqlx::PgPool;
     use tower::ServiceExt;
+    use uuid::Uuid;
 
-    fn config(v2: bool) -> SharedConfig {
+    fn config_v2_on() -> SharedConfig {
         SharedConfig {
             database_url: "ignored".into(),
-            jwt_secret: "test".into(),
+            jwt_secret: "test-secret-test-secret-test-secret-test-secret".into(),
             admin_email: None,
             survey_enabled: false,
             frontend_base_url: "http://localhost:3000".into(),
             app_base_url: "http://localhost:8080".into(),
             relay_base_url: "http://localhost:8090".into(),
-            discovery_v2_enabled: v2,
+            discovery_v2_enabled: true,
             log_filter: "warn".into(),
         }
     }
 
-    /// Both stubs respond with HTTP 501 and a structured JSON-RPC
-    /// 2.0 error envelope carrying `data.code = chk.not_implemented_yet`.
-    /// Generic A2A clients fetching our cards and trying to call
-    /// today get this meaningful error rather than 404.
-    #[sqlx::test(migrations = "../migrations")]
-    async fn jsonrpc_stub_returns_501_with_structured_error(pool: PgPool) {
-        let state = crate::state::RelayState::new(pool, config(true));
-        let app = crate::router(state);
-        let res = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/agents/acme-corp/alice/a2a/jsonrpc")
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(
-                        r#"{"jsonrpc":"2.0","method":"SendMessage","id":1}"#,
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(res.status(), StatusCode::NOT_IMPLEMENTED);
-
-        let body = res.into_body().collect().await.unwrap().to_bytes();
-        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(v["jsonrpc"], "2.0");
-        assert_eq!(v["error"]["code"], -32601);
-        assert_eq!(v["error"]["data"]["code"], "chk.not_implemented_yet");
-        assert_eq!(v["error"]["data"]["ships_in"], "D5");
+    /// Standard fixture: two accounts, two agents (one per account),
+    /// a capability on the target, an accepted friendship, an active
+    /// grant. Returns ids the tests can manipulate to land in
+    /// specific deny branches.
+    struct Fixture {
+        caller_user_id: Uuid,
+        caller_account_id: Uuid,
+        caller_agent_id: Uuid,
+        target_account_slug: String,
+        target_account_id: Uuid,
+        target_agent_slug: String,
+        target_agent_id: Uuid,
+        capability_id: Uuid,
+        api_key_plaintext: String,
     }
 
-    #[sqlx::test(migrations = "../migrations")]
-    async fn stream_stub_returns_501(pool: PgPool) {
-        let state = crate::state::RelayState::new(pool, config(true));
-        let app = crate::router(state);
-        let res = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/agents/acme/alice/a2a/stream")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(res.status(), StatusCode::NOT_IMPLEMENTED);
-    }
-
-    #[sqlx::test(migrations = "../migrations")]
-    async fn returns_404_when_v2_disabled(pool: PgPool) {
-        let state = crate::state::RelayState::new(pool, config(false));
-        let app = crate::router(state);
-        for path in [
-            "/agents/acme/alice/a2a/jsonrpc",
-            "/agents/acme/alice/a2a/stream",
-        ] {
-            let res = app
-                .clone()
-                .oneshot(
-                    Request::builder()
-                        .method("POST")
-                        .uri(path)
-                        .body(Body::empty())
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-            assert_eq!(res.status(), StatusCode::NOT_FOUND, "path: {path}");
-        }
-    }
-
-    /// The card published by D2 contains a `url` field — that URL
-    /// MUST resolve to a real (stub) route. This test:
-    ///   1. seeds a pull-mode agent + capability
-    ///   2. fetches the card via the D2c handler
-    ///   3. extracts the URL from the card
-    ///   4. POSTs to it
-    ///   5. asserts 501 (not 404)
-    /// — proving D2's published URL pattern and D3's route registration agree.
-    #[sqlx::test(migrations = "../migrations")]
-    async fn card_url_actually_resolves(pool: PgPool) {
-        let acct_id = uuid::Uuid::now_v7();
-        let agent_id = uuid::Uuid::now_v7();
-        let cap_id = uuid::Uuid::now_v7();
+    async fn seed_full_fixture(pool: &PgPool) -> Fixture {
+        // Caller user + their api key
+        let caller_user_id = Uuid::now_v7();
         sqlx::query!(
-            r#"INSERT INTO accounts (id, slug, display_name, account_type)
-               VALUES ($1, 'acme-corp', 'Acme', 'individual')"#,
-            acct_id,
+            r#"INSERT INTO users (id, email, display_name, password_hash)
+               VALUES ($1, $2, 'Caller', 'x')"#,
+            caller_user_id,
+            format!("caller-{caller_user_id}@test.local"),
         )
-        .execute(&pool)
+        .execute(pool)
         .await
         .unwrap();
+
+        let api_key_plaintext = format!("ck_test_{caller_user_id}");
+        let mut hasher = Sha256::new();
+        hasher.update(api_key_plaintext.as_bytes());
+        let key_hash = hex::encode(hasher.finalize());
+        sqlx::query!(
+            r#"INSERT INTO api_keys (id, user_id, key_hash, name, key_prefix)
+               VALUES ($1, $2, $3, 'test', 'ck_test')"#,
+            Uuid::now_v7(),
+            caller_user_id,
+            key_hash,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+
+        // Caller account + membership
+        let caller_account_id = Uuid::now_v7();
+        sqlx::query!(
+            r#"INSERT INTO accounts (id, slug, display_name, account_type, owner_user_id)
+               VALUES ($1, $2, 'Caller Org', 'individual', $3)"#,
+            caller_account_id,
+            format!("caller-acct-{caller_account_id}"),
+            caller_user_id,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            r#"INSERT INTO account_memberships (id, account_id, user_id, role)
+               VALUES ($1, $2, $3, 'owner')"#,
+            Uuid::now_v7(),
+            caller_account_id,
+            caller_user_id,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        let caller_agent_id = Uuid::now_v7();
         sqlx::query!(
             r#"INSERT INTO agents (id, account_id, slug, display_name, visibility)
-               VALUES ($1, $2, 'alice', 'Alice', 'network')"#,
-            agent_id,
-            acct_id,
+               VALUES ($1, $2, 'caller-agent', 'Caller Agent', 'network')"#,
+            caller_agent_id,
+            caller_account_id,
         )
-        .execute(&pool)
+        .execute(pool)
         .await
         .unwrap();
+
+        // Target account + agent + capability
+        let target_account_id = Uuid::now_v7();
+        let target_account_slug = format!("target-acct-{target_account_id}");
+        sqlx::query!(
+            r#"INSERT INTO accounts (id, slug, display_name, account_type)
+               VALUES ($1, $2, 'Target Org', 'individual')"#,
+            target_account_id,
+            target_account_slug,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        let target_agent_id = Uuid::now_v7();
+        let target_agent_slug = "target-agent".to_string();
+        sqlx::query!(
+            r#"INSERT INTO agents (id, account_id, slug, display_name, visibility)
+               VALUES ($1, $2, $3, 'Target Agent', 'network')"#,
+            target_agent_id,
+            target_account_id,
+            target_agent_slug,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        let capability_id = Uuid::now_v7();
         sqlx::query!(
             r#"INSERT INTO agent_capabilities
                   (id, agent_id, name, description, input_schema, output_schema, visibility)
                VALUES ($1, $2, 'do', 'Do.', '{}'::jsonb, '{}'::jsonb, 'network')"#,
-            cap_id,
-            agent_id,
+            capability_id,
+            target_agent_id,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+
+        // Friendship (accepted) + Grant (active, target → caller, on this capability)
+        sqlx::query!(
+            r#"INSERT INTO friendships
+                  (id, proposer_agent_id, target_agent_id, status, decided_at)
+               VALUES ($1, $2, $3, 'accepted', now())"#,
+            Uuid::now_v7(),
+            target_agent_id,
+            caller_agent_id,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            r#"INSERT INTO grants
+                  (id, granter_agent_id, grantee_agent_id, capability_id, status)
+               VALUES ($1, $2, $3, $4, 'active')"#,
+            Uuid::now_v7(),
+            target_agent_id,
+            caller_agent_id,
+            capability_id,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+
+        Fixture {
+            caller_user_id,
+            caller_account_id,
+            caller_agent_id,
+            target_account_slug,
+            target_account_id,
+            target_agent_slug,
+            target_agent_id,
+            capability_id,
+            api_key_plaintext,
+        }
+    }
+
+    use sha2::{Digest, Sha256};
+
+    fn req(
+        path: &str,
+        bearer: Option<&str>,
+        caller_agent: Option<&str>,
+        capability: Option<&str>,
+    ) -> Request<Body> {
+        let mut b = Request::builder().method("POST").uri(path);
+        if let Some(t) = bearer {
+            b = b.header(header::AUTHORIZATION, format!("Bearer {t}"));
+        }
+        if let Some(c) = caller_agent {
+            b = b.header("X-ChakraMCP-Caller-Agent", c);
+        }
+        if let Some(c) = capability {
+            b = b.header("X-ChakraMCP-Capability", c);
+        }
+        b.body(Body::empty()).unwrap()
+    }
+
+    async fn parse_body(res: Response) -> serde_json::Value {
+        let bytes = res.into_body().collect().await.unwrap().to_bytes();
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
+    fn path_for(f: &Fixture) -> String {
+        format!(
+            "/agents/{}/{}/a2a/jsonrpc",
+            f.target_account_slug, f.target_agent_slug
+        )
+    }
+
+    // ── Auth branches ─────────────────────────────────────
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn deny_auth_missing(pool: PgPool) {
+        let f = seed_full_fixture(&pool).await;
+        let app = crate::router(crate::state::RelayState::new(pool, config_v2_on()));
+        let res = app.oneshot(req(&path_for(&f), None, None, None)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+        let body = parse_body(res).await;
+        assert_eq!(body["error"]["code"], -32000);
+        assert_eq!(body["error"]["data"]["code"], "chk.auth.missing");
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn deny_auth_invalid(pool: PgPool) {
+        let f = seed_full_fixture(&pool).await;
+        let app = crate::router(crate::state::RelayState::new(pool, config_v2_on()));
+        let res = app
+            .oneshot(req(&path_for(&f), Some("ck_not_a_real_key"), None, None))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+        let body = parse_body(res).await;
+        assert_eq!(body["error"]["data"]["code"], "chk.auth.invalid");
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn deny_caller_agent_header_missing(pool: PgPool) {
+        let f = seed_full_fixture(&pool).await;
+        let app = crate::router(crate::state::RelayState::new(pool, config_v2_on()));
+        let res = app
+            .oneshot(req(&path_for(&f), Some(&f.api_key_plaintext), None, None))
+            .await
+            .unwrap();
+        assert_eq!(
+            parse_body(res).await["error"]["data"]["code"],
+            "chk.auth.caller_agent_header_missing"
+        );
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn deny_caller_agent_not_owned(pool: PgPool) {
+        let f = seed_full_fixture(&pool).await;
+        // Provide a UUID that ISN'T one of the caller's agents — use the target's.
+        let app = crate::router(crate::state::RelayState::new(pool, config_v2_on()));
+        let res = app
+            .oneshot(req(
+                &path_for(&f),
+                Some(&f.api_key_plaintext),
+                Some(&f.target_agent_id.to_string()),
+                Some(&f.capability_id.to_string()),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            parse_body(res).await["error"]["data"]["code"],
+            "chk.auth.caller_agent_not_owned"
+        );
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn deny_capability_header_missing(pool: PgPool) {
+        let f = seed_full_fixture(&pool).await;
+        let app = crate::router(crate::state::RelayState::new(pool, config_v2_on()));
+        let res = app
+            .oneshot(req(
+                &path_for(&f),
+                Some(&f.api_key_plaintext),
+                Some(&f.caller_agent_id.to_string()),
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            parse_body(res).await["error"]["data"]["code"],
+            "chk.auth.capability_header_missing"
+        );
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn deny_target_account_not_found(pool: PgPool) {
+        let f = seed_full_fixture(&pool).await;
+        let app = crate::router(crate::state::RelayState::new(pool, config_v2_on()));
+        let res = app
+            .oneshot(req(
+                "/agents/no-such-account/whatever/a2a/jsonrpc",
+                Some(&f.api_key_plaintext),
+                Some(&f.caller_agent_id.to_string()),
+                Some(&f.capability_id.to_string()),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            parse_body(res).await["error"]["data"]["code"],
+            "chk.target.not_found"
+        );
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn deny_target_tombstoned(pool: PgPool) {
+        let f = seed_full_fixture(&pool).await;
+        sqlx::query!(
+            "UPDATE agents SET tombstoned_at = now() WHERE id = $1",
+            f.target_agent_id,
         )
         .execute(&pool)
         .await
         .unwrap();
-
-        let state = crate::state::RelayState::new(pool, config(true));
-        let app = crate::router(state);
-
-        // 1. Fetch the card.
-        let card_res = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .uri("/agents/acme-corp/alice/.well-known/agent-card.json")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(card_res.status(), StatusCode::OK);
-        let body = card_res.into_body().collect().await.unwrap().to_bytes();
-        let card: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        let url_in_card = card["supported_interfaces"][0]["url"].as_str().unwrap();
-        // The card publishes the absolute URL; for the in-process
-        // router test we strip the host and just call the path.
-        let path = url_in_card
-            .trim_start_matches("http://localhost:8090")
-            .trim_start_matches("https://localhost:8090");
-        assert!(
-            path.starts_with("/agents/acme-corp/alice/a2a/jsonrpc"),
-            "unexpected card url: {url_in_card}"
-        );
-
-        // 2. POST to that path. Expect 501 (not 404).
+        let app = crate::router(crate::state::RelayState::new(pool, config_v2_on()));
         let res = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri(path)
-                    .body(Body::from(
-                        r#"{"jsonrpc":"2.0","method":"SendMessage","id":1}"#,
-                    ))
-                    .unwrap(),
-            )
+            .oneshot(req(
+                &path_for(&f),
+                Some(&f.api_key_plaintext),
+                Some(&f.caller_agent_id.to_string()),
+                Some(&f.capability_id.to_string()),
+            ))
             .await
             .unwrap();
+        assert_eq!(
+            parse_body(res).await["error"]["data"]["code"],
+            "chk.target.tombstoned"
+        );
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn deny_capability_not_on_target(pool: PgPool) {
+        let f = seed_full_fixture(&pool).await;
+        let app = crate::router(crate::state::RelayState::new(pool, config_v2_on()));
+        let res = app
+            .oneshot(req(
+                &path_for(&f),
+                Some(&f.api_key_plaintext),
+                Some(&f.caller_agent_id.to_string()),
+                Some(&Uuid::now_v7().to_string()),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            parse_body(res).await["error"]["data"]["code"],
+            "chk.target.capability_unknown"
+        );
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn deny_friendship_required(pool: PgPool) {
+        let f = seed_full_fixture(&pool).await;
+        sqlx::query!("DELETE FROM friendships")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let app = crate::router(crate::state::RelayState::new(pool, config_v2_on()));
+        let res = app
+            .oneshot(req(
+                &path_for(&f),
+                Some(&f.api_key_plaintext),
+                Some(&f.caller_agent_id.to_string()),
+                Some(&f.capability_id.to_string()),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        assert_eq!(
+            parse_body(res).await["error"]["data"]["code"],
+            "chk.policy.friendship_required"
+        );
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn deny_grant_required(pool: PgPool) {
+        let f = seed_full_fixture(&pool).await;
+        sqlx::query!("DELETE FROM grants")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let app = crate::router(crate::state::RelayState::new(pool, config_v2_on()));
+        let res = app
+            .oneshot(req(
+                &path_for(&f),
+                Some(&f.api_key_plaintext),
+                Some(&f.caller_agent_id.to_string()),
+                Some(&f.capability_id.to_string()),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            parse_body(res).await["error"]["data"]["code"],
+            "chk.policy.grant_required"
+        );
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn pass_returns_501_for_now(pool: PgPool) {
+        let f = seed_full_fixture(&pool).await;
+        let app = crate::router(crate::state::RelayState::new(pool, config_v2_on()));
+        let res = app
+            .oneshot(req(
+                &path_for(&f),
+                Some(&f.api_key_plaintext),
+                Some(&f.caller_agent_id.to_string()),
+                Some(&f.capability_id.to_string()),
+            ))
+            .await
+            .unwrap();
+        // Pass: full policy gate runs; D5 hasn't landed yet so we 501.
         assert_eq!(res.status(), StatusCode::NOT_IMPLEMENTED);
+        let body = parse_body(res).await;
+        assert_eq!(body["error"]["data"]["code"], "chk.not_implemented_yet");
+        assert_eq!(body["error"]["data"]["ships_in"], "D5");
+    }
+
+    /// Sanity that the deny path doesn't smuggle any caller info
+    /// into the response payload — phishing-resistant by spec.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn error_response_carries_no_user_info(pool: PgPool) {
+        let f = seed_full_fixture(&pool).await;
+        sqlx::query!("DELETE FROM friendships")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let app = crate::router(crate::state::RelayState::new(pool, config_v2_on()));
+        let res = app
+            .oneshot(req(
+                &path_for(&f),
+                Some(&f.api_key_plaintext),
+                Some(&f.caller_agent_id.to_string()),
+                Some(&f.capability_id.to_string()),
+            ))
+            .await
+            .unwrap();
+        let body = parse_body(res).await;
+        let body_str = serde_json::to_string(&body).unwrap();
+        // Don't surface user ids, account ids, or agent UUIDs in the
+        // response. The catalog (D12) provides any deep-links by code.
+        assert!(!body_str.contains(&f.caller_user_id.to_string()));
+        assert!(!body_str.contains(&f.caller_account_id.to_string()));
+        assert!(!body_str.contains(&f.caller_agent_id.to_string()));
+        assert!(!body_str.contains(&f.target_account_id.to_string()));
+        assert!(!body_str.contains(&f.target_agent_id.to_string()));
     }
 }
-
