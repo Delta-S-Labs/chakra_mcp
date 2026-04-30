@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT agent_card_cached, agent_card_signed, agent_card_signature_verified,\n                      agent_card_fetched_at\n                 FROM agents WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "agent_card_cached",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 1,
+        "name": "agent_card_signed",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "agent_card_signature_verified",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "agent_card_fetched_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "05ba807e4ec96318b702b9f79945866d52bcb68a38cc97ed043bcd6c22dc1f7b"
+}

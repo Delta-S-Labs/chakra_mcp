@@ -164,26 +164,28 @@ pub fn verify_card(card: &AgentCard, keys: &[VerifyingKey]) -> Result<(), Verify
         canonical_payload_b64(card).map_err(|e| VerifyError::Canonicalize(e.to_string()))?;
 
     for sig in &card.signatures {
-        // Decode protected header to find the kid.
-        let header_bytes = URL_SAFE_NO_PAD
-            .decode(&sig.protected)
-            .map_err(|_| VerifyError::MalformedProtectedHeader)?;
-        let header: ProtectedHeader = serde_json::from_slice(&header_bytes)
-            .map_err(|_| VerifyError::MalformedProtectedHeader)?;
+        // A card may carry signatures from multiple parties (upstream
+        // + ChakraMCP). Signatures whose `protected` doesn't decode
+        // as base64url-JSON-with-alg-EdDSA aren't from us — skip them
+        // rather than erroring; the next one might be ours. Same for
+        // a kid that doesn't appear in the supplied key set.
+        let Ok(header_bytes) = URL_SAFE_NO_PAD.decode(&sig.protected) else {
+            continue;
+        };
+        let Ok(header) = serde_json::from_slice::<ProtectedHeader>(&header_bytes) else {
+            continue;
+        };
         if header.alg != ALG_EDDSA {
-            return Err(VerifyError::UnsupportedAlg);
+            continue;
         }
-        let kid = header
-            .kid
-            .as_deref()
-            .ok_or(VerifyError::IncompleteProtectedHeader)?;
-
+        let Some(kid) = header.kid.as_deref() else {
+            continue;
+        };
         let Some(key) = keys.iter().find(|k| k.kid == kid) else {
-            // This sig isn't from a kid we know about — it could be
-            // upstream's. Skip it and try the next one.
             continue;
         };
 
+        // Found a candidate — from this point on, errors are real.
         let sig_bytes = URL_SAFE_NO_PAD
             .decode(&sig.signature)
             .map_err(|_| VerifyError::MalformedSignature)?;
@@ -202,7 +204,9 @@ pub fn verify_card(card: &AgentCard, keys: &[VerifyingKey]) -> Result<(), Verify
         };
     }
 
-    // None of the card's signatures referenced a kid we know about.
+    // No signature on the card was attributable to a key we know
+    // about — could mean the card has only upstream signatures, or
+    // the kid we expected isn't in our JWKS yet.
     Err(VerifyError::UnknownKid)
 }
 

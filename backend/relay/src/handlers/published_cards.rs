@@ -33,11 +33,13 @@ use axum::{
 };
 
 use crate::agent_card::{
+    cache_card_for_agent,
     keys::KeyStore,
     sign_card,
     synthesizer::{
         synthesize_pull_card, AgentRowForSynthesis, CapabilityRowForSynthesis,
     },
+    AgentCard, CacheError, CachedCardEnvelope, Fetcher,
 };
 use crate::state::RelayState;
 
@@ -95,66 +97,84 @@ pub async fn get_agent_card(
         }
     };
 
-    // (3) Push-mode lands in D2d. For now, 503 if we somehow have a
-    // push-mode agent without a cached card yet.
-    if agent_row.mode == "push" && agent_row.agent_card_cached.is_none() {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            [(header::CONTENT_TYPE, "application/json")],
-            Json(serde_json::json!({
-                "error": "push-mode card fetch not yet implemented",
-                "code": "chk.cards.push_mode_pending",
-            })),
+    // (3) Build the unsigned card. Two paths:
+    //
+    //   - push: the upstream-fetched, normalized card. Already has
+    //     our relay URL substituted in supported_interfaces and our
+    //     security scheme. May already carry an upstream signature.
+    //     If we don't have it cached yet, lazy-fetch on this request
+    //     (refresh job in D2e keeps it fresh thereafter).
+    //   - pull: synthesize from registration data + capability rows.
+    let mut card = match agent_row.mode.as_str() {
+        "push" => match cached_or_fetch_push_card(
+            &state,
+            agent_row.id,
+            agent_row.agent_card_cached.as_ref(),
         )
-            .into_response();
-    }
+        .await
+        {
+            Ok(c) => c,
+            Err(PushCardError::Unreachable) => {
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    [(header::CONTENT_TYPE, "application/json")],
+                    Json(serde_json::json!({
+                        "error": "upstream Agent Card endpoint unreachable",
+                        "code": "chk.target.unreachable",
+                    })),
+                )
+                    .into_response()
+            }
+            Err(PushCardError::Internal) => return internal_error(),
+        },
+        _ => {
+            // Pull-mode synthesis.
+            let capabilities = match sqlx::query!(
+                r#"
+                SELECT id, name, description
+                  FROM agent_capabilities
+                 WHERE agent_id = $1
+                "#,
+                agent_row.id,
+            )
+            .fetch_all(&state.db)
+            .await
+            {
+                Ok(rows) => rows
+                    .into_iter()
+                    .map(|r| CapabilityRowForSynthesis {
+                        id: r.id.to_string(),
+                        name: r.name,
+                        description: r.description,
+                    })
+                    .collect::<Vec<_>>(),
+                Err(e) => {
+                    tracing::error!(error = %e, "capability lookup failed");
+                    return internal_error();
+                }
+            };
 
-    // (4) Pull-mode synthesis. Capabilities feed the skills array.
-    let capabilities = match sqlx::query!(
-        r#"
-        SELECT id, name, description
-          FROM agent_capabilities
-         WHERE agent_id = $1
-        "#,
-        agent_row.id,
-    )
-    .fetch_all(&state.db)
-    .await
-    {
-        Ok(rows) => rows
-            .into_iter()
-            .map(|r| CapabilityRowForSynthesis {
-                id: r.id.to_string(),
-                name: r.name,
-                description: r.description,
-            })
-            .collect::<Vec<_>>(),
-        Err(e) => {
-            tracing::error!(error = %e, "capability lookup failed");
-            return internal_error();
-        }
-    };
+            let agent_input = AgentRowForSynthesis {
+                account_slug: account_slug.clone(),
+                agent_slug: agent_row.slug.clone(),
+                display_name: agent_row.display_name.clone(),
+                description: agent_row.description.clone(),
+                // v0.1.0 default — the agent's own semver. When the
+                // agent-version column gets added, source it from there.
+                agent_version: "0.1.0".to_string(),
+            };
 
-    let agent_input = AgentRowForSynthesis {
-        account_slug: account_slug.clone(),
-        agent_slug: agent_row.slug.clone(),
-        display_name: agent_row.display_name.clone(),
-        description: agent_row.description.clone(),
-        // v0.1.0 default — the agent's own semver (NOT the A2A
-        // protocol version). When agent-version becomes a column on
-        // agents, switch this to the row's value.
-        agent_version: "0.1.0".to_string(),
-    };
-
-    let mut card = match synthesize_pull_card(
-        &agent_input,
-        &capabilities,
-        &state.config.relay_base_url,
-    ) {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::error!(error = %e, "synthesis failed");
-            return internal_error();
+            match synthesize_pull_card(
+                &agent_input,
+                &capabilities,
+                &state.config.relay_base_url,
+            ) {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::error!(error = %e, "synthesis failed");
+                    return internal_error();
+                }
+            }
         }
     };
 
@@ -204,6 +224,58 @@ fn internal_error() -> Response {
         Json(serde_json::json!({ "error": "internal error" })),
     )
         .into_response()
+}
+
+/// Outcomes the handler distinguishes for push-mode card retrieval.
+enum PushCardError {
+    Unreachable,
+    Internal,
+}
+
+/// Return the cached normalized card if present; otherwise lazy-fetch
+/// it via the Fetcher and cache for next time. The refresh job (D2e)
+/// keeps push agents' caches fresh proactively, so this lazy path is
+/// only the first-request slow case.
+async fn cached_or_fetch_push_card(
+    state: &RelayState,
+    agent_id: uuid::Uuid,
+    cached: Option<&serde_json::Value>,
+) -> Result<AgentCard, PushCardError> {
+    if let Some(value) = cached {
+        match serde_json::from_value::<CachedCardEnvelope>(value.clone()) {
+            Ok(env) => return Ok(env.normalized),
+            Err(e) => {
+                // The cache row is corrupt — log and fall through to
+                // fetching afresh, which overwrites it.
+                tracing::warn!(error = %e, "cached envelope unparseable; refetching");
+            }
+        }
+    }
+    let fetcher = Fetcher::new();
+    match cache_card_for_agent(
+        &state.db,
+        &fetcher,
+        agent_id,
+        &state.config.relay_base_url,
+    )
+    .await
+    {
+        Ok(card) => Ok(card),
+        Err(CacheError::NotPushMode) | Err(CacheError::NotFound) => {
+            // Should be unreachable from this code path — the caller
+            // already verified mode='push' and the agent is live —
+            // but treat defensively.
+            Err(PushCardError::Internal)
+        }
+        Err(CacheError::Fetch(e)) => {
+            tracing::warn!(error = %e, agent_id = %agent_id, "upstream card fetch failed");
+            Err(PushCardError::Unreachable)
+        }
+        Err(CacheError::Db(e)) => {
+            tracing::error!(error = %e, "cache_card_for_agent DB error");
+            Err(PushCardError::Internal)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -422,6 +494,165 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    }
+
+    /// Spin up a tiny axum upstream that serves an Agent Card body at
+    /// `/.well-known/agent-card.json`. Returns the URL to register
+    /// against and a handle that keeps the server alive until dropped.
+    async fn start_test_upstream(body: serde_json::Value) -> String {
+        use axum::http::{header::CONTENT_TYPE, HeaderValue, StatusCode};
+        use axum::response::IntoResponse;
+        use axum::routing::get;
+        let body = std::sync::Arc::new(body.to_string());
+        async fn handler(
+            axum::extract::State(body): axum::extract::State<std::sync::Arc<String>>,
+        ) -> axum::response::Response {
+            let mut h = axum::http::HeaderMap::new();
+            h.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+            (StatusCode::OK, h, (*body).clone()).into_response()
+        }
+        let app = axum::Router::new()
+            .route("/.well-known/agent-card.json", get(handler))
+            .with_state(body);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.ok();
+        });
+        format!("http://{}/.well-known/agent-card.json", addr)
+    }
+
+    async fn seed_push_agent(
+        pool: &PgPool,
+        account_slug: &str,
+        agent_slug: &str,
+        upstream_url: &str,
+    ) -> uuid::Uuid {
+        let acct_id = uuid::Uuid::now_v7();
+        let agent_id = uuid::Uuid::now_v7();
+        sqlx::query!(
+            r#"INSERT INTO accounts (id, slug, display_name, account_type)
+               VALUES ($1, $2, 'Test Account', 'individual')"#,
+            acct_id,
+            account_slug,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            r#"INSERT INTO agents (id, account_id, slug, display_name, mode, agent_card_url)
+               VALUES ($1, $2, $3, 'Test Push Agent', 'push', $4)"#,
+            agent_id,
+            acct_id,
+            agent_slug,
+            upstream_url,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        agent_id
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn push_mode_lazy_fetches_normalizes_and_signs(pool: PgPool) {
+        // Upstream declares a non-bearer scheme + multiple interfaces;
+        // the published card must replace both with our canonical
+        // chakramcp_bearer + single relay-pointing JSONRPC interface,
+        // and verify against our active key.
+        let upstream_url = start_test_upstream(serde_json::json!({
+            "name": "Travel Planner",
+            "description": "Plans trips.",
+            "supported_interfaces": [
+                { "url": "https://travel.example.com/a2a/v1",
+                  "protocol_binding": "JSONRPC",
+                  "protocol_version": "0.3" },
+                { "url": "https://travel.example.com/a2a/grpc",
+                  "protocol_binding": "GRPC",
+                  "protocol_version": "0.3" }
+            ],
+            "version": "2.1.0",
+            "capabilities": { "streaming": true },
+            "security_schemes": { "upstream_oauth":
+                { "oauth2": { "flows": { "client_credentials": {} } } } },
+            "security_requirements": [{ "upstream_oauth": ["read"] }],
+            "default_input_modes": ["application/json"],
+            "default_output_modes": ["application/json"],
+            "skills": [{
+                "id": "plan-trip", "name": "Plan Trip",
+                "description": "Plans an itinerary.", "tags": ["travel"]
+            }],
+            "signatures": [
+                { "protected": "upstream-protected", "signature": "upstream-signature" }
+            ]
+        }))
+        .await;
+
+        let _agent_id =
+            seed_push_agent(&pool, "acme-corp", "travel-planner", &upstream_url).await;
+
+        let cfg = config_with_v2_enabled(true, "ignored".into());
+        let state = crate::state::RelayState::new(pool.clone(), cfg);
+        let app = crate::router(state);
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/agents/acme-corp/travel-planner/.well-known/agent-card.json")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let body = res.into_body().collect().await.unwrap().to_bytes();
+        let card: AgentCard = serde_json::from_slice(&body).unwrap();
+
+        // URL: ours, not upstream's.
+        assert_eq!(card.supported_interfaces.len(), 1);
+        assert_eq!(
+            card.supported_interfaces[0].url,
+            "http://localhost:8090/agents/acme-corp/travel-planner/a2a/jsonrpc"
+        );
+        // Auth: ours, not upstream's.
+        assert!(card.security_schemes.contains_key("chakramcp_bearer"));
+        assert!(!card.security_schemes.contains_key("upstream_oauth"));
+
+        // Pass-through fields preserved.
+        assert_eq!(card.name, "Travel Planner");
+        assert_eq!(card.version, "2.1.0");
+        assert_eq!(card.skills.len(), 1);
+        assert_eq!(card.skills[0].id, "plan-trip");
+
+        // Two signatures: upstream's preserved + ours added.
+        assert_eq!(card.signatures.len(), 2);
+        let store = KeyStore::new(pool);
+        let pub_keys = store.jwks_keys().await.unwrap();
+        verify_card(&card, &pub_keys).expect("our signature should verify");
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn push_mode_returns_503_when_upstream_unreachable(pool: PgPool) {
+        // Point at a port nothing is listening on — fetch fails fast.
+        let unreachable = "http://127.0.0.1:1/.well-known/agent-card.json";
+        seed_push_agent(&pool, "acme-corp", "broken", unreachable).await;
+
+        let cfg = config_with_v2_enabled(true, "ignored".into());
+        let state = crate::state::RelayState::new(pool, cfg);
+        let app = crate::router(state);
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/agents/acme-corp/broken/.well-known/agent-card.json")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let body = res.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["code"], "chk.target.unreachable");
     }
 
     #[sqlx::test(migrations = "../migrations")]

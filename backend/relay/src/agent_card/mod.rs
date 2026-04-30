@@ -37,11 +37,16 @@
 //! See `docs/specs/2026-04-29-discovery-design.md` §"Agent Card hosting
 //! model" for the full design.
 
+pub mod fetcher;
 pub mod keys;
 pub mod signer;
 pub mod synthesizer;
 pub mod types;
 
+pub use fetcher::{
+    cache_card_for_agent, normalize_for_publish, CacheError, CachedCardEnvelope, FetchError,
+    FetchOutcome, Fetcher, MAX_REFRESH_INTERVAL_SECONDS,
+};
 pub use keys::{Jwks, JsonWebKey, KeyStore, KeyStoreError};
 pub use signer::{sign_card, verify_card, SignError, SigningKey, VerifyError, VerifyingKey};
 pub use synthesizer::{
