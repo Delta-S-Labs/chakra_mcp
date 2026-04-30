@@ -8,7 +8,12 @@ use std::net::SocketAddr;
 use anyhow::Result;
 use sqlx::PgPool;
 
-use chakramcp_relay::{router, RelayState};
+use chakramcp_relay::{
+    agent_card::refresh_job::{
+        spawn as spawn_refresh_job, DEFAULT_STALENESS_SECONDS, DEFAULT_TICK_INTERVAL_SECONDS,
+    },
+    router, RelayState,
+};
 use chakramcp_shared::{config::SharedConfig, db, tracing_init};
 
 #[tokio::main]
@@ -23,6 +28,22 @@ async fn main() -> Result<()> {
     // can boot a fresh dev DB on its own.
     sqlx::migrate!("../migrations").run(&pool).await?;
 
+    // Refresh job for push-mode Agent Cards. Spawn only when the
+    // discovery v2 surface is enabled — otherwise it'd hammer
+    // upstream URLs that can't be served. SKIP LOCKED makes
+    // multi-replica spawn safe.
+    let refresh_shutdown = if cfg.discovery_v2_enabled {
+        tracing::info!("DISCOVERY_V2 enabled — spawning Agent Card refresh job");
+        Some(spawn_refresh_job(
+            pool.clone(),
+            cfg.relay_base_url.clone(),
+            DEFAULT_TICK_INTERVAL_SECONDS,
+            DEFAULT_STALENESS_SECONDS,
+        ))
+    } else {
+        None
+    };
+
     let state = RelayState::new(pool, cfg.clone());
     let app = router(state);
 
@@ -30,6 +51,13 @@ async fn main() -> Result<()> {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     tracing::info!(%addr, "chakramcp-relay starting");
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    let serve_result = axum::serve(listener, app).await;
+
+    // On shutdown signal the refresh loop to exit cleanly so its
+    // current tick (if any) finishes before DB pool closes.
+    if let Some(tx) = refresh_shutdown {
+        let _ = tx.send(true);
+    }
+    serve_result?;
     Ok(())
 }

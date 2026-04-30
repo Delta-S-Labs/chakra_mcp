@@ -171,6 +171,27 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
     let pool: PgPool = db::connect(&cfg.shared.database_url).await?;
     sqlx::migrate!("../migrations").run(&pool).await?;
 
+    // Spawn the Agent Card refresh job before mounting the routers
+    // so it picks up any push-mode rows immediately on startup. Only
+    // active when DISCOVERY_V2 is on; otherwise the job idles and
+    // wastes a connection.
+    let refresh_shutdown = if cfg.shared.discovery_v2_enabled {
+        use chakramcp_relay::agent_card::refresh_job::{
+            spawn as spawn_refresh_job, DEFAULT_STALENESS_SECONDS, DEFAULT_TICK_INTERVAL_SECONDS,
+        };
+        tracing::info!(
+            "DISCOVERY_V2 enabled — spawning Agent Card refresh job (server mode)"
+        );
+        Some(spawn_refresh_job(
+            pool.clone(),
+            cfg.shared.relay_base_url.clone(),
+            DEFAULT_TICK_INTERVAL_SECONDS,
+            DEFAULT_STALENESS_SECONDS,
+        ))
+    } else {
+        None
+    };
+
     let app_state = AppState::new(pool.clone(), cfg.shared.clone());
     let relay_state = RelayState::new(pool, cfg.shared.clone());
 
@@ -206,6 +227,11 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
         _ = relay_handle => {
             tracing::warn!("relay server stopped — initiating shutdown");
         }
+    }
+    // Stop the refresh loop cleanly so its current tick (if any)
+    // can finish before the DB pool drops.
+    if let Some(tx) = refresh_shutdown {
+        let _ = tx.send(true);
     }
     Ok(())
 }

@@ -39,6 +39,7 @@
 
 pub mod fetcher;
 pub mod keys;
+pub mod refresh_job;
 pub mod signer;
 pub mod synthesizer;
 pub mod types;
