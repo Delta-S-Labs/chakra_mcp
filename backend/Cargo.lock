@@ -316,6 +316,7 @@ dependencies = [
  "anyhow",
  "axum",
  "base64",
+ "bytes",
  "chakramcp-shared",
  "chrono",
  "dotenvy",

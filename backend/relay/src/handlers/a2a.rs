@@ -11,13 +11,16 @@
 //!   forward (JWT-mint + proxy for push, inbox-bridge park for pull).
 
 use axum::{
+    body::Bytes,
     extract::{Path, State},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
 
-use crate::policy::{evaluate, Decision, DenyReason};
+use crate::agent_card::keys::KeyStore;
+use crate::forwarder::{forward_push, ForwardError, ForwardOutcome};
+use crate::policy::{evaluate, Authorized, Decision, DenyReason};
 use crate::state::RelayState;
 
 /// `POST /agents/<account_slug>/<agent_slug>/a2a/jsonrpc`
@@ -25,6 +28,7 @@ pub async fn jsonrpc_stub(
     State(state): State<RelayState>,
     Path((account_slug, agent_slug)): Path<(String, String)>,
     headers: HeaderMap,
+    body: Bytes,
 ) -> Response {
     if !state.config.discovery_v2_enabled {
         return discovery_disabled();
@@ -32,13 +36,22 @@ pub async fn jsonrpc_stub(
     let decision = evaluate(&state.db, &headers, &state, &account_slug, &agent_slug).await;
     match decision {
         Decision::Authorized(authz) => {
-            tracing::debug!(
-                caller_agent = %authz.caller_agent_id,
-                target_agent = %authz.target_agent_id,
-                grant = %authz.grant_id,
-                "A2A call authorized; D5 not yet implemented",
-            );
-            not_implemented()
+            // Snapshot capability_name once for the audit log so the
+            // outcome row reads correctly years later even after a
+            // rename (relay_invocations.capability_name is a snapshot).
+            let cap_name = match capability_name(&state.db, authz.capability_id).await {
+                Ok(n) => n,
+                Err(e) => {
+                    tracing::error!(error = %e, "capability lookup failed post-authorization");
+                    return internal_error();
+                }
+            };
+            if authz.target_is_push {
+                handle_authorized_push(&state, authz, cap_name, body, &headers).await
+            } else {
+                // Pull mode lands in D5c (inbox bridge — park).
+                not_implemented()
+            }
         }
         Decision::Denied(reason) => deny_response(&reason),
     }
@@ -53,11 +66,120 @@ pub async fn stream_stub(
     if !state.config.discovery_v2_enabled {
         return discovery_disabled();
     }
-    // Streaming uses the same gate; only the post-pass forward differs.
+    // Streaming uses the same gate; the post-pass SSE-passthrough
+    // implementation is its own design (mid-stream consent expiry,
+    // cancellation, replica failover) and lands later in D5+.
     match evaluate(&state.db, &headers, &state, &account_slug, &agent_slug).await {
         Decision::Authorized(_) => not_implemented(),
         Decision::Denied(reason) => deny_response(&reason),
     }
+}
+
+/// Forward an authorized push call upstream and return the response.
+async fn handle_authorized_push(
+    state: &RelayState,
+    authz: Authorized,
+    capability_name: String,
+    body: Bytes,
+    headers: &HeaderMap,
+) -> Response {
+    let keystore = KeyStore::new(state.db.clone());
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(
+            crate::forwarder::FORWARD_TIMEOUT_SECONDS,
+        ))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+
+    match forward_push(
+        &state.db,
+        &keystore,
+        &http,
+        &authz,
+        &capability_name,
+        body,
+        headers,
+    )
+    .await
+    {
+        Ok(ForwardOutcome {
+            http_status,
+            body,
+            content_type,
+        }) => {
+            let mut h = HeaderMap::new();
+            h.insert(
+                header::CONTENT_TYPE,
+                content_type
+                    .as_deref()
+                    .and_then(|s| axum::http::HeaderValue::from_str(s).ok())
+                    .unwrap_or_else(|| axum::http::HeaderValue::from_static("application/json")),
+            );
+            (
+                StatusCode::from_u16(http_status).unwrap_or(StatusCode::OK),
+                h,
+                body,
+            )
+                .into_response()
+        }
+        Err(ForwardError::NoCachedCard) | Err(ForwardError::NoUpstreamInterface) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            [(header::CONTENT_TYPE, "application/json")],
+            Json(serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": null,
+                "error": {
+                    "code": -32005,
+                    "message": "target agent's upstream card not cached or unreachable",
+                    "data": { "code": "chk.target.unreachable" }
+                }
+            })),
+        )
+            .into_response(),
+        Err(ForwardError::Transport(msg)) => {
+            tracing::warn!(error = %msg, "upstream forward transport error");
+            (
+                StatusCode::BAD_GATEWAY,
+                [(header::CONTENT_TYPE, "application/json")],
+                Json(serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": null,
+                    "error": {
+                        "code": -32005,
+                        "message": "upstream agent unreachable",
+                        "data": { "code": "chk.target.unreachable" }
+                    }
+                })),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "forward_push internal error");
+            internal_error()
+        }
+    }
+}
+
+async fn capability_name(
+    db: &sqlx::PgPool,
+    capability_id: uuid::Uuid,
+) -> Result<String, sqlx::Error> {
+    let row = sqlx::query!(
+        "SELECT name FROM agent_capabilities WHERE id = $1",
+        capability_id,
+    )
+    .fetch_one(db)
+    .await?;
+    Ok(row.name)
+}
+
+fn internal_error() -> Response {
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        [(header::CONTENT_TYPE, "application/json")],
+        Json(serde_json::json!({ "error": "internal error" })),
+    )
+        .into_response()
 }
 
 fn deny_response(reason: &DenyReason) -> Response {
@@ -529,8 +651,11 @@ mod tests {
         );
     }
 
+    /// Default fixture is a *pull*-mode target (mode column defaults
+    /// to 'pull'). With D5b only push-forward implemented, pull-mode
+    /// authorized calls still return 501. Pull-side bridge lands in D5c.
     #[sqlx::test(migrations = "../migrations")]
-    async fn pass_returns_501_for_now(pool: PgPool) {
+    async fn pull_pass_returns_501_for_now(pool: PgPool) {
         let f = seed_full_fixture(&pool).await;
         let app = crate::router(crate::state::RelayState::new(pool, config_v2_on()));
         let res = app
@@ -542,11 +667,205 @@ mod tests {
             ))
             .await
             .unwrap();
-        // Pass: full policy gate runs; D5 hasn't landed yet so we 501.
         assert_eq!(res.status(), StatusCode::NOT_IMPLEMENTED);
         let body = parse_body(res).await;
         assert_eq!(body["error"]["data"]["code"], "chk.not_implemented_yet");
         assert_eq!(body["error"]["data"]["ships_in"], "D5");
+    }
+
+    /// Promote the fixture's target agent to push mode by giving it
+    /// an `agent_card_url` and a cached envelope pointing at the
+    /// supplied upstream URL. The policy gate's TargetUnreachable
+    /// check is bypassed by setting `agent_card_fetched_at = now()`.
+    async fn promote_target_to_push(
+        pool: &PgPool,
+        f: &Fixture,
+        upstream_url: &str,
+    ) {
+        use crate::agent_card::fetcher::CachedCardEnvelope;
+        use crate::agent_card::types::{
+            AgentCapabilities, AgentCard, AgentInterface, A2A_PROTOCOL_VERSION,
+            PROTOCOL_BINDING_JSONRPC,
+        };
+        use std::collections::BTreeMap;
+        let upstream_card = AgentCard {
+            name: "Target".into(),
+            description: "Test".into(),
+            supported_interfaces: vec![AgentInterface {
+                url: upstream_url.into(),
+                protocol_binding: PROTOCOL_BINDING_JSONRPC.into(),
+                tenant: None,
+                protocol_version: A2A_PROTOCOL_VERSION.into(),
+                extra: Default::default(),
+            }],
+            provider: None,
+            version: "1.0.0".into(),
+            documentation_url: None,
+            capabilities: AgentCapabilities {
+                streaming: Some(false),
+                push_notifications: Some(false),
+                extensions: vec![],
+                extended_agent_card: None,
+                extra: Default::default(),
+            },
+            security_schemes: BTreeMap::new(),
+            security_requirements: vec![],
+            default_input_modes: vec!["application/json".into()],
+            default_output_modes: vec!["application/json".into()],
+            skills: vec![],
+            signatures: vec![],
+            icon_url: None,
+            extra: Default::default(),
+        };
+        let envelope = CachedCardEnvelope {
+            normalized: upstream_card.clone(),
+            upstream: upstream_card,
+            etag: None,
+        };
+        let envelope_json = serde_json::to_value(&envelope).unwrap();
+        sqlx::query!(
+            r#"UPDATE agents
+                  SET mode = 'push',
+                      agent_card_url = $2,
+                      agent_card_cached = $3,
+                      agent_card_fetched_at = now()
+                WHERE id = $1"#,
+            f.target_agent_id,
+            "https://upstream.example.com/.well-known/agent-card.json",
+            envelope_json,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    /// End-to-end push: D2-cached card, D4 policy gate passes, D5b
+    /// forwards through to a real test upstream, response flows back.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn push_authorized_call_proxies_to_upstream(pool: PgPool) {
+        // Stand up an upstream that captures the inbound request +
+        // returns a JSON-RPC success response.
+        use axum::extract::State as AxumState;
+        use axum::http::StatusCode as AxumStatus;
+        use axum::response::IntoResponse;
+        use axum::routing::post;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::{Arc, Mutex};
+
+        #[derive(Clone)]
+        struct UpstreamState {
+            last_auth: Arc<Mutex<Option<String>>>,
+            hits: Arc<AtomicUsize>,
+        }
+
+        async fn upstream_handler(
+            AxumState(s): AxumState<UpstreamState>,
+            headers: HeaderMap,
+            _body: axum::body::Bytes,
+        ) -> axum::response::Response {
+            s.hits.fetch_add(1, Ordering::SeqCst);
+            *s.last_auth.lock().unwrap() = headers
+                .get(axum::http::header::AUTHORIZATION)
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string());
+            (
+                AxumStatus::OK,
+                [(
+                    axum::http::header::CONTENT_TYPE,
+                    "application/json",
+                )],
+                br#"{"jsonrpc":"2.0","id":1,"result":{"ok":true}}"#.to_vec(),
+            )
+                .into_response()
+        }
+
+        let upstream_state = UpstreamState {
+            last_auth: Arc::new(Mutex::new(None)),
+            hits: Arc::new(AtomicUsize::new(0)),
+        };
+        let upstream_app = axum::Router::new()
+            .route("/a2a/jsonrpc", post(upstream_handler))
+            .with_state(upstream_state.clone());
+        let upstream_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream_addr = upstream_listener.local_addr().unwrap();
+        let upstream_url = format!("http://{}/a2a/jsonrpc", upstream_addr);
+        tokio::spawn(async move {
+            axum::serve(upstream_listener, upstream_app).await.ok();
+        });
+
+        // Seed standard caller/target fixture, then promote target to push.
+        let f = seed_full_fixture(&pool).await;
+        promote_target_to_push(&pool, &f, &upstream_url).await;
+
+        // Mint an active signing key (forwarder needs it). Normally
+        // this happens lazily on first card-fetch; here we ensure
+        // it explicitly so JWKS has something for the upstream to
+        // verify against if it wanted to.
+        let keystore = crate::agent_card::KeyStore::new(pool.clone());
+        let _ = keystore.ensure_active_key().await.unwrap();
+
+        // Caller POSTs to our relay's A2A endpoint. The full pipeline
+        // runs: D4 policy gate -> D5b forwarder.
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config_v2_on()));
+        let res = app
+            .oneshot(req(
+                &path_for(&f),
+                Some(&f.api_key_plaintext),
+                Some(&f.caller_agent_id.to_string()),
+                Some(&f.capability_id.to_string()),
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = parse_body(res).await;
+        assert_eq!(body["result"]["ok"], true);
+
+        // Upstream got our request with a relay-minted JWT.
+        assert_eq!(upstream_state.hits.load(Ordering::SeqCst), 1);
+        let auth = upstream_state.last_auth.lock().unwrap().clone().unwrap();
+        let bearer = auth.strip_prefix("Bearer ").unwrap();
+        let pub_keys = keystore.jwks_keys().await.unwrap();
+        let claims = crate::jwt_mint::decode_relay_jwt(bearer, &pub_keys, chrono::Utc::now())
+            .expect("upstream-bound JWT must verify against our JWKS");
+        assert_eq!(claims.sub, f.caller_agent_id.to_string());
+        assert_eq!(claims.aud, f.target_agent_id.to_string());
+        assert_eq!(claims.capability_id, f.capability_id.to_string());
+
+        // Audit row written.
+        let row =
+            sqlx::query!("SELECT status, http_status FROM relay_invocations LIMIT 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(row.status, "succeeded");
+        assert_eq!(row.http_status, Some(200));
+    }
+
+    /// Push-mode call where upstream is unreachable returns
+    /// 502 + chk.target.unreachable to the caller (no leaking
+    /// "the upstream is at xyz.example.com:1234" detail).
+    #[sqlx::test(migrations = "../migrations")]
+    async fn push_authorized_call_502s_when_upstream_unreachable(pool: PgPool) {
+        let f = seed_full_fixture(&pool).await;
+        promote_target_to_push(&pool, &f, "http://127.0.0.1:1/a2a/jsonrpc").await;
+        let _ = crate::agent_card::KeyStore::new(pool.clone())
+            .ensure_active_key()
+            .await
+            .unwrap();
+        let app = crate::router(crate::state::RelayState::new(pool, config_v2_on()));
+        let res = app
+            .oneshot(req(
+                &path_for(&f),
+                Some(&f.api_key_plaintext),
+                Some(&f.caller_agent_id.to_string()),
+                Some(&f.capability_id.to_string()),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_GATEWAY);
+        let body = parse_body(res).await;
+        assert_eq!(body["error"]["data"]["code"], "chk.target.unreachable");
     }
 
     /// Sanity that the deny path doesn't smuggle any caller info

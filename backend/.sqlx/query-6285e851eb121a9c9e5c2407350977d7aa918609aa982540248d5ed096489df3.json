@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE agents\n                  SET mode = 'push',\n                      agent_card_url = $2,\n                      agent_card_cached = $3,\n                      agent_card_fetched_at = now()\n                WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6285e851eb121a9c9e5c2407350977d7aa918609aa982540248d5ed096489df3"
+}
