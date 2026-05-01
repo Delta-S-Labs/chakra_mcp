@@ -248,6 +248,61 @@ struct CallerIdentity {
     user_id: Uuid,
 }
 
+/// Resolve `(caller_agent_id)` for a GetTask call. Reuses the same
+/// bearer + X-ChakraMCP-Caller-Agent path as the full policy gate
+/// but skips capability/friendship/grant — GetTask is a per-task
+/// read where authorization is "same caller as the original
+/// SendMessage", enforced inside `inbox_bridge::get_task` against
+/// the row's grantee_agent_id.
+pub async fn resolve_caller_agent_for_get_task(
+    db: &sqlx::PgPool,
+    headers: &axum::http::HeaderMap,
+    state: &RelayState,
+) -> Result<Uuid, super::DenyReason> {
+    use super::DenyReason;
+
+    let Some(bearer) = headers
+        .get(AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+    else {
+        return Err(DenyReason::AuthMissing);
+    };
+    let caller = match resolve_bearer(bearer, state).await {
+        Ok(Some(c)) => c,
+        Ok(None) => return Err(DenyReason::AuthInvalid),
+        Err(_) => return Err(DenyReason::AuthInvalid),
+    };
+    let Some(caller_agent_id_str) = headers.get(CALLER_AGENT_HEADER).and_then(|v| v.to_str().ok())
+    else {
+        return Err(DenyReason::CallerAgentHeaderMissing);
+    };
+    let Ok(caller_agent_id) = caller_agent_id_str.parse::<Uuid>() else {
+        return Err(DenyReason::CallerAgentNotOwnedByCaller);
+    };
+    let owns = sqlx::query_scalar!(
+        r#"
+        SELECT EXISTS(
+            SELECT 1 FROM agents a
+              JOIN account_memberships m ON m.account_id = a.account_id
+             WHERE a.id = $1
+               AND m.user_id = $2
+               AND a.tombstoned_at IS NULL
+        )
+        "#,
+        caller_agent_id,
+        caller.user_id,
+    )
+    .fetch_one(db)
+    .await
+    .unwrap_or(Some(false))
+    .unwrap_or(false);
+    if !owns {
+        return Err(DenyReason::CallerAgentNotOwnedByCaller);
+    }
+    Ok(caller_agent_id)
+}
+
 async fn resolve_bearer(
     token: &str,
     state: &RelayState,

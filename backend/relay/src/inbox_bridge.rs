@@ -61,11 +61,27 @@ pub struct Parked {
 pub struct A2aTask {
     pub id: String,
     pub status: A2aTaskStatus,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub artifacts: Vec<A2aArtifact>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct A2aTaskStatus {
     pub state: String, // "submitted" | "working" | "completed" | "failed" | ...
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct A2aArtifact {
+    pub parts: Vec<A2aPart>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub enum A2aPart {
+    /// Structured JSON payload — what the granter SDK returned as `output`.
+    Data { data: serde_json::Value },
 }
 
 const PREVIEW_BYTES: usize = 16 * 1024;
@@ -127,8 +143,72 @@ pub async fn park(
             id: task_id.to_string(),
             status: A2aTaskStatus {
                 state: "submitted".to_string(),
+                message: None,
             },
+            artifacts: vec![],
         },
+    })
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum GetTaskError {
+    #[error("task not found")]
+    NotFound,
+    #[error("caller did not invoke this task; not authorized to read it")]
+    NotYourTask,
+    #[error("database error: {0}")]
+    Db(#[from] sqlx::Error),
+}
+
+/// Look up a parked task by id, return an A2A v0.3 Task with state +
+/// artifacts mapped from the invocation row. Authorization: the
+/// caller (identified by `caller_agent_id`) must equal the row's
+/// grantee_agent_id, i.e. only the original caller can poll the task.
+pub async fn get_task(
+    db: &PgPool,
+    task_id: Uuid,
+    caller_agent_id: Uuid,
+) -> Result<A2aTask, GetTaskError> {
+    let row = sqlx::query!(
+        r#"SELECT status, grantee_agent_id, output_preview, error_message
+             FROM relay_invocations WHERE id = $1"#,
+        task_id,
+    )
+    .fetch_optional(db)
+    .await?
+    .ok_or(GetTaskError::NotFound)?;
+
+    if row.grantee_agent_id != Some(caller_agent_id) {
+        return Err(GetTaskError::NotYourTask);
+    }
+
+    let state = match row.status.as_str() {
+        "pending" => "submitted",
+        "in_progress" => "working",
+        "succeeded" => "completed",
+        "failed" => "failed",
+        "rejected" => "rejected",
+        "timeout" => "failed",
+        // Unknown statuses (defensive — schema CHECK should prevent).
+        _ => "unknown",
+    };
+
+    let mut artifacts = vec![];
+    if state == "completed" {
+        if let Some(output) = row.output_preview {
+            artifacts.push(A2aArtifact {
+                parts: vec![A2aPart::Data { data: output }],
+            });
+        }
+    }
+
+    Ok(A2aTask {
+        id: task_id.to_string(),
+        status: A2aTaskStatus {
+            state: state.to_string(),
+            message: row.error_message,
+        },
+        artifacts,
     })
 }
 

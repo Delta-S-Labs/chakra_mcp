@@ -20,11 +20,16 @@ use axum::{
 
 use crate::agent_card::keys::KeyStore;
 use crate::forwarder::{forward_push, ForwardError, ForwardOutcome};
-use crate::inbox_bridge::{park, ParkError};
+use crate::inbox_bridge::{get_task, park, GetTaskError, ParkError};
 use crate::policy::{evaluate, Authorized, Decision, DenyReason};
 use crate::state::RelayState;
 
 /// `POST /agents/<account_slug>/<agent_slug>/a2a/jsonrpc`
+///
+/// Dispatches on JSON-RPC `method`:
+/// - `SendMessage` → policy gate + forward (push) / park (pull).
+/// - `tasks/get`   → return Task wrapping the parked invocation row.
+/// - anything else → method-not-found JSON-RPC error.
 pub async fn jsonrpc_stub(
     State(state): State<RelayState>,
     Path((account_slug, agent_slug)): Path<(String, String)>,
@@ -34,12 +39,37 @@ pub async fn jsonrpc_stub(
     if !state.config.discovery_v2_enabled {
         return discovery_disabled();
     }
-    let decision = evaluate(&state.db, &headers, &state, &account_slug, &agent_slug).await;
+
+    // Peek at method + id without committing to a full envelope shape
+    // (clients may add fields we don't model).
+    let envelope: serde_json::Value = match serde_json::from_slice(&body) {
+        Ok(v) => v,
+        Err(_) => return parse_error(),
+    };
+    let method = envelope.get("method").and_then(|v| v.as_str());
+    let req_id = envelope.get("id").cloned().unwrap_or(serde_json::Value::Null);
+
+    match method {
+        Some("SendMessage") => {
+            handle_send_message(&state, &account_slug, &agent_slug, &headers, body).await
+        }
+        Some("tasks/get") => handle_get_task(&state, &headers, envelope, req_id).await,
+        Some(other) => method_not_found(other, req_id),
+        None => parse_error(),
+    }
+}
+
+/// Run the policy gate, then forward (push) or park (pull).
+async fn handle_send_message(
+    state: &RelayState,
+    account_slug: &str,
+    agent_slug: &str,
+    headers: &HeaderMap,
+    body: Bytes,
+) -> Response {
+    let decision = evaluate(&state.db, headers, state, account_slug, agent_slug).await;
     match decision {
         Decision::Authorized(authz) => {
-            // Snapshot capability_name once for the audit log so the
-            // outcome row reads correctly years later even after a
-            // rename (relay_invocations.capability_name is a snapshot).
             let cap_name = match capability_name(&state.db, authz.capability_id).await {
                 Ok(n) => n,
                 Err(e) => {
@@ -48,13 +78,145 @@ pub async fn jsonrpc_stub(
                 }
             };
             if authz.target_is_push {
-                handle_authorized_push(&state, authz, cap_name, body, &headers).await
+                handle_authorized_push(state, authz, cap_name, body, headers).await
             } else {
-                handle_authorized_pull(&state, authz, cap_name, body).await
+                handle_authorized_pull(state, authz, cap_name, body).await
             }
         }
         Decision::Denied(reason) => deny_response(&reason),
     }
+}
+
+/// Caller polls for completion of a task they previously submitted.
+/// Auth: same bearer + caller-agent header as SendMessage. The
+/// caller_agent must equal the invocation's grantee_agent_id —
+/// strangers can't probe other agents' tasks.
+async fn handle_get_task(
+    state: &RelayState,
+    headers: &HeaderMap,
+    envelope: serde_json::Value,
+    req_id: serde_json::Value,
+) -> Response {
+    // Reuse the same identity-resolution rules as the policy gate.
+    // We don't run the FULL policy gate here (no friendship/grant
+    // check needed — those were enforced when the task was parked)
+    // but we do need to verify the bearer + caller-agent ownership.
+    let caller_agent_id = match crate::policy::evaluator::resolve_caller_agent_for_get_task(
+        &state.db,
+        headers,
+        state,
+    )
+    .await
+    {
+        Ok(id) => id,
+        Err(reason) => return deny_response(&reason),
+    };
+
+    // Extract task id from params.
+    let task_id_str = envelope
+        .get("params")
+        .and_then(|p| p.get("id"))
+        .and_then(|v| v.as_str());
+    let Some(task_id_str) = task_id_str else {
+        return jsonrpc_error_with_id(
+            req_id,
+            -32602,
+            "tasks/get requires params.id",
+            Some(serde_json::json!({"code":"chk.request.invalid_params"})),
+        );
+    };
+    let Ok(task_id) = task_id_str.parse::<uuid::Uuid>() else {
+        return jsonrpc_error_with_id(
+            req_id,
+            -32602,
+            "tasks/get params.id is not a valid UUID",
+            Some(serde_json::json!({"code":"chk.request.invalid_params"})),
+        );
+    };
+
+    match get_task(&state.db, task_id, caller_agent_id).await {
+        Ok(task) => (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, "application/json")],
+            Json(serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": task,
+            })),
+        )
+            .into_response(),
+        Err(GetTaskError::NotFound) => jsonrpc_error_with_id(
+            req_id,
+            -32006,
+            "task not found",
+            Some(serde_json::json!({"code":"chk.target.not_found"})),
+        ),
+        Err(GetTaskError::NotYourTask) => jsonrpc_error_with_id(
+            req_id,
+            -32003,
+            "task not owned by caller",
+            Some(serde_json::json!({"code":"chk.policy.task_not_yours"})),
+        ),
+        Err(GetTaskError::Db(e)) => {
+            tracing::error!(error = %e, "get_task DB error");
+            internal_error()
+        }
+    }
+}
+
+fn parse_error() -> Response {
+    (
+        StatusCode::BAD_REQUEST,
+        [(header::CONTENT_TYPE, "application/json")],
+        Json(serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": null,
+            "error": {
+                "code": -32700,
+                "message": "parse error",
+                "data": { "code": "chk.request.parse_error" }
+            }
+        })),
+    )
+        .into_response()
+}
+
+fn method_not_found(method: &str, req_id: serde_json::Value) -> Response {
+    jsonrpc_error_with_id(
+        req_id,
+        -32601,
+        &format!("method '{method}' not supported"),
+        Some(serde_json::json!({"code":"chk.request.unknown_method","method":method})),
+    )
+}
+
+fn jsonrpc_error_with_id(
+    req_id: serde_json::Value,
+    code: i32,
+    message: &str,
+    data: Option<serde_json::Value>,
+) -> Response {
+    let http = match code {
+        -32700 | -32600 | -32602 => StatusCode::BAD_REQUEST,
+        -32601 => StatusCode::NOT_IMPLEMENTED,
+        -32003 => StatusCode::FORBIDDEN,
+        -32006 => StatusCode::NOT_FOUND,
+        _ => StatusCode::OK,
+    };
+    let mut error = serde_json::json!({"code": code, "message": message});
+    if let Some(d) = data {
+        error["data"] = d;
+    }
+    (
+        http,
+        [(header::CONTENT_TYPE, "application/json")],
+        Json(serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "error": error,
+        })),
+    )
+        .into_response()
 }
 
 /// `POST /agents/<account_slug>/<agent_slug>/a2a/stream`
@@ -479,7 +641,14 @@ mod tests {
         caller_agent: Option<&str>,
         capability: Option<&str>,
     ) -> Request<Body> {
-        let mut b = Request::builder().method("POST").uri(path);
+        // A valid JSON-RPC SendMessage envelope so the handler's
+        // method-dispatch path resolves to the policy gate. Tests
+        // that need a different body (tasks/get, malformed) build
+        // their own request directly.
+        let mut b = Request::builder()
+            .method("POST")
+            .uri(path)
+            .header(header::CONTENT_TYPE, "application/json");
         if let Some(t) = bearer {
             b = b.header(header::AUTHORIZATION, format!("Bearer {t}"));
         }
@@ -489,7 +658,10 @@ mod tests {
         if let Some(c) = capability {
             b = b.header("X-ChakraMCP-Capability", c);
         }
-        b.body(Body::empty()).unwrap()
+        b.body(Body::from(
+            br#"{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{}}"#.to_vec(),
+        ))
+        .unwrap()
     }
 
     async fn parse_body(res: Response) -> serde_json::Value {
@@ -942,6 +1114,315 @@ mod tests {
         assert_eq!(res.status(), StatusCode::BAD_GATEWAY);
         let body = parse_body(res).await;
         assert_eq!(body["error"]["data"]["code"], "chk.target.unreachable");
+    }
+
+    // ── D5d: tasks/get end-to-end ─────────────────────────
+
+    fn req_with_body(
+        path: &str,
+        bearer: Option<&str>,
+        caller_agent: Option<&str>,
+        capability: Option<&str>,
+        body: serde_json::Value,
+    ) -> Request<Body> {
+        let mut b = Request::builder()
+            .method("POST")
+            .uri(path)
+            .header(header::CONTENT_TYPE, "application/json");
+        if let Some(t) = bearer {
+            b = b.header(header::AUTHORIZATION, format!("Bearer {t}"));
+        }
+        if let Some(c) = caller_agent {
+            b = b.header("X-ChakraMCP-Caller-Agent", c);
+        }
+        if let Some(c) = capability {
+            b = b.header("X-ChakraMCP-Capability", c);
+        }
+        b.body(Body::from(serde_json::to_vec(&body).unwrap())).unwrap()
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn parked_task_then_get_task_polls_through_completion(pool: PgPool) {
+        let f = seed_full_fixture(&pool).await;
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config_v2_on()));
+
+        // 1. Caller submits SendMessage. Pull-mode → parked.
+        let send_res = app
+            .clone()
+            .oneshot(req_with_body(
+                &path_for(&f),
+                Some(&f.api_key_plaintext),
+                Some(&f.caller_agent_id.to_string()),
+                Some(&f.capability_id.to_string()),
+                serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "SendMessage",
+                    "params": {"text": "do the thing"}
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(send_res.status(), StatusCode::OK);
+        let send_body = parse_body(send_res).await;
+        let task_id = send_body["result"]["id"].as_str().unwrap().to_string();
+
+        // 2. Caller polls tasks/get → state should be "submitted".
+        let get1 = app
+            .clone()
+            .oneshot(req_with_body(
+                &path_for(&f),
+                Some(&f.api_key_plaintext),
+                Some(&f.caller_agent_id.to_string()),
+                None, // capability not required for tasks/get
+                serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "tasks/get",
+                    "params": {"id": task_id}
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(get1.status(), StatusCode::OK);
+        let get1_body = parse_body(get1).await;
+        assert_eq!(get1_body["id"], 2);
+        assert_eq!(get1_body["result"]["id"], task_id);
+        assert_eq!(get1_body["result"]["status"]["state"], "submitted");
+
+        // 3. Granter SDK posts a result via the legacy endpoint.
+        // Simulate that by directly updating the row to status='succeeded'
+        // with output_preview set — the relay handler does the same thing
+        // when it receives POST /v1/invocations/{id}/result.
+        let task_uuid: uuid::Uuid = task_id.parse().unwrap();
+        sqlx::query!(
+            r#"UPDATE relay_invocations
+                  SET status = 'succeeded',
+                      output_preview = '{"slots":[1,2,3]}'::jsonb
+                WHERE id = $1"#,
+            task_uuid,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // 4. Caller polls again → state="completed", artifacts carry output.
+        let get2 = app
+            .oneshot(req_with_body(
+                &path_for(&f),
+                Some(&f.api_key_plaintext),
+                Some(&f.caller_agent_id.to_string()),
+                None,
+                serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "tasks/get",
+                    "params": {"id": task_id}
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(get2.status(), StatusCode::OK);
+        let get2_body = parse_body(get2).await;
+        assert_eq!(get2_body["result"]["status"]["state"], "completed");
+        let arts = get2_body["result"]["artifacts"].as_array().unwrap();
+        assert_eq!(arts.len(), 1);
+        assert_eq!(arts[0]["parts"][0]["data"], serde_json::json!({"slots":[1,2,3]}));
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn get_task_returns_failed_state_with_error_message(pool: PgPool) {
+        let f = seed_full_fixture(&pool).await;
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config_v2_on()));
+
+        // Park.
+        let r = app
+            .clone()
+            .oneshot(req_with_body(
+                &path_for(&f),
+                Some(&f.api_key_plaintext),
+                Some(&f.caller_agent_id.to_string()),
+                Some(&f.capability_id.to_string()),
+                serde_json::json!({"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{}}),
+            ))
+            .await
+            .unwrap();
+        let body = parse_body(r).await;
+        let task_id = body["result"]["id"].as_str().unwrap().to_string();
+        let task_uuid: uuid::Uuid = task_id.parse().unwrap();
+
+        // Granter reports failure.
+        sqlx::query!(
+            r#"UPDATE relay_invocations
+                  SET status = 'failed',
+                      error_message = 'capability raised'
+                WHERE id = $1"#,
+            task_uuid,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Poll.
+        let res = app
+            .oneshot(req_with_body(
+                &path_for(&f),
+                Some(&f.api_key_plaintext),
+                Some(&f.caller_agent_id.to_string()),
+                None,
+                serde_json::json!({
+                    "jsonrpc": "2.0", "id": 2,
+                    "method": "tasks/get",
+                    "params": {"id": task_id}
+                }),
+            ))
+            .await
+            .unwrap();
+        let body = parse_body(res).await;
+        assert_eq!(body["result"]["status"]["state"], "failed");
+        assert_eq!(body["result"]["status"]["message"], "capability raised");
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn get_task_rejects_caller_who_didnt_originate_it(pool: PgPool) {
+        let f = seed_full_fixture(&pool).await;
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config_v2_on()));
+
+        // Park as the original caller.
+        let r = app
+            .clone()
+            .oneshot(req_with_body(
+                &path_for(&f),
+                Some(&f.api_key_plaintext),
+                Some(&f.caller_agent_id.to_string()),
+                Some(&f.capability_id.to_string()),
+                serde_json::json!({"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{}}),
+            ))
+            .await
+            .unwrap();
+        let task_id = parse_body(r).await["result"]["id"].as_str().unwrap().to_string();
+
+        // Build a SECOND user who has no relationship to this task.
+        let other_user = uuid::Uuid::now_v7();
+        sqlx::query!(
+            r#"INSERT INTO users (id, email, display_name, password_hash)
+               VALUES ($1, $2, 'Other', 'x')"#,
+            other_user,
+            format!("other-{other_user}@t.local"),
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let other_key = format!("ck_other_{other_user}");
+        let mut h = Sha256::new();
+        h.update(other_key.as_bytes());
+        let kh = hex::encode(h.finalize());
+        sqlx::query!(
+            r#"INSERT INTO api_keys (id, user_id, key_hash, name, key_prefix)
+               VALUES ($1, $2, $3, 'k', 'ck_other')"#,
+            uuid::Uuid::now_v7(),
+            other_user,
+            kh,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let other_account = uuid::Uuid::now_v7();
+        sqlx::query!(
+            r#"INSERT INTO accounts (id, slug, display_name, account_type, owner_user_id)
+               VALUES ($1, $2, 'Other', 'individual', $3)"#,
+            other_account,
+            format!("oa-{other_account}"),
+            other_user,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            r#"INSERT INTO account_memberships (id, account_id, user_id, role)
+               VALUES ($1, $2, $3, 'owner')"#,
+            uuid::Uuid::now_v7(),
+            other_account,
+            other_user,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let other_agent = uuid::Uuid::now_v7();
+        sqlx::query!(
+            r#"INSERT INTO agents (id, account_id, slug, display_name)
+               VALUES ($1, $2, 'eve', 'Eve')"#,
+            other_agent,
+            other_account,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Other user tries to read the task.
+        let res = app
+            .oneshot(req_with_body(
+                &path_for(&f),
+                Some(&other_key),
+                Some(&other_agent.to_string()),
+                None,
+                serde_json::json!({
+                    "jsonrpc": "2.0", "id": 9,
+                    "method": "tasks/get",
+                    "params": {"id": task_id}
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        let body = parse_body(res).await;
+        assert_eq!(body["error"]["data"]["code"], "chk.policy.task_not_yours");
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn unknown_method_returns_method_not_found(pool: PgPool) {
+        let f = seed_full_fixture(&pool).await;
+        let app = crate::router(crate::state::RelayState::new(pool, config_v2_on()));
+        let res = app
+            .oneshot(req_with_body(
+                &path_for(&f),
+                Some(&f.api_key_plaintext),
+                Some(&f.caller_agent_id.to_string()),
+                None,
+                serde_json::json!({
+                    "jsonrpc": "2.0", "id": 1,
+                    "method": "UnknownThing",
+                    "params": {}
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_IMPLEMENTED);
+        let body = parse_body(res).await;
+        assert_eq!(body["error"]["code"], -32601);
+        assert_eq!(body["error"]["data"]["code"], "chk.request.unknown_method");
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn malformed_json_body_returns_parse_error(pool: PgPool) {
+        let f = seed_full_fixture(&pool).await;
+        let app = crate::router(crate::state::RelayState::new(pool, config_v2_on()));
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(&path_for(&f))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, format!("Bearer {}", f.api_key_plaintext))
+                    .header("X-ChakraMCP-Caller-Agent", f.caller_agent_id.to_string())
+                    .body(Body::from(b"not valid json".to_vec()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        let body = parse_body(res).await;
+        assert_eq!(body["error"]["code"], -32700);
     }
 
     /// Sanity that the deny path doesn't smuggle any caller info
