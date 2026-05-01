@@ -26,6 +26,15 @@ pub enum Cmd {
         /// `private` (default) or `network`.
         #[arg(long, default_value = "private")]
         visibility: String,
+        /// A2A canonical Agent Card URL for **push-mode** agents
+        /// (those with a public A2A endpoint). When supplied, the
+        /// relay registers the agent in push mode and starts
+        /// fetching + caching its upstream card. When omitted, the
+        /// agent registers in pull mode and is expected to run
+        /// `inbox.serve()` against the relay (the default for
+        /// laptop / sandboxed agents).
+        #[arg(long)]
+        agent_card_url: Option<String>,
     },
     /// Fetch one agent by id.
     Get {
@@ -45,14 +54,22 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             name,
             description,
             visibility,
+            agent_card_url,
         } => {
-            let body = json!({
+            let mut body = json!({
                 "account_id": account,
                 "slug": slug,
                 "display_name": name,
                 "description": description,
                 "visibility": visibility,
             });
+            // Push mode is opt-in by passing --agent-card-url; the
+            // server picks the mode from the URL's presence (see
+            // backend/relay/src/handlers/agents.rs::create), and the
+            // DB CHECK enforces the card-or-pull invariant.
+            if let Some(url) = agent_card_url {
+                body["agent_card_url"] = json!(url);
+            }
             let agent: Value = api.post_relay("/v1/agents", &body).await?;
             print(&agent)
         }
