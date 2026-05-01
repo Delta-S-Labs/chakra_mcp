@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE agents\n        SET display_name = COALESCE($2, display_name),\n            description = COALESCE($3, description),\n            visibility = COALESCE($4, visibility),\n            endpoint_url = CASE\n                WHEN $5::boolean THEN $6\n                ELSE endpoint_url\n            END,\n            agent_card_url = CASE\n                WHEN $7::boolean THEN $8\n                ELSE agent_card_url\n            END,\n            mode = CASE\n                WHEN $9::boolean THEN $10\n                ELSE mode\n            END\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Bool",
+        "Text",
+        "Bool",
+        "Text",
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c749db9f23ba27e66744a7229e8c7575caf74598fd163ee4243ce46c2b5ff27c"
+}

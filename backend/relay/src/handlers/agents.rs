@@ -14,6 +14,70 @@ use chakramcp_shared::error::{ApiError, ApiResult};
 use crate::auth::{user_can_admin_account, user_is_member, AuthUser};
 use crate::state::RelayState;
 
+// ─── Validation helpers ──────────────────────────────────
+
+/// Slug rules per discovery design §"Slug allocation":
+/// 3–32 chars, ASCII `[a-z0-9-]`, no leading/trailing or double
+/// hyphens. NFKC normalization + reserved-words list land in D9.
+fn is_valid_slug(s: &str) -> bool {
+    let len = s.chars().count();
+    if !(3..=32).contains(&len) {
+        return false;
+    }
+    if s.starts_with('-') || s.ends_with('-') {
+        return false;
+    }
+    if s.contains("--") {
+        return false;
+    }
+    s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// Parse + normalize an Agent Card URL. Rejects non-http(s) schemes,
+/// missing host, fragments. Returns the canonicalized form (URL with
+/// fragment stripped, trailing whitespace gone) the caller should
+/// store. The fetcher (D2d) further validates at fetch time, but
+/// catching the obvious garbage here gives users a clean error
+/// instead of a "fetch failed" surprise an hour later.
+fn validate_agent_card_url(raw: &str) -> Result<String, ApiError> {
+    // url::Url::parse is lenient toward malformed authorities: e.g.
+    // `https:///path` parses with `host_str = Some("path")` because
+    // the parser swallows one extra `/` to recover. We catch that
+    // class of typo with an explicit pre-parse check before relying
+    // on the parsed result.
+    if raw.contains(":///") {
+        return Err(ApiError::InvalidRequest(
+            "agent_card_url is missing a host (saw `:///`)".into(),
+        ));
+    }
+    let mut parsed = url::Url::parse(raw).map_err(|_| {
+        ApiError::InvalidRequest(
+            "agent_card_url must be a valid absolute URL".into(),
+        )
+    })?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err(ApiError::InvalidRequest(
+            "agent_card_url must use http or https scheme".into(),
+        ));
+    }
+    match parsed.host_str() {
+        Some(h) if !h.is_empty() => {}
+        _ => {
+            return Err(ApiError::InvalidRequest(
+                "agent_card_url must include a non-empty host".into(),
+            ))
+        }
+    }
+    parsed.set_fragment(None);
+    Ok(parsed.to_string())
+}
+
+enum CardChange {
+    Unchanged,
+    ClearToPull,
+    SetToPush(String),
+}
+
 // ─── DTOs ────────────────────────────────────────────────
 
 #[derive(Debug, Serialize)]
@@ -59,6 +123,22 @@ pub struct UpdateRequest {
     pub description: Option<String>,
     pub visibility: Option<String>,
     pub endpoint_url: Option<Option<String>>,
+    /// Push↔pull migration:
+    ///
+    /// - Field **absent**: mode unchanged.
+    /// - Field present with **empty string** `""`: demote to pull.
+    ///   Clears `agent_card_url`, sets `mode='pull'`.
+    /// - Field present with a **URL**: promote to push. Sets
+    ///   `agent_card_url` and `mode='push'`.
+    ///
+    /// Serde collapses missing-field and `null` to the same `None`
+    /// for `Option<Option<T>>` without third-party helpers, so we
+    /// use `""` as the explicit "clear" sentinel rather than
+    /// playing serde-with games. The DB CHECK
+    /// `agents_mode_card_consistency` (migration 0010) catches any
+    /// inconsistency at COMMIT time as a defense in depth.
+    #[serde(default)]
+    pub agent_card_url: Option<String>,
 }
 
 // ─── GET /v1/agents — list mine ──────────────────────────
@@ -214,9 +294,15 @@ pub async fn create(
     if slug.is_empty() || display_name.is_empty() {
         return Err(ApiError::InvalidRequest("slug and display_name are required".into()));
     }
-    if !slug.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+    // Slug rules per discovery design §"Slug allocation":
+    //   ASCII a-z 0-9 -, length 3-32, no leading/trailing hyphen,
+    //   no double hyphens, NFKC-normalized. NFKC normalization will
+    //   land in D9 alongside the reserved-words list; the rest is
+    //   enforced here so registrations made today don't need to be
+    //   grandfathered when D9 ships.
+    if !is_valid_slug(&slug) {
         return Err(ApiError::InvalidRequest(
-            "slug must be ascii alphanumeric, hyphen, or underscore".into(),
+            "slug must be 3-32 chars of [a-z0-9-], no leading/trailing or double hyphens".into(),
         ));
     }
     let visibility = req.visibility.as_deref().unwrap_or("private");
@@ -246,18 +332,14 @@ pub async fn create(
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty());
+    let agent_card_url = agent_card_url
+        .map(validate_agent_card_url)
+        .transpose()?;
     let mode = if agent_card_url.is_some() {
         "push"
     } else {
         "pull"
     };
-    if let Some(url) = agent_card_url {
-        if !(url.starts_with("http://") || url.starts_with("https://")) {
-            return Err(ApiError::InvalidRequest(
-                "agent_card_url must be an absolute http(s) URL".into(),
-            ));
-        }
-    }
     let inserted = sqlx::query!(
         r#"
         INSERT INTO agents
@@ -334,6 +416,20 @@ pub async fn update(
         }
     }
 
+    // Push↔pull migration. See UpdateRequest doc.
+    // Empty string ("") is the explicit clear sentinel; missing
+    // field leaves mode untouched.
+    let card_change = match req.agent_card_url.as_deref().map(str::trim) {
+        None => CardChange::Unchanged,
+        Some("") => CardChange::ClearToPull,
+        Some(raw) => CardChange::SetToPush(validate_agent_card_url(raw)?),
+    };
+
+    let (set_card, new_card, set_mode, new_mode) = match &card_change {
+        CardChange::Unchanged => (false, None, false, "pull"),
+        CardChange::ClearToPull => (true, None, true, "pull"),
+        CardChange::SetToPush(url) => (true, Some(url.as_str()), true, "push"),
+    };
     sqlx::query!(
         r#"
         UPDATE agents
@@ -343,6 +439,14 @@ pub async fn update(
             endpoint_url = CASE
                 WHEN $5::boolean THEN $6
                 ELSE endpoint_url
+            END,
+            agent_card_url = CASE
+                WHEN $7::boolean THEN $8
+                ELSE agent_card_url
+            END,
+            mode = CASE
+                WHEN $9::boolean THEN $10
+                ELSE mode
             END
         WHERE id = $1
         "#,
@@ -352,6 +456,10 @@ pub async fn update(
         req.visibility.as_deref(),
         req.endpoint_url.is_some(),
         req.endpoint_url.flatten(),
+        set_card,
+        new_card,
+        set_mode,
+        new_mode,
     )
     .execute(&state.db)
     .await?;
@@ -635,5 +743,408 @@ mod create_push_mode_tests {
         // Whitespace-only URL trimmed to empty -> pull mode, no URL stored.
         assert_eq!(row.mode, "pull");
         assert!(row.agent_card_url.is_none());
+    }
+}
+
+#[cfg(test)]
+mod mode_mutation_and_validation_tests {
+    //! Post-D8-review additions:
+    //!  * Pull → push and push → pull migration via PATCH (the
+    //!    discovery design's "promote later" path).
+    //!  * Tightened URL validation via url::Url::parse.
+    //!  * Tightened slug rules toward D9 spec form.
+    //!  * Conflict on duplicate live slug.
+    use axum::body::Body;
+    use axum::http::{header, Request, StatusCode};
+    use chakramcp_shared::config::SharedConfig;
+    use chakramcp_shared::jwt;
+    use http_body_util::BodyExt;
+    use sqlx::PgPool;
+    use tower::ServiceExt;
+    use uuid::Uuid;
+
+    fn config() -> SharedConfig {
+        SharedConfig {
+            database_url: "ignored".into(),
+            jwt_secret: "test-secret-test-secret-test-secret-test-secret".into(),
+            admin_email: None,
+            survey_enabled: false,
+            frontend_base_url: "http://localhost:3000".into(),
+            app_base_url: "http://localhost:8080".into(),
+            relay_base_url: "http://localhost:8090".into(),
+            discovery_v2_enabled: false,
+            log_filter: "warn".into(),
+        }
+    }
+
+    async fn seed_user_with_jwt(pool: &PgPool) -> (Uuid, Uuid, String) {
+        let user_id = Uuid::now_v7();
+        sqlx::query!(
+            r#"INSERT INTO users (id, email, display_name, password_hash)
+               VALUES ($1, $2, 'Test', 'x')"#,
+            user_id,
+            format!("{user_id}@t.local"),
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        let account_id = Uuid::now_v7();
+        sqlx::query!(
+            r#"INSERT INTO accounts (id, slug, display_name, account_type, owner_user_id)
+               VALUES ($1, $2, 'Acct', 'individual', $3)"#,
+            account_id,
+            format!("acct-{account_id}"),
+            user_id,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            r#"INSERT INTO account_memberships (id, account_id, user_id, role)
+               VALUES ($1, $2, $3, 'owner')"#,
+            Uuid::now_v7(),
+            account_id,
+            user_id,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        let token = jwt::encode_jwt(
+            &jwt::UserClaims::new(user_id, format!("{user_id}@t.local"), false, 1),
+            "test-secret-test-secret-test-secret-test-secret",
+        )
+        .unwrap();
+        (user_id, account_id, token)
+    }
+
+    async fn create_pull_agent(pool: &PgPool, account: Uuid, slug: &str, token: &str) -> Uuid {
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/agents")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                    .body(Body::from(
+                        serde_json::to_vec(&serde_json::json!({
+                            "account_id": account,
+                            "slug": slug,
+                            "display_name": "Agent",
+                            "visibility": "network",
+                        }))
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body: serde_json::Value =
+            serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        body["id"].as_str().unwrap().parse().unwrap()
+    }
+
+    async fn patch(
+        pool: &PgPool,
+        token: &str,
+        agent_id: Uuid,
+        body: serde_json::Value,
+    ) -> axum::http::Response<Body> {
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        app.oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!("/v1/agents/{agent_id}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+    }
+
+    // ── Mode mutation ─────────────────────────────────────
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn pull_can_be_promoted_to_push_via_patch(pool: PgPool) {
+        let (_, account_id, token) = seed_user_with_jwt(&pool).await;
+        let agent_id = create_pull_agent(&pool, account_id, "alice", &token).await;
+
+        let res = patch(
+            &pool,
+            &token,
+            agent_id,
+            serde_json::json!({
+                "agent_card_url": "https://travel.example.com/.well-known/agent-card.json"
+            }),
+        )
+        .await;
+        assert!(res.status().is_success(), "got {}", res.status());
+
+        let row =
+            sqlx::query!("SELECT mode, agent_card_url FROM agents WHERE id = $1", agent_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(row.mode, "push");
+        assert_eq!(
+            row.agent_card_url.as_deref(),
+            Some("https://travel.example.com/.well-known/agent-card.json")
+        );
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn push_can_be_demoted_to_pull_via_empty_string(pool: PgPool) {
+        let (_, account_id, token) = seed_user_with_jwt(&pool).await;
+        // Create as push first.
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/agents")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                    .body(Body::from(
+                        serde_json::to_vec(&serde_json::json!({
+                            "account_id": account_id,
+                            "slug": "bob-push",
+                            "display_name": "Bob",
+                            "agent_card_url": "https://example.com/.well-known/agent-card.json",
+                        }))
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body: serde_json::Value =
+            serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        let agent_id: Uuid = body["id"].as_str().unwrap().parse().unwrap();
+
+        // Demote: send agent_card_url="" (the documented clear sentinel).
+        let res = patch(
+            &pool,
+            &token,
+            agent_id,
+            serde_json::json!({"agent_card_url": ""}),
+        )
+        .await;
+        assert!(res.status().is_success(), "got {}", res.status());
+
+        let row =
+            sqlx::query!("SELECT mode, agent_card_url FROM agents WHERE id = $1", agent_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(row.mode, "pull");
+        assert!(row.agent_card_url.is_none());
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn patch_without_agent_card_url_field_leaves_mode_alone(pool: PgPool) {
+        let (_, account_id, token) = seed_user_with_jwt(&pool).await;
+        let agent_id = create_pull_agent(&pool, account_id, "carol", &token).await;
+        let res = patch(
+            &pool,
+            &token,
+            agent_id,
+            serde_json::json!({"display_name": "Carol Updated"}),
+        )
+        .await;
+        assert!(res.status().is_success());
+        let row =
+            sqlx::query!("SELECT mode, display_name FROM agents WHERE id = $1", agent_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(row.mode, "pull");
+        assert_eq!(row.display_name, "Carol Updated");
+    }
+
+    // ── Tightened URL validation ──────────────────────────
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn rejects_url_without_host(pool: PgPool) {
+        let (_, account_id, token) = seed_user_with_jwt(&pool).await;
+        let app = crate::router(crate::state::RelayState::new(pool, config()));
+        for bogus in [
+            "https://",
+            "http://",
+            "https:///path",
+            "https//missing-colon.com",
+        ] {
+            let res = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/v1/agents")
+                        .header(header::CONTENT_TYPE, "application/json")
+                        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                        .body(Body::from(
+                            serde_json::to_vec(&serde_json::json!({
+                                "account_id": account_id,
+                                "slug": "scratch",
+                                "display_name": "S",
+                                "agent_card_url": bogus,
+                            }))
+                            .unwrap(),
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                res.status(),
+                StatusCode::BAD_REQUEST,
+                "bogus URL should be rejected: {bogus}"
+            );
+        }
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn url_fragment_is_stripped_on_storage(pool: PgPool) {
+        let (_, account_id, token) = seed_user_with_jwt(&pool).await;
+        let agent_id = create_pull_agent(&pool, account_id, "dave", &token).await;
+        let res = patch(
+            &pool,
+            &token,
+            agent_id,
+            serde_json::json!({
+                "agent_card_url":
+                    "https://example.com/.well-known/agent-card.json#fragment"
+            }),
+        )
+        .await;
+        assert!(res.status().is_success(), "got {}", res.status());
+        let row = sqlx::query!("SELECT agent_card_url FROM agents WHERE id = $1", agent_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            row.agent_card_url.as_deref(),
+            Some("https://example.com/.well-known/agent-card.json")
+        );
+    }
+
+    // ── Slug rules toward D9 spec ─────────────────────────
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn rejects_too_short_slug(pool: PgPool) {
+        let (_, account_id, token) = seed_user_with_jwt(&pool).await;
+        let app = crate::router(crate::state::RelayState::new(pool, config()));
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/agents")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                    .body(Body::from(
+                        serde_json::to_vec(&serde_json::json!({
+                            "account_id": account_id,
+                            "slug": "ab",
+                            "display_name": "Tiny",
+                        }))
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn rejects_double_hyphen_and_leading_hyphen(pool: PgPool) {
+        let (_, account_id, token) = seed_user_with_jwt(&pool).await;
+        let app = crate::router(crate::state::RelayState::new(pool, config()));
+        for bad_slug in ["foo--bar", "-foo", "bar-"] {
+            let res = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/v1/agents")
+                        .header(header::CONTENT_TYPE, "application/json")
+                        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                        .body(Body::from(
+                            serde_json::to_vec(&serde_json::json!({
+                                "account_id": account_id,
+                                "slug": bad_slug,
+                                "display_name": "Z",
+                            }))
+                            .unwrap(),
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                res.status(),
+                StatusCode::BAD_REQUEST,
+                "bad slug should be rejected: {bad_slug}"
+            );
+        }
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn rejects_underscore_per_d9_spec(pool: PgPool) {
+        // D8 originally accepted underscores; D9 bans them. We
+        // tighten now so registrations made today don't need to be
+        // grandfathered when D9's reserved-words list lands.
+        let (_, account_id, token) = seed_user_with_jwt(&pool).await;
+        let app = crate::router(crate::state::RelayState::new(pool, config()));
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/agents")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                    .body(Body::from(
+                        serde_json::to_vec(&serde_json::json!({
+                            "account_id": account_id,
+                            "slug": "my_bot",
+                            "display_name": "Z",
+                        }))
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    }
+
+    // ── Concurrency / conflict ────────────────────────────
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn duplicate_live_slug_returns_conflict(pool: PgPool) {
+        let (_, account_id, token) = seed_user_with_jwt(&pool).await;
+        let _first = create_pull_agent(&pool, account_id, "duplicate", &token).await;
+        let app = crate::router(crate::state::RelayState::new(pool, config()));
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/agents")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                    .body(Body::from(
+                        serde_json::to_vec(&serde_json::json!({
+                            "account_id": account_id,
+                            "slug": "duplicate",
+                            "display_name": "Dup",
+                        }))
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CONFLICT);
     }
 }
