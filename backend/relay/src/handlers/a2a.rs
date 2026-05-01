@@ -20,6 +20,7 @@ use axum::{
 
 use crate::agent_card::keys::KeyStore;
 use crate::forwarder::{forward_push, ForwardError, ForwardOutcome};
+use crate::inbox_bridge::{park, ParkError};
 use crate::policy::{evaluate, Authorized, Decision, DenyReason};
 use crate::state::RelayState;
 
@@ -49,8 +50,7 @@ pub async fn jsonrpc_stub(
             if authz.target_is_push {
                 handle_authorized_push(&state, authz, cap_name, body, &headers).await
             } else {
-                // Pull mode lands in D5c (inbox bridge — park).
-                not_implemented()
+                handle_authorized_pull(&state, authz, cap_name, body).await
             }
         }
         Decision::Denied(reason) => deny_response(&reason),
@@ -155,6 +155,50 @@ async fn handle_authorized_push(
         }
         Err(e) => {
             tracing::error!(error = %e, "forward_push internal error");
+            internal_error()
+        }
+    }
+}
+
+/// Park an authorized pull-mode call and return an A2A Task with
+/// `state: "submitted"` so the caller can begin polling via D5d's
+/// GetTask handler. The granter SDK's `inbox.serve()` will pick the
+/// row up on its next poll of `/v1/inbox` and post the result back
+/// via `/v1/invocations/{id}/result` — both endpoints predate the
+/// migration and survive unchanged.
+async fn handle_authorized_pull(
+    state: &RelayState,
+    authz: Authorized,
+    capability_name: String,
+    body: Bytes,
+) -> Response {
+    match park(&state.db, &authz, &capability_name, body).await {
+        Ok(parked) => (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, "application/json")],
+            Json(serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": parked.jsonrpc_id,
+                "result": parked.task,
+            })),
+        )
+            .into_response(),
+        Err(ParkError::BodyTooLarge(n)) => (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            [(header::CONTENT_TYPE, "application/json")],
+            Json(serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": null,
+                "error": {
+                    "code": -32600,
+                    "message": "request body too large to park",
+                    "data": { "code": "chk.request.too_large", "byte_count": n }
+                }
+            })),
+        )
+            .into_response(),
+        Err(ParkError::Db(e)) => {
+            tracing::error!(error = %e, "park failed");
             internal_error()
         }
     }
@@ -652,25 +696,57 @@ mod tests {
     }
 
     /// Default fixture is a *pull*-mode target (mode column defaults
-    /// to 'pull'). With D5b only push-forward implemented, pull-mode
-    /// authorized calls still return 501. Pull-side bridge lands in D5c.
+    /// to 'pull'). The handler now parks the call into the inbox bridge
+    /// and returns an A2A Task with state="submitted" — D5d's GetTask
+    /// handler completes the polling loop.
     #[sqlx::test(migrations = "../migrations")]
-    async fn pull_pass_returns_501_for_now(pool: PgPool) {
+    async fn pull_pass_parks_and_returns_a2a_task(pool: PgPool) {
         let f = seed_full_fixture(&pool).await;
-        let app = crate::router(crate::state::RelayState::new(pool, config_v2_on()));
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config_v2_on()));
         let res = app
-            .oneshot(req(
-                &path_for(&f),
-                Some(&f.api_key_plaintext),
-                Some(&f.caller_agent_id.to_string()),
-                Some(&f.capability_id.to_string()),
-            ))
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(&path_for(&f))
+                    .header(header::AUTHORIZATION, format!("Bearer {}", f.api_key_plaintext))
+                    .header("X-ChakraMCP-Caller-Agent", f.caller_agent_id.to_string())
+                    .header("X-ChakraMCP-Capability", f.capability_id.to_string())
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        r#"{"jsonrpc":"2.0","id":7,"method":"SendMessage","params":{"text":"hi"}}"#,
+                    ))
+                    .unwrap(),
+            )
             .await
             .unwrap();
-        assert_eq!(res.status(), StatusCode::NOT_IMPLEMENTED);
+        assert_eq!(res.status(), StatusCode::OK);
         let body = parse_body(res).await;
-        assert_eq!(body["error"]["data"]["code"], "chk.not_implemented_yet");
-        assert_eq!(body["error"]["data"]["ships_in"], "D5");
+        // JSON-RPC envelope echoes the original id and embeds the Task.
+        assert_eq!(body["id"], 7);
+        let task = &body["result"];
+        assert!(task["id"].is_string(), "Task.id present");
+        assert_eq!(task["status"]["state"], "submitted");
+
+        // Underlying invocation row is pending and assigned to the
+        // target as granter (so its inbox.serve loop will pick it up).
+        let row = sqlx::query!(
+            r#"SELECT status, granter_agent_id, grantee_agent_id, capability_id, input_preview
+                 FROM relay_invocations LIMIT 1"#,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row.status, "pending");
+        assert_eq!(row.granter_agent_id, Some(f.target_agent_id));
+        assert_eq!(row.grantee_agent_id, Some(f.caller_agent_id));
+        assert_eq!(row.capability_id, Some(f.capability_id));
+        // input_preview holds SendMessage params — the granter SDK's
+        // existing `inbox.serve()` handler sees the same shape it
+        // always saw (backward compat with v0.1.0 SDK contract).
+        assert_eq!(
+            row.input_preview,
+            Some(serde_json::json!({"text": "hi"}))
+        );
     }
 
     /// Promote the fixture's target agent to push mode by giving it
