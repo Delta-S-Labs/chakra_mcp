@@ -84,6 +84,8 @@ pub fn router(state: RelayState) -> Router {
         .route("/mcp", post(handlers::mcp::handle))
         // ─── A2A: JWKS for verifying our Agent Card signatures ─
         .route("/.well-known/jwks.json", get(handlers::jwks::get_jwks))
+        // ─── Discovery search (D10a) ──────────────────────────
+        .route("/v1/discovery/agents", get(handlers::discovery::search))
         // ─── A2A: published Agent Card per registered agent ────
         .route(
             "/agents/{account_slug}/{agent_slug}/.well-known/agent-card.json",

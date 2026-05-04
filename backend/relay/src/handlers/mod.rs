@@ -1,6 +1,7 @@
 pub mod a2a;
 pub mod agents;
 pub mod capabilities;
+pub mod discovery;
 pub mod friendships;
 pub mod grants;
 pub mod health;

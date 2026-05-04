@@ -1,0 +1,89 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH q AS (\n            SELECT\n                a.id,\n                a.account_id,\n                a.slug         AS agent_slug,\n                a.display_name,\n                a.description,\n                a.mode,\n                a.tags,\n                a.friend_count,\n                a.created_at,\n                acc.slug       AS account_slug,\n                acc.verified_at IS NOT NULL AS verified\n              FROM agents a\n              JOIN accounts acc ON acc.id = a.account_id\n             WHERE a.tombstoned_at  IS NULL\n               AND acc.tombstoned_at IS NULL\n               AND a.visibility = 'network'\n               AND ($1::text IS NULL OR a.search_vec @@ to_tsquery('simple', $1::text))\n               AND ($2::jsonb   IS NULL OR EXISTS (\n                       SELECT 1 FROM agent_capabilities c\n                        WHERE c.agent_id = a.id AND c.output_schema @> $2::jsonb))\n               AND ($3::text    IS NULL OR a.mode = $3::text)\n               AND ($4::boolean IS NULL OR (acc.verified_at IS NOT NULL) = $4::boolean)\n               AND ($5::text[]  IS NULL OR a.tags @> $5::text[])\n               -- Cursor: rows strictly after the previous page's last\n               -- (created_at, id). Tuple ordering is the stable sort.\n               AND ($6::timestamptz IS NULL OR\n                    (a.created_at, a.id) < ($6::timestamptz, $7::uuid))\n             ORDER BY a.created_at DESC, a.id DESC\n             LIMIT $8 + 1\n        )\n        SELECT\n            id          AS \"id!\",\n            account_id  AS \"account_id!\",\n            agent_slug  AS \"agent_slug!\",\n            account_slug AS \"account_slug!\",\n            display_name AS \"display_name!\",\n            description AS \"description!\",\n            mode        AS \"mode!\",\n            tags        AS \"tags!\",\n            friend_count AS \"friend_count!\",\n            created_at  AS \"created_at!\",\n            verified    AS \"verified!\"\n          FROM q\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "agent_slug!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "account_slug!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "display_name!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "description!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "mode!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "tags!",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 8,
+        "name": "friend_count!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "verified!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Jsonb",
+        "Text",
+        "Bool",
+        "TextArray",
+        "Timestamptz",
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "35dc5c2b6c9c1d1de19a785d504a12e440618969cd4782eab685ab70ec2b810a"
+}
