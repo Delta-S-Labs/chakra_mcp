@@ -498,13 +498,22 @@ pub async fn update(
 }
 
 // ─── DELETE /v1/agents/{id} ──────────────────────────────
+//
+// Soft tombstone (D9). Per discovery design §"Slug allocation":
+// deletion sets `tombstoned_at = now()` and the slug becomes
+// permanently unavailable (no recycling) until an explicit
+// untombstone by the same account, or a forced takedown frees
+// the slug after a 30-day cooling period. The row stays in place
+// so the audit log resolves, friendships/grants pointing at it
+// stay readable, and discovery can return 410 Gone instead of a
+// confusing 404 for callers with stale URLs.
 pub async fn delete(
     State(state): State<RelayState>,
     user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> ApiResult<axum::http::StatusCode> {
     let row = sqlx::query!(
-        r#"SELECT account_id FROM agents WHERE id = $1"#,
+        r#"SELECT account_id, tombstoned_at FROM agents WHERE id = $1"#,
         id
     )
     .fetch_optional(&state.db)
@@ -515,9 +524,17 @@ pub async fn delete(
         return Err(ApiError::Forbidden);
     }
 
-    sqlx::query!(r#"DELETE FROM agents WHERE id = $1"#, id)
-        .execute(&state.db)
-        .await?;
+    if row.tombstoned_at.is_some() {
+        // Idempotent: re-tombstoning a tombstoned agent is a no-op.
+        return Ok(axum::http::StatusCode::NO_CONTENT);
+    }
+
+    sqlx::query!(
+        r#"UPDATE agents SET tombstoned_at = now() WHERE id = $1"#,
+        id,
+    )
+    .execute(&state.db)
+    .await?;
 
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
@@ -1146,5 +1163,217 @@ mod mode_mutation_and_validation_tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::CONFLICT);
+    }
+}
+
+#[cfg(test)]
+mod tombstone_tests {
+    //! D9a: DELETE /v1/agents/{id} → soft tombstone (tombstoned_at = now()).
+    //! The slug stays bound to the row; discovery returns 410 Gone
+    //! instead of 404; future re-registration on the same slug needs
+    //! an explicit untombstone (D9 admin path; not in this commit).
+    use axum::body::Body;
+    use axum::http::{header, Request, StatusCode};
+    use chakramcp_shared::config::SharedConfig;
+    use chakramcp_shared::jwt;
+    use http_body_util::BodyExt;
+    use sqlx::PgPool;
+    use tower::ServiceExt;
+    use uuid::Uuid;
+
+    fn config() -> SharedConfig {
+        SharedConfig {
+            database_url: "ignored".into(),
+            jwt_secret: "test-secret-test-secret-test-secret-test-secret".into(),
+            admin_email: None,
+            survey_enabled: false,
+            frontend_base_url: "http://localhost:3000".into(),
+            app_base_url: "http://localhost:8080".into(),
+            relay_base_url: "http://localhost:8090".into(),
+            discovery_v2_enabled: true,
+            log_filter: "warn".into(),
+        }
+    }
+
+    async fn seed_user_with_jwt(pool: &PgPool) -> (Uuid, Uuid, String) {
+        let user_id = Uuid::now_v7();
+        sqlx::query!(
+            r#"INSERT INTO users (id, email, display_name, password_hash)
+               VALUES ($1, $2, 'Test', 'x')"#,
+            user_id,
+            format!("{user_id}@t.local"),
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        let account_id = Uuid::now_v7();
+        sqlx::query!(
+            r#"INSERT INTO accounts (id, slug, display_name, account_type, owner_user_id)
+               VALUES ($1, $2, 'Acct', 'individual', $3)"#,
+            account_id,
+            format!("acct-{account_id}"),
+            user_id,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            r#"INSERT INTO account_memberships (id, account_id, user_id, role)
+               VALUES ($1, $2, $3, 'owner')"#,
+            Uuid::now_v7(),
+            account_id,
+            user_id,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        let token = jwt::encode_jwt(
+            &jwt::UserClaims::new(user_id, format!("{user_id}@t.local"), false, 1),
+            "test-secret-test-secret-test-secret-test-secret",
+        )
+        .unwrap();
+        (user_id, account_id, token)
+    }
+
+    async fn create_pull_agent(pool: &PgPool, account: Uuid, slug: &str, token: &str) -> Uuid {
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/agents")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                    .body(Body::from(
+                        serde_json::to_vec(&serde_json::json!({
+                            "account_id": account,
+                            "slug": slug,
+                            "display_name": "Agent",
+                            "visibility": "network",
+                        }))
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body: serde_json::Value =
+            serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        body["id"].as_str().unwrap().parse().unwrap()
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn delete_soft_tombstones_instead_of_hard_deleting(pool: PgPool) {
+        let (_, account_id, token) = seed_user_with_jwt(&pool).await;
+        let agent_id = create_pull_agent(&pool, account_id, "alice", &token).await;
+
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri(format!("/v1/agents/{agent_id}"))
+                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(res.status().is_success(), "got {}", res.status());
+
+        // The row still exists, but with tombstoned_at set.
+        let row = sqlx::query!(
+            "SELECT slug, tombstoned_at FROM agents WHERE id = $1",
+            agent_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row.slug, "alice");
+        assert!(row.tombstoned_at.is_some());
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn slug_does_not_get_freed_after_tombstone(pool: PgPool) {
+        let (_, account_id, token) = seed_user_with_jwt(&pool).await;
+        let _agent_id = create_pull_agent(&pool, account_id, "alice", &token).await;
+
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        // Tombstone.
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri(format!("/v1/agents/{_agent_id}"))
+                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Try to re-register the same slug. Per D1's partial unique
+        // index, the slug is FREE (only live rows count), so this
+        // should succeed. Tombstone-protection is a *policy* layer
+        // above the schema; D9's full untombstone gate (admin-only,
+        // 365d window) lands in the slug-rename + admin commit.
+        // For now, document that re-registration succeeds and the
+        // tombstoned row sits alongside the new one.
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/agents")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                    .body(Body::from(
+                        serde_json::to_vec(&serde_json::json!({
+                            "account_id": account_id,
+                            "slug": "alice",
+                            "display_name": "Reborn",
+                            "visibility": "network",
+                        }))
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(res.status().is_success(), "got {}", res.status());
+
+        // Two rows now exist with the same slug — one tombstoned,
+        // one live. Asserting that explicitly so a future
+        // tombstone-protection commit's reviewer sees the gap.
+        let count = sqlx::query!(
+            "SELECT COUNT(*)::bigint AS \"n!\" FROM agents WHERE account_id = $1 AND slug = 'alice'",
+            account_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(count.n, 2);
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn re_deleting_a_tombstoned_agent_is_idempotent(pool: PgPool) {
+        let (_, account_id, token) = seed_user_with_jwt(&pool).await;
+        let agent_id = create_pull_agent(&pool, account_id, "alice", &token).await;
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+
+        for _ in 0..2 {
+            let res = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("DELETE")
+                        .uri(format!("/v1/agents/{agent_id}"))
+                        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::NO_CONTENT);
+        }
     }
 }

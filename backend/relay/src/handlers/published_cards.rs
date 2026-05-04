@@ -74,14 +74,17 @@ pub async fn get_agent_card(
         }
     };
 
-    // (2) Resolve agent.
+    // (2) Resolve agent. We deliberately fetch tombstoned rows too,
+    // so we can serve a clean 410 Gone with a stable error code
+    // (chk.target.tombstoned) instead of a 404 — callers with a
+    // stale URL learn the shape from the wire, not from us.
     let agent_row = match sqlx::query!(
         r#"
-        SELECT id, slug, display_name, description, mode, agent_card_cached
+        SELECT id, slug, display_name, description, mode, agent_card_cached,
+               tombstoned_at
           FROM agents
          WHERE account_id = $1
            AND slug       = $2
-           AND tombstoned_at IS NULL
         "#,
         account.id,
         agent_slug,
@@ -96,6 +99,9 @@ pub async fn get_agent_card(
             return internal_error();
         }
     };
+    if agent_row.tombstoned_at.is_some() {
+        return tombstoned_response();
+    }
 
     // (3) Build the unsigned card. Two paths:
     //
@@ -213,6 +219,20 @@ fn not_found(msg: &'static str) -> Response {
         StatusCode::NOT_FOUND,
         [(header::CONTENT_TYPE, "application/json")],
         Json(serde_json::json!({ "error": msg })),
+    )
+        .into_response()
+}
+
+/// 410 Gone with stable code so generic A2A clients distinguish
+/// "this slug is dead, don't retry" from a transient 404.
+fn tombstoned_response() -> Response {
+    (
+        StatusCode::GONE,
+        [(header::CONTENT_TYPE, "application/json")],
+        Json(serde_json::json!({
+            "error": "agent tombstoned (slug retired)",
+            "code": "chk.target.tombstoned",
+        })),
     )
         .into_response()
 }
@@ -471,7 +491,7 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "../migrations")]
-    async fn returns_404_when_agent_is_tombstoned(pool: PgPool) {
+    async fn returns_410_gone_when_agent_is_tombstoned(pool: PgPool) {
         let (_, agent_id, _) = seed_pull_agent(&pool, "acme-corp", "alice").await;
         sqlx::query!(
             "UPDATE agents SET tombstoned_at = now() WHERE id = $1",
@@ -493,7 +513,10 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        assert_eq!(res.status(), StatusCode::GONE);
+        let body = res.into_body().collect().await.unwrap().to_bytes();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["code"], "chk.target.tombstoned");
     }
 
     /// Spin up a tiny axum upstream that serves an Agent Card body at
