@@ -43,6 +43,16 @@ use crate::state::RelayState;
 const DEFAULT_PAGE_SIZE: i64 = 20;
 const MAX_PAGE_SIZE: i64 = 100;
 
+/// Cap free-text query length. Defends the FTS path from cheap
+/// DoS via 1 MB query strings — a normal user types a handful of
+/// words.
+const MAX_Q_LEN: usize = 500;
+
+/// Cap `capability_schema` JSON length. The JSONB containment
+/// path is index-backed but parsing a 1 MB schema is still
+/// wasted work.
+const MAX_CAP_SCHEMA_LEN: usize = 4096;
+
 /// Query string for `GET /v1/discovery/agents`.
 #[derive(Debug, Deserialize)]
 pub struct DiscoveryQuery {
@@ -96,6 +106,13 @@ pub async fn search(
         .limit
         .unwrap_or(DEFAULT_PAGE_SIZE)
         .clamp(1, MAX_PAGE_SIZE);
+
+    if q.q.as_deref().map(str::len).unwrap_or(0) > MAX_Q_LEN {
+        return invalid_request("q is too long");
+    }
+    if q.capability_schema.as_deref().map(str::len).unwrap_or(0) > MAX_CAP_SCHEMA_LEN {
+        return invalid_request("capability_schema is too long");
+    }
 
     let cursor = match q.cursor.as_deref().map(decode_cursor).transpose() {
         Ok(c) => c,
@@ -167,7 +184,7 @@ pub async fn search(
             verified    AS "verified!"
           FROM q
         "#,
-        q.q.as_deref().map(to_tsquery),
+        q.q.as_deref().and_then(to_tsquery),
         capability_schema_json,
         mode,
         q.verified,
@@ -221,7 +238,7 @@ pub async fn search(
                AND ($4::boolean IS NULL OR (acc.verified_at IS NOT NULL) = $4::boolean)
                AND ($5::text[]  IS NULL OR a.tags @> $5::text[])
             "#,
-            q.q.as_deref().map(to_tsquery),
+            q.q.as_deref().and_then(to_tsquery),
             capability_schema_json,
             mode,
             q.verified,
@@ -289,10 +306,16 @@ fn decode_cursor(s: &str) -> Result<CursorState, ()> {
     serde_json::from_slice(&bytes).map_err(|_| ())
 }
 
-/// Convert a free-text query into a Postgres tsquery. Splits on
-/// whitespace, ANDs the terms, escapes any reserved characters.
-fn to_tsquery(q: &str) -> String {
-    q.split_whitespace()
+/// Convert a free-text query into a Postgres tsquery, or None if
+/// nothing useful survives sanitization. Splits on whitespace,
+/// strips non-alphanumeric (except `-` and `_`), suffixes each
+/// surviving token with `:*` for prefix match, AND-combines.
+/// Returning None here is important: passing an empty string to
+/// `to_tsquery('simple', '')` errors at the database, so the SQL
+/// parameter must be NULL when there's nothing to match.
+fn to_tsquery(q: &str) -> Option<String> {
+    let sanitized = q
+        .split_whitespace()
         .filter(|t| !t.is_empty())
         .map(|t| {
             t.chars()
@@ -302,7 +325,12 @@ fn to_tsquery(q: &str) -> String {
         .filter(|t| !t.is_empty())
         .map(|t| format!("{t}:*"))
         .collect::<Vec<_>>()
-        .join(" & ")
+        .join(" & ");
+    if sanitized.is_empty() {
+        None
+    } else {
+        Some(sanitized)
+    }
 }
 
 fn parse_jsonb(s: &str) -> Result<serde_json::Value, serde_json::Error> {
@@ -695,6 +723,50 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn punctuation_only_q_does_not_500(pool: PgPool) {
+        // Self-review #2: ?q=... reduces to an empty tsquery via
+        // sanitization. Postgres `to_tsquery('simple', '')` errors,
+        // so the handler MUST treat empty post-sanitization as "no
+        // query" rather than passing the empty string through.
+        seed_account(&pool, "acme", false).await;
+        let body = search_url(pool, "?q=...").await;
+        assert!(body["agents"].is_array());
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn rejects_overlong_q(pool: PgPool) {
+        let app = crate::router(crate::state::RelayState::new(pool, config()));
+        let big = "x".repeat(600);
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/v1/discovery/agents?q={big}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn rejects_overlong_capability_schema(pool: PgPool) {
+        let app = crate::router(crate::state::RelayState::new(pool, config()));
+        // 5 KB > MAX_CAP_SCHEMA_LEN (4 KB).
+        let big = "%7B".to_string() + &"a".repeat(5_000) + "%7D";
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/v1/discovery/agents?capability_schema={big}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
     }
 
     #[sqlx::test(migrations = "../migrations")]

@@ -122,6 +122,22 @@
   transform: translateY(-1px);
 }
 
+.reset {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.85rem;
+  color: var(--ink-soft, #6b6258);
+  text-decoration: none;
+  padding: 0.55rem 0.9rem;
+  border: 1px solid var(--line, #e6decd);
+  border-radius: 0.5rem;
+  background: white;
+}
+
+.reset:hover {
+  background: var(--accent-butter, #f5d34a);
+  color: var(--ink, #2a2620);
+}
+
 .summary {
   font-size: 0.95rem;
   color: var(--ink-soft, #6b6258);

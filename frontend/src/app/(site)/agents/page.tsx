@@ -133,6 +133,11 @@ export default async function AgentsPage({
           <button type="submit" className={styles.submit}>
             Apply
           </button>
+          {hasActiveFilter(sp) && (
+            <Link href="/agents" className={styles.reset}>
+              Reset
+            </Link>
+          )}
         </fieldset>
       </form>
 
@@ -153,6 +158,16 @@ export default async function AgentsPage({
       {data.next_cursor && <NextPageLink params={params} cursor={data.next_cursor} />}
     </main>
   );
+}
+
+function hasActiveFilter(sp: {
+  q?: string;
+  mode?: string;
+  verified?: string;
+  tags?: string;
+  cursor?: string;
+}): boolean {
+  return Boolean(sp.q || sp.mode || sp.verified || sp.tags || sp.cursor);
 }
 
 function Summary({ count, total }: { count: number; total?: number }) {
