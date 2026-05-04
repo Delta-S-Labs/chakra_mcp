@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE slug_aliases\n                  SET created_at = now() - interval '100 days',\n                      expires_at = now() - interval '1 second'\n                WHERE account_id = $1 AND old_slug = 'alice'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b91a525288093aeedea8e3fbc18cd780084c965282652ab51f476633bdfa774b"
+}

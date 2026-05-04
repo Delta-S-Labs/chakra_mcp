@@ -74,6 +74,37 @@ pub async fn get_agent_card(
         }
     };
 
+    // (1b) Slug-alias resolution: if the requested agent_slug was
+    // previously renamed, 301-redirect to the new slug so external
+    // bookmarks survive (per discovery design §"Rename redirects").
+    // Multiple renames collapse to the head of the chain via repeated
+    // resolution — bounded at 8 hops to defend against pathological
+    // cycles.
+    if let Some(target) = match resolve_alias(&state.db, account.id, &agent_slug).await {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::error!(error = %e, "slug alias lookup failed");
+            return internal_error();
+        }
+    } {
+        let location = format!(
+            "/agents/{}/{}/.well-known/agent-card.json",
+            account_slug, target
+        );
+        return (
+            StatusCode::MOVED_PERMANENTLY,
+            [
+                (header::LOCATION, location.as_str()),
+                (header::CACHE_CONTROL, "public, max-age=300"),
+            ],
+            Json(serde_json::json!({
+                "moved_to_slug": target,
+                "code": "chk.target.renamed",
+            })),
+        )
+            .into_response();
+    }
+
     // (2) Resolve agent. We deliberately fetch tombstoned rows too,
     // so we can serve a clean 410 Gone with a stable error code
     // (chk.target.tombstoned) instead of a 404 — callers with a
@@ -221,6 +252,42 @@ fn not_found(msg: &'static str) -> Response {
         Json(serde_json::json!({ "error": msg })),
     )
         .into_response()
+}
+
+/// Resolve a slug rename. Returns Some(head_slug) if the input
+/// slug is an alias whose target should be redirected to.
+/// Returns None if the slug isn't an alias (live agent or
+/// genuinely missing). Walks rename chains transitively up to a
+/// bounded depth to collapse to the head — A→B→C returns C, not B.
+async fn resolve_alias(
+    db: &sqlx::PgPool,
+    account_id: uuid::Uuid,
+    starting_slug: &str,
+) -> Result<Option<String>, sqlx::Error> {
+    let mut cur = starting_slug.to_string();
+    for _ in 0..8 {
+        let row = sqlx::query!(
+            r#"SELECT new_slug FROM slug_aliases
+                WHERE scope = 'agent'
+                  AND account_id = $1
+                  AND old_slug = $2
+                  AND expires_at > now()"#,
+            account_id,
+            cur,
+        )
+        .fetch_optional(db)
+        .await?;
+        match row {
+            Some(r) if r.new_slug == cur => break, // cycle / self-alias, defensive
+            Some(r) => cur = r.new_slug,
+            None => break,
+        }
+    }
+    if cur == starting_slug {
+        Ok(None)
+    } else {
+        Ok(Some(cur))
+    }
 }
 
 /// 410 Gone with stable code so generic A2A clients distinguish
