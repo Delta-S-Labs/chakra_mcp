@@ -1,0 +1,288 @@
+.main {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 4rem 1.5rem 6rem;
+}
+
+.header {
+  margin-bottom: 2rem;
+}
+
+.eyebrow {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.78rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-soft, #6b6258);
+  margin-bottom: 0.5rem;
+}
+
+.header h1 {
+  font-family: var(--font-display, "Archivo Expanded", sans-serif);
+  font-weight: 800;
+  font-size: clamp(2.2rem, 4vw, 3.4rem);
+  line-height: 1;
+  letter-spacing: -0.04em;
+  margin: 0 0 1rem;
+}
+
+.lede {
+  font-size: 1.05rem;
+  line-height: 1.6;
+  color: var(--ink-soft, #6b6258);
+  max-width: 60ch;
+}
+
+/* ─── Filter form ─── */
+.controls {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  padding: 1.25rem;
+  border: 1px solid var(--line, #e6decd);
+  border-radius: 1.1rem;
+  background: var(--paper-soft, #fdf9ee);
+}
+
+.search {
+  width: 100%;
+  padding: 0.7rem 0.9rem;
+  font-size: 1rem;
+  font-family: inherit;
+  border: 1px solid var(--line, #e6decd);
+  border-radius: 0.6rem;
+  background: white;
+  color: var(--ink, #2a2620);
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.4rem;
+  align-items: center;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.filtersLegend {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft, #6b6258);
+  padding: 0;
+  margin-right: 0.5rem;
+}
+
+.filters label {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft, #6b6258);
+}
+
+.filters select,
+.filters input[type="text"] {
+  padding: 0.5rem 0.7rem;
+  font-size: 0.95rem;
+  font-family: inherit;
+  border: 1px solid var(--line, #e6decd);
+  border-radius: 0.5rem;
+  background: white;
+  color: var(--ink, #2a2620);
+}
+
+.checkbox {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 0.4rem !important;
+  margin-top: 1rem; /* align baseline-ish with the dropdowns */
+}
+
+.tags input[type="text"] {
+  width: 14rem;
+}
+
+.submit {
+  margin-left: auto;
+  padding: 0.55rem 1.1rem;
+  border: 1px solid var(--ink, #2a2620);
+  border-radius: 0.5rem;
+  background: var(--ink, #2a2620);
+  color: var(--paper, #faf3e3);
+  font-family: inherit;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.submit:hover {
+  transform: translateY(-1px);
+}
+
+.summary {
+  font-size: 0.95rem;
+  color: var(--ink-soft, #6b6258);
+  margin: 0 0 1rem;
+}
+
+/* ─── Card grid ─── */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1.1rem;
+  border: 1px solid var(--line, #e6decd);
+  border-radius: 1rem;
+  background: var(--paper-soft, #fdf9ee);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(80, 60, 40, 0.06);
+}
+
+.cardHead h3 {
+  font-family: var(--font-display, "Archivo Expanded", sans-serif);
+  font-weight: 700;
+  font-size: 1.15rem;
+  margin: 0 0 0.25rem;
+  letter-spacing: -0.02em;
+}
+
+.cardHead a {
+  color: var(--ink, #2a2620);
+  text-decoration: none;
+}
+
+.cardHead a:hover {
+  text-decoration: underline;
+}
+
+.cardSlug {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  font-size: 0.78rem;
+  color: var(--ink-soft, #6b6258);
+  margin: 0;
+}
+
+.cardSlug code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  background: rgba(255, 255, 255, 0.5);
+  padding: 0.05rem 0.35rem;
+  border-radius: 0.3rem;
+}
+
+.verified {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.3rem;
+  background: var(--accent-lime, #c5e060);
+  color: var(--ink, #2a2620);
+}
+
+.modePush,
+.modePull {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.3rem;
+  border: 1px solid var(--line, #e6decd);
+  background: white;
+}
+
+.modePush {
+  border-color: var(--accent-coral, #e35d4c);
+  color: var(--accent-coral, #e35d4c);
+}
+
+.cardBody {
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: var(--ink, #2a2620);
+  margin: 0;
+}
+
+.cardTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  list-style: none;
+  padding: 0;
+  margin: 0.2rem 0 0;
+}
+
+.cardTags a {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.72rem;
+  color: var(--ink-soft, #6b6258);
+  text-decoration: none;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.3rem;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.cardTags a:hover {
+  background: var(--accent-butter, #f5d34a);
+  color: var(--ink, #2a2620);
+}
+
+/* ─── Empty state ─── */
+.empty {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--ink-soft, #6b6258);
+  border: 1px dashed var(--line, #e6decd);
+  border-radius: 1rem;
+}
+
+.emptyHint {
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+}
+
+.emptyHint code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  background: rgba(255, 255, 255, 0.5);
+  padding: 0.05rem 0.3rem;
+  border-radius: 0.25rem;
+}
+
+/* ─── Pager ─── */
+.pager {
+  margin-top: 2rem;
+  text-align: center;
+}
+
+.pager a {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.95rem;
+  color: var(--ink, #2a2620);
+  text-decoration: none;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--line, #e6decd);
+  border-radius: 0.5rem;
+  background: var(--paper-soft, #fdf9ee);
+}
+
+.pager a:hover {
+  background: var(--accent-butter, #f5d34a);
+}
