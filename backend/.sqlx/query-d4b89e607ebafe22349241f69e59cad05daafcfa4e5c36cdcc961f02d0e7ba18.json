@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO agents (id, account_id, slug, display_name, visibility)\n               VALUES ($1, $2, 'private-bot', 'Private', 'private')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d4b89e607ebafe22349241f69e59cad05daafcfa4e5c36cdcc961f02d0e7ba18"
+}

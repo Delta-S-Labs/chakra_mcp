@@ -25,8 +25,17 @@ jsonwebtoken = { workspace = true }
 sha2 = { workspace = true }
 rand = { workspace = true }
 hex = { workspace = true }
+base64 = { workspace = true }
+ed25519-dalek = { workspace = true }
+reqwest = { workspace = true }
+url = "2"
+bytes = "1"
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 dotenvy = { workspace = true }
+
+[dev-dependencies]
+tower = { workspace = true }
+http-body-util = "0.1"

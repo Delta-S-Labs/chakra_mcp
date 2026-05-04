@@ -7,8 +7,13 @@ use axum::Router;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
+pub mod agent_card;
 pub mod auth;
+pub mod forwarder;
 pub mod handlers;
+pub mod inbox_bridge;
+pub mod jwt_mint;
+pub mod policy;
 pub mod state;
 
 pub use state::RelayState;
@@ -77,6 +82,24 @@ pub fn router(state: RelayState) -> Router {
             get(handlers::mcp::protected_resource_metadata),
         )
         .route("/mcp", post(handlers::mcp::handle))
+        // ─── A2A: JWKS for verifying our Agent Card signatures ─
+        .route("/.well-known/jwks.json", get(handlers::jwks::get_jwks))
+        // ─── Discovery search (D10a) ──────────────────────────
+        .route("/v1/discovery/agents", get(handlers::discovery::search))
+        // ─── A2A: published Agent Card per registered agent ────
+        .route(
+            "/agents/{account_slug}/{agent_slug}/.well-known/agent-card.json",
+            get(handlers::published_cards::get_agent_card),
+        )
+        // ─── A2A: JSON-RPC + streaming endpoints (stubs until D5) ─
+        .route(
+            "/agents/{account_slug}/{agent_slug}/a2a/jsonrpc",
+            post(handlers::a2a::jsonrpc_stub),
+        )
+        .route(
+            "/agents/{account_slug}/{agent_slug}/a2a/stream",
+            post(handlers::a2a::stream_stub),
+        )
         .with_state(state)
         .layer(cors)
         .layer(TraceLayer::new_for_http())

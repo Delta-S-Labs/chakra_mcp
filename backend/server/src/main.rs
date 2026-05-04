@@ -171,6 +171,27 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
     let pool: PgPool = db::connect(&cfg.shared.database_url).await?;
     sqlx::migrate!("../migrations").run(&pool).await?;
 
+    // Spawn the Agent Card refresh job before mounting the routers
+    // so it picks up any push-mode rows immediately on startup. Only
+    // active when DISCOVERY_V2 is on; otherwise the job idles and
+    // wastes a connection.
+    let refresh_shutdown = if cfg.shared.discovery_v2_enabled {
+        use chakramcp_relay::agent_card::refresh_job::{
+            spawn as spawn_refresh_job, DEFAULT_STALENESS_SECONDS, DEFAULT_TICK_INTERVAL_SECONDS,
+        };
+        tracing::info!(
+            "DISCOVERY_V2 enabled — spawning Agent Card refresh job (server mode)"
+        );
+        Some(spawn_refresh_job(
+            pool.clone(),
+            cfg.shared.relay_base_url.clone(),
+            DEFAULT_TICK_INTERVAL_SECONDS,
+            DEFAULT_STALENESS_SECONDS,
+        ))
+    } else {
+        None
+    };
+
     let app_state = AppState::new(pool.clone(), cfg.shared.clone());
     let relay_state = RelayState::new(pool, cfg.shared.clone());
 
@@ -207,6 +228,11 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
             tracing::warn!("relay server stopped — initiating shutdown");
         }
     }
+    // Stop the refresh loop cleanly so its current tick (if any)
+    // can finish before the DB pool drops.
+    if let Some(tx) = refresh_shutdown {
+        let _ = tx.send(true);
+    }
     Ok(())
 }
 
@@ -228,6 +254,7 @@ struct ServerFile {
     frontend_base_url: Option<String>,
     app_base_url: Option<String>,
     relay_base_url: Option<String>,
+    discovery_v2_enabled: Option<bool>,
     app_port: Option<u16>,
     relay_port: Option<u16>,
     log_filter: Option<String>,
@@ -293,6 +320,12 @@ fn load_config(explicit_path: Option<PathBuf>) -> Result<ServerConfig> {
         .or(from_file.relay_base_url)
         .unwrap_or_else(|| "http://localhost:8090".into());
 
+    let discovery_v2_enabled = std::env::var("DISCOVERY_V2")
+        .ok()
+        .map(|s| matches!(s.trim().to_lowercase().as_str(), "true" | "1" | "yes" | "on"))
+        .or(from_file.discovery_v2_enabled)
+        .unwrap_or(false);
+
     let log_filter = std::env::var("RUST_LOG")
         .ok()
         .or(from_file.log_filter)
@@ -318,6 +351,7 @@ fn load_config(explicit_path: Option<PathBuf>) -> Result<ServerConfig> {
             frontend_base_url,
             app_base_url,
             relay_base_url,
+            discovery_v2_enabled,
             log_filter,
         },
         app_port,
@@ -354,6 +388,7 @@ impl Default for ServerFile {
             frontend_base_url: None,
             app_base_url: None,
             relay_base_url: None,
+            discovery_v2_enabled: None,
             app_port: None,
             relay_port: None,
             log_filter: None,

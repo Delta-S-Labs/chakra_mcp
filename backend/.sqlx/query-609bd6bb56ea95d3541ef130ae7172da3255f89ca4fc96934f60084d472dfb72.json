@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM grants",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "609bd6bb56ea95d3541ef130ae7172da3255f89ca4fc96934f60084d472dfb72"
+}

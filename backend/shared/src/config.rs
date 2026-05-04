@@ -23,6 +23,12 @@ pub struct SharedConfig {
     pub app_base_url: String,
     /// Public-facing base URL for the chakramcp-relay service.
     pub relay_base_url: String,
+    /// A2A discovery v2 feature flag (the migration described in
+    /// `docs/specs/2026-04-29-discovery-implementation-plan.md`).
+    /// When false, new A2A surfaces (Agent Card serve, JWKS, A2A
+    /// JSON-RPC routes) return 404. Defaults to false until the
+    /// cutover phase D14.
+    pub discovery_v2_enabled: bool,
     pub log_filter: String,
 }
 
@@ -52,6 +58,11 @@ impl SharedConfig {
         let relay_base_url = env::var("RELAY_BASE_URL")
             .unwrap_or_else(|_| "http://localhost:8090".to_string());
 
+        let discovery_v2_enabled = env::var("DISCOVERY_V2")
+            .ok()
+            .map(|s| matches!(s.trim().to_lowercase().as_str(), "true" | "1" | "yes" | "on"))
+            .unwrap_or(false);
+
         let log_filter = env::var("RUST_LOG")
             .unwrap_or_else(|_| "info,chakramcp_app=debug,chakramcp_relay=debug,sqlx=warn".to_string());
 
@@ -63,6 +74,7 @@ impl SharedConfig {
             frontend_base_url,
             app_base_url,
             relay_base_url,
+            discovery_v2_enabled,
             log_filter,
         })
     }

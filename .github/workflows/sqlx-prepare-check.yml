@@ -1,0 +1,95 @@
+name: sqlx prepare check
+
+# Verifies that the committed backend/.sqlx/ offline cache is in sync
+# with the source. Local workflow: contributors should run
+#   cargo sqlx prepare --workspace -- --tests
+# from backend/ before committing any new query!() / query_as!() macro
+# usage. This CI job catches forgotten preparations.
+
+on:
+  push:
+    branches: [main, "feature/**"]
+    paths:
+      - "backend/**/*.rs"
+      - "backend/**/Cargo.toml"
+      - "backend/Cargo.lock"
+      - "backend/migrations/**"
+      - "backend/.sqlx/**"
+      - ".github/workflows/sqlx-prepare-check.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "backend/**/*.rs"
+      - "backend/**/Cargo.toml"
+      - "backend/Cargo.lock"
+      - "backend/migrations/**"
+      - "backend/.sqlx/**"
+      - ".github/workflows/sqlx-prepare-check.yml"
+
+concurrency:
+  group: sqlx-prepare-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify .sqlx cache is up to date
+    runs-on: ubuntu-22.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: chakramcp
+          POSTGRES_PASSWORD: chakramcp
+          POSTGRES_DB: chakramcp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U chakramcp"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgres://chakramcp:chakramcp@localhost:5432/chakramcp
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+          key: sqlx-prepare
+
+      - name: Install sqlx-cli
+        run: |
+          cargo install --locked --version 0.8 sqlx-cli --no-default-features --features rustls,postgres
+          sqlx --version
+
+      - name: Apply migrations
+        run: sqlx migrate run --source migrations
+
+      # `cargo sqlx prepare --workspace --check` exits non-zero if the
+      # committed cache differs from what the live DB + source would
+      # produce. The friendly error message at the bottom tells the
+      # contributor exactly what to do locally.
+      - name: Check .sqlx cache is current
+        run: |
+          set -e
+          if ! cargo sqlx prepare --workspace --check -- --tests; then
+            echo ""
+            echo "::error::The committed backend/.sqlx/ cache is stale."
+            echo ""
+            echo "Run this from backend/ locally and commit the result:"
+            echo "    cargo sqlx prepare --workspace -- --tests"
+            echo ""
+            echo "Make sure your local DATABASE_URL points at a Postgres"
+            echo "with all migrations applied (task db:up && sqlx migrate run)."
+            exit 1
+          fi

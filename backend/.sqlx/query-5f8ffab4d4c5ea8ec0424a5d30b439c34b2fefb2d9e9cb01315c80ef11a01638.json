@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT new_slug, expires_at, created_at FROM slug_aliases\n                WHERE scope = 'agent' AND account_id = $1 AND old_slug = 'alice'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "new_slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "5f8ffab4d4c5ea8ec0424a5d30b439c34b2fefb2d9e9cb01315c80ef11a01638"
+}

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO agents (id, account_id, slug, display_name, mode, agent_card_url)\n               VALUES ($1, $2, $3, 'Push', 'push', $4)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "022a0af45e8d538fed0513e4ea2d28e99a990fcd505547d0415522cc637a44a7"
+}

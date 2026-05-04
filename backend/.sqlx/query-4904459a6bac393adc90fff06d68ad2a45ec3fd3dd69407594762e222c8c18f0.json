@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT new_slug FROM slug_aliases\n                WHERE scope = 'agent' AND account_id = $1 AND old_slug = 'alice'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "new_slug",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4904459a6bac393adc90fff06d68ad2a45ec3fd3dd69407594762e222c8c18f0"
+}

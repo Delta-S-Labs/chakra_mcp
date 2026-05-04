@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT COUNT(*)::bigint AS \"n!\"\n              FROM agents a\n              JOIN accounts acc ON acc.id = a.account_id\n             WHERE a.tombstoned_at  IS NULL\n               AND acc.tombstoned_at IS NULL\n               AND a.visibility = 'network'\n               AND ($1::text IS NULL OR a.search_vec @@ to_tsquery('simple', $1::text))\n               AND ($2::jsonb   IS NULL OR EXISTS (\n                       SELECT 1 FROM agent_capabilities c\n                        WHERE c.agent_id = a.id AND c.output_schema @> $2::jsonb))\n               AND ($3::text    IS NULL OR a.mode = $3::text)\n               AND ($4::boolean IS NULL OR (acc.verified_at IS NOT NULL) = $4::boolean)\n               AND ($5::text[]  IS NULL OR a.tags @> $5::text[])\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Jsonb",
+        "Text",
+        "Bool",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "c0afc6ecb9cd6749011ff623619f8d42ffc028adbb8dc4f71250ee14b0b8e1f7"
+}
