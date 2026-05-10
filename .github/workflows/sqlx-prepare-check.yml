@@ -69,7 +69,9 @@ jobs:
 
       - name: Install sqlx-cli
         run: |
-          cargo install --locked --version 0.8 sqlx-cli --no-default-features --features rustls,postgres
+          # cargo's version flag now requires a full semver (>=1.95);
+          # earlier toolchains accepted "0.8" as a major.minor shortcut.
+          cargo install --locked --version ^0.8 sqlx-cli --no-default-features --features rustls,postgres
           sqlx --version
 
       - name: Apply migrations
