@@ -29,11 +29,7 @@ use reqwest::header;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::agent_card::{
-    fetcher::CachedCardEnvelope,
-    keys::KeyStore,
-    types::AgentCard,
-};
+use crate::agent_card::{fetcher::CachedCardEnvelope, keys::KeyStore, types::AgentCard};
 use crate::jwt_mint::{mint_for_proxied_call, DEFAULT_TTL_SECONDS};
 use crate::policy::Authorized;
 
@@ -82,7 +78,10 @@ pub async fn forward_push(
     request_body: Bytes,
     request_headers: &HeaderMap,
 ) -> Result<ForwardOutcome, ForwardError> {
-    debug_assert!(authz.target_is_push, "forward_push called for non-push target");
+    debug_assert!(
+        authz.target_is_push,
+        "forward_push called for non-push target"
+    );
 
     // (1) Resolve upstream endpoint from the cached card.
     let upstream_url = load_upstream_endpoint(db, authz.target_agent_id).await?;
@@ -286,9 +285,7 @@ mod tests {
         last: Arc<std::sync::Mutex<Option<CapturedRequest>>>,
         hits: Arc<AtomicUsize>,
         responder: Box<
-            dyn Fn(usize) -> (StatusCode, Vec<(&'static str, &'static str)>, Vec<u8>)
-                + Send
-                + Sync,
+            dyn Fn(usize) -> (StatusCode, Vec<(&'static str, &'static str)>, Vec<u8>) + Send + Sync,
         >,
     }
 
@@ -561,10 +558,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(outcome.http_status, 200);
-        assert_eq!(
-            outcome.content_type.as_deref(),
-            Some("application/json")
-        );
+        assert_eq!(outcome.content_type.as_deref(), Some("application/json"));
         assert!(String::from_utf8_lossy(&outcome.body).contains("\"ok\":true"));
 
         // Upstream got our request with a bearer JWT we can verify.
@@ -629,11 +623,10 @@ mod tests {
         .unwrap();
         assert_eq!(outcome.http_status, 500);
 
-        let row =
-            sqlx::query!("SELECT status, http_status FROM relay_invocations LIMIT 1")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let row = sqlx::query!("SELECT status, http_status FROM relay_invocations LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         assert_eq!(row.status, "failed");
         assert_eq!(row.http_status, Some(500));
     }
@@ -659,12 +652,10 @@ mod tests {
         assert!(matches!(r, Err(ForwardError::Transport(_))));
 
         // An audit row should still be persisted with status='failed'.
-        let row = sqlx::query!(
-            "SELECT status, error_message FROM relay_invocations LIMIT 1",
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+        let row = sqlx::query!("SELECT status, error_message FROM relay_invocations LIMIT 1",)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         assert_eq!(row.status, "failed");
         assert!(row.error_message.is_some());
     }

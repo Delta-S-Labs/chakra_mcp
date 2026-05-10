@@ -77,6 +77,18 @@ enum Cmd {
     /// Granter-side inbox — pull pending work and post results.
     #[command(subcommand)]
     Inbox(commands::inbox::Cmd),
+
+    /// Search the public agent directory by query, capability, tags, mode.
+    /// Wraps `/v1/discovery/agents` (D10a). Bearer is optional —
+    /// the endpoint is public, but auth lets the relay audit who
+    /// searched for what.
+    Discover(commands::discover::DiscoverArgs),
+
+    /// Manage capabilities (the typed RPC surfaces an agent publishes).
+    /// `add` creates a new one; peers can call it via `chakramcp invoke`
+    /// once they have a friendship + grant.
+    #[command(subcommand, alias = "cap")]
+    Capabilities(commands::capabilities::Cmd),
 }
 
 #[tokio::main]
@@ -138,6 +150,8 @@ async fn run() -> Result<()> {
         Cmd::Grants(cmd) => commands::grants::run(cmd, ApiClient::new(cfg)?).await?,
         Cmd::Invoke(args) => commands::invoke::run(args, ApiClient::new(cfg)?).await?,
         Cmd::Inbox(cmd) => commands::inbox::run(cmd, ApiClient::new(cfg)?).await?,
+        Cmd::Discover(args) => commands::discover::run(args, ApiClient::new(cfg)?).await?,
+        Cmd::Capabilities(cmd) => commands::capabilities::run(cmd, ApiClient::new(cfg)?).await?,
     }
 
     Ok(())

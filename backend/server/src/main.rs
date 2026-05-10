@@ -104,8 +104,7 @@ fn init(
     rand::thread_rng().fill_bytes(&mut secret_bytes);
     let jwt_secret = hex::encode(secret_bytes);
 
-    let database_url =
-        database_url.unwrap_or_else(|| "postgres:///chakramcp".to_string());
+    let database_url = database_url.unwrap_or_else(|| "postgres:///chakramcp".to_string());
 
     let admin_line = match admin_email.as_deref() {
         Some(e) if !e.is_empty() => format!("admin_email = \"{e}\"\n"),
@@ -158,7 +157,10 @@ async fn migrate(explicit_path: Option<PathBuf>) -> Result<()> {
         .run(&pool)
         .await
         .context("running migrations")?;
-    eprintln!("migrations applied to {}", redact_url(&cfg.shared.database_url));
+    eprintln!(
+        "migrations applied to {}",
+        redact_url(&cfg.shared.database_url)
+    );
     Ok(())
 }
 
@@ -179,9 +181,7 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
         use chakramcp_relay::agent_card::refresh_job::{
             spawn as spawn_refresh_job, DEFAULT_STALENESS_SECONDS, DEFAULT_TICK_INTERVAL_SECONDS,
         };
-        tracing::info!(
-            "DISCOVERY_V2 enabled — spawning Agent Card refresh job (server mode)"
-        );
+        tracing::info!("DISCOVERY_V2 enabled — spawning Agent Card refresh job (server mode)");
         Some(spawn_refresh_job(
             pool.clone(),
             cfg.shared.relay_base_url.clone(),
@@ -270,10 +270,8 @@ fn load_config(explicit_path: Option<PathBuf>) -> Result<ServerConfig> {
         .as_ref()
         .filter(|p| p.exists())
         .map(|p| {
-            let raw = fs::read_to_string(p)
-                .with_context(|| format!("reading {}", p.display()))?;
-            toml::from_str::<ServerFile>(&raw)
-                .with_context(|| format!("parsing {}", p.display()))
+            let raw = fs::read_to_string(p).with_context(|| format!("reading {}", p.display()))?;
+            toml::from_str::<ServerFile>(&raw).with_context(|| format!("parsing {}", p.display()))
         })
         .transpose()?
         .unwrap_or_default_marker();
@@ -292,18 +290,19 @@ fn load_config(explicit_path: Option<PathBuf>) -> Result<ServerConfig> {
     let jwt_secret = std::env::var("JWT_SECRET")
         .ok()
         .or(from_file.jwt_secret)
-        .ok_or_else(|| {
-            anyhow!(
-                "JWT_SECRET is required — set it in env or in the config file"
-            )
-        })?;
+        .ok_or_else(|| anyhow!("JWT_SECRET is required — set it in env or in the config file"))?;
     let admin_email = std::env::var("ADMIN_EMAIL")
         .ok()
         .or(from_file.admin_email)
         .filter(|s| !s.trim().is_empty());
     let survey_enabled = std::env::var("SURVEY_ENABLED")
         .ok()
-        .map(|s| matches!(s.trim().to_lowercase().as_str(), "true" | "1" | "yes" | "on"))
+        .map(|s| {
+            matches!(
+                s.trim().to_lowercase().as_str(),
+                "true" | "1" | "yes" | "on"
+            )
+        })
         .or(from_file.survey_enabled)
         .unwrap_or(false);
 
@@ -322,7 +321,12 @@ fn load_config(explicit_path: Option<PathBuf>) -> Result<ServerConfig> {
 
     let discovery_v2_enabled = std::env::var("DISCOVERY_V2")
         .ok()
-        .map(|s| matches!(s.trim().to_lowercase().as_str(), "true" | "1" | "yes" | "on"))
+        .map(|s| {
+            matches!(
+                s.trim().to_lowercase().as_str(),
+                "true" | "1" | "yes" | "on"
+            )
+        })
         .or(from_file.discovery_v2_enabled)
         .unwrap_or(false);
 

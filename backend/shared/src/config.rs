@@ -44,27 +44,40 @@ impl SharedConfig {
         let jwt_secret = env::var("JWT_SECRET")
             .context("JWT_SECRET is required (generate with: openssl rand -hex 32)")?;
 
-        let admin_email = env::var("ADMIN_EMAIL").ok().filter(|s| !s.trim().is_empty());
+        let admin_email = env::var("ADMIN_EMAIL")
+            .ok()
+            .filter(|s| !s.trim().is_empty());
 
         let survey_enabled = env::var("SURVEY_ENABLED")
             .ok()
-            .map(|s| matches!(s.trim().to_lowercase().as_str(), "true" | "1" | "yes" | "on"))
+            .map(|s| {
+                matches!(
+                    s.trim().to_lowercase().as_str(),
+                    "true" | "1" | "yes" | "on"
+                )
+            })
             .unwrap_or(false);
 
-        let frontend_base_url = env::var("FRONTEND_BASE_URL")
-            .unwrap_or_else(|_| "http://localhost:3000".to_string());
-        let app_base_url = env::var("APP_BASE_URL")
-            .unwrap_or_else(|_| "http://localhost:8080".to_string());
-        let relay_base_url = env::var("RELAY_BASE_URL")
-            .unwrap_or_else(|_| "http://localhost:8090".to_string());
+        let frontend_base_url =
+            env::var("FRONTEND_BASE_URL").unwrap_or_else(|_| "http://localhost:3000".to_string());
+        let app_base_url =
+            env::var("APP_BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+        let relay_base_url =
+            env::var("RELAY_BASE_URL").unwrap_or_else(|_| "http://localhost:8090".to_string());
 
         let discovery_v2_enabled = env::var("DISCOVERY_V2")
             .ok()
-            .map(|s| matches!(s.trim().to_lowercase().as_str(), "true" | "1" | "yes" | "on"))
+            .map(|s| {
+                matches!(
+                    s.trim().to_lowercase().as_str(),
+                    "true" | "1" | "yes" | "on"
+                )
+            })
             .unwrap_or(false);
 
-        let log_filter = env::var("RUST_LOG")
-            .unwrap_or_else(|_| "info,chakramcp_app=debug,chakramcp_relay=debug,sqlx=warn".to_string());
+        let log_filter = env::var("RUST_LOG").unwrap_or_else(|_| {
+            "info,chakramcp_app=debug,chakramcp_relay=debug,sqlx=warn".to_string()
+        });
 
         Ok(Self {
             database_url,

@@ -53,6 +53,10 @@ const MAX_Q_LEN: usize = 500;
 /// wasted work.
 const MAX_CAP_SCHEMA_LEN: usize = 4096;
 
+/// Cap exact-name capability filter to slug-shaped values; longer
+/// strings are almost certainly a malformed query.
+const MAX_CAP_NAME_LEN: usize = 128;
+
 /// Query string for `GET /v1/discovery/agents`.
 #[derive(Debug, Deserialize)]
 pub struct DiscoveryQuery {
@@ -61,6 +65,13 @@ pub struct DiscoveryQuery {
     /// output_schema. Pass as a JSON string: e.g.
     /// `?capability_schema={"properties":{"slots":{}}}`.
     pub capability_schema: Option<String>,
+    /// Exact match against `agent_capabilities.name`. Cheaper than
+    /// `q` (which is full-text against vec'd description + tags +
+    /// capability text) and more reliable for the autopilot use
+    /// case where one agent searches for another that publishes a
+    /// specific capability by name. Mutually compatible with
+    /// `capability_schema` — both apply if both supplied.
+    pub capability: Option<String>,
     pub mode: Option<String>, // "push" | "pull"
     pub verified: Option<bool>,
     /// Comma-separated tags. All must match (AND).
@@ -95,17 +106,11 @@ pub struct DiscoveryResponse {
 }
 
 /// `GET /v1/discovery/agents`
-pub async fn search(
-    State(state): State<RelayState>,
-    Query(q): Query<DiscoveryQuery>,
-) -> Response {
+pub async fn search(State(state): State<RelayState>, Query(q): Query<DiscoveryQuery>) -> Response {
     if !state.config.discovery_v2_enabled {
         return not_found("discovery not enabled");
     }
-    let limit = q
-        .limit
-        .unwrap_or(DEFAULT_PAGE_SIZE)
-        .clamp(1, MAX_PAGE_SIZE);
+    let limit = q.limit.unwrap_or(DEFAULT_PAGE_SIZE).clamp(1, MAX_PAGE_SIZE);
 
     if q.q.as_deref().map(str::len).unwrap_or(0) > MAX_Q_LEN {
         return invalid_request("q is too long");
@@ -113,6 +118,10 @@ pub async fn search(
     if q.capability_schema.as_deref().map(str::len).unwrap_or(0) > MAX_CAP_SCHEMA_LEN {
         return invalid_request("capability_schema is too long");
     }
+    if q.capability.as_deref().map(str::len).unwrap_or(0) > MAX_CAP_NAME_LEN {
+        return invalid_request("capability is too long");
+    }
+    let capability_name = q.capability.as_deref().filter(|s| !s.is_empty());
 
     let cursor = match q.cursor.as_deref().map(decode_cursor).transpose() {
         Ok(c) => c,
@@ -133,7 +142,12 @@ pub async fn search(
     let tags: Vec<String> = q
         .tags
         .as_deref()
-        .map(|s| s.split(',').map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).collect())
+        .map(|s| {
+            s.split(',')
+                .map(|t| t.trim().to_string())
+                .filter(|t| !t.is_empty())
+                .collect()
+        })
         .unwrap_or_default();
 
     let res = sqlx::query!(
@@ -163,6 +177,9 @@ pub async fn search(
                AND ($3::text    IS NULL OR a.mode = $3::text)
                AND ($4::boolean IS NULL OR (acc.verified_at IS NOT NULL) = $4::boolean)
                AND ($5::text[]  IS NULL OR a.tags @> $5::text[])
+               AND ($9::text    IS NULL OR EXISTS (
+                       SELECT 1 FROM agent_capabilities c
+                        WHERE c.agent_id = a.id AND c.name = $9::text))
                -- Cursor: rows strictly after the previous page's last
                -- (created_at, id). Tuple ordering is the stable sort.
                AND ($6::timestamptz IS NULL OR
@@ -188,10 +205,15 @@ pub async fn search(
         capability_schema_json,
         mode,
         q.verified,
-        if tags.is_empty() { None } else { Some(tags.as_slice()) },
+        if tags.is_empty() {
+            None
+        } else {
+            Some(tags.as_slice())
+        },
         cursor.as_ref().map(|c| c.created_at),
         cursor.as_ref().map(|c| c.id),
         limit as i32,
+        capability_name,
     )
     .fetch_all(&state.db)
     .await;
@@ -237,12 +259,20 @@ pub async fn search(
                AND ($3::text    IS NULL OR a.mode = $3::text)
                AND ($4::boolean IS NULL OR (acc.verified_at IS NOT NULL) = $4::boolean)
                AND ($5::text[]  IS NULL OR a.tags @> $5::text[])
+               AND ($6::text    IS NULL OR EXISTS (
+                       SELECT 1 FROM agent_capabilities c
+                        WHERE c.agent_id = a.id AND c.name = $6::text))
             "#,
             q.q.as_deref().and_then(to_tsquery),
             capability_schema_json,
             mode,
             q.verified,
-            if tags.is_empty() { None } else { Some(tags.as_slice()) },
+            if tags.is_empty() {
+                None
+            } else {
+                Some(tags.as_slice())
+            },
+            capability_name,
         )
         .fetch_one(&state.db)
         .await
@@ -495,8 +525,26 @@ mod tests {
     #[sqlx::test(migrations = "../migrations")]
     async fn lists_network_agents(pool: PgPool) {
         let acct = seed_account(&pool, "acme", false).await;
-        seed_agent(&pool, acct, "alice-bot", "Alice Bot", "Plans trips.", "pull", &[]).await;
-        seed_agent(&pool, acct, "bob-bot", "Bob Bot", "Books flights.", "pull", &[]).await;
+        seed_agent(
+            &pool,
+            acct,
+            "alice-bot",
+            "Alice Bot",
+            "Plans trips.",
+            "pull",
+            &[],
+        )
+        .await;
+        seed_agent(
+            &pool,
+            acct,
+            "bob-bot",
+            "Bob Bot",
+            "Books flights.",
+            "pull",
+            &[],
+        )
+        .await;
 
         let body = search_url(pool, "").await;
         let names: Vec<&str> = body["agents"]
@@ -513,8 +561,26 @@ mod tests {
     #[sqlx::test(migrations = "../migrations")]
     async fn full_text_search_matches_display_name(pool: PgPool) {
         let acct = seed_account(&pool, "acme", false).await;
-        seed_agent(&pool, acct, "alice-bot", "Alice Trip Planner", "Plans trips.", "pull", &[]).await;
-        seed_agent(&pool, acct, "bob-bot", "Bob Email Helper", "Sends email.", "pull", &[]).await;
+        seed_agent(
+            &pool,
+            acct,
+            "alice-bot",
+            "Alice Trip Planner",
+            "Plans trips.",
+            "pull",
+            &[],
+        )
+        .await;
+        seed_agent(
+            &pool,
+            acct,
+            "bob-bot",
+            "Bob Email Helper",
+            "Sends email.",
+            "pull",
+            &[],
+        )
+        .await;
 
         let body = search_url(pool, "?q=trip").await;
         let agents = body["agents"].as_array().unwrap();
@@ -525,7 +591,16 @@ mod tests {
     #[sqlx::test(migrations = "../migrations")]
     async fn full_text_search_matches_capability_text(pool: PgPool) {
         let acct = seed_account(&pool, "acme", false).await;
-        let alice = seed_agent(&pool, acct, "alice-bot", "Alice Bot", "Generic.", "pull", &[]).await;
+        let alice = seed_agent(
+            &pool,
+            acct,
+            "alice-bot",
+            "Alice Bot",
+            "Generic.",
+            "pull",
+            &[],
+        )
+        .await;
         add_capability(
             &pool,
             alice,
@@ -609,8 +684,26 @@ mod tests {
     #[sqlx::test(migrations = "../migrations")]
     async fn tags_filter_requires_all(pool: PgPool) {
         let acct = seed_account(&pool, "acme", false).await;
-        seed_agent(&pool, acct, "travel-bot", "Travel", "Plans.", "pull", &["travel", "booking"]).await;
-        seed_agent(&pool, acct, "email-bot", "Email", "Sends.", "pull", &["email"]).await;
+        seed_agent(
+            &pool,
+            acct,
+            "travel-bot",
+            "Travel",
+            "Plans.",
+            "pull",
+            &["travel", "booking"],
+        )
+        .await;
+        seed_agent(
+            &pool,
+            acct,
+            "email-bot",
+            "Email",
+            "Sends.",
+            "pull",
+            &["email"],
+        )
+        .await;
 
         let body = search_url(pool.clone(), "?tags=travel").await;
         let agents = body["agents"].as_array().unwrap();
@@ -628,10 +721,13 @@ mod tests {
         let acct = seed_account(&pool, "acme", false).await;
         let alive = seed_agent(&pool, acct, "alive", "Alive", "x", "pull", &[]).await;
         let dead = seed_agent(&pool, acct, "dead", "Dead", "x", "pull", &[]).await;
-        sqlx::query!("UPDATE agents SET tombstoned_at = now() WHERE id = $1", dead)
-            .execute(&pool)
-            .await
-            .unwrap();
+        sqlx::query!(
+            "UPDATE agents SET tombstoned_at = now() WHERE id = $1",
+            dead
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
 
         let body = search_url(pool, "").await;
         let agents = body["agents"].as_array().unwrap();
@@ -682,13 +778,23 @@ mod tests {
         assert_eq!(p1_agents.len(), 2);
         let cursor = page1["next_cursor"].as_str().unwrap();
 
-        let page2 = search_url(pool.clone(), &format!("?limit=2&cursor={}", urlencoding(cursor))).await;
+        let page2 = search_url(
+            pool.clone(),
+            &format!("?limit=2&cursor={}", urlencoding(cursor)),
+        )
+        .await;
         let p2_agents = page2["agents"].as_array().unwrap();
         assert_eq!(p2_agents.len(), 2);
 
         // No overlap.
-        let p1_slugs: Vec<&str> = p1_agents.iter().map(|a| a["agent_slug"].as_str().unwrap()).collect();
-        let p2_slugs: Vec<&str> = p2_agents.iter().map(|a| a["agent_slug"].as_str().unwrap()).collect();
+        let p1_slugs: Vec<&str> = p1_agents
+            .iter()
+            .map(|a| a["agent_slug"].as_str().unwrap())
+            .collect();
+        let p2_slugs: Vec<&str> = p2_agents
+            .iter()
+            .map(|a| a["agent_slug"].as_str().unwrap())
+            .collect();
         assert!(p1_slugs.iter().all(|s| !p2_slugs.contains(s)));
 
         // Page 1 has total_estimate; page 2 does not.

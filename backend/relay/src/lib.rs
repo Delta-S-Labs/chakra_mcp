@@ -56,10 +56,22 @@ pub fn router(state: RelayState) -> Router {
             get(handlers::friendships::list).post(handlers::friendships::propose),
         )
         .route("/v1/friendships/{id}", get(handlers::friendships::get_one))
-        .route("/v1/friendships/{id}/accept", post(handlers::friendships::accept))
-        .route("/v1/friendships/{id}/reject", post(handlers::friendships::reject))
-        .route("/v1/friendships/{id}/counter", post(handlers::friendships::counter))
-        .route("/v1/friendships/{id}/cancel", post(handlers::friendships::cancel))
+        .route(
+            "/v1/friendships/{id}/accept",
+            post(handlers::friendships::accept),
+        )
+        .route(
+            "/v1/friendships/{id}/reject",
+            post(handlers::friendships::reject),
+        )
+        .route(
+            "/v1/friendships/{id}/counter",
+            post(handlers::friendships::counter),
+        )
+        .route(
+            "/v1/friendships/{id}/cancel",
+            post(handlers::friendships::cancel),
+        )
         // ─── Grants ────────────────────────────────────
         .route(
             "/v1/grants",

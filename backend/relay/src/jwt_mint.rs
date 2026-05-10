@@ -414,6 +414,9 @@ mod tests {
         let t2 = mint_for_proxied_call(&sample_authz(), &key, now, 60).unwrap();
         let c1 = decode_relay_jwt(&t1, &[key.verifying_key()], now).unwrap();
         let c2 = decode_relay_jwt(&t2, &[key.verifying_key()], now).unwrap();
-        assert_ne!(c1.jti, c2.jti, "jti must be unique per mint for replay protection");
+        assert_ne!(
+            c1.jti, c2.jti,
+            "jti must be unique per mint for replay protection"
+        );
     }
 }

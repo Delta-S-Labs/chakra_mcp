@@ -136,7 +136,9 @@ pub fn synthesize_pull_card(
             extra: Default::default(),
         },
         security_schemes,
-        security_requirements: vec![SecurityRequirement { schemes: chakramcp_req }],
+        security_requirements: vec![SecurityRequirement {
+            schemes: chakramcp_req,
+        }],
         default_input_modes: vec![DEFAULT_MEDIA_TYPE.to_string()],
         default_output_modes: vec![DEFAULT_MEDIA_TYPE.to_string()],
         skills,
@@ -217,8 +219,7 @@ mod tests {
 
     #[test]
     fn url_uses_path_based_relay_endpoint() {
-        let card =
-            synthesize_pull_card(&agent("alice"), &[], "https://chakramcp.com").unwrap();
+        let card = synthesize_pull_card(&agent("alice"), &[], "https://chakramcp.com").unwrap();
         assert_eq!(card.supported_interfaces.len(), 1);
         assert_eq!(
             card.supported_interfaces[0].url,
@@ -230,8 +231,7 @@ mod tests {
 
     #[test]
     fn trailing_slash_on_base_is_normalized() {
-        let card =
-            synthesize_pull_card(&agent("alice"), &[], "https://chakramcp.com/").unwrap();
+        let card = synthesize_pull_card(&agent("alice"), &[], "https://chakramcp.com/").unwrap();
         assert_eq!(
             card.supported_interfaces[0].url,
             "https://chakramcp.com/agents/acme-corp/alice/a2a/jsonrpc"

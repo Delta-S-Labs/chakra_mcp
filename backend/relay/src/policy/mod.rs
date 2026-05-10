@@ -47,6 +47,4 @@ pub mod decision;
 pub mod evaluator;
 
 pub use decision::{Authorized, Decision, DenyReason};
-pub use evaluator::{
-    evaluate, CALLER_AGENT_HEADER, CAPABILITY_HEADER,
-};
+pub use evaluator::{evaluate, CALLER_AGENT_HEADER, CAPABILITY_HEADER};

@@ -61,7 +61,9 @@ pub async fn evaluate(
     };
 
     // ── 3-4: caller agent ─────────────────────────────────
-    let Some(caller_agent_id_str) = headers.get(CALLER_AGENT_HEADER).and_then(|v| v.to_str().ok())
+    let Some(caller_agent_id_str) = headers
+        .get(CALLER_AGENT_HEADER)
+        .and_then(|v| v.to_str().ok())
     else {
         return Decision::Denied(DenyReason::CallerAgentHeaderMissing);
     };
@@ -273,7 +275,9 @@ pub async fn resolve_caller_agent_for_get_task(
         Ok(None) => return Err(DenyReason::AuthInvalid),
         Err(_) => return Err(DenyReason::AuthInvalid),
     };
-    let Some(caller_agent_id_str) = headers.get(CALLER_AGENT_HEADER).and_then(|v| v.to_str().ok())
+    let Some(caller_agent_id_str) = headers
+        .get(CALLER_AGENT_HEADER)
+        .and_then(|v| v.to_str().ok())
     else {
         return Err(DenyReason::CallerAgentHeaderMissing);
     };
@@ -339,4 +343,3 @@ async fn resolve_bearer(
     }
     Ok(None)
 }
-

@@ -57,10 +57,7 @@ pub enum TickOutcome {
     /// Claimed a row but the fetch failed. The row's
     /// `agent_card_last_attempted_at` is bumped so we won't re-claim
     /// it for one staleness window.
-    FetchFailed {
-        agent_id: Uuid,
-        error: String,
-    },
+    FetchFailed { agent_id: Uuid, error: String },
 }
 
 /// Run a single tick: claim at most one stale push agent and refresh
@@ -202,7 +199,11 @@ mod tests {
             axum::extract::State(s): axum::extract::State<State>,
         ) -> axum::response::Response {
             s.hits.fetch_add(1, Ordering::SeqCst);
-            (StatusCode::OK, [("content-type", "application/json")], (*s.body).clone())
+            (
+                StatusCode::OK,
+                [("content-type", "application/json")],
+                (*s.body).clone(),
+            )
                 .into_response()
         }
         let app = axum::Router::new()
@@ -307,7 +308,13 @@ mod tests {
         let agent_id = seed_push_agent(&pool, acct, "pusher", &upstream.url).await;
 
         let f = Fetcher::new();
-        let outcome = tick(&pool, &f, "https://chakramcp.com", DEFAULT_STALENESS_SECONDS).await;
+        let outcome = tick(
+            &pool,
+            &f,
+            "https://chakramcp.com",
+            DEFAULT_STALENESS_SECONDS,
+        )
+        .await;
         assert_eq!(outcome, TickOutcome::Refreshed { agent_id });
         assert_eq!(upstream.hits.load(Ordering::SeqCst), 1);
 
@@ -399,7 +406,9 @@ mod tests {
         let f = Fetcher::new();
         let outcome = tick(&pool, &f, "https://r", DEFAULT_STALENESS_SECONDS).await;
         match outcome {
-            TickOutcome::FetchFailed { agent_id: returned, .. } => assert_eq!(returned, agent_id),
+            TickOutcome::FetchFailed {
+                agent_id: returned, ..
+            } => assert_eq!(returned, agent_id),
             other => panic!("expected FetchFailed, got {other:?}"),
         }
 
@@ -427,10 +436,13 @@ mod tests {
         let upstream = start_counting_upstream(sample_card()).await;
         let acct = seed_account(&pool, "acme").await;
         let agent_id = seed_push_agent(&pool, acct, "tombed", &upstream.url).await;
-        sqlx::query!("UPDATE agents SET tombstoned_at = now() WHERE id = $1", agent_id)
-            .execute(&pool)
-            .await
-            .unwrap();
+        sqlx::query!(
+            "UPDATE agents SET tombstoned_at = now() WHERE id = $1",
+            agent_id
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
 
         let f = Fetcher::new();
         let outcome = tick(&pool, &f, "https://r", DEFAULT_STALENESS_SECONDS).await;

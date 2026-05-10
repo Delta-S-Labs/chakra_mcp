@@ -81,6 +81,46 @@ impl ApiClient {
             .await?;
         decode(resp).await
     }
+
+    pub async fn patch_relay<T: DeserializeOwned, B: Serialize>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<T> {
+        let bearer = self.bearer()?;
+        let net = self.network()?;
+        let resp = self
+            .request(Method::PATCH, &net.relay_url, path)
+            .bearer_auth(bearer)
+            .json(body)
+            .send()
+            .await?;
+        decode(resp).await
+    }
+
+    pub async fn delete_relay<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
+        let bearer = self.bearer()?;
+        let net = self.network()?;
+        let resp = self
+            .request(Method::DELETE, &net.relay_url, path)
+            .bearer_auth(bearer)
+            .send()
+            .await?;
+        decode(resp).await
+    }
+
+    /// GET on the relay where the Bearer is optional — used for the
+    /// public discovery endpoint so an operator can browse the
+    /// network before signing in.
+    pub async fn get_relay_optional_auth<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
+        let net = self.network()?;
+        let mut req = self.request(Method::GET, &net.relay_url, path);
+        if let Some(bearer) = net.bearer() {
+            req = req.bearer_auth(bearer);
+        }
+        let resp = req.send().await?;
+        decode(resp).await
+    }
 }
 
 async fn decode<T: DeserializeOwned>(resp: Response) -> Result<T> {

@@ -22,7 +22,10 @@ async fn main() -> Result<()> {
     let state = AppState::new(pool, cfg.clone());
     let app = router(state);
 
-    let port: u16 = env::var("APP_PORT").ok().and_then(|s| s.parse().ok()).unwrap_or(8080);
+    let port: u16 = env::var("APP_PORT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(8080);
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     tracing::info!(%addr, "chakramcp-app starting");
     let listener = tokio::net::TcpListener::bind(addr).await?;

@@ -197,7 +197,11 @@ pub fn verify_card(card: &AgentCard, keys: &[VerifyingKey]) -> Result<(), Verify
         let parsed_sig = Signature::from_bytes(&sig_arr);
 
         let signing_input = format!("{}.{}", sig.protected, payload_b64);
-        return if key.inner.verify(signing_input.as_bytes(), &parsed_sig).is_ok() {
+        return if key
+            .inner
+            .verify(signing_input.as_bytes(), &parsed_sig)
+            .is_ok()
+        {
             Ok(())
         } else {
             Err(VerifyError::InvalidSignature)

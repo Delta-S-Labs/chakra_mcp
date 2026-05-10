@@ -93,7 +93,10 @@ pub async fn handle(
         "tools/list" => Ok(tools_list_result()),
         "tools/call" => call_tool(&state, &user, req.params).await,
         "ping" => Ok(json!({})),
-        _ => Err(rpc_err(ERR_METHOD_NOT_FOUND, format!("method '{}' not found", req.method))),
+        _ => Err(rpc_err(
+            ERR_METHOD_NOT_FOUND,
+            format!("method '{}' not found", req.method),
+        )),
     };
 
     if is_notification {
@@ -123,13 +126,21 @@ fn reply_err(id: Value, code: i32, message: impl Into<String>) -> Response {
         jsonrpc: "2.0",
         id,
         result: None,
-        error: Some(RpcError { code, message: message.into(), data: None }),
+        error: Some(RpcError {
+            code,
+            message: message.into(),
+            data: None,
+        }),
     })
     .into_response()
 }
 
 fn rpc_err(code: i32, message: impl Into<String>) -> RpcError {
-    RpcError { code, message: message.into(), data: None }
+    RpcError {
+        code,
+        message: message.into(),
+        data: None,
+    }
 }
 
 fn api_err_to_rpc(e: ApiError) -> RpcError {
@@ -142,7 +153,11 @@ fn api_err_to_rpc(e: ApiError) -> RpcError {
         Conflict(m) => (ERR_INVALID_REQUEST, m.clone()),
         Database(_) | Auth(_) | Internal(_) => (ERR_INTERNAL, e.to_string()),
     };
-    RpcError { code, message: msg, data: None }
+    RpcError {
+        code,
+        message: msg,
+        data: None,
+    }
 }
 
 // ─── initialize ──────────────────────────────────────────
@@ -281,7 +296,12 @@ async fn call_tool(state: &RelayState, user: &AuthUser, params: Value) -> Result
         "pull_inbox" => pull_inbox(&state.db, user, p.arguments).await,
         "respond" => respond(&state.db, user, p.arguments).await,
         "propose_friendship" => propose_friendship(&state.db, user, p.arguments).await,
-        other => return Err(rpc_err(ERR_INVALID_PARAMS, format!("unknown tool '{other}'"))),
+        other => {
+            return Err(rpc_err(
+                ERR_INVALID_PARAMS,
+                format!("unknown tool '{other}'"),
+            ))
+        }
     };
 
     match result {
@@ -328,17 +348,20 @@ async fn list_my_agents(db: &PgPool, user: &AuthUser) -> Result<Value, ApiError>
     .fetch_all(db)
     .await?;
 
-    Ok(json!(rows.into_iter().map(|r| json!({
-        "id": r.id,
-        "account_id": r.account_id,
-        "account_slug": r.account_slug,
-        "account_display_name": r.account_display_name,
-        "slug": r.slug,
-        "display_name": r.display_name,
-        "description": r.description,
-        "visibility": r.visibility,
-        "capability_count": r.capability_count,
-    })).collect::<Vec<_>>()))
+    Ok(json!(rows
+        .into_iter()
+        .map(|r| json!({
+            "id": r.id,
+            "account_id": r.account_id,
+            "account_slug": r.account_slug,
+            "account_display_name": r.account_display_name,
+            "slug": r.slug,
+            "display_name": r.display_name,
+            "description": r.description,
+            "visibility": r.visibility,
+            "capability_count": r.capability_count,
+        }))
+        .collect::<Vec<_>>()))
 }
 
 async fn list_network_agents(db: &PgPool, user: &AuthUser) -> Result<Value, ApiError> {
@@ -362,22 +385,27 @@ async fn list_network_agents(db: &PgPool, user: &AuthUser) -> Result<Value, ApiE
     .fetch_all(db)
     .await?;
 
-    Ok(json!(rows.into_iter().map(|r| json!({
-        "id": r.id,
-        "account_id": r.account_id,
-        "account_slug": r.account_slug,
-        "account_display_name": r.account_display_name,
-        "slug": r.slug,
-        "display_name": r.display_name,
-        "description": r.description,
-        "capability_count": r.capability_count,
-        "is_mine": r.is_mine,
-    })).collect::<Vec<_>>()))
+    Ok(json!(rows
+        .into_iter()
+        .map(|r| json!({
+            "id": r.id,
+            "account_id": r.account_id,
+            "account_slug": r.account_slug,
+            "account_display_name": r.account_display_name,
+            "slug": r.slug,
+            "display_name": r.display_name,
+            "description": r.description,
+            "capability_count": r.capability_count,
+            "is_mine": r.is_mine,
+        }))
+        .collect::<Vec<_>>()))
 }
 
 async fn list_grants(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
     #[derive(Deserialize, Default)]
-    struct A { direction: Option<String> }
+    struct A {
+        direction: Option<String>,
+    }
     let a: A = serde_json::from_value(args).unwrap_or_default();
     let direction = a.direction.as_deref().unwrap_or("all");
     let want_outbound = matches!(direction, "all" | "outbound");
@@ -403,24 +431,30 @@ async fn list_grants(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value,
     )
     .fetch_all(db).await?;
 
-    Ok(json!(rows.into_iter().map(|r| json!({
-        "id": r.id,
-        "status": r.status,
-        "granter_agent_id": r.granter_agent_id,
-        "granter_display_name": r.granter_display_name,
-        "grantee_agent_id": r.grantee_agent_id,
-        "grantee_display_name": r.grantee_display_name,
-        "capability_id": r.capability_id,
-        "capability_name": r.capability_name,
-        "granted_at": r.granted_at,
-        "expires_at": r.expires_at,
-        "revoked_at": r.revoked_at,
-    })).collect::<Vec<_>>()))
+    Ok(json!(rows
+        .into_iter()
+        .map(|r| json!({
+            "id": r.id,
+            "status": r.status,
+            "granter_agent_id": r.granter_agent_id,
+            "granter_display_name": r.granter_display_name,
+            "grantee_agent_id": r.grantee_agent_id,
+            "grantee_display_name": r.grantee_display_name,
+            "capability_id": r.capability_id,
+            "capability_name": r.capability_name,
+            "granted_at": r.granted_at,
+            "expires_at": r.expires_at,
+            "revoked_at": r.revoked_at,
+        }))
+        .collect::<Vec<_>>()))
 }
 
 async fn list_friendships(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
     #[derive(Deserialize, Default)]
-    struct A { direction: Option<String>, status: Option<String> }
+    struct A {
+        direction: Option<String>,
+        status: Option<String>,
+    }
     let a: A = serde_json::from_value(args).unwrap_or_default();
     let direction = a.direction.as_deref().unwrap_or("all");
     let want_outbound = matches!(direction, "all" | "outbound");
@@ -448,23 +482,30 @@ async fn list_friendships(db: &PgPool, user: &AuthUser, args: Value) -> Result<V
     )
     .fetch_all(db).await?;
 
-    Ok(json!(rows.into_iter().map(|r| json!({
-        "id": r.id,
-        "status": r.status,
-        "proposer_agent_id": r.proposer_agent_id,
-        "proposer_display_name": r.proposer_display_name,
-        "target_agent_id": r.target_agent_id,
-        "target_display_name": r.target_display_name,
-        "proposer_message": r.proposer_message,
-        "response_message": r.response_message,
-        "created_at": r.created_at,
-        "updated_at": r.updated_at,
-    })).collect::<Vec<_>>()))
+    Ok(json!(rows
+        .into_iter()
+        .map(|r| json!({
+            "id": r.id,
+            "status": r.status,
+            "proposer_agent_id": r.proposer_agent_id,
+            "proposer_display_name": r.proposer_display_name,
+            "target_agent_id": r.target_agent_id,
+            "target_display_name": r.target_display_name,
+            "proposer_message": r.proposer_message,
+            "response_message": r.response_message,
+            "created_at": r.created_at,
+            "updated_at": r.updated_at,
+        }))
+        .collect::<Vec<_>>()))
 }
 
 async fn invoke(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
     #[derive(Deserialize)]
-    struct A { grant_id: Uuid, grantee_agent_id: Uuid, input: Value }
+    struct A {
+        grant_id: Uuid,
+        grantee_agent_id: Uuid,
+        input: Value,
+    }
     let a: A = serde_json::from_value(args)
         .map_err(|e| ApiError::InvalidRequest(format!("bad invoke args: {e}")))?;
 
@@ -482,7 +523,9 @@ async fn invoke(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiE
         "#,
         a.grant_id,
     )
-    .fetch_optional(db).await?.ok_or(ApiError::NotFound)?;
+    .fetch_optional(db)
+    .await?
+    .ok_or(ApiError::NotFound)?;
 
     if row.grantee_agent_id != a.grantee_agent_id {
         return Err(ApiError::InvalidRequest(
@@ -494,7 +537,8 @@ async fn invoke(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiE
     }
     if row.grant_status != "active" {
         return Err(ApiError::Conflict(format!(
-            "grant is {}; only active grants can be invoked", row.grant_status
+            "grant is {}; only active grants can be invoked",
+            row.grant_status
         )));
     }
     if let Some(exp) = row.expires_at {
@@ -511,16 +555,26 @@ async fn invoke(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiE
              capability_name, invoked_by_user_id, status, input_preview)
         VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8)
         "#,
-        id, row.grant_id, row.granter_agent_id, row.grantee_agent_id,
-        row.capability_id, row.capability_name, user.user_id, a.input,
-    ).execute(db).await?;
+        id,
+        row.grant_id,
+        row.granter_agent_id,
+        row.grantee_agent_id,
+        row.capability_id,
+        row.capability_name,
+        user.user_id,
+        a.input,
+    )
+    .execute(db)
+    .await?;
 
     Ok(json!({ "invocation_id": id, "status": "pending" }))
 }
 
 async fn poll_invocation(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
     #[derive(Deserialize)]
-    struct A { invocation_id: Uuid }
+    struct A {
+        invocation_id: Uuid,
+    }
     let a: A = serde_json::from_value(args)
         .map_err(|e| ApiError::InvalidRequest(format!("bad poll args: {e}")))?;
 
@@ -538,8 +592,12 @@ async fn poll_invocation(db: &PgPool, user: &AuthUser, args: Value) -> Result<Va
         FROM relay_invocations i
         WHERE i.id = $2
         "#,
-        user.user_id, a.invocation_id,
-    ).fetch_optional(db).await?.ok_or(ApiError::NotFound)?;
+        user.user_id,
+        a.invocation_id,
+    )
+    .fetch_optional(db)
+    .await?
+    .ok_or(ApiError::NotFound)?;
 
     if !r.may_view {
         return Err(ApiError::NotFound);
@@ -560,14 +618,19 @@ async fn poll_invocation(db: &PgPool, user: &AuthUser, args: Value) -> Result<Va
 
 async fn pull_inbox(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
     #[derive(Deserialize)]
-    struct A { agent_id: Uuid, limit: Option<i64> }
+    struct A {
+        agent_id: Uuid,
+        limit: Option<i64>,
+    }
     let a: A = serde_json::from_value(args)
         .map_err(|e| ApiError::InvalidRequest(format!("bad pull_inbox args: {e}")))?;
     let limit = a.limit.unwrap_or(25).clamp(1, 100);
 
-    let agent_account = sqlx::query_scalar!(
-        r#"SELECT account_id FROM agents WHERE id = $1"#, a.agent_id,
-    ).fetch_optional(db).await?.ok_or(ApiError::NotFound)?;
+    let agent_account =
+        sqlx::query_scalar!(r#"SELECT account_id FROM agents WHERE id = $1"#, a.agent_id,)
+            .fetch_optional(db)
+            .await?
+            .ok_or(ApiError::NotFound)?;
     if !user_is_member(db, user.user_id, agent_account).await? {
         return Err(ApiError::Forbidden);
     }
@@ -588,8 +651,12 @@ async fn pull_inbox(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, 
         WHERE i.id = picked.id
         RETURNING i.id
         "#,
-        a.agent_id, limit, user.user_id,
-    ).fetch_all(&mut *tx).await?;
+        a.agent_id,
+        limit,
+        user.user_id,
+    )
+    .fetch_all(&mut *tx)
+    .await?;
     tx.commit().await?;
 
     if claimed.is_empty() {
@@ -608,17 +675,22 @@ async fn pull_inbox(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, 
         ORDER BY i.created_at ASC
         "#,
         &ids,
-    ).fetch_all(db).await?;
+    )
+    .fetch_all(db)
+    .await?;
 
-    Ok(json!(rows.into_iter().map(|r| json!({
-        "invocation_id": r.id,
-        "capability_name": r.capability_name,
-        "grantee_agent_id": r.grantee_agent_id,
-        "grantee_display_name": r.grantee_display_name,
-        "input": r.input_preview,
-        "created_at": r.created_at,
-        "claimed_at": r.claimed_at,
-    })).collect::<Vec<_>>()))
+    Ok(json!(rows
+        .into_iter()
+        .map(|r| json!({
+            "invocation_id": r.id,
+            "capability_name": r.capability_name,
+            "grantee_agent_id": r.grantee_agent_id,
+            "grantee_display_name": r.grantee_display_name,
+            "input": r.input_preview,
+            "created_at": r.created_at,
+            "claimed_at": r.claimed_at,
+        }))
+        .collect::<Vec<_>>()))
 }
 
 async fn respond(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
@@ -646,11 +718,15 @@ async fn respond(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, Api
         WHERE i.id = $1
         "#,
         a.invocation_id,
-    ).fetch_optional(db).await?.ok_or(ApiError::NotFound)?;
+    )
+    .fetch_optional(db)
+    .await?
+    .ok_or(ApiError::NotFound)?;
 
     if row.status != "in_progress" {
         return Err(ApiError::Conflict(format!(
-            "invocation is {}; only in_progress can be completed", row.status
+            "invocation is {}; only in_progress can be completed",
+            row.status
         )));
     }
     let granter_account = row.granter_account_id.ok_or(ApiError::Forbidden)?;
@@ -668,9 +744,14 @@ async fn respond(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, Api
         SET status = $2, elapsed_ms = $3, error_message = $4, output_preview = $5
         WHERE id = $1 AND status = 'in_progress'
         "#,
-        a.invocation_id, a.status, elapsed_ms,
-        a.error.as_deref(), a.output.unwrap_or(Value::Null),
-    ).execute(db).await?;
+        a.invocation_id,
+        a.status,
+        elapsed_ms,
+        a.error.as_deref(),
+        a.output.unwrap_or(Value::Null),
+    )
+    .execute(db)
+    .await?;
 
     Ok(json!({ "invocation_id": a.invocation_id, "status": a.status, "elapsed_ms": elapsed_ms }))
 }
@@ -691,15 +772,23 @@ async fn propose_friendship(db: &PgPool, user: &AuthUser, args: Value) -> Result
     }
 
     let proposer_account = sqlx::query_scalar!(
-        r#"SELECT account_id FROM agents WHERE id = $1"#, a.proposer_agent_id,
-    ).fetch_optional(db).await?.ok_or(ApiError::NotFound)?;
+        r#"SELECT account_id FROM agents WHERE id = $1"#,
+        a.proposer_agent_id,
+    )
+    .fetch_optional(db)
+    .await?
+    .ok_or(ApiError::NotFound)?;
     if !user_is_member(db, user.user_id, proposer_account).await? {
         return Err(ApiError::Forbidden);
     }
     // Confirm target exists.
     let _t = sqlx::query_scalar!(
-        r#"SELECT account_id FROM agents WHERE id = $1"#, a.target_agent_id,
-    ).fetch_optional(db).await?.ok_or(ApiError::NotFound)?;
+        r#"SELECT account_id FROM agents WHERE id = $1"#,
+        a.target_agent_id,
+    )
+    .fetch_optional(db)
+    .await?
+    .ok_or(ApiError::NotFound)?;
 
     let id = Uuid::now_v7();
     sqlx::query!(
@@ -707,9 +796,13 @@ async fn propose_friendship(db: &PgPool, user: &AuthUser, args: Value) -> Result
         INSERT INTO friendships (id, proposer_agent_id, target_agent_id, status, proposer_message)
         VALUES ($1, $2, $3, 'proposed', $4)
         "#,
-        id, a.proposer_agent_id, a.target_agent_id, a.proposer_message,
+        id,
+        a.proposer_agent_id,
+        a.target_agent_id,
+        a.proposer_message,
     )
-    .execute(db).await
+    .execute(db)
+    .await
     .map_err(|e| match e {
         sqlx::Error::Database(db_err) if db_err.code().as_deref() == Some("23505") => {
             ApiError::Conflict("a proposal between these agents is already in flight".into())

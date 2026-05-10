@@ -30,7 +30,8 @@ fn is_valid_slug(s: &str) -> bool {
     if s.contains("--") {
         return false;
     }
-    s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    s.chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
 /// Parse + normalize an Agent Card URL. Rejects non-http(s) schemes,
@@ -51,9 +52,7 @@ fn validate_agent_card_url(raw: &str) -> Result<String, ApiError> {
         ));
     }
     let mut parsed = url::Url::parse(raw).map_err(|_| {
-        ApiError::InvalidRequest(
-            "agent_card_url must be a valid absolute URL".into(),
-        )
+        ApiError::InvalidRequest("agent_card_url must be a valid absolute URL".into())
     })?;
     if !matches!(parsed.scheme(), "http" | "https") {
         return Err(ApiError::InvalidRequest(
@@ -303,7 +302,9 @@ pub async fn create(
     let slug = req.slug.trim().to_lowercase();
     let display_name = req.display_name.trim().to_string();
     if slug.is_empty() || display_name.is_empty() {
-        return Err(ApiError::InvalidRequest("slug and display_name are required".into()));
+        return Err(ApiError::InvalidRequest(
+            "slug and display_name are required".into(),
+        ));
     }
     // Slug rules per discovery design §"Slug allocation":
     //   ASCII a-z 0-9 -, length 3-32, no leading/trailing hyphen,
@@ -318,7 +319,9 @@ pub async fn create(
     }
     let visibility = req.visibility.as_deref().unwrap_or("private");
     if !matches!(visibility, "private" | "network") {
-        return Err(ApiError::InvalidRequest("visibility must be private|network".into()));
+        return Err(ApiError::InvalidRequest(
+            "visibility must be private|network".into(),
+        ));
     }
 
     if !user_is_member(&state.db, user.user_id, req.account_id).await? {
@@ -343,9 +346,7 @@ pub async fn create(
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty());
-    let agent_card_url = agent_card_url
-        .map(validate_agent_card_url)
-        .transpose()?;
+    let agent_card_url = agent_card_url.map(validate_agent_card_url).transpose()?;
     let mode = if agent_card_url.is_some() {
         "push"
     } else {
@@ -420,9 +421,13 @@ pub async fn update(
 
     if let Some(v) = req.visibility.as_deref() {
         if !matches!(v, "private" | "network") {
-            return Err(ApiError::InvalidRequest("visibility must be private|network".into()));
+            return Err(ApiError::InvalidRequest(
+                "visibility must be private|network".into(),
+            ));
         }
-        if v == "network" && !user_can_admin_account(&state.db, user.user_id, row.account_id).await? {
+        if v == "network"
+            && !user_can_admin_account(&state.db, user.user_id, row.account_id).await?
+        {
             return Err(ApiError::Forbidden);
         }
     }
@@ -436,7 +441,8 @@ pub async fn update(
         Some(new) => {
             if !is_valid_slug(&new) {
                 return Err(ApiError::InvalidRequest(
-                    "slug must be 3-32 chars of [a-z0-9-], no leading/trailing or double hyphens".into(),
+                    "slug must be 3-32 chars of [a-z0-9-], no leading/trailing or double hyphens"
+                        .into(),
                 ));
             }
             // Acquire the new slug. The partial unique index on
@@ -981,11 +987,13 @@ mod mode_mutation_and_validation_tests {
         .await;
         assert!(res.status().is_success(), "got {}", res.status());
 
-        let row =
-            sqlx::query!("SELECT mode, agent_card_url FROM agents WHERE id = $1", agent_id)
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let row = sqlx::query!(
+            "SELECT mode, agent_card_url FROM agents WHERE id = $1",
+            agent_id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
         assert_eq!(row.mode, "push");
         assert_eq!(
             row.agent_card_url.as_deref(),
@@ -1032,11 +1040,13 @@ mod mode_mutation_and_validation_tests {
         .await;
         assert!(res.status().is_success(), "got {}", res.status());
 
-        let row =
-            sqlx::query!("SELECT mode, agent_card_url FROM agents WHERE id = $1", agent_id)
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let row = sqlx::query!(
+            "SELECT mode, agent_card_url FROM agents WHERE id = $1",
+            agent_id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
         assert_eq!(row.mode, "pull");
         assert!(row.agent_card_url.is_none());
     }
@@ -1053,11 +1063,13 @@ mod mode_mutation_and_validation_tests {
         )
         .await;
         assert!(res.status().is_success());
-        let row =
-            sqlx::query!("SELECT mode, display_name FROM agents WHERE id = $1", agent_id)
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let row = sqlx::query!(
+            "SELECT mode, display_name FROM agents WHERE id = $1",
+            agent_id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
         assert_eq!(row.mode, "pull");
         assert_eq!(row.display_name, "Carol Updated");
     }

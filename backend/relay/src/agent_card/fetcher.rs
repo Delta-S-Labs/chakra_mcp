@@ -154,17 +154,17 @@ impl Fetcher {
             .get(header::ETAG)
             .and_then(|h| h.to_str().ok())
             .map(|s| s.to_string());
-        let max_age_seconds = parse_cache_control_max_age(resp.headers().get(header::CACHE_CONTROL))
-            .unwrap_or(MAX_REFRESH_INTERVAL_SECONDS)
-            .min(MAX_REFRESH_INTERVAL_SECONDS);
+        let max_age_seconds =
+            parse_cache_control_max_age(resp.headers().get(header::CACHE_CONTROL))
+                .unwrap_or(MAX_REFRESH_INTERVAL_SECONDS)
+                .min(MAX_REFRESH_INTERVAL_SECONDS);
 
         let bytes = resp
             .bytes()
             .await
             .map_err(|e| FetchError::Transport(e.to_string()))?;
-        let upstream: AgentCard = serde_json::from_slice(&bytes).map_err(|e| {
-            FetchError::InvalidUpstreamCard(format!("json parse failed: {e}"))
-        })?;
+        let upstream: AgentCard = serde_json::from_slice(&bytes)
+            .map_err(|e| FetchError::InvalidUpstreamCard(format!("json parse failed: {e}")))?;
 
         let normalized =
             normalize_for_publish(upstream.clone(), relay_base_url, account_slug, agent_slug);
@@ -184,7 +184,10 @@ fn parse_cache_control_max_age(value: Option<&header::HeaderValue>) -> Option<u6
     let s = value.and_then(|v| v.to_str().ok())?;
     for part in s.split(',') {
         let part = part.trim();
-        if let Some(v) = part.strip_prefix("max-age=").or_else(|| part.strip_prefix("s-maxage=")) {
+        if let Some(v) = part
+            .strip_prefix("max-age=")
+            .or_else(|| part.strip_prefix("s-maxage="))
+        {
             return v.trim().parse::<u64>().ok();
         }
     }
@@ -457,10 +460,7 @@ mod tests {
                     HeaderValue::from_static("application/json"),
                 );
                 if let Some(e) = s.etag {
-                    hdrs.insert(
-                        axum::http::header::ETAG,
-                        HeaderValue::from_str(e).unwrap(),
-                    );
+                    hdrs.insert(axum::http::header::ETAG, HeaderValue::from_str(e).unwrap());
                 }
                 if let Some(cc) = s.cache_control {
                     hdrs.insert(
@@ -648,7 +648,9 @@ mod tests {
             .await
             .unwrap();
         match outcome {
-            FetchOutcome::Fresh { max_age_seconds, .. } => {
+            FetchOutcome::Fresh {
+                max_age_seconds, ..
+            } => {
                 assert_eq!(max_age_seconds, MAX_REFRESH_INTERVAL_SECONDS);
             }
             other => panic!("expected Fresh, got {other:?}"),
@@ -682,9 +684,7 @@ mod tests {
     async fn malformed_upstream_json_is_invalid_card_error() {
         let server = TestUpstream::start("{not json".to_string(), None, None).await;
         let f = Fetcher::new();
-        let r = f
-            .fetch(&server.url(), None, "https://r", "a", "b")
-            .await;
+        let r = f.fetch(&server.url(), None, "https://r", "a", "b").await;
         assert!(matches!(r, Err(FetchError::InvalidUpstreamCard(_))));
     }
 
@@ -718,7 +718,13 @@ mod tests {
     async fn rejects_non_http_scheme() {
         let f = Fetcher::new();
         let r = f
-            .fetch("ftp://upstream.example.com/card", None, "https://r", "a", "b")
+            .fetch(
+                "ftp://upstream.example.com/card",
+                None,
+                "https://r",
+                "a",
+                "b",
+            )
             .await;
         assert!(matches!(r, Err(FetchError::BadUrl(_))));
     }
@@ -780,8 +786,7 @@ mod tests {
 
     #[sqlx::test(migrations = "../migrations")]
     async fn cache_card_for_agent_stores_envelope_and_marks_signed(pool: PgPool) {
-        let server =
-            TestUpstream::start(sample_upstream_card_json(), Some("\"v1\""), None).await;
+        let server = TestUpstream::start(sample_upstream_card_json(), Some("\"v1\""), None).await;
 
         let acct_id = Uuid::now_v7();
         let agent_id = Uuid::now_v7();
@@ -805,10 +810,9 @@ mod tests {
         .unwrap();
 
         let f = Fetcher::new();
-        let normalized =
-            cache_card_for_agent(&pool, &f, agent_id, "https://chakramcp.com")
-                .await
-                .unwrap();
+        let normalized = cache_card_for_agent(&pool, &f, agent_id, "https://chakramcp.com")
+            .await
+            .unwrap();
 
         assert_eq!(
             normalized.supported_interfaces[0].url,
@@ -838,8 +842,7 @@ mod tests {
 
     #[sqlx::test(migrations = "../migrations")]
     async fn cache_card_for_agent_uses_etag_on_subsequent_fetches(pool: PgPool) {
-        let server =
-            TestUpstream::start(sample_upstream_card_json(), Some("\"v1\""), None).await;
+        let server = TestUpstream::start(sample_upstream_card_json(), Some("\"v1\""), None).await;
 
         let acct_id = Uuid::now_v7();
         let agent_id = Uuid::now_v7();

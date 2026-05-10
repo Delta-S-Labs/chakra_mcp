@@ -263,16 +263,27 @@ pub async fn invoke(
 
     if row.grantee_agent_id != req.grantee_agent_id {
         let id = record_terminal(
-            &state.db, Some(row.grant_id), Some(row.granter_agent_id),
-            Some(row.grantee_agent_id), Some(row.capability_id), &row.capability_name,
-            user.user_id, "rejected", 0,
+            &state.db,
+            Some(row.grant_id),
+            Some(row.granter_agent_id),
+            Some(row.grantee_agent_id),
+            Some(row.capability_id),
+            &row.capability_name,
+            user.user_id,
+            "rejected",
+            0,
             Some("grantee_agent_id does not match the grant"),
             Some(&input_preview),
-        ).await?;
-        return Ok((StatusCode::BAD_REQUEST, Json(InvokeResponse {
-            invocation_id: id, status: "rejected".into(),
-            error: Some("grantee_agent_id does not match the grant".into()),
-        })));
+        )
+        .await?;
+        return Ok((
+            StatusCode::BAD_REQUEST,
+            Json(InvokeResponse {
+                invocation_id: id,
+                status: "rejected".into(),
+                error: Some("grantee_agent_id does not match the grant".into()),
+            }),
+        ));
     }
 
     // Caller must be a member of the grantee's account.
@@ -282,27 +293,58 @@ pub async fn invoke(
 
     // Grant must be active and not expired.
     if row.grant_status != "active" {
-        let msg = format!("grant is {}; only active grants can be invoked", row.grant_status);
+        let msg = format!(
+            "grant is {}; only active grants can be invoked",
+            row.grant_status
+        );
         let id = record_terminal(
-            &state.db, Some(row.grant_id), Some(row.granter_agent_id),
-            Some(row.grantee_agent_id), Some(row.capability_id), &row.capability_name,
-            user.user_id, "rejected", 0, Some(&msg), Some(&input_preview),
-        ).await?;
-        return Ok((StatusCode::CONFLICT, Json(InvokeResponse {
-            invocation_id: id, status: "rejected".into(), error: Some(msg),
-        })));
+            &state.db,
+            Some(row.grant_id),
+            Some(row.granter_agent_id),
+            Some(row.grantee_agent_id),
+            Some(row.capability_id),
+            &row.capability_name,
+            user.user_id,
+            "rejected",
+            0,
+            Some(&msg),
+            Some(&input_preview),
+        )
+        .await?;
+        return Ok((
+            StatusCode::CONFLICT,
+            Json(InvokeResponse {
+                invocation_id: id,
+                status: "rejected".into(),
+                error: Some(msg),
+            }),
+        ));
     }
     if let Some(exp) = row.expires_at {
         if exp <= Utc::now() {
             let msg = "grant has expired".to_string();
             let id = record_terminal(
-                &state.db, Some(row.grant_id), Some(row.granter_agent_id),
-                Some(row.grantee_agent_id), Some(row.capability_id), &row.capability_name,
-                user.user_id, "rejected", 0, Some(&msg), Some(&input_preview),
-            ).await?;
-            return Ok((StatusCode::CONFLICT, Json(InvokeResponse {
-                invocation_id: id, status: "rejected".into(), error: Some(msg),
-            })));
+                &state.db,
+                Some(row.grant_id),
+                Some(row.granter_agent_id),
+                Some(row.grantee_agent_id),
+                Some(row.capability_id),
+                &row.capability_name,
+                user.user_id,
+                "rejected",
+                0,
+                Some(&msg),
+                Some(&input_preview),
+            )
+            .await?;
+            return Ok((
+                StatusCode::CONFLICT,
+                Json(InvokeResponse {
+                    invocation_id: id,
+                    status: "rejected".into(),
+                    error: Some(msg),
+                }),
+            ));
         }
     }
 
@@ -327,9 +369,14 @@ pub async fn invoke(
     .execute(&state.db)
     .await?;
 
-    Ok((StatusCode::ACCEPTED, Json(InvokeResponse {
-        invocation_id: id, status: "pending".into(), error: None,
-    })))
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(InvokeResponse {
+            invocation_id: id,
+            status: "pending".into(),
+            error: None,
+        }),
+    ))
 }
 
 // ─── GET /v1/inbox?agent_id=X[&limit=N] ──────────────────
@@ -338,16 +385,17 @@ pub async fn inbox(
     user: AuthUser,
     Query(q): Query<InboxQuery>,
 ) -> ApiResult<Json<Vec<InvocationDto>>> {
-    let limit = q.limit.unwrap_or(INBOX_DEFAULT_LIMIT).clamp(1, INBOX_MAX_LIMIT);
+    let limit = q
+        .limit
+        .unwrap_or(INBOX_DEFAULT_LIMIT)
+        .clamp(1, INBOX_MAX_LIMIT);
 
     // Caller must be a member of the agent's account.
-    let agent_account = sqlx::query_scalar!(
-        r#"SELECT account_id FROM agents WHERE id = $1"#,
-        q.agent_id,
-    )
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(ApiError::NotFound)?;
+    let agent_account =
+        sqlx::query_scalar!(r#"SELECT account_id FROM agents WHERE id = $1"#, q.agent_id,)
+            .fetch_optional(&state.db)
+            .await?
+            .ok_or(ApiError::NotFound)?;
     if !user_is_member(&state.db, user.user_id, agent_account).await? {
         return Err(ApiError::Forbidden);
     }
@@ -562,7 +610,9 @@ pub async fn report_result(
     }
 
     // Wall time from enqueue to result.
-    let elapsed_ms = (Utc::now() - row.created_at).num_milliseconds().clamp(0, i32::MAX as i64) as i32;
+    let elapsed_ms = (Utc::now() - row.created_at)
+        .num_milliseconds()
+        .clamp(0, i32::MAX as i64) as i32;
     let output_preview = req.output.as_ref().map(truncate_for_audit);
 
     sqlx::query!(
@@ -600,7 +650,10 @@ pub async fn list(
         ));
     }
     if let Some(s) = q.status.as_deref() {
-        if !matches!(s, "pending" | "in_progress" | "rejected" | "succeeded" | "failed" | "timeout") {
+        if !matches!(
+            s,
+            "pending" | "in_progress" | "rejected" | "succeeded" | "failed" | "timeout"
+        ) {
             return Err(ApiError::InvalidRequest("invalid status".into()));
         }
     }
@@ -993,10 +1046,9 @@ mod legacy_v01_contract_tests {
             .await
             .unwrap();
         assert_eq!(poll_res.status(), StatusCode::OK);
-        let poll_body: serde_json::Value = serde_json::from_slice(
-            &poll_res.into_body().collect().await.unwrap().to_bytes(),
-        )
-        .unwrap();
+        let poll_body: serde_json::Value =
+            serde_json::from_slice(&poll_res.into_body().collect().await.unwrap().to_bytes())
+                .unwrap();
         assert_eq!(poll_body["status"], "pending");
 
         // ── Alice: GET /v1/inbox?agent_id=<alice-scheduler> ─
@@ -1036,10 +1088,9 @@ mod legacy_v01_contract_tests {
             .await
             .unwrap();
         assert_eq!(inbox_res.status(), StatusCode::OK);
-        let inbox_body: serde_json::Value = serde_json::from_slice(
-            &inbox_res.into_body().collect().await.unwrap().to_bytes(),
-        )
-        .unwrap();
+        let inbox_body: serde_json::Value =
+            serde_json::from_slice(&inbox_res.into_body().collect().await.unwrap().to_bytes())
+                .unwrap();
         // The legacy contract returns an array of invocations.
         let items = inbox_body
             .get("invocations")
@@ -1047,7 +1098,9 @@ mod legacy_v01_contract_tests {
             .and_then(|v| v.as_array())
             .expect("inbox response should contain an invocations array");
         assert!(
-            items.iter().any(|inv| inv["id"] == invocation_id.to_string()),
+            items
+                .iter()
+                .any(|inv| inv["id"] == invocation_id.to_string()),
             "Alice's inbox should include the parked invocation"
         );
 
@@ -1088,10 +1141,8 @@ mod legacy_v01_contract_tests {
             )
             .await
             .unwrap();
-        let poll2_body: serde_json::Value = serde_json::from_slice(
-            &poll2.into_body().collect().await.unwrap().to_bytes(),
-        )
-        .unwrap();
+        let poll2_body: serde_json::Value =
+            serde_json::from_slice(&poll2.into_body().collect().await.unwrap().to_bytes()).unwrap();
         assert_eq!(poll2_body["status"], "succeeded");
         assert_eq!(
             poll2_body["output_preview"]["slots"][0],

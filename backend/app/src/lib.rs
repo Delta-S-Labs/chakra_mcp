@@ -32,7 +32,10 @@ pub fn router(state: AppState) -> Router {
             get(handlers::oauth::metadata),
         )
         .route("/oauth/register", post(handlers::oauth::register))
-        .route("/oauth/clients/{client_id}", get(handlers::oauth::get_client))
+        .route(
+            "/oauth/clients/{client_id}",
+            get(handlers::oauth::get_client),
+        )
         .route("/oauth/issue-code", post(handlers::oauth::issue_code))
         .route("/oauth/token", post(handlers::oauth::token))
         // ─── Sign-in callback from frontend ────────────
@@ -46,12 +49,21 @@ pub fn router(state: AppState) -> Router {
             "/v1/me/survey",
             get(handlers::surveys::get_mine).post(handlers::surveys::submit),
         )
-        .route("/v1/orgs", get(handlers::orgs::list).post(handlers::orgs::create))
+        .route(
+            "/v1/orgs",
+            get(handlers::orgs::list).post(handlers::orgs::create),
+        )
         .route("/v1/orgs/{slug}", get(handlers::orgs::get_one))
         .route("/v1/orgs/{slug}/members", get(handlers::orgs::list_members))
-        .route("/v1/orgs/{slug}/invites", post(handlers::orgs::create_invite))
+        .route(
+            "/v1/orgs/{slug}/invites",
+            post(handlers::orgs::create_invite),
+        )
         .route("/v1/invites/{token}", get(handlers::orgs::preview_invite))
-        .route("/v1/invites/{token}/accept", post(handlers::orgs::accept_invite))
+        .route(
+            "/v1/invites/{token}/accept",
+            post(handlers::orgs::accept_invite),
+        )
         .route(
             "/v1/api-keys",
             get(handlers::api_keys::list).post(handlers::api_keys::create),

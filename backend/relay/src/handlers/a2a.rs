@@ -47,7 +47,10 @@ pub async fn jsonrpc_stub(
         Err(_) => return parse_error(),
     };
     let method = envelope.get("method").and_then(|v| v.as_str());
-    let req_id = envelope.get("id").cloned().unwrap_or(serde_json::Value::Null);
+    let req_id = envelope
+        .get("id")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
 
     match method {
         Some("SendMessage") => {
@@ -102,9 +105,7 @@ async fn handle_get_task(
     // check needed — those were enforced when the task was parked)
     // but we do need to verify the bearer + caller-agent ownership.
     let caller_agent_id = match crate::policy::evaluator::resolve_caller_agent_for_get_task(
-        &state.db,
-        headers,
-        state,
+        &state.db, headers, state,
     )
     .await
     {
@@ -682,7 +683,10 @@ mod tests {
     async fn deny_auth_missing(pool: PgPool) {
         let f = seed_full_fixture(&pool).await;
         let app = crate::router(crate::state::RelayState::new(pool, config_v2_on()));
-        let res = app.oneshot(req(&path_for(&f), None, None, None)).await.unwrap();
+        let res = app
+            .oneshot(req(&path_for(&f), None, None, None))
+            .await
+            .unwrap();
         assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
         let body = parse_body(res).await;
         assert_eq!(body["error"]["code"], -32000);
@@ -880,7 +884,10 @@ mod tests {
                 Request::builder()
                     .method("POST")
                     .uri(&path_for(&f))
-                    .header(header::AUTHORIZATION, format!("Bearer {}", f.api_key_plaintext))
+                    .header(
+                        header::AUTHORIZATION,
+                        format!("Bearer {}", f.api_key_plaintext),
+                    )
                     .header("X-ChakraMCP-Caller-Agent", f.caller_agent_id.to_string())
                     .header("X-ChakraMCP-Capability", f.capability_id.to_string())
                     .header(header::CONTENT_TYPE, "application/json")
@@ -915,21 +922,14 @@ mod tests {
         // input_preview holds SendMessage params — the granter SDK's
         // existing `inbox.serve()` handler sees the same shape it
         // always saw (backward compat with v0.1.0 SDK contract).
-        assert_eq!(
-            row.input_preview,
-            Some(serde_json::json!({"text": "hi"}))
-        );
+        assert_eq!(row.input_preview, Some(serde_json::json!({"text": "hi"})));
     }
 
     /// Promote the fixture's target agent to push mode by giving it
     /// an `agent_card_url` and a cached envelope pointing at the
     /// supplied upstream URL. The policy gate's TargetUnreachable
     /// check is bypassed by setting `agent_card_fetched_at = now()`.
-    async fn promote_target_to_push(
-        pool: &PgPool,
-        f: &Fixture,
-        upstream_url: &str,
-    ) {
+    async fn promote_target_to_push(pool: &PgPool, f: &Fixture, upstream_url: &str) {
         use crate::agent_card::fetcher::CachedCardEnvelope;
         use crate::agent_card::types::{
             AgentCapabilities, AgentCard, AgentInterface, A2A_PROTOCOL_VERSION,
@@ -1018,10 +1018,7 @@ mod tests {
                 .map(|s| s.to_string());
             (
                 AxumStatus::OK,
-                [(
-                    axum::http::header::CONTENT_TYPE,
-                    "application/json",
-                )],
+                [(axum::http::header::CONTENT_TYPE, "application/json")],
                 br#"{"jsonrpc":"2.0","id":1,"result":{"ok":true}}"#.to_vec(),
             )
                 .into_response()
@@ -1081,11 +1078,10 @@ mod tests {
         assert_eq!(claims.capability_id, f.capability_id.to_string());
 
         // Audit row written.
-        let row =
-            sqlx::query!("SELECT status, http_status FROM relay_invocations LIMIT 1")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let row = sqlx::query!("SELECT status, http_status FROM relay_invocations LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         assert_eq!(row.status, "succeeded");
         assert_eq!(row.http_status, Some(200));
     }
@@ -1138,7 +1134,8 @@ mod tests {
         if let Some(c) = capability {
             b = b.header("X-ChakraMCP-Capability", c);
         }
-        b.body(Body::from(serde_json::to_vec(&body).unwrap())).unwrap()
+        b.body(Body::from(serde_json::to_vec(&body).unwrap()))
+            .unwrap()
     }
 
     #[sqlx::test(migrations = "../migrations")]
@@ -1227,7 +1224,10 @@ mod tests {
         assert_eq!(get2_body["result"]["status"]["state"], "completed");
         let arts = get2_body["result"]["artifacts"].as_array().unwrap();
         assert_eq!(arts.len(), 1);
-        assert_eq!(arts[0]["parts"][0]["data"], serde_json::json!({"slots":[1,2,3]}));
+        assert_eq!(
+            arts[0]["parts"][0]["data"],
+            serde_json::json!({"slots":[1,2,3]})
+        );
     }
 
     #[sqlx::test(migrations = "../migrations")]
@@ -1300,7 +1300,10 @@ mod tests {
             ))
             .await
             .unwrap();
-        let task_id = parse_body(r).await["result"]["id"].as_str().unwrap().to_string();
+        let task_id = parse_body(r).await["result"]["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
 
         // Build a SECOND user who has no relationship to this task.
         let other_user = uuid::Uuid::now_v7();
@@ -1413,7 +1416,10 @@ mod tests {
                     .method("POST")
                     .uri(&path_for(&f))
                     .header(header::CONTENT_TYPE, "application/json")
-                    .header(header::AUTHORIZATION, format!("Bearer {}", f.api_key_plaintext))
+                    .header(
+                        header::AUTHORIZATION,
+                        format!("Bearer {}", f.api_key_plaintext),
+                    )
                     .header("X-ChakraMCP-Caller-Agent", f.caller_agent_id.to_string())
                     .body(Body::from(b"not valid json".to_vec()))
                     .unwrap(),

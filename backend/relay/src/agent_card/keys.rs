@@ -22,9 +22,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use super::signer::{
-    SigningKey as AppSigningKey, VerifyingKey, ALG_EDDSA, CRV_ED25519, KTY_OKP,
-};
+use super::signer::{SigningKey as AppSigningKey, VerifyingKey, ALG_EDDSA, CRV_ED25519, KTY_OKP};
 
 /// JWKS document published at `/.well-known/jwks.json`.
 ///
@@ -126,7 +124,9 @@ impl KeyStore {
         .fetch_optional(&self.pool)
         .await?;
 
-        let Some(row) = row else { return Ok(None); };
+        let Some(row) = row else {
+            return Ok(None);
+        };
         let bytes_vec = row.private_key_bytes;
         if bytes_vec.len() != SECRET_KEY_LENGTH {
             return Err(KeyStoreError::WrongLength);
@@ -282,7 +282,10 @@ mod tests {
         let active_kid: Uuid = active_key.kid.parse().unwrap();
 
         // Retire it but leave expires_at NULL — still in JWKS during overlap.
-        store.retire_key(active_kid, None, Some("test")).await.unwrap();
+        store
+            .retire_key(active_kid, None, Some("test"))
+            .await
+            .unwrap();
         let jwks = store.jwks().await.unwrap();
         assert!(jwks.keys.iter().any(|k| k.kid == active_key.kid));
 

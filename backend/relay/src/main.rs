@@ -47,7 +47,10 @@ async fn main() -> Result<()> {
     let state = RelayState::new(pool, cfg.clone());
     let app = router(state);
 
-    let port: u16 = env::var("RELAY_PORT").ok().and_then(|s| s.parse().ok()).unwrap_or(8090);
+    let port: u16 = env::var("RELAY_PORT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(8090);
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     tracing::info!(%addr, "chakramcp-relay starting");
     let listener = tokio::net::TcpListener::bind(addr).await?;

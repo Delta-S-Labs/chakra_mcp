@@ -29,14 +29,19 @@ pub struct AuthUser {
 impl FromRequestParts<AppState> for AuthUser {
     type Rejection = ApiError;
 
-    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
         let header = parts
             .headers
             .get(axum::http::header::AUTHORIZATION)
             .and_then(|v| v.to_str().ok())
             .ok_or(ApiError::Unauthorized)?;
 
-        let token = header.strip_prefix("Bearer ").ok_or(ApiError::Unauthorized)?;
+        let token = header
+            .strip_prefix("Bearer ")
+            .ok_or(ApiError::Unauthorized)?;
 
         // Try JWT first; if that fails, try API key.
         if let Ok(claims) = jwt::decode_jwt(token, &state.config.jwt_secret) {
@@ -63,7 +68,10 @@ pub struct AdminUser(pub AuthUser);
 impl FromRequestParts<AppState> for AdminUser {
     type Rejection = ApiError;
 
-    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
         let user = AuthUser::from_request_parts(parts, state).await?;
         if !user.is_admin {
             return Err(ApiError::Forbidden);
@@ -141,4 +149,3 @@ pub fn forbid_if_not_self(claims_user_id: Uuid, target_user_id: Uuid) -> Result<
     }
     Ok(())
 }
-

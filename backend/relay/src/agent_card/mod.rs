@@ -48,7 +48,7 @@ pub use fetcher::{
     cache_card_for_agent, normalize_for_publish, CacheError, CachedCardEnvelope, FetchError,
     FetchOutcome, Fetcher, MAX_REFRESH_INTERVAL_SECONDS,
 };
-pub use keys::{Jwks, JsonWebKey, KeyStore, KeyStoreError};
+pub use keys::{JsonWebKey, Jwks, KeyStore, KeyStoreError};
 pub use signer::{sign_card, verify_card, SignError, SigningKey, VerifyError, VerifyingKey};
 pub use synthesizer::{
     synthesize_pull_card, AgentRowForSynthesis, CapabilityRowForSynthesis, SynthesisError,
@@ -58,6 +58,6 @@ pub use types::{
     AgentCapabilities, AgentCard, AgentCardSignature, AgentExtension, AgentInterface,
     AgentProvider, AgentSkill, ApiKeyDetails, ApiKeySecurityScheme, HttpAuthDetails,
     HttpAuthSecurityScheme, MutualTlsSecurityScheme, OAuth2SecurityScheme,
-    OpenIdConnectSecurityScheme, SecurityRequirement, SecurityScheme,
-    A2A_PROTOCOL_VERSION, DEFAULT_MEDIA_TYPE, PROTOCOL_BINDING_JSONRPC,
+    OpenIdConnectSecurityScheme, SecurityRequirement, SecurityScheme, A2A_PROTOCOL_VERSION,
+    DEFAULT_MEDIA_TYPE, PROTOCOL_BINDING_JSONRPC,
 };

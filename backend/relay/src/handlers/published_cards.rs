@@ -36,9 +36,7 @@ use crate::agent_card::{
     cache_card_for_agent,
     keys::KeyStore,
     sign_card,
-    synthesizer::{
-        synthesize_pull_card, AgentRowForSynthesis, CapabilityRowForSynthesis,
-    },
+    synthesizer::{synthesize_pull_card, AgentRowForSynthesis, CapabilityRowForSynthesis},
     AgentCard, CacheError, CachedCardEnvelope, Fetcher,
 };
 use crate::state::RelayState;
@@ -201,11 +199,7 @@ pub async fn get_agent_card(
                 agent_version: "0.1.0".to_string(),
             };
 
-            match synthesize_pull_card(
-                &agent_input,
-                &capabilities,
-                &state.config.relay_base_url,
-            ) {
+            match synthesize_pull_card(&agent_input, &capabilities, &state.config.relay_base_url) {
                 Ok(c) => c,
                 Err(e) => {
                     tracing::error!(error = %e, "synthesis failed");
@@ -339,14 +333,7 @@ async fn cached_or_fetch_push_card(
         }
     }
     let fetcher = Fetcher::new();
-    match cache_card_for_agent(
-        &state.db,
-        &fetcher,
-        agent_id,
-        &state.config.relay_base_url,
-    )
-    .await
-    {
+    match cache_card_for_agent(&state.db, &fetcher, agent_id, &state.config.relay_base_url).await {
         Ok(card) => Ok(card),
         Err(CacheError::NotPushMode) | Err(CacheError::NotFound) => {
             // Should be unreachable from this code path — the caller
@@ -677,8 +664,7 @@ mod tests {
         }))
         .await;
 
-        let _agent_id =
-            seed_push_agent(&pool, "acme-corp", "travel-planner", &upstream_url).await;
+        let _agent_id = seed_push_agent(&pool, "acme-corp", "travel-planner", &upstream_url).await;
 
         let cfg = config_with_v2_enabled(true, "ignored".into());
         let state = crate::state::RelayState::new(pool.clone(), cfg);
@@ -778,9 +764,12 @@ mod tests {
         let body = res.into_body().collect().await.unwrap().to_bytes();
         let jwks: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let keys = jwks["keys"].as_array().unwrap();
-        assert_eq!(keys.len(), 1, "active key from card sign should appear in JWKS");
+        assert_eq!(
+            keys.len(),
+            1,
+            "active key from card sign should appear in JWKS"
+        );
         assert_eq!(keys[0]["alg"], "EdDSA");
         assert_eq!(keys[0]["crv"], "Ed25519");
     }
 }
-

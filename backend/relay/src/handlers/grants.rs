@@ -135,11 +135,7 @@ async fn fetch_grant(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<GrantDto, A
 
 /// Returns true if granter and grantee have an accepted friendship in
 /// either direction. Used as a precondition for issuing a grant.
-async fn have_accepted_friendship(
-    db: &PgPool,
-    a: Uuid,
-    b: Uuid,
-) -> Result<bool, ApiError> {
+async fn have_accepted_friendship(db: &PgPool, a: Uuid, b: Uuid) -> Result<bool, ApiError> {
     let row = sqlx::query!(
         r#"
         SELECT 1 as one FROM friendships
@@ -349,7 +345,9 @@ pub async fn create(
     })?
     .ok_or_else(|| ApiError::Internal(anyhow::anyhow!("insert returned no row")))?;
 
-    Ok(Json(fetch_grant(&state.db, user.user_id, inserted.id).await?))
+    Ok(Json(
+        fetch_grant(&state.db, user.user_id, inserted.id).await?,
+    ))
 }
 
 // ─── POST /v1/grants/{id}/revoke ─────────────────────────

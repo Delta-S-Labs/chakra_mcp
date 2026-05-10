@@ -107,10 +107,7 @@ pub async fn park(
     // Extract the JSON-RPC request id (so we echo it on the response)
     // and the SendMessage params (which become input_preview for the
     // granter's `inbox.serve()` handler).
-    let jsonrpc_id = parsed
-        .get("id")
-        .cloned()
-        .unwrap_or(serde_json::Value::Null);
+    let jsonrpc_id = parsed.get("id").cloned().unwrap_or(serde_json::Value::Null);
     let params = parsed
         .get("params")
         .cloned()
@@ -240,9 +237,7 @@ mod tests {
 
     /// Insert minimal rows the FKs need. Returns the seven UUIDs
     /// the Authorized struct wires together.
-    async fn seed_for_park(
-        pool: &PgPool,
-    ) -> (Uuid, Uuid, Uuid, Uuid, Uuid, Uuid, Uuid) {
+    async fn seed_for_park(pool: &PgPool) -> (Uuid, Uuid, Uuid, Uuid, Uuid, Uuid, Uuid) {
         let user = Uuid::now_v7();
         sqlx::query!(
             r#"INSERT INTO users (id, email, display_name, password_hash)
@@ -320,7 +315,15 @@ mod tests {
         .execute(pool)
         .await
         .unwrap();
-        (user, caller_account, caller_agent, target_account, target_agent, capability, grant)
+        (
+            user,
+            caller_account,
+            caller_agent,
+            target_account,
+            target_agent,
+            capability,
+            grant,
+        )
     }
 
     #[sqlx::test(migrations = "../migrations")]
@@ -404,9 +407,7 @@ mod tests {
     async fn missing_id_becomes_null(pool: PgPool) {
         let (u, ca, cg, ta, tg, c, g) = seed_for_park(&pool).await;
         let authz = sample_authz_for(u, ca, cg, ta, tg, c, g);
-        let body = Bytes::from_static(
-            br#"{"jsonrpc":"2.0","method":"SendMessage","params":{}}"#,
-        );
+        let body = Bytes::from_static(br#"{"jsonrpc":"2.0","method":"SendMessage","params":{}}"#);
         let parked = park(&pool, &authz, "do", body).await.unwrap();
         assert_eq!(parked.jsonrpc_id, serde_json::Value::Null);
     }

@@ -391,10 +391,14 @@ mod tests {
         });
         let card: AgentCard = serde_json::from_value(json.clone()).unwrap();
         let reserialized = serde_json::to_value(&card).unwrap();
-        assert_eq!(reserialized.get("future_field_added_in_v1_2"),
-                   json.get("future_field_added_in_v1_2"));
-        assert_eq!(reserialized.get("another_unknown"),
-                   json.get("another_unknown"));
+        assert_eq!(
+            reserialized.get("future_field_added_in_v1_2"),
+            json.get("future_field_added_in_v1_2")
+        );
+        assert_eq!(
+            reserialized.get("another_unknown"),
+            json.get("another_unknown")
+        );
     }
 
     #[test]
@@ -492,7 +496,10 @@ mod tests {
         let card: AgentCard = serde_json::from_value(json).unwrap();
         assert_eq!(card.signatures.len(), 2);
         assert_eq!(card.signatures[0].signature, "sig-relay");
-        assert_eq!(card.signatures[1].header.as_ref().unwrap()["kid"], "upstream-2026-01");
+        assert_eq!(
+            card.signatures[1].header.as_ref().unwrap()["kid"],
+            "upstream-2026-01"
+        );
         let reserialized = serde_json::to_value(&card).unwrap();
         let reparsed: AgentCard = serde_json::from_value(reserialized).unwrap();
         assert_eq!(card, reparsed);
@@ -524,12 +531,18 @@ mod tests {
         });
         let card: AgentCard = serde_json::from_value(json.clone()).unwrap();
         let reserialized = serde_json::to_value(&card).unwrap();
-        assert_eq!(reserialized["supported_interfaces"][0]["future_interface_field"],
-                   json["supported_interfaces"][0]["future_interface_field"]);
-        assert_eq!(reserialized["capabilities"]["future_capability_flag"],
-                   json["capabilities"]["future_capability_flag"]);
-        assert_eq!(reserialized["skills"][0]["future_skill_field"],
-                   json["skills"][0]["future_skill_field"]);
+        assert_eq!(
+            reserialized["supported_interfaces"][0]["future_interface_field"],
+            json["supported_interfaces"][0]["future_interface_field"]
+        );
+        assert_eq!(
+            reserialized["capabilities"]["future_capability_flag"],
+            json["capabilities"]["future_capability_flag"]
+        );
+        assert_eq!(
+            reserialized["skills"][0]["future_skill_field"],
+            json["skills"][0]["future_skill_field"]
+        );
     }
 
     #[test]
@@ -585,10 +598,16 @@ mod tests {
         let card: AgentCard = serde_json::from_value(example.clone()).unwrap();
         assert_eq!(card.name, "Recipe Agent");
         assert_eq!(card.version, "1.2.3");
-        assert_eq!(card.supported_interfaces[0].url, "https://api.example.com/a2a/v1");
+        assert_eq!(
+            card.supported_interfaces[0].url,
+            "https://api.example.com/a2a/v1"
+        );
         assert_eq!(card.supported_interfaces[0].protocol_version, "0.3");
         assert_eq!(card.skills[0].id, "recipe-search");
-        assert_eq!(card.skills[0].tags, vec!["recipes".to_string(), "search".to_string()]);
+        assert_eq!(
+            card.skills[0].tags,
+            vec!["recipes".to_string(), "search".to_string()]
+        );
         // Round-trip to JSON and reparse equal.
         let reserialized = serde_json::to_value(&card).unwrap();
         let reparsed: AgentCard = serde_json::from_value(reserialized).unwrap();
