@@ -1,0 +1,44 @@
+# Caddy auto-provisions Let's Encrypt certs for any host you list.
+# Both subdomains route to the relay container's two listeners:
+#   relay.chakramcp.com  → :8090 (chakramcp-relay)
+#   app.chakramcp.com    → :8080 (chakramcp-app)
+#
+# If you only want to expose the relay (frontend on Netlify already
+# handles app.chakramcp.com via direct user signup), comment out the
+# app block. The OAuth flow needs both reachable, though.
+
+{
+	email kaustav@chakramcp.com
+	# Increase if you start hitting LE rate limits during testing.
+	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+relay.chakramcp.com {
+	encode zstd gzip
+	# Forward client IP for the relay's rate-limit / audit log.
+	reverse_proxy relay:8090 {
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+	}
+	# Hide upstream errors behind a generic message.
+	handle_errors {
+		respond "{err.status_code} {err.status_text}"
+	}
+}
+
+app.chakramcp.com {
+	encode zstd gzip
+	reverse_proxy relay:8080 {
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+	}
+	handle_errors {
+		respond "{err.status_code} {err.status_text}"
+	}
+}
+
+# Catch-all for unknown hosts so we don't auto-issue certs for
+# random visitors hitting the IP. Returns 421 Misdirected Request.
+:80 {
+	respond 421
+}
