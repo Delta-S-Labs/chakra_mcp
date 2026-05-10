@@ -203,3 +203,34 @@
   margin: 0;
   white-space: pre;
 }
+
+/* ─── Focal-agent picker (added with cross-account direction fix) ─── */
+
+.agentPicker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-right: auto;
+  font-size: 0.85rem;
+  color: var(--ink, #2a2620);
+}
+.agentPickerLabel {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft, #6b6258);
+}
+.agentSelect {
+  padding: 0.4rem 0.6rem;
+  border-radius: 0.45rem;
+  border: 1px solid var(--line, #e6decd);
+  background: white;
+  font-family: inherit;
+  font-size: 0.92rem;
+  min-width: 16rem;
+}
+.agentPickerHint {
+  font-size: 0.74rem;
+  color: var(--ink-soft, #6b6258);
+}
