@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO account_memberships (id, account_id, user_id, role)\n               VALUES ($1, $2, $3, 'owner'),\n                      ($4, $5, $6, 'owner')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c22404307bd0209eceee190209fc7b6b54fad39923cdee1a0518e473052706fe"
+}

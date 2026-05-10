@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO relay_signing_keys\n                (kid, private_key_bytes, public_key_bytes,\n                 created_at, retired_at, expires_at, rotation_reason)\n            VALUES ($1, $2, $3, $4, $5, $6, 'test-expired')\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bytea",
+        "Bytea",
+        "Timestamptz",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cd964e9ec119a3aa994071642fa7c0ebfb47863b0744261bd5ec1b1b1afb0f4a"
+}

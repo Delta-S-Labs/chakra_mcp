@@ -60,11 +60,17 @@ pre-commit:
         if [ -z "$DATABASE_URL" ]; then
           export DATABASE_URL=postgres://chakramcp:chakramcp@localhost:5432/chakramcp
         fi
-        cd backend && cargo sqlx prepare --workspace --check
+        # CI runs `prepare --check -- --tests` (note the trailing flag),
+        # which means test-only sqlx::test query!() calls are included
+        # in the cache. Mirror that exactly so the hook can't pass
+        # while CI fails for the same diff.
+        cd backend && cargo sqlx prepare --workspace --check -- --tests
       fail_text: |
         .sqlx cache is stale. Regenerate:
-            cd backend && cargo sqlx prepare --workspace
-        Make sure your local Postgres is up first (task db:up).
+            cd backend && cargo sqlx prepare --workspace -- --tests
+        Make sure your local Postgres is up first (task db:up). Note
+        the trailing `-- --tests` — without it, test-only queries are
+        skipped and CI will reject the cache.
 
 # ─── Pre-push: slower checks, runs once per push ────────────────────
 pre-push:
