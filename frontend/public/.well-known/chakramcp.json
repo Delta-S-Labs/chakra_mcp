@@ -59,6 +59,16 @@
     "install_script": "https://chakramcp.com/install.sh",
     "npm_package": "@chakramcp/cli"
   },
+  "skills": [
+    {
+      "id": "chakramcp-hermes",
+      "name": "ChakraMCP Hermes pull-mode agent",
+      "url": "https://chakramcp.com/skills/chakramcp-hermes.md",
+      "description": "Drop into .claude/skills/chakramcp-hermes/SKILL.md. Covers registering a pull-mode agent, publishing capabilities, friendships+grants, the inbox loop (long-running and cron variants), calling push-mode A2A peers, and verifying directory listing.",
+      "format": "claude-code-skill",
+      "format_version": "1"
+    }
+  ],
   "self_host": {
     "binary_name": "chakramcp-server",
     "homebrew_formula": "chakramcp-server",

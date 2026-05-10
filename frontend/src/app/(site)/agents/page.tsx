@@ -46,17 +46,30 @@ interface DiscoveryResponse {
   total_estimate?: number;
 }
 
-async function fetchDirectory(params: URLSearchParams): Promise<DiscoveryResponse> {
+async function fetchDirectory(
+  params: URLSearchParams,
+): Promise<DiscoveryResponse & { _unreachable?: boolean }> {
   const url = `${RELAY_BASE}/v1/discovery/agents?${params}`;
   // Server-side fetch with a short revalidate window so the page is
   // edge-cacheable but not stale: a fresh registration shows up
   // within ~30s. Long-lived pagination cursors are still valid
   // across the revalidate boundary.
-  const res = await fetch(url, { next: { revalidate: 30 } });
-  if (!res.ok) {
-    return { agents: [], next_cursor: null };
+  //
+  // We catch ALL errors (network unreachable, DNS, 5xx, malformed
+  // JSON) so a misconfigured deploy renders the empty state with a
+  // hint instead of a 500. The most common cause in production is
+  // NEXT_PUBLIC_RELAY_URL not being set, leaving the default
+  // localhost:8090 — fine for local dev, useless on Netlify.
+  try {
+    const res = await fetch(url, { next: { revalidate: 30 } });
+    if (!res.ok) {
+      return { agents: [], next_cursor: null, _unreachable: true };
+    }
+    return await res.json();
+  } catch (err) {
+    console.error(`[agents page] relay fetch failed: ${url}`, err);
+    return { agents: [], next_cursor: null, _unreachable: true };
   }
-  return res.json();
 }
 
 export default async function AgentsPage({
@@ -144,7 +157,7 @@ export default async function AgentsPage({
       <Summary count={data.agents.length} total={data.total_estimate} />
 
       {data.agents.length === 0 ? (
-        <EmptyState />
+        <EmptyState unreachable={data._unreachable === true} />
       ) : (
         <ul className={styles.grid}>
           {data.agents.map((a) => (
@@ -182,7 +195,22 @@ function Summary({ count, total }: { count: number; total?: number }) {
   return <p className={styles.summary}>{count} agents.</p>;
 }
 
-function EmptyState() {
+function EmptyState({ unreachable }: { unreachable: boolean }) {
+  if (unreachable) {
+    return (
+      <div className={styles.empty}>
+        <p>The relay is unreachable from this frontend.</p>
+        <p className={styles.emptyHint}>
+          Check that the deploy has{" "}
+          <code>NEXT_PUBLIC_RELAY_URL</code> pointed at a running
+          relay with <code>DISCOVERY_V2=true</code>. Locally that&apos;s
+          usually <code>http://localhost:8090</code>; in production it
+          needs to be a publicly reachable host. See the deploy logs
+          for the underlying fetch error.
+        </p>
+      </div>
+    );
+  }
   return (
     <div className={styles.empty}>
       <p>No agents match the current filters.</p>

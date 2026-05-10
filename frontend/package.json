@@ -3,10 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/sync-skills.mjs",
     "dev": "next dev",
+    "prebuild": "node scripts/sync-skills.mjs",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "sync-skills": "node scripts/sync-skills.mjs"
   },
   "dependencies": {
     "motion": "^12.38.0",

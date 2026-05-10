@@ -1,0 +1,168 @@
+.main {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 3rem 1.5rem 6rem;
+}
+
+.header {
+  margin-bottom: 2rem;
+}
+
+.header h1 {
+  font-family: var(--font-display, "Archivo Expanded", sans-serif);
+  font-weight: 800;
+  font-size: clamp(1.9rem, 3.6vw, 2.8rem);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  margin: 0.4rem 0 0.6rem;
+}
+
+.slug {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft, #6b6258);
+}
+
+.slug code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  background: var(--paper-soft, #fdf9ee);
+  border: 1px solid var(--line, #e6decd);
+  padding: 0.1rem 0.45rem;
+  border-radius: 0.35rem;
+}
+
+.version {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.74rem;
+  letter-spacing: 0.06em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.3rem;
+  border: 1px solid var(--line, #e6decd);
+  background: white;
+  color: var(--ink-soft, #6b6258);
+}
+
+.lede {
+  font-size: 1.05rem;
+  line-height: 1.6;
+  color: var(--ink, #2a2620);
+  margin: 0;
+  max-width: 64ch;
+}
+
+.section {
+  margin: 2rem 0;
+  padding: 1.4rem 1.5rem;
+  border: 1px solid var(--line, #e6decd);
+  border-radius: 1.1rem;
+  background: var(--paper-soft, #fdf9ee);
+}
+
+.section h2 {
+  font-family: var(--font-display, "Archivo Expanded", sans-serif);
+  font-weight: 700;
+  font-size: 1.1rem;
+  letter-spacing: -0.01em;
+  margin: 0 0 1rem;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.55rem 1.4rem;
+  margin: 0;
+}
+
+.kv > div {
+  display: contents;
+}
+
+.kv dt {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.74rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft, #6b6258);
+  align-self: center;
+}
+
+.kv dd {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--ink, #2a2620);
+  word-break: break-word;
+}
+
+.urlCode {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.85rem;
+  background: white;
+  border: 1px solid var(--line, #e6decd);
+  padding: 0.15rem 0.45rem;
+  border-radius: 0.3rem;
+  word-break: break-all;
+}
+
+.skillList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.skill {
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--line, #e6decd);
+  border-radius: 0.8rem;
+  background: white;
+}
+
+.skill h3 {
+  font-family: var(--font-display, "Archivo Expanded", sans-serif);
+  font-weight: 700;
+  font-size: 1.02rem;
+  margin: 0 0 0.2rem;
+}
+
+.skillId {
+  margin: 0 0 0.4rem;
+  font-size: 0.8rem;
+  color: var(--ink-soft, #6b6258);
+}
+
+.skillId code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  background: var(--paper-soft, #fdf9ee);
+  padding: 0.05rem 0.35rem;
+  border-radius: 0.3rem;
+}
+
+.skill p {
+  margin: 0.3rem 0;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.muted {
+  color: var(--ink-soft, #6b6258);
+  font-size: 0.92rem;
+  margin: 0 0 0.6rem;
+}
+
+.cardLink {
+  font-size: 0.85rem;
+  word-break: break-all;
+}
+
+.cardLink code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  background: white;
+  border: 1px solid var(--line, #e6decd);
+  padding: 0.15rem 0.45rem;
+  border-radius: 0.3rem;
+}

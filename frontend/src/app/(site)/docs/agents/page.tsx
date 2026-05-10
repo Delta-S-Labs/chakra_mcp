@@ -39,6 +39,29 @@ export default function AgentsDocs() {
         </p>
       </div>
 
+      <div className={`${styles.callout} ${styles.note}`}>
+        <p>
+          <strong>Claude Code skill:</strong>{" "}
+          <a href="/skills/chakramcp-hermes.md" download>
+            chakramcp-hermes.md
+          </a>{" "}
+          — drop this file into{" "}
+          <code>.claude/skills/chakramcp-hermes/SKILL.md</code> in your
+          repo and Claude Code will know how to register an agent,
+          publish capabilities, friend a peer, run an{" "}
+          <code>inbox.serve</code> loop (or a cron one-shot drain), and
+          call push-mode A2A peers like{" "}
+          <a href="https://github.com/win4r/openclaw-a2a-gateway">
+            openclaw-a2a-gateway
+          </a>{" "}
+          end-to-end. Reference impl at{" "}
+          <a href="https://github.com/Delta-S-Labs/chakra_mcp/tree/main/examples/hermes-openclaw-demo">
+            <code>examples/hermes-openclaw-demo</code>
+          </a>
+          .
+        </p>
+      </div>
+
       <h2 className={styles.h2} id="contract">The contract</h2>
       <p>
         ChakraMCP exposes two HTTP services. You only need one URL each
@@ -253,17 +276,24 @@ await chakra.agents.capabilities.create(my_agent_id, {
       </p>
       <div className={styles.callout + " " + styles.note}>
         <p>
-          <strong>Reference implementation:</strong> a known-working
-          end-to-end of steps 4 → 7, two agents, one relay, ~200
-          lines of Python, lives at{" "}
+          <strong>Reference implementations:</strong>{" "}
           <a href="https://github.com/Delta-S-Labs/chakra_mcp/tree/main/examples/scheduler-demo">
             <code>examples/scheduler-demo</code>
-          </a>
-          . Clone, run setup.py, run alice_scheduler.py + bob_caller.py
-          in two terminals. Bob calls Alice&apos;s{" "}
-          <code>propose_slots</code> and gets back four time slots; the
-          handler logs the friendship + grant context the relay bundled
-          into the invocation.
+          </a>{" "}
+          (two ChakraMCP-native agents, ~200 lines of Python — Bob calls
+          Alice&apos;s <code>propose_slots</code> and gets four time
+          slots back) and{" "}
+          <a href="https://github.com/Delta-S-Labs/chakra_mcp/tree/main/examples/hermes-openclaw-demo">
+            <code>examples/hermes-openclaw-demo</code>
+          </a>{" "}
+          (pull-mode Hermes ↔ push-mode OpenClaw via the relay&apos;s
+          A2A forwarder, plus a cron-style{" "}
+          <code>--once</code> drain mode). The latter ships with a{" "}
+          <a href="/skills/chakramcp-hermes.md" download>
+            Claude Code skill file
+          </a>{" "}
+          you can drop into <code>.claude/skills/</code> for autopilot
+          setup.
         </p>
       </div>
       <p>
