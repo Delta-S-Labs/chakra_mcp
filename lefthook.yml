@@ -1,0 +1,84 @@
+# Pre-commit + pre-push hooks for ChakraMCP.
+#
+# Activate once per clone:
+#   brew install lefthook                 # mac
+#   # or `go install github.com/evilmartians/lefthook@latest`
+#   lefthook install                      # writes .git/hooks/{pre-commit,pre-push}
+#
+# Or via the Taskfile:  task install:hooks
+#
+# These hooks catch the same things CI does (we hit
+# react-hooks/set-state-in-effect, clippy::useless-format, and
+# sqlx-cache drift in the same week — all preventable here).
+# Hooks run only on staged/changed files so the loop stays fast.
+#
+# Bypass for an emergency commit:  git commit --no-verify
+
+# ─── Pre-commit: fast, files-only checks ────────────────────────────
+pre-commit:
+  parallel: true
+  commands:
+
+    # ─── Rust formatting (workspace-aware) ──────────────────────────
+    rust-fmt:
+      glob: "backend/**/*.rs"
+      run: cd backend && cargo fmt --check
+      stage_fixed: false
+      fail_text: |
+        Rust formatting check failed. Run:
+            cd backend && cargo fmt
+        then re-stage the changes.
+
+    # ─── Frontend lint (only on staged files) ───────────────────────
+    eslint:
+      glob: "frontend/src/**/*.{ts,tsx,js,jsx}"
+      root: "frontend/"
+      run: npx eslint --max-warnings 0 {staged_files}
+      fail_text: |
+        ESLint failed on staged frontend files. Fix the errors and re-stage.
+        Auto-fix what you can:
+            cd frontend && npx eslint --fix {staged_files}
+
+    # ─── TypeScript type-check ──────────────────────────────────────
+    # tsc doesn't have a "files-only" mode that respects tsconfig
+    # path aliases, so we just typecheck the whole frontend project.
+    # Fast enough on Next 16's tsc (~3s incremental).
+    tsc:
+      glob: "frontend/src/**/*.{ts,tsx}"
+      root: "frontend/"
+      run: npx tsc --noEmit -p .
+      fail_text: |
+        TypeScript errors. Fix and re-stage.
+
+    # ─── sqlx cache integrity ──────────────────────────────────────
+    # Only triggers when SQL-touching files or .sqlx/ change. Requires
+    # a running local Postgres at the default DATABASE_URL — skip with
+    # --no-verify if you're committing on a plane.
+    sqlx-prepare-check:
+      glob: "backend/**/*.{rs,sql}"
+      run: |
+        if [ -z "$DATABASE_URL" ]; then
+          export DATABASE_URL=postgres://chakramcp:chakramcp@localhost:5432/chakramcp
+        fi
+        cd backend && cargo sqlx prepare --workspace --check
+      fail_text: |
+        .sqlx cache is stale. Regenerate:
+            cd backend && cargo sqlx prepare --workspace
+        Make sure your local Postgres is up first (task db:up).
+
+# ─── Pre-push: slower checks, runs once per push ────────────────────
+pre-push:
+  commands:
+
+    # ─── Clippy on workspace (catches what fmt doesn't) ─────────────
+    rust-clippy:
+      run: cd backend && cargo clippy --workspace -- -D warnings
+      fail_text: |
+        Clippy errors on push. Fix them locally — CI will fail otherwise.
+
+    # ─── Frontend build smoke-test ──────────────────────────────────
+    frontend-lint-all:
+      root: "frontend/"
+      run: npx eslint "src/**/*.{ts,tsx}" --max-warnings 0
+      fail_text: |
+        ESLint errors on the full frontend tree (not just your changes).
