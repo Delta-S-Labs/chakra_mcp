@@ -87,9 +87,7 @@ pub async fn signup(
 
     let password_hash = hash_password(&req.password)?;
     let admin_email = state.admin_email().map(|s| s.to_lowercase());
-    let is_admin = admin_email
-        .as_deref()
-        .map_or(false, |a| a == email.as_str());
+    let is_admin = admin_email.as_deref() == Some(email.as_str());
 
     let mut tx = state.db.begin().await?;
 

@@ -50,6 +50,13 @@ pub const MAX_REFRESH_INTERVAL_SECONDS: u64 = 3600;
 pub const FETCH_TIMEOUT_SECONDS: u64 = 8;
 
 /// Outcome of a fetch attempt.
+///
+/// The `Fresh` variant carries two AgentCard structs (~900 bytes
+/// total). Boxing the variant would shrink the enum but force every
+/// call site through `Box::new` + a deref pattern; the cost on stack
+/// from the larger discriminant is small relative to the readability
+/// hit, so we allow the lint here.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum FetchOutcome {
     /// Upstream returned a fresh card (200). Includes the normalized

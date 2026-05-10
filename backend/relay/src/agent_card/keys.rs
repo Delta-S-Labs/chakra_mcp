@@ -27,9 +27,10 @@ use super::signer::{SigningKey as AppSigningKey, VerifyingKey, ALG_EDDSA, CRV_ED
 /// JWKS document published at `/.well-known/jwks.json`.
 ///
 /// Per RFC 7517. Includes every key that's not yet expired (active
-/// + retired-but-still-in-overlap-window). Each entry carries a kid
-/// + crv + alg + base64url-encoded public point — verifiers select
-/// the entry matching the kid in a JWS protected header.
+/// keys plus any retired-but-still-in-overlap-window keys). Each
+/// entry carries a kid, crv, alg, and base64url-encoded public point;
+/// verifiers select the entry matching the kid in a JWS protected
+/// header.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Jwks {
     pub keys: Vec<JsonWebKey>,

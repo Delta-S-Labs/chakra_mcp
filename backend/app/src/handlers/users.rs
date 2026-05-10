@@ -77,9 +77,7 @@ pub async fn upsert(
 
     let admin_email = state.admin_email().map(|s| s.to_lowercase());
     let email_lower = req.email.to_lowercase();
-    let is_admin = admin_email
-        .as_deref()
-        .map_or(false, |a| a == email_lower.as_str());
+    let is_admin = admin_email.as_deref() == Some(email_lower.as_str());
 
     let mut tx = state.db.begin().await?;
 

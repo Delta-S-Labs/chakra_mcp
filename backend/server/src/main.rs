@@ -5,12 +5,13 @@
 //! machine via `brew install chakramcp-server`.
 //!
 //! Subcommands:
-//!   * init    — write a sensible default config to ~/.chakramcp/server.toml
-//!               (generates a fresh JWT_SECRET).
-//!   * migrate — apply pending migrations against DATABASE_URL and exit.
-//!   * start   — run app on $APP_PORT (default 8080) and relay on
-//!               $RELAY_PORT (default 8090). Migrations are applied
-//!               automatically on startup.
+//!
+//! - `init`    — write a sensible default config to ~/.chakramcp/server.toml
+//!   (generates a fresh JWT_SECRET).
+//! - `migrate` — apply pending migrations against DATABASE_URL and exit.
+//! - `start`   — run app on $APP_PORT (default 8080) and relay on
+//!   $RELAY_PORT (default 8090). Migrations are applied
+//!   automatically on startup.
 
 use std::fs;
 use std::net::SocketAddr;
@@ -245,7 +246,7 @@ struct ServerConfig {
     relay_port: u16,
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Default, serde::Deserialize)]
 struct ServerFile {
     database_url: Option<String>,
     jwt_secret: Option<String>,
@@ -377,26 +378,6 @@ fn redact_url(url: &str) -> String {
             u.to_string()
         }
         Err(_) => url.to_string(),
-    }
-}
-
-// `Default` for ServerFile so the missing-file path returns an
-// all-None struct without us writing it out by hand.
-impl Default for ServerFile {
-    fn default() -> Self {
-        Self {
-            database_url: None,
-            jwt_secret: None,
-            admin_email: None,
-            survey_enabled: None,
-            frontend_base_url: None,
-            app_base_url: None,
-            relay_base_url: None,
-            discovery_v2_enabled: None,
-            app_port: None,
-            relay_port: None,
-            log_filter: None,
-        }
     }
 }
 
