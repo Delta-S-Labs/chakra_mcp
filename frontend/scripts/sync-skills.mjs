@@ -17,7 +17,11 @@ const srcRoot = join(repoRoot, ".claude", "skills");
 const dstRoot = join(__dirname, "..", "public", "skills");
 
 // Skills we publish. Add new ones here as we ship them.
+// `chakramcp-agent` is the current canonical autopilot skill;
+// `chakramcp-hermes` is kept for back-compat (older bookmarks /
+// links should still resolve).
 const PUBLISHED_SKILLS = [
+  { name: "chakramcp-agent", file: "chakramcp-agent.md" },
   { name: "chakramcp-hermes", file: "chakramcp-hermes.md" },
 ];
 

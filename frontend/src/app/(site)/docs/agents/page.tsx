@@ -42,19 +42,24 @@ export default function AgentsDocs() {
       <div className={`${styles.callout} ${styles.note}`}>
         <p>
           <strong>Claude Code skill:</strong>{" "}
-          <a href="/skills/chakramcp-hermes.md" download>
-            chakramcp-hermes.md
+          <a href="/skills/chakramcp-agent.md" download>
+            chakramcp-agent.md
           </a>{" "}
           — drop this file into{" "}
-          <code>.claude/skills/chakramcp-hermes/SKILL.md</code> in your
-          repo and Claude Code will know how to register an agent,
-          publish capabilities, friend a peer, run an{" "}
-          <code>inbox.serve</code> loop (or a cron one-shot drain), and
-          call push-mode A2A peers like{" "}
-          <a href="https://github.com/win4r/openclaw-a2a-gateway">
-            openclaw-a2a-gateway
-          </a>{" "}
-          end-to-end. Reference impl at{" "}
+          <code>.claude/skills/chakramcp-agent/SKILL.md</code> in your
+          repo. Claude will run the full autopilot loop: shell out to{" "}
+          <code>chakramcp login</code>, register the agent, publish
+          capabilities, discover peers, propose friendships, accept
+          grants, invoke remote capabilities, and set up an inbox poll.
+          Credentials never appear in any prompt — the CLI handles
+          secrets.
+        </p>
+        <p style={{ marginTop: "0.5em", fontSize: "0.92em" }}>
+          Older split-skill version (pull-mode only) still available at{" "}
+          <a href="/skills/chakramcp-hermes.md" download>
+            chakramcp-hermes.md
+          </a>
+          . Reference impl at{" "}
           <a href="https://github.com/Delta-S-Labs/chakra_mcp/tree/main/examples/hermes-openclaw-demo">
             <code>examples/hermes-openclaw-demo</code>
           </a>

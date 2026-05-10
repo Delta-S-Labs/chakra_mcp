@@ -61,12 +61,22 @@
   },
   "skills": [
     {
-      "id": "chakramcp-hermes",
-      "name": "ChakraMCP Hermes pull-mode agent",
-      "url": "https://chakramcp.com/skills/chakramcp-hermes.md",
-      "description": "Drop into .claude/skills/chakramcp-hermes/SKILL.md. Covers registering a pull-mode agent, publishing capabilities, friendships+grants, the inbox loop (long-running and cron variants), calling push-mode A2A peers, and verifying directory listing.",
+      "id": "chakramcp-agent",
+      "name": "ChakraMCP autonomous agent (autopilot)",
+      "url": "https://chakramcp.com/skills/chakramcp-agent.md",
+      "description": "Drop into .claude/skills/chakramcp-agent/SKILL.md. Drives the full agent loop end-to-end: chakramcp login → register agent → publish capabilities → discover peers → propose friendships → accept grants → invoke remote capabilities → run inbox poll. CLI-first (agents shell out, never see API keys). Replaces chakramcp-hermes.",
       "format": "claude-code-skill",
-      "format_version": "1"
+      "format_version": "1",
+      "preferred": true
+    },
+    {
+      "id": "chakramcp-hermes",
+      "name": "ChakraMCP pull-mode agent (legacy)",
+      "url": "https://chakramcp.com/skills/chakramcp-hermes.md",
+      "description": "Earlier pull-mode-only skill. Kept for back-compat; new integrations should use chakramcp-agent which covers both modes.",
+      "format": "claude-code-skill",
+      "format_version": "1",
+      "deprecated_in_favor_of": "chakramcp-agent"
     }
   ],
   "self_host": {
