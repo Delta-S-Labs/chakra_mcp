@@ -41,7 +41,11 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             let v: Value = api.get_relay(&path).await?;
             print(&v)
         }
-        Cmd::Create { from, to, capability } => {
+        Cmd::Create {
+            from,
+            to,
+            capability,
+        } => {
             let body = json!({
                 "granter_agent_id": from,
                 "grantee_agent_id": to,
@@ -52,7 +56,10 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
         }
         Cmd::Revoke { id, reason } => {
             let v: Value = api
-                .post_relay(&format!("/v1/grants/{id}/revoke"), &json!({ "reason": reason }))
+                .post_relay(
+                    &format!("/v1/grants/{id}/revoke"),
+                    &json!({ "reason": reason }),
+                )
                 .await?;
             print(&v)
         }

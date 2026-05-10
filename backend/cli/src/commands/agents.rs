@@ -37,9 +37,7 @@ pub enum Cmd {
         agent_card_url: Option<String>,
     },
     /// Fetch one agent by id.
-    Get {
-        id: String,
-    },
+    Get { id: String },
 }
 
 pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {

@@ -78,14 +78,17 @@ pub async fn login(cfg: &mut CliConfig, network_name: &str) -> Result<String> {
 
     // Bind the loopback callback up front so the registered redirect_uri
     // can include the resolved port.
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .context("binding loopback callback listener")?;
+    let listener =
+        TcpListener::bind("127.0.0.1:0").context("binding loopback callback listener")?;
     let port = listener.local_addr()?.port();
     let redirect_uri = format!("http://127.0.0.1:{port}/callback");
 
     let client_id = {
         let net = cfg.network_mut(network_name).unwrap();
-        match (net.oauth_client_id.as_ref(), meta.registration_endpoint.as_ref()) {
+        match (
+            net.oauth_client_id.as_ref(),
+            meta.registration_endpoint.as_ref(),
+        ) {
             (Some(id), _) => id.clone(),
             (None, Some(reg_endpoint)) => {
                 let resp: RegisterResponse = http
@@ -140,13 +143,20 @@ pub async fn login(cfg: &mut CliConfig, network_name: &str) -> Result<String> {
     let pb = ui::spinner("opening your browser…");
     if webbrowser::open(&auth_url).is_err() {
         pb.finish_and_clear();
-        ui::note(&format!("couldn't auto-open the browser — open this URL manually:"));
+        ui::note("couldn't auto-open the browser — open this URL manually:");
         eprintln!("    {auth_url}");
         let pb2 = ui::spinner("waiting for sign-in…");
         let code = capture_callback(listener, &state)?;
         pb2.finish_and_clear();
         return finish_token_exchange(
-            &http, &meta, cfg, network_name, &client_id, &redirect_uri, &verifier, &code,
+            &http,
+            &meta,
+            cfg,
+            network_name,
+            &client_id,
+            &redirect_uri,
+            &verifier,
+            &code,
         )
         .await;
     }
@@ -154,7 +164,14 @@ pub async fn login(cfg: &mut CliConfig, network_name: &str) -> Result<String> {
     let code = capture_callback(listener, &state)?;
     pb.finish_and_clear();
     finish_token_exchange(
-        &http, &meta, cfg, network_name, &client_id, &redirect_uri, &verifier, &code,
+        &http,
+        &meta,
+        cfg,
+        network_name,
+        &client_id,
+        &redirect_uri,
+        &verifier,
+        &code,
     )
     .await
 }

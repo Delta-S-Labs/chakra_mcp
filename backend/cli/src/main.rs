@@ -93,9 +93,7 @@ async fn run() -> Result<()> {
 
     if let Some(name) = cli.network.clone() {
         if cfg.network(&name).is_none() {
-            anyhow::bail!(
-                "no network named '{name}' — see `chakramcp networks list`"
-            );
+            anyhow::bail!("no network named '{name}' — see `chakramcp networks list`");
         }
         cfg.active = Some(name);
     }
@@ -158,8 +156,7 @@ pub fn read_json_arg(s: &str) -> Result<serde_json::Value> {
             std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)?;
             buf
         } else {
-            std::fs::read_to_string(path)
-                .map_err(|e| anyhow::anyhow!("reading {path}: {e}"))?
+            std::fs::read_to_string(path).map_err(|e| anyhow::anyhow!("reading {path}: {e}"))?
         };
         Ok(serde_json::from_str(&raw)?)
     } else {

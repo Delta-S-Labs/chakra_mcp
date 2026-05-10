@@ -54,7 +54,10 @@ pub async fn run(args: Args, api: ApiClient) -> Result<()> {
             return print(&row);
         }
         if attempt > 0 && attempt % 10 == 0 {
-            eprintln!("  still {status} after {}s…", (attempt + 1) * (POLL_INTERVAL_MS as usize) / 1000);
+            eprintln!(
+                "  still {status} after {}s…",
+                (attempt + 1) * (POLL_INTERVAL_MS as usize) / 1000
+            );
         }
     }
     bail!("timed out after 3 minutes — re-run `chakramcp invoke wait` or check `chakramcp inbox` on the granter side");

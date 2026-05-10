@@ -55,7 +55,11 @@ pub fn run(cmd: Cmd, cfg: &mut CliConfig) -> Result<()> {
             ui::ok(&format!("switched to '{name}'"));
             Ok(())
         }
-        Cmd::Add { name, app_url, relay_url } => {
+        Cmd::Add {
+            name,
+            app_url,
+            relay_url,
+        } => {
             cfg.add_network(Network {
                 name: name.clone(),
                 app_url,

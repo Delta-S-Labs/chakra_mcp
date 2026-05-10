@@ -94,8 +94,8 @@ impl CliConfig {
         if !path.exists() {
             return Ok(Self::default());
         }
-        let raw = fs::read_to_string(&path)
-            .with_context(|| format!("reading {}", path.display()))?;
+        let raw =
+            fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
         let mut cfg: CliConfig =
             toml::from_str(&raw).with_context(|| format!("parsing {}", path.display()))?;
 
@@ -122,8 +122,7 @@ impl CliConfig {
     pub fn save(&self) -> Result<()> {
         let path = config_path()?;
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("creating {}", parent.display()))?;
+            fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
         }
         let body = toml::to_string_pretty(self)?;
         fs::write(&path, body).with_context(|| format!("writing {}", path.display()))?;

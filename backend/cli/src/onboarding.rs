@@ -23,7 +23,10 @@ pub struct WizardOutcome {
     pub display_account: Option<String>,
 }
 
-pub async fn run_login(cfg: &mut CliConfig, requested_network: Option<String>) -> Result<WizardOutcome> {
+pub async fn run_login(
+    cfg: &mut CliConfig,
+    requested_network: Option<String>,
+) -> Result<WizardOutcome> {
     if cfg.networks.is_empty() {
         ui::banner();
         ui::step("Let's get you connected.");
@@ -40,7 +43,12 @@ pub async fn run_login(cfg: &mut CliConfig, requested_network: Option<String>) -
         bail!("no network named '{target_network}' — see `chakramcp networks list`");
     }
 
-    let mode = if cfg.networks.len() == 1 && cfg.network(&target_network).map(|n| !n.is_signed_in()).unwrap_or(true) {
+    let mode = if cfg.networks.len() == 1
+        && cfg
+            .network(&target_network)
+            .map(|n| !n.is_signed_in())
+            .unwrap_or(true)
+    {
         // Brand-new flow — ask explicitly.
         ui::step("How would you like to sign in?");
         ui::select(
@@ -101,7 +109,10 @@ fn pick_network(cfg: &mut CliConfig) -> Result<String> {
         _ => {
             let name = ui::input("Network name", Some(DEFAULT_NETWORK))?;
             let app_url = ui::input("App service URL", Some("https://chakramcp.example.com"))?;
-            let relay_url = ui::input("Relay service URL", Some("https://relay.chakramcp.example.com"))?;
+            let relay_url = ui::input(
+                "Relay service URL",
+                Some("https://relay.chakramcp.example.com"),
+            )?;
             Network {
                 name: name.trim().to_string(),
                 app_url: app_url.trim().to_string(),
