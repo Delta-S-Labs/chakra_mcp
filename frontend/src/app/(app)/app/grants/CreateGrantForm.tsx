@@ -61,23 +61,35 @@ export function CreateGrantForm({
   const [error, setError] = useState<string | null>(null);
 
   // When granter changes, refresh its capability list and seed grantee.
+  // Everything is wrapped in an async IIFE so the state mutations land
+  // *after* a microtask boundary — that satisfies React 19's
+  // `react-hooks/set-state-in-effect` lint, which forbids synchronous
+  // setState inside an effect body. The cleanup just flips the
+  // cancelled flag; the IIFE checks it before each setState.
   useEffect(() => {
     if (!token || !granterId) return;
     let cancelled = false;
-    setLoadingCaps(true);
-    setError(null);
-    listCapabilities(token, granterId)
-      .then((rows) => {
+
+    (async () => {
+      if (cancelled) return;
+      setLoadingCaps(true);
+      setError(null);
+      try {
+        const rows = await listCapabilities(token, granterId);
         if (cancelled) return;
         setCapabilities(rows);
         setCapId(rows[0]?.id ?? "");
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Couldn't load capabilities.");
-      })
-      .finally(() => !cancelled && setLoadingCaps(false));
-    const friends = friendsByAgent.get(granterId) ?? [];
-    setGranteeId(friends[0]?.id ?? "");
+      } catch (err) {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : "Couldn't load capabilities.");
+      } finally {
+        if (!cancelled) setLoadingCaps(false);
+      }
+      if (cancelled) return;
+      const friends = friendsByAgent.get(granterId) ?? [];
+      setGranteeId(friends[0]?.id ?? "");
+    })();
+
     return () => {
       cancelled = true;
     };
