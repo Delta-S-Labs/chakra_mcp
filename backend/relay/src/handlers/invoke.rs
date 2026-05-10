@@ -150,7 +150,14 @@ pub struct GrantContext {
 
 #[derive(Debug, Deserialize, Default)]
 pub struct ListQuery {
-    /// "outbound" (I served) | "inbound" (I invoked) | omitted for both.
+    /// "outbound" (I invoked — call I sent out)
+    /// | "inbound" (I served — call that came in)
+    /// | omitted for both.
+    ///
+    /// Mirrors the convention used by `/v1/friendships` and `/v1/grants`:
+    /// "outbound" always means "I initiated this side of the
+    /// relationship". For invocations the initiator is the grantee
+    /// (the caller).
     pub direction: Option<String>,
     pub agent_id: Option<Uuid>,
     pub status: Option<String>,
@@ -598,8 +605,13 @@ pub async fn list(
         }
     }
 
-    let want_outbound = matches!(direction, "all" | "outbound");
-    let want_inbound = matches!(direction, "all" | "inbound");
+    // outbound = I'm the grantee (caller) for the row; inbound = I'm
+    // the granter (server). The booleans below feed into the SQL
+    // WHERE clause: `want_grantee_is_me` flips on for outbound + all,
+    // `want_granter_is_me` for inbound + all. Renamed from the older
+    // (and confusingly inverted) `want_outbound`/`want_inbound`.
+    let want_grantee_is_me = matches!(direction, "all" | "outbound");
+    let want_granter_is_me = matches!(direction, "all" | "inbound");
 
     let rows = sqlx::query!(
         r#"
@@ -623,10 +635,12 @@ pub async fn list(
         LEFT JOIN agents ea ON ea.id = i.grantee_agent_id
         WHERE
             (
-                ($2::boolean AND ga.account_id IN (
+                -- $2 = want_grantee_is_me (I sent this call OUT)
+                ($2::boolean AND ea.account_id IN (
                     SELECT account_id FROM account_memberships WHERE user_id = $1
                 ))
-             OR ($3::boolean AND ea.account_id IN (
+                -- $3 = want_granter_is_me (call came IN, I served it)
+             OR ($3::boolean AND ga.account_id IN (
                     SELECT account_id FROM account_memberships WHERE user_id = $1
                 ))
             )
@@ -636,8 +650,8 @@ pub async fn list(
         LIMIT 200
         "#,
         user.user_id,
-        want_outbound,
-        want_inbound,
+        want_grantee_is_me,
+        want_granter_is_me,
         q.agent_id,
         q.status,
     )

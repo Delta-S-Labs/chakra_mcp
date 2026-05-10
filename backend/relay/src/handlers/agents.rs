@@ -163,6 +163,8 @@ pub async fn list_mine(
         WHERE a.account_id IN (
             SELECT account_id FROM account_memberships WHERE user_id = $1
         )
+          AND a.tombstoned_at IS NULL
+          AND acc.tombstoned_at IS NULL
         ORDER BY a.created_at DESC
         "#,
         user.user_id
@@ -211,6 +213,8 @@ pub async fn list_network(
         FROM agents a
         JOIN accounts acc ON acc.id = a.account_id
         WHERE a.visibility = 'network'
+          AND a.tombstoned_at IS NULL
+          AND acc.tombstoned_at IS NULL
         ORDER BY a.created_at DESC
         "#,
         user.user_id
@@ -259,6 +263,8 @@ pub async fn get_one(
         FROM agents a
         JOIN accounts acc ON acc.id = a.account_id
         WHERE a.id = $2
+          AND a.tombstoned_at IS NULL
+          AND acc.tombstoned_at IS NULL
         "#,
         user.user_id,
         id

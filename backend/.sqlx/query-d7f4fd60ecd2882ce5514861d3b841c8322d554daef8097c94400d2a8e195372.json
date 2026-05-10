@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n            a.id, a.account_id, a.slug, a.display_name, a.description,\n            a.visibility, a.endpoint_url, a.created_at, a.updated_at,\n            acc.slug as account_slug, acc.display_name as account_display_name,\n            (SELECT COUNT(*)::bigint FROM agent_capabilities c WHERE c.agent_id = a.id) as \"capability_count!\"\n        FROM agents a\n        JOIN accounts acc ON acc.id = a.account_id\n        WHERE a.account_id IN (\n            SELECT account_id FROM account_memberships WHERE user_id = $1\n        )\n        ORDER BY a.created_at DESC\n        ",
+  "query": "\n        SELECT\n            a.id, a.account_id, a.slug, a.display_name, a.description,\n            a.visibility, a.endpoint_url, a.created_at, a.updated_at,\n            acc.slug as account_slug, acc.display_name as account_display_name,\n            (SELECT COUNT(*)::bigint FROM agent_capabilities c WHERE c.agent_id = a.id) as \"capability_count!\",\n            EXISTS(\n                SELECT 1 FROM account_memberships m\n                WHERE m.account_id = a.account_id AND m.user_id = $1\n            ) as \"is_mine!\"\n        FROM agents a\n        JOIN accounts acc ON acc.id = a.account_id\n        WHERE a.id = $2\n          AND a.tombstoned_at IS NULL\n          AND acc.tombstoned_at IS NULL\n        ",
   "describe": {
     "columns": [
       {
@@ -62,10 +62,16 @@
         "ordinal": 11,
         "name": "capability_count!",
         "type_info": "Int8"
+      },
+      {
+        "ordinal": 12,
+        "name": "is_mine!",
+        "type_info": "Bool"
       }
     ],
     "parameters": {
       "Left": [
+        "Uuid",
         "Uuid"
       ]
     },
@@ -81,8 +87,9 @@
       false,
       false,
       false,
+      null,
       null
     ]
   },
-  "hash": "c896d480e816153957f848a9fdc7cbd309dea88272d043cdf4d66ac03c0db9cd"
+  "hash": "d7f4fd60ecd2882ce5514861d3b841c8322d554daef8097c94400d2a8e195372"
 }

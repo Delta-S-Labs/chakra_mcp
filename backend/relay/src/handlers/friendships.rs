@@ -107,6 +107,10 @@ async fn fetch_friendship(
         JOIN agents ta   ON ta.id   = f.target_agent_id
         JOIN accounts tacc ON tacc.id = ta.account_id
         WHERE f.id = $1
+          AND pa.tombstoned_at  IS NULL
+          AND ta.tombstoned_at  IS NULL
+          AND pacc.tombstoned_at IS NULL
+          AND tacc.tombstoned_at IS NULL
         "#,
         id,
         user_id,
@@ -200,6 +204,10 @@ pub async fn list(
              OR ($3::boolean AND EXISTS(SELECT 1 FROM account_memberships m WHERE m.account_id = ta.account_id AND m.user_id = $1))
             )
             AND ($4::text IS NULL OR f.status = $4)
+            AND pa.tombstoned_at  IS NULL
+            AND ta.tombstoned_at  IS NULL
+            AND pacc.tombstoned_at IS NULL
+            AND tacc.tombstoned_at IS NULL
         ORDER BY f.updated_at DESC
         "#,
         user.user_id,
