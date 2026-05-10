@@ -1,5 +1,6 @@
 import Link from "next/link";
 import SignInPanel from "./SignInPanel";
+import { AlreadySignedIn } from "./AlreadySignedIn";
 import styles from "./login.module.css";
 
 /**
@@ -34,6 +35,8 @@ export default async function LoginPage({
         </header>
 
         <div className={styles.card}>
+          <AlreadySignedIn />
+
           <div className={styles.eyebrow}>Sign in</div>
           <h1 className={styles.title}>Welcome to the relay.</h1>
           <p className={styles.body}>

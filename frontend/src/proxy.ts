@@ -2,8 +2,14 @@
  * Proxy - gate the /app/* routes behind a session.
  *
  * Public auth pages: /login, /signup. Anyone hitting an unauthenticated
- * /app/* URL gets bounced to /login. Logged-in users hitting /login or
- * /signup get bounced to /app.
+ * /app/* URL gets bounced to /login.
+ *
+ * Logged-in users hitting /login or /signup: we used to bounce them to
+ * /app, which felt like "auto-login" when really they just had a stale
+ * session cookie and wanted to switch accounts. Now we let those pages
+ * render and they show a "Signed in as X — sign out to switch?" banner
+ * up top. The user picks: stay signed in (Continue link), or sign out
+ * and pick a different identity. Much less confusing.
  *
  * NextAuth.js v5 exposes `auth` as middleware directly.
  */
@@ -46,12 +52,9 @@ export default auth((req) => {
     return NextResponse.redirect(url);
   }
 
-  if (isLoggedIn && isPublicAuth) {
-    const url = req.nextUrl.clone();
-    url.pathname = "/app";
-    return NextResponse.redirect(url);
-  }
-
+  // Intentionally allow /login + /signup through even when signed in.
+  // The pages themselves show a "Signed in as X" banner so the user
+  // can switch accounts without feeling auto-logged-in.
   return NextResponse.next();
 });
 

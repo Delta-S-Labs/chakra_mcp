@@ -5,6 +5,7 @@ import { signIn } from "next-auth/react";
 import ReCAPTCHA from "react-google-recaptcha";
 import { signupWithPassword } from "@/lib/api";
 import styles from "../login/login.module.css";
+import { OAuthProviders } from "../login/OAuthProviders";
 
 export function SignupForm({
   captchaEnabled,
@@ -79,63 +80,75 @@ export function SignupForm({
   }
 
   return (
-    <form className={styles.passwordForm} onSubmit={handleSubmit}>
-      <label className={styles.field}>
-        <span className={styles.fieldLabel}>Name</span>
-        <input
-          type="text"
-          required
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Your display name"
-        />
-      </label>
+    <div className={styles.panel}>
+      <OAuthProviders
+        redirectTo={redirectTo}
+        captchaReady={captchaReady}
+        showSwitchAccountHint
+      />
 
-      <label className={styles.field}>
-        <span className={styles.fieldLabel}>Email</span>
-        <input
-          type="email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="you@example.com"
-          autoComplete="email"
-        />
-      </label>
+      <div className={styles.divider}>
+        <span>or with email + password</span>
+      </div>
 
-      <label className={styles.field}>
-        <span className={styles.fieldLabel}>Password</span>
-        <input
-          type="password"
-          required
-          minLength={8}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="At least 8 characters"
-          autoComplete="new-password"
-        />
-      </label>
-
-      {showCaptchaWidget && (
-        <div className={styles.captcha}>
-          <ReCAPTCHA
-            ref={recaptchaRef}
-            sitekey={captchaSiteKey}
-            onChange={(token) => {
-              setCaptchaToken(token);
-              setError(null);
-            }}
-            onExpired={() => setCaptchaToken(null)}
-            onErrored={() => setError("Captcha widget failed to load.")}
+      <form className={styles.passwordForm} onSubmit={handleSubmit}>
+        <label className={styles.field}>
+          <span className={styles.fieldLabel}>Name</span>
+          <input
+            type="text"
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Your display name"
           />
-        </div>
-      )}
+        </label>
 
-      {error && <div className={styles.error}>{error}</div>}
+        <label className={styles.field}>
+          <span className={styles.fieldLabel}>Email</span>
+          <input
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@example.com"
+            autoComplete="email"
+          />
+        </label>
 
-      <button type="submit" className={styles.submitBtn} disabled={pending || !captchaReady}>
-        {pending ? "Creating account…" : "Create account"}
-      </button>
-    </form>
+        <label className={styles.field}>
+          <span className={styles.fieldLabel}>Password</span>
+          <input
+            type="password"
+            required
+            minLength={8}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="At least 8 characters"
+            autoComplete="new-password"
+          />
+        </label>
+
+        {showCaptchaWidget && (
+          <div className={styles.captcha}>
+            <ReCAPTCHA
+              ref={recaptchaRef}
+              sitekey={captchaSiteKey}
+              onChange={(token) => {
+                setCaptchaToken(token);
+                setError(null);
+              }}
+              onExpired={() => setCaptchaToken(null)}
+              onErrored={() => setError("Captcha widget failed to load.")}
+            />
+          </div>
+        )}
+
+        {error && <div className={styles.error}>{error}</div>}
+
+        <button type="submit" className={styles.submitBtn} disabled={pending || !captchaReady}>
+          {pending ? "Creating account…" : "Create account"}
+        </button>
+      </form>
+    </div>
   );
 }

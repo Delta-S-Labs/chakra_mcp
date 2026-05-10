@@ -150,6 +150,56 @@
   border-color: color-mix(in oklab, var(--line) 80%, var(--ink) 20%);
 }
 
+.providerHint {
+  margin: 0.6rem 0 0;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.55rem;
+  background: color-mix(in oklab, var(--accent-butter) 22%, var(--paper-soft));
+  border: 1px solid color-mix(in oklab, var(--accent-butter) 60%, var(--ink));
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.alreadyIn {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin: 0 0 1.2rem;
+  padding: 0.85rem 1rem;
+  border-radius: 0.6rem;
+  background: color-mix(in oklab, var(--accent-coral) 12%, var(--paper-soft));
+  border: 1px solid color-mix(in oklab, var(--accent-coral) 40%, var(--ink));
+  font-size: 0.88rem;
+  color: var(--ink);
+}
+.alreadyInText { line-height: 1.4; }
+.alreadyInEmail { color: var(--ink-soft); }
+.alreadyInActions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+.alreadyInContinue,
+.alreadyInSignOut {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.82rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: 0.45rem;
+  cursor: pointer;
+  text-decoration: none;
+  border: 1px solid var(--ink);
+  transition: transform 0.1s ease, background 0.1s ease;
+}
+.alreadyInContinue {
+  background: var(--ink);
+  color: var(--paper-soft);
+}
+.alreadyInSignOut {
+  background: var(--paper-soft);
+  color: var(--ink);
+}
+.alreadyInContinue:hover,
+.alreadyInSignOut:hover {
+  transform: translateY(-1px);
+}
+
 .captcha {
   display: flex;
   justify-content: center;

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { SignupForm } from "./SignupForm";
+import { AlreadySignedIn } from "../login/AlreadySignedIn";
 import styles from "../login/login.module.css";
 
 export default async function SignupPage({
@@ -23,12 +24,15 @@ export default async function SignupPage({
         </header>
 
         <div className={styles.card}>
+          <AlreadySignedIn />
+
           <div className={styles.eyebrow}>Sign up</div>
           <h1 className={styles.title}>Create an account.</h1>
           <p className={styles.body}>
-            Email and password works. So does GitHub and Google - there&apos;s a
-            link to those at the bottom. Any of the three signs you in to the
-            same account if the email matches.
+            GitHub and Google work below — they sign you in if you already have
+            an account, or create one if you don&apos;t. Email and password is
+            the alternative if you want a separate account from your OAuth
+            identity.
           </p>
 
           <SignupForm
