@@ -253,9 +253,11 @@ jobs:
     name: Publish npm wrapper
     needs: [resolve-version, release]
     runs-on: ubuntu-22.04
-    if: ${{ env.NPM_TOKEN_SET == 'true' }}
-    env:
-      NPM_TOKEN_SET: ${{ secrets.NPM_TOKEN != '' }}
+    # Job-level `env:` isn't evaluated before job-level `if:`, so the
+    # earlier `env.NPM_TOKEN_SET == 'true'` gate always read as false
+    # and GitHub flagged the run as a workflow file issue. Moved the
+    # token check into the publish step instead — fails clearly if
+    # the secret is missing.
     steps:
       - uses: actions/checkout@v6
 
@@ -274,4 +276,9 @@ jobs:
         working-directory: packaging/cli/npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::error::NPM_TOKEN secret is empty. Set it in repo secrets and re-run."
+            exit 1
+          fi
+          npm publish --access public
