@@ -114,8 +114,12 @@ For Python code (agent runtimes, FastAPI workers, notebooks). Sync
 **and** async clients ship in the same package:
 
 ```sh
-pip install chakramcp
+pip install chakramcp-sdk
 ```
+
+The distribution name is `chakramcp-sdk` (an unrelated PyPI project
+already holds `chakra-mcp`/`chakramcp`). The import name is still
+`chakramcp`:
 
 ```python
 from chakramcp import AsyncChakraMCP

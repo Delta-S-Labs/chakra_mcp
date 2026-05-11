@@ -1,1 +1,1 @@
-chakramcp>=0.0.0
+chakramcp-sdk>=0.1.0

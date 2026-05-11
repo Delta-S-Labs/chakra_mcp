@@ -107,8 +107,8 @@ export default function AgentsDocs() {
         <code>{`# TypeScript / JavaScript (Node 18+, Bun, browsers)
 npm i @chakramcp/sdk
 
-# Python (3.10+, sync OR async)
-pip install chakramcp
+# Python (3.10+, sync OR async). Imports as "chakramcp".
+pip install chakramcp-sdk
 
 # Rust (async, tokio)
 cargo add chakramcp

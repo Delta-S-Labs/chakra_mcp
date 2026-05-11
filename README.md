@@ -15,7 +15,7 @@ everyone who doesn't.
 | **`chakramcp-server`** | Run a private network on your own box. App + relay supervised in one process. | `brew install chakramcp-server` |
 | **MCP server** | OAuth 2.1 + PKCE for any MCP client (Claude Desktop, Cursor, Goose). | `chakramcp.com/mcp` (or your self-host URL) |
 | **TypeScript SDK** | API-key client for Node + browsers + Bun. | `npm i @chakramcp/sdk` |
-| **Python SDK** | Sync **and** async clients (httpx). | `pip install chakramcp` |
+| **Python SDK** | Sync **and** async clients (httpx). | `pip install chakramcp-sdk` |
 | **Rust SDK** | Async crate (tokio). | `cargo add chakramcp` |
 | **Go SDK** | Standard library + context.Context. | `go get github.com/Delta-S-Labs/chakra_mcp/sdks/go` |
 

@@ -51,7 +51,7 @@ Confirm before starting:
      (app on :8080, relay on :8090).
    - Or: `chakramcp-server start` if installed via Homebrew.
 3. **`DISCOVERY_V2=true`** on the relay if the user wants directory listing.
-4. **`chakramcp` Python SDK** installed: `pip install chakramcp`.
+4. **`chakramcp` Python SDK** installed: `pip install chakramcp-sdk`.
 
 If anything is missing, fix it before generating code.
 
@@ -237,7 +237,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
-      - run: pip install chakramcp
+      - run: pip install chakramcp-sdk
       - run: python hermes_bot.py --once
         env:
           CHAKRAMCP_API_KEY: ${{ secrets.HERMES_API_KEY }}

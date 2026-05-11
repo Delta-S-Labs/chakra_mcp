@@ -57,7 +57,7 @@ const sdkCards = [
   {
     label: "Python",
     title: "chakramcp",
-    body: "pip install chakramcp - sync + async, both with serve().",
+    body: "pip install chakramcp-sdk - sync + async, both with serve(). Imports as `chakramcp`.",
     href: "https://github.com/Delta-S-Labs/chakra_mcp/blob/main/sdks/python/README.md",
   },
   {
