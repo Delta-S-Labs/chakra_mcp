@@ -91,7 +91,7 @@
   border-radius: 999px;
   transform-origin: left;
   transform: scaleX(0);
-  animation: clockFill 16s linear infinite;
+  animation: clockFill 28s linear infinite;
 }
 @keyframes clockFill {
   0% { transform: scaleX(0); }
@@ -120,25 +120,25 @@
 }
 
 /* Each line runs the same duration, with its own keyframe window
-   so the visibility rises at the right moment of a single 16s loop. */
-.at0  { animation: show0  16s infinite; }
-.at3  { animation: show3  16s infinite; }
-.at6  { animation: show6  16s infinite; }
-.at9  { animation: show9  16s infinite; }
-.at12 { animation: show12 16s infinite; }
-.at15 { animation: show15 16s infinite; }
-.at18 { animation: show18 16s infinite; }
-.at22 { animation: show22 16s infinite; }
-.at26 { animation: show26 16s infinite; }
-.at30 { animation: show30 16s infinite; }
-.at34 { animation: show34 16s infinite; }
-.at38 { animation: show38 16s infinite; }
-.at42 { animation: show42 16s infinite; }
-.at48 { animation: show48 16s infinite; }
-.at54 { animation: show54 16s infinite; }
-.at62 { animation: show62 16s infinite; }
-.at68 { animation: show68 16s infinite; }
-.at74 { animation: show74 16s infinite; }
+   so the visibility rises at the right moment of a single 28s loop. */
+.at0  { animation: show0  28s infinite; }
+.at3  { animation: show3  28s infinite; }
+.at6  { animation: show6  28s infinite; }
+.at9  { animation: show9  28s infinite; }
+.at12 { animation: show12 28s infinite; }
+.at15 { animation: show15 28s infinite; }
+.at18 { animation: show18 28s infinite; }
+.at22 { animation: show22 28s infinite; }
+.at26 { animation: show26 28s infinite; }
+.at30 { animation: show30 28s infinite; }
+.at34 { animation: show34 28s infinite; }
+.at38 { animation: show38 28s infinite; }
+.at42 { animation: show42 28s infinite; }
+.at48 { animation: show48 28s infinite; }
+.at54 { animation: show54 28s infinite; }
+.at62 { animation: show62 28s infinite; }
+.at68 { animation: show68 28s infinite; }
+.at74 { animation: show74 28s infinite; }
 
 @keyframes show0  { 0%       { opacity: 0; transform: translateY(6px); } 2%,  90% { opacity: 1; transform: translateY(0); } 97%, 100% { opacity: 0; transform: translateY(-4px); } }
 @keyframes show3  { 0%, 2%   { opacity: 0; transform: translateY(6px); } 4%,  90% { opacity: 1; transform: translateY(0); } 97%, 100% { opacity: 0; transform: translateY(-4px); } }

@@ -91,7 +91,7 @@
   border-radius: 999px;
   transform-origin: left;
   transform: scaleX(0);
-  animation: clockFill 14s linear infinite;
+  animation: clockFill 24s linear infinite;
 }
 @keyframes clockFill {
   0% { transform: scaleX(0); }
@@ -120,21 +120,21 @@
 }
 
 /* Each line runs the same duration, with its own keyframe window
-   so the visibility rises at the right moment of a single 14s loop. */
-.at0  { animation: show0  14s infinite; }
-.at5  { animation: show5  14s infinite; }
-.at7  { animation: show7  14s infinite; }
-.at9  { animation: show9  14s infinite; }
-.at11 { animation: show11 14s infinite; }
-.at13 { animation: show13 14s infinite; }
-.at15 { animation: show15 14s infinite; }
-.at22 { animation: show22 14s infinite; }
-.at27 { animation: show27 14s infinite; }
-.at32 { animation: show32 14s infinite; }
-.at37 { animation: show37 14s infinite; }
-.at44 { animation: show44 14s infinite; }
-.at52 { animation: show52 14s infinite; }
-.at62 { animation: show62 14s infinite; }
+   so the visibility rises at the right moment of a single 24s loop. */
+.at0  { animation: show0  24s infinite; }
+.at5  { animation: show5  24s infinite; }
+.at7  { animation: show7  24s infinite; }
+.at9  { animation: show9  24s infinite; }
+.at11 { animation: show11 24s infinite; }
+.at13 { animation: show13 24s infinite; }
+.at15 { animation: show15 24s infinite; }
+.at22 { animation: show22 24s infinite; }
+.at27 { animation: show27 24s infinite; }
+.at32 { animation: show32 24s infinite; }
+.at37 { animation: show37 24s infinite; }
+.at44 { animation: show44 24s infinite; }
+.at52 { animation: show52 24s infinite; }
+.at62 { animation: show62 24s infinite; }
 
 @keyframes show0  { 0%       { opacity: 0; transform: translateY(6px); } 2%,  88% { opacity: 1; transform: translateY(0); } 96%, 100% { opacity: 0; transform: translateY(-4px); } }
 @keyframes show5  { 0%, 4%   { opacity: 0; transform: translateY(6px); } 6%,  88% { opacity: 1; transform: translateY(0); } 96%, 100% { opacity: 0; transform: translateY(-4px); } }
