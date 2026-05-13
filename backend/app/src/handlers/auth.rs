@@ -80,12 +80,14 @@ pub async fn signup(
     .fetch_optional(&state.db)
     .await?;
     if exists.is_some() {
-        return Err(ApiError::Conflict("an account with this email already exists".into()));
+        return Err(ApiError::Conflict(
+            "an account with this email already exists".into(),
+        ));
     }
 
     let password_hash = hash_password(&req.password)?;
     let admin_email = state.admin_email().map(|s| s.to_lowercase());
-    let is_admin = admin_email.as_deref().map_or(false, |a| a == email.as_str());
+    let is_admin = admin_email.as_deref() == Some(email.as_str());
 
     let mut tx = state.db.begin().await?;
 

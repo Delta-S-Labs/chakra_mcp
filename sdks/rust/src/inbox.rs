@@ -49,11 +49,7 @@ impl<'a> InboxClient<'a> {
             .await
     }
 
-    pub async fn respond_failed(
-        &self,
-        invocation_id: &str,
-        error: &str,
-    ) -> Result<Invocation> {
+    pub async fn respond_failed(&self, invocation_id: &str, error: &str) -> Result<Invocation> {
         self.parent
             .relay_post(
                 &format!("/v1/invocations/{}/result", urlencode(invocation_id)),

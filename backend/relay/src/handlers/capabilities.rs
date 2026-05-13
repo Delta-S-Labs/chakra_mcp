@@ -137,14 +137,19 @@ pub async fn create(
     if name.is_empty() {
         return Err(ApiError::InvalidRequest("name is required".into()));
     }
-    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.') {
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
+    {
         return Err(ApiError::InvalidRequest(
             "name must be ascii alphanumeric, underscore, or dot".into(),
         ));
     }
     let visibility = req.visibility.as_deref().unwrap_or("network");
     if !matches!(visibility, "private" | "network") {
-        return Err(ApiError::InvalidRequest("visibility must be private|network".into()));
+        return Err(ApiError::InvalidRequest(
+            "visibility must be private|network".into(),
+        ));
     }
 
     let id = Uuid::now_v7();
@@ -167,7 +172,9 @@ pub async fn create(
     )
     .fetch_optional(&state.db)
     .await?
-    .ok_or_else(|| ApiError::Conflict(format!("capability '{name}' already exists for this agent")))?;
+    .ok_or_else(|| {
+        ApiError::Conflict(format!("capability '{name}' already exists for this agent"))
+    })?;
 
     Ok(Json(CapabilityDto {
         id: inserted.id,
@@ -193,7 +200,9 @@ pub async fn update(
 
     if let Some(v) = req.visibility.as_deref() {
         if !matches!(v, "private" | "network") {
-            return Err(ApiError::InvalidRequest("visibility must be private|network".into()));
+            return Err(ApiError::InvalidRequest(
+                "visibility must be private|network".into(),
+            ));
         }
     }
 

@@ -86,6 +86,10 @@ async fn fetch_grant(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<GrantDto, A
         JOIN accounts eacc ON eacc.id = ea.account_id
         JOIN agent_capabilities cap ON cap.id = g.capability_id
         WHERE g.id = $1
+          AND ga.tombstoned_at  IS NULL
+          AND ea.tombstoned_at  IS NULL
+          AND gacc.tombstoned_at IS NULL
+          AND eacc.tombstoned_at IS NULL
         "#,
         id,
         user_id,
@@ -131,11 +135,7 @@ async fn fetch_grant(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<GrantDto, A
 
 /// Returns true if granter and grantee have an accepted friendship in
 /// either direction. Used as a precondition for issuing a grant.
-async fn have_accepted_friendship(
-    db: &PgPool,
-    a: Uuid,
-    b: Uuid,
-) -> Result<bool, ApiError> {
+async fn have_accepted_friendship(db: &PgPool, a: Uuid, b: Uuid) -> Result<bool, ApiError> {
     let row = sqlx::query!(
         r#"
         SELECT 1 as one FROM friendships
@@ -199,6 +199,10 @@ pub async fn list(
              OR ($3::boolean AND EXISTS(SELECT 1 FROM account_memberships m WHERE m.account_id = ea.account_id AND m.user_id = $1))
             )
             AND ($4::text IS NULL OR g.status = $4)
+            AND ga.tombstoned_at  IS NULL
+            AND ea.tombstoned_at  IS NULL
+            AND gacc.tombstoned_at IS NULL
+            AND eacc.tombstoned_at IS NULL
         ORDER BY g.granted_at DESC
         "#,
         user.user_id,
@@ -341,7 +345,9 @@ pub async fn create(
     })?
     .ok_or_else(|| ApiError::Internal(anyhow::anyhow!("insert returned no row")))?;
 
-    Ok(Json(fetch_grant(&state.db, user.user_id, inserted.id).await?))
+    Ok(Json(
+        fetch_grant(&state.db, user.user_id, inserted.id).await?,
+    ))
 }
 
 // ─── POST /v1/grants/{id}/revoke ─────────────────────────

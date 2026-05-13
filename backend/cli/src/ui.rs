@@ -89,18 +89,16 @@ pub fn input(prompt: &str, default: Option<&str>) -> Result<String> {
 
 pub fn password(prompt: &str) -> Result<String> {
     let theme = ColorfulTheme::default();
-    Ok(Password::with_theme(&theme).with_prompt(prompt).interact()?)
+    Ok(Password::with_theme(&theme)
+        .with_prompt(prompt)
+        .interact()?)
 }
 
 /// Render the "you're in" closing of the onboarding flow, with a
 /// short list of "try this next" commands.
 pub fn closing(network_name: &str, account: &str) {
     eprintln!();
-    eprintln!(
-        "{} signed in as {}",
-        "✓".green().bold(),
-        account.bold(),
-    );
+    eprintln!("{} signed in as {}", "✓".green().bold(), account.bold(),);
     eprintln!(
         "{} on the {} network",
         "✓".green().bold(),
@@ -111,7 +109,10 @@ pub fn closing(network_name: &str, account: &str) {
     let cmds: &[(&str, &str)] = &[
         ("chakramcp agents list", "your agents"),
         ("chakramcp network", "discover others on this network"),
-        ("chakramcp grants list", "what you can call / who can call you"),
+        (
+            "chakramcp grants list",
+            "what you can call / who can call you",
+        ),
         ("chakramcp inbox pull --agent <id>", "claim pending work"),
     ];
     for (cmd, desc) in cmds {

@@ -5,12 +5,8 @@ use serde::{de::DeserializeOwned, Serialize};
 
 use crate::error::{Error, Result};
 use crate::inbox::InboxClient;
-use crate::resources::{
-    AgentsClient, FriendshipsClient, GrantsClient, InvocationsClient,
-};
-use crate::types::{
-    Agent, Invocation, InvokeRequest, InvokeResponse, MeResponse,
-};
+use crate::resources::{AgentsClient, FriendshipsClient, GrantsClient, InvocationsClient};
+use crate::types::{Agent, Invocation, InvokeRequest, InvokeResponse, MeResponse};
 
 pub(crate) const DEFAULT_APP_URL: &str = "https://chakramcp.com";
 pub(crate) const DEFAULT_RELAY_URL: &str = "https://relay.chakramcp.com";
@@ -76,11 +72,7 @@ impl ChakraMCP {
 
     /// Enqueue + poll until terminal status. Default: poll every
     /// 1500ms, time out after 3 minutes.
-    pub async fn invoke_and_wait(
-        &self,
-        req: &InvokeRequest,
-        opts: PollOpts,
-    ) -> Result<Invocation> {
+    pub async fn invoke_and_wait(&self, req: &InvokeRequest, opts: PollOpts) -> Result<Invocation> {
         let interval = opts.interval.unwrap_or(Duration::from_millis(1500));
         let timeout = opts.timeout.unwrap_or(Duration::from_secs(180));
         let started = std::time::Instant::now();
@@ -195,8 +187,7 @@ impl ChakraMCPBuilder {
         }
 
         let app_url = trim_url(self.app_url.unwrap_or_else(|| DEFAULT_APP_URL.into()))?;
-        let relay_url =
-            trim_url(self.relay_url.unwrap_or_else(|| DEFAULT_RELAY_URL.into()))?;
+        let relay_url = trim_url(self.relay_url.unwrap_or_else(|| DEFAULT_RELAY_URL.into()))?;
 
         let http = if let Some(c) = self.custom_http {
             c

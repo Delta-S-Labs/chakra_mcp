@@ -70,12 +70,14 @@ pub async fn upsert(
         return Err(ApiError::InvalidRequest("email is required".into()));
     }
     if req.provider.trim().is_empty() || req.provider_user_id.trim().is_empty() {
-        return Err(ApiError::InvalidRequest("provider and provider_user_id are required".into()));
+        return Err(ApiError::InvalidRequest(
+            "provider and provider_user_id are required".into(),
+        ));
     }
 
     let admin_email = state.admin_email().map(|s| s.to_lowercase());
     let email_lower = req.email.to_lowercase();
-    let is_admin = admin_email.as_deref().map_or(false, |a| a == email_lower.as_str());
+    let is_admin = admin_email.as_deref() == Some(email_lower.as_str());
 
     let mut tx = state.db.begin().await?;
 
@@ -223,7 +225,8 @@ pub async fn upsert(
     let claims = jwt::UserClaims::new(user_id, user_record.email.clone(), user_record.is_admin, 24);
     let token = jwt::encode_jwt(&claims, &state.config.jwt_secret)?;
     let survey_required =
-        crate::handlers::surveys::is_required(&state.db, state.config.survey_enabled, user_id).await?;
+        crate::handlers::surveys::is_required(&state.db, state.config.survey_enabled, user_id)
+            .await?;
 
     Ok(Json(UpsertResponse {
         user: user_record,

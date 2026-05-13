@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE relay_invocations\n                  SET status = 'succeeded',\n                      output_preview = '{\"slots\":[1,2,3]}'::jsonb\n                WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2b9cc4605aaba9110b29a524dd9036719e6339bc1d66451854ab6445bc6cee6a"
+}

@@ -1,4 +1,10 @@
-//! Async, inbox-pull invocations.
+//! Async, inbox-pull invocations — the v0.1.0 SDK contract surface.
+//!
+//! These endpoints predate the A2A migration and are preserved
+//! unchanged on `relay.chakramcp.com` per discovery spec Override #2
+//! (the "two-host surface model"). The published `chakramcp` Python
+//! SDK + `@chakramcp/sdk` TypeScript package at v0.1.0 use exactly
+//! these URLs.
 //!
 //! POST /v1/invoke
 //!   Grantee asks the relay to deliver `input` to the granter for
@@ -22,6 +28,29 @@
 //!   Audit + status polling. The grantee polls /{id} until status is
 //!   terminal (succeeded | failed | timeout | rejected), then reads
 //!   output_preview / error_message off the row.
+//!
+//! ── Relationship to the A2A migration (D6) ─────────────────────
+//!
+//! These endpoints share the `relay_invocations` table with the new
+//! A2A surfaces (D5):
+//!
+//! - `inbox_bridge::park` (D5c) inserts the same `status='pending'`
+//!   shape this `/v1/inbox` polls. A v0.1.0 granter SDK transparently
+//!   picks up calls originating from generic A2A clients hitting
+//!   `/agents/<acct>/<slug>/a2a/jsonrpc` — no SDK upgrade needed.
+//! - `inbox_bridge::get_task` (D5d) reads the same row from the
+//!   caller's side and shapes it as an A2A Task. The same row is
+//!   both an "Invocation" (legacy poll) and a "Task" (A2A poll).
+//! - `forwarder::forward_push` (D5b) writes a terminal-status row
+//!   directly. v0.1.0 SDKs invoking via `/v1/invoke` against push
+//!   targets currently see a pending row that no one delivers —
+//!   push agents are reached only via the new A2A endpoint in v1.
+//!   The scheduler-demo (and every v0.1.0 SDK use case to date)
+//!   targets pull-mode agents and is unaffected.
+//!
+//! Regression coverage: `legacy_v01_contract_tests` at the bottom of
+//! this module exercises the full v0.1.0 lifecycle on the post-D5
+//! schema as the D6 acceptance gate.
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -121,7 +150,14 @@ pub struct GrantContext {
 
 #[derive(Debug, Deserialize, Default)]
 pub struct ListQuery {
-    /// "outbound" (I served) | "inbound" (I invoked) | omitted for both.
+    /// "outbound" (I invoked — call I sent out)
+    /// | "inbound" (I served — call that came in)
+    /// | omitted for both.
+    ///
+    /// Mirrors the convention used by `/v1/friendships` and `/v1/grants`:
+    /// "outbound" always means "I initiated this side of the
+    /// relationship". For invocations the initiator is the grantee
+    /// (the caller).
     pub direction: Option<String>,
     pub agent_id: Option<Uuid>,
     pub status: Option<String>,
@@ -227,16 +263,27 @@ pub async fn invoke(
 
     if row.grantee_agent_id != req.grantee_agent_id {
         let id = record_terminal(
-            &state.db, Some(row.grant_id), Some(row.granter_agent_id),
-            Some(row.grantee_agent_id), Some(row.capability_id), &row.capability_name,
-            user.user_id, "rejected", 0,
+            &state.db,
+            Some(row.grant_id),
+            Some(row.granter_agent_id),
+            Some(row.grantee_agent_id),
+            Some(row.capability_id),
+            &row.capability_name,
+            user.user_id,
+            "rejected",
+            0,
             Some("grantee_agent_id does not match the grant"),
             Some(&input_preview),
-        ).await?;
-        return Ok((StatusCode::BAD_REQUEST, Json(InvokeResponse {
-            invocation_id: id, status: "rejected".into(),
-            error: Some("grantee_agent_id does not match the grant".into()),
-        })));
+        )
+        .await?;
+        return Ok((
+            StatusCode::BAD_REQUEST,
+            Json(InvokeResponse {
+                invocation_id: id,
+                status: "rejected".into(),
+                error: Some("grantee_agent_id does not match the grant".into()),
+            }),
+        ));
     }
 
     // Caller must be a member of the grantee's account.
@@ -246,27 +293,58 @@ pub async fn invoke(
 
     // Grant must be active and not expired.
     if row.grant_status != "active" {
-        let msg = format!("grant is {}; only active grants can be invoked", row.grant_status);
+        let msg = format!(
+            "grant is {}; only active grants can be invoked",
+            row.grant_status
+        );
         let id = record_terminal(
-            &state.db, Some(row.grant_id), Some(row.granter_agent_id),
-            Some(row.grantee_agent_id), Some(row.capability_id), &row.capability_name,
-            user.user_id, "rejected", 0, Some(&msg), Some(&input_preview),
-        ).await?;
-        return Ok((StatusCode::CONFLICT, Json(InvokeResponse {
-            invocation_id: id, status: "rejected".into(), error: Some(msg),
-        })));
+            &state.db,
+            Some(row.grant_id),
+            Some(row.granter_agent_id),
+            Some(row.grantee_agent_id),
+            Some(row.capability_id),
+            &row.capability_name,
+            user.user_id,
+            "rejected",
+            0,
+            Some(&msg),
+            Some(&input_preview),
+        )
+        .await?;
+        return Ok((
+            StatusCode::CONFLICT,
+            Json(InvokeResponse {
+                invocation_id: id,
+                status: "rejected".into(),
+                error: Some(msg),
+            }),
+        ));
     }
     if let Some(exp) = row.expires_at {
         if exp <= Utc::now() {
             let msg = "grant has expired".to_string();
             let id = record_terminal(
-                &state.db, Some(row.grant_id), Some(row.granter_agent_id),
-                Some(row.grantee_agent_id), Some(row.capability_id), &row.capability_name,
-                user.user_id, "rejected", 0, Some(&msg), Some(&input_preview),
-            ).await?;
-            return Ok((StatusCode::CONFLICT, Json(InvokeResponse {
-                invocation_id: id, status: "rejected".into(), error: Some(msg),
-            })));
+                &state.db,
+                Some(row.grant_id),
+                Some(row.granter_agent_id),
+                Some(row.grantee_agent_id),
+                Some(row.capability_id),
+                &row.capability_name,
+                user.user_id,
+                "rejected",
+                0,
+                Some(&msg),
+                Some(&input_preview),
+            )
+            .await?;
+            return Ok((
+                StatusCode::CONFLICT,
+                Json(InvokeResponse {
+                    invocation_id: id,
+                    status: "rejected".into(),
+                    error: Some(msg),
+                }),
+            ));
         }
     }
 
@@ -291,9 +369,14 @@ pub async fn invoke(
     .execute(&state.db)
     .await?;
 
-    Ok((StatusCode::ACCEPTED, Json(InvokeResponse {
-        invocation_id: id, status: "pending".into(), error: None,
-    })))
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(InvokeResponse {
+            invocation_id: id,
+            status: "pending".into(),
+            error: None,
+        }),
+    ))
 }
 
 // ─── GET /v1/inbox?agent_id=X[&limit=N] ──────────────────
@@ -302,16 +385,17 @@ pub async fn inbox(
     user: AuthUser,
     Query(q): Query<InboxQuery>,
 ) -> ApiResult<Json<Vec<InvocationDto>>> {
-    let limit = q.limit.unwrap_or(INBOX_DEFAULT_LIMIT).clamp(1, INBOX_MAX_LIMIT);
+    let limit = q
+        .limit
+        .unwrap_or(INBOX_DEFAULT_LIMIT)
+        .clamp(1, INBOX_MAX_LIMIT);
 
     // Caller must be a member of the agent's account.
-    let agent_account = sqlx::query_scalar!(
-        r#"SELECT account_id FROM agents WHERE id = $1"#,
-        q.agent_id,
-    )
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(ApiError::NotFound)?;
+    let agent_account =
+        sqlx::query_scalar!(r#"SELECT account_id FROM agents WHERE id = $1"#, q.agent_id,)
+            .fetch_optional(&state.db)
+            .await?
+            .ok_or(ApiError::NotFound)?;
     if !user_is_member(&state.db, user.user_id, agent_account).await? {
         return Err(ApiError::Forbidden);
     }
@@ -526,7 +610,9 @@ pub async fn report_result(
     }
 
     // Wall time from enqueue to result.
-    let elapsed_ms = (Utc::now() - row.created_at).num_milliseconds().clamp(0, i32::MAX as i64) as i32;
+    let elapsed_ms = (Utc::now() - row.created_at)
+        .num_milliseconds()
+        .clamp(0, i32::MAX as i64) as i32;
     let output_preview = req.output.as_ref().map(truncate_for_audit);
 
     sqlx::query!(
@@ -564,13 +650,21 @@ pub async fn list(
         ));
     }
     if let Some(s) = q.status.as_deref() {
-        if !matches!(s, "pending" | "in_progress" | "rejected" | "succeeded" | "failed" | "timeout") {
+        if !matches!(
+            s,
+            "pending" | "in_progress" | "rejected" | "succeeded" | "failed" | "timeout"
+        ) {
             return Err(ApiError::InvalidRequest("invalid status".into()));
         }
     }
 
-    let want_outbound = matches!(direction, "all" | "outbound");
-    let want_inbound = matches!(direction, "all" | "inbound");
+    // outbound = I'm the grantee (caller) for the row; inbound = I'm
+    // the granter (server). The booleans below feed into the SQL
+    // WHERE clause: `want_grantee_is_me` flips on for outbound + all,
+    // `want_granter_is_me` for inbound + all. Renamed from the older
+    // (and confusingly inverted) `want_outbound`/`want_inbound`.
+    let want_grantee_is_me = matches!(direction, "all" | "outbound");
+    let want_granter_is_me = matches!(direction, "all" | "inbound");
 
     let rows = sqlx::query!(
         r#"
@@ -594,10 +688,12 @@ pub async fn list(
         LEFT JOIN agents ea ON ea.id = i.grantee_agent_id
         WHERE
             (
-                ($2::boolean AND ga.account_id IN (
+                -- $2 = want_grantee_is_me (I sent this call OUT)
+                ($2::boolean AND ea.account_id IN (
                     SELECT account_id FROM account_memberships WHERE user_id = $1
                 ))
-             OR ($3::boolean AND ea.account_id IN (
+                -- $3 = want_granter_is_me (call came IN, I served it)
+             OR ($3::boolean AND ga.account_id IN (
                     SELECT account_id FROM account_memberships WHERE user_id = $1
                 ))
             )
@@ -607,8 +703,8 @@ pub async fn list(
         LIMIT 200
         "#,
         user.user_id,
-        want_outbound,
-        want_inbound,
+        want_grantee_is_me,
+        want_granter_is_me,
         q.agent_id,
         q.status,
     )
@@ -708,4 +804,357 @@ async fn fetch_one(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<InvocationDto
         friendship_context: None,
         grant_context: None,
     })
+}
+
+#[cfg(test)]
+mod legacy_v01_contract_tests {
+    //! D6 regression gate: the v0.1.0 SDK contract for the legacy
+    //! pull-mode endpoints must continue to work post-A2A migration,
+    //! since v0.1.0 of `chakramcp` (Python) and `@chakramcp/sdk` (TS)
+    //! are already published and depend on these exact endpoint
+    //! shapes:
+    //!
+    //!   POST /v1/invoke                 — caller submits work
+    //!   GET  /v1/invocations/{id}       — caller polls for terminal
+    //!   GET  /v1/inbox?agent_id=…       — granter polls for parked
+    //!   POST /v1/invocations/{id}/result — granter reports outcome
+    //!
+    //! The scheduler-demo (`examples/scheduler-demo/`) is a
+    //! published-on-the-website v0.1.0 SDK demo that uses exactly
+    //! this flow. If this test fails, the demo fails. D5 doesn't
+    //! touch any of these handlers — but the schema migrations
+    //! from D1 *did* touch the agents/accounts tables, so we
+    //! verify the contract holds end-to-end.
+    use axum::body::Body;
+    use axum::http::{header, Request, StatusCode};
+    use chakramcp_shared::config::SharedConfig;
+    use http_body_util::BodyExt;
+    use sha2::{Digest, Sha256};
+    use sqlx::PgPool;
+    use tower::ServiceExt;
+    use uuid::Uuid;
+
+    fn config() -> SharedConfig {
+        SharedConfig {
+            database_url: "ignored".into(),
+            jwt_secret: "test-secret".into(),
+            admin_email: None,
+            survey_enabled: false,
+            frontend_base_url: "http://localhost:3000".into(),
+            app_base_url: "http://localhost:8080".into(),
+            relay_base_url: "http://localhost:8090".into(),
+            // Off — legacy endpoints don't depend on it. Keeping it
+            // false also proves the v0.1.0 contract works for
+            // self-hosters who haven't enabled the new A2A surfaces.
+            discovery_v2_enabled: false,
+            log_filter: "warn".into(),
+        }
+    }
+
+    /// Seed the same shape as `examples/scheduler-demo/setup.py`:
+    /// two accounts, one agent each, friendship, grant. Returns the
+    /// caller's ck_ token, both agent ids, and the grant id.
+    struct DemoFixture {
+        caller_token: String,
+        caller_user_id: Uuid,
+        granter_agent_id: Uuid,
+        grantee_agent_id: Uuid,
+        grant_id: Uuid,
+        capability_id: Uuid,
+    }
+
+    async fn seed_demo(pool: &PgPool) -> DemoFixture {
+        let alice_user = Uuid::now_v7(); // granter / inbox.serve side
+        let bob_user = Uuid::now_v7(); // grantee / invoke side
+        for (uid, name) in [(alice_user, "Alice"), (bob_user, "Bob")] {
+            sqlx::query!(
+                r#"INSERT INTO users (id, email, display_name, password_hash)
+                   VALUES ($1, $2, $3, 'x')"#,
+                uid,
+                format!("{name}-{uid}@t.local"),
+                name,
+            )
+            .execute(pool)
+            .await
+            .unwrap();
+        }
+
+        // Bob (the caller) gets an API key — same shape v0.1.0 SDK uses.
+        let bob_ck = format!("ck_demo_{bob_user}");
+        let mut h = Sha256::new();
+        h.update(bob_ck.as_bytes());
+        let kh = hex::encode(h.finalize());
+        sqlx::query!(
+            r#"INSERT INTO api_keys (id, user_id, key_hash, name, key_prefix)
+               VALUES ($1, $2, $3, 'demo', 'ck_demo')"#,
+            Uuid::now_v7(),
+            bob_user,
+            kh,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+
+        let alice_account = Uuid::now_v7();
+        let bob_account = Uuid::now_v7();
+        sqlx::query!(
+            r#"INSERT INTO accounts (id, slug, display_name, account_type, owner_user_id)
+               VALUES ($1, $2, 'Alice', 'individual', $3),
+                      ($4, $5, 'Bob',   'individual', $6)"#,
+            alice_account,
+            format!("alice-{alice_account}"),
+            alice_user,
+            bob_account,
+            format!("bob-{bob_account}"),
+            bob_user,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            r#"INSERT INTO account_memberships (id, account_id, user_id, role)
+               VALUES ($1, $2, $3, 'owner'),
+                      ($4, $5, $6, 'owner')"#,
+            Uuid::now_v7(),
+            alice_account,
+            alice_user,
+            Uuid::now_v7(),
+            bob_account,
+            bob_user,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+
+        // Two agents: alice-scheduler (granter) + bob-caller (grantee).
+        let alice_agent = Uuid::now_v7();
+        let bob_agent = Uuid::now_v7();
+        sqlx::query!(
+            r#"INSERT INTO agents (id, account_id, slug, display_name, visibility)
+               VALUES ($1, $2, 'alice-scheduler', 'Alice Scheduler', 'network'),
+                      ($3, $4, 'bob-caller',      'Bob Caller',      'network')"#,
+            alice_agent,
+            alice_account,
+            bob_agent,
+            bob_account,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+
+        // The propose_slots capability on alice-scheduler.
+        let cap = Uuid::now_v7();
+        sqlx::query!(
+            r#"INSERT INTO agent_capabilities
+                  (id, agent_id, name, description, input_schema, output_schema, visibility)
+               VALUES ($1, $2, 'propose_slots', 'Propose meeting slots.',
+                       '{"type":"object"}'::jsonb,
+                       '{"type":"object"}'::jsonb,
+                       'network')"#,
+            cap,
+            alice_agent,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+
+        // Friendship + Grant.
+        sqlx::query!(
+            r#"INSERT INTO friendships
+                  (id, proposer_agent_id, target_agent_id, status, decided_at)
+               VALUES ($1, $2, $3, 'accepted', now())"#,
+            Uuid::now_v7(),
+            alice_agent,
+            bob_agent,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        let grant = Uuid::now_v7();
+        sqlx::query!(
+            r#"INSERT INTO grants
+                  (id, granter_agent_id, grantee_agent_id, capability_id, status)
+               VALUES ($1, $2, $3, $4, 'active')"#,
+            grant,
+            alice_agent,
+            bob_agent,
+            cap,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+
+        DemoFixture {
+            caller_token: bob_ck,
+            caller_user_id: bob_user,
+            granter_agent_id: alice_agent,
+            grantee_agent_id: bob_agent,
+            grant_id: grant,
+            capability_id: cap,
+        }
+    }
+
+    /// Full flow mirrors what `chakramcp.AsyncChakraMCP.invoke_and_wait`
+    /// + `chakramcp.AsyncChakraMCP.inbox.serve` do at the wire level.
+    /// If this test passes, the scheduler-demo passes.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn v01_pull_mode_full_lifecycle(pool: PgPool) {
+        let f = seed_demo(&pool).await;
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+
+        // ── Bob: POST /v1/invoke ────────────────────────────
+        let invoke_res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/invoke")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, format!("Bearer {}", f.caller_token))
+                    .body(Body::from(
+                        serde_json::to_vec(&serde_json::json!({
+                            "grant_id": f.grant_id,
+                            "grantee_agent_id": f.grantee_agent_id,
+                            "input": {"duration_min": 30, "within_days": 7}
+                        }))
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(invoke_res.status(), StatusCode::ACCEPTED);
+        let invoke_body: serde_json::Value =
+            serde_json::from_slice(&invoke_res.into_body().collect().await.unwrap().to_bytes())
+                .unwrap();
+        assert_eq!(invoke_body["status"], "pending");
+        let invocation_id: Uuid = invoke_body["invocation_id"]
+            .as_str()
+            .and_then(|s| s.parse().ok())
+            .unwrap();
+
+        // ── Bob: GET /v1/invocations/{id} (still pending) ───
+        let poll_res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/v1/invocations/{invocation_id}"))
+                    .header(header::AUTHORIZATION, format!("Bearer {}", f.caller_token))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(poll_res.status(), StatusCode::OK);
+        let poll_body: serde_json::Value =
+            serde_json::from_slice(&poll_res.into_body().collect().await.unwrap().to_bytes())
+                .unwrap();
+        assert_eq!(poll_body["status"], "pending");
+
+        // ── Alice: GET /v1/inbox?agent_id=<alice-scheduler> ─
+        // Need a token for Alice. Mint one quickly.
+        let alice_user_id = sqlx::query_scalar!(
+            "SELECT owner_user_id FROM accounts a JOIN agents g ON g.account_id=a.id WHERE g.id=$1",
+            f.granter_agent_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+        .unwrap();
+        let alice_ck = format!("ck_demo_alice_{alice_user_id}");
+        let mut h = Sha256::new();
+        h.update(alice_ck.as_bytes());
+        let kh = hex::encode(h.finalize());
+        sqlx::query!(
+            r#"INSERT INTO api_keys (id, user_id, key_hash, name, key_prefix)
+               VALUES ($1, $2, $3, 'demo', 'ck_demo')"#,
+            Uuid::now_v7(),
+            alice_user_id,
+            kh,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let inbox_res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/v1/inbox?agent_id={}", f.granter_agent_id))
+                    .header(header::AUTHORIZATION, format!("Bearer {alice_ck}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(inbox_res.status(), StatusCode::OK);
+        let inbox_body: serde_json::Value =
+            serde_json::from_slice(&inbox_res.into_body().collect().await.unwrap().to_bytes())
+                .unwrap();
+        // The legacy contract returns an array of invocations.
+        let items = inbox_body
+            .get("invocations")
+            .or_else(|| inbox_body.as_array().map(|_| &inbox_body))
+            .and_then(|v| v.as_array())
+            .expect("inbox response should contain an invocations array");
+        assert!(
+            items
+                .iter()
+                .any(|inv| inv["id"] == invocation_id.to_string()),
+            "Alice's inbox should include the parked invocation"
+        );
+
+        // ── Alice: POST /v1/invocations/{id}/result ─────────
+        let result_res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/invocations/{invocation_id}/result"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, format!("Bearer {alice_ck}"))
+                    .body(Body::from(
+                        serde_json::to_vec(&serde_json::json!({
+                            "status": "succeeded",
+                            "output": { "slots": ["2026-05-04T10:00:00Z"] }
+                        }))
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(
+            result_res.status().is_success(),
+            "result post should succeed; got {}",
+            result_res.status()
+        );
+
+        // ── Bob: GET /v1/invocations/{id} (now succeeded) ───
+        let poll2 = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/v1/invocations/{invocation_id}"))
+                    .header(header::AUTHORIZATION, format!("Bearer {}", f.caller_token))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let poll2_body: serde_json::Value =
+            serde_json::from_slice(&poll2.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        assert_eq!(poll2_body["status"], "succeeded");
+        assert_eq!(
+            poll2_body["output_preview"]["slots"][0],
+            "2026-05-04T10:00:00Z"
+        );
+
+        // Defensive use of unused values.
+        let _ = (
+            f.caller_user_id,
+            f.capability_id,
+            f.grantee_agent_id,
+            invocation_id,
+        );
+    }
 }

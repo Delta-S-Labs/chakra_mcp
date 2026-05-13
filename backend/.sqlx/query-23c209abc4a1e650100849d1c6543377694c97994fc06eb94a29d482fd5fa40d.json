@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO agent_capabilities\n                  (id, agent_id, name, description, input_schema, output_schema, visibility)\n               VALUES ($1, $2, 'propose_slots', 'Propose meeting slots.',\n                       '{\"type\":\"object\"}'::jsonb,\n                       '{\"type\":\"object\"}'::jsonb,\n                       'network')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "23c209abc4a1e650100849d1c6543377694c97994fc06eb94a29d482fd5fa40d"
+}

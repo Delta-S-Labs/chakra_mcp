@@ -1,0 +1,8 @@
+# Provisioned by setup.py — contains live API keys.
+state.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/

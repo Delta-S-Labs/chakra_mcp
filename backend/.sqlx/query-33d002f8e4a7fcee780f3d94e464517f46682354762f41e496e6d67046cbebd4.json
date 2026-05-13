@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH candidate AS (\n            SELECT id\n              FROM agents\n             WHERE mode = 'push'\n               AND tombstoned_at IS NULL\n               AND (agent_card_last_attempted_at IS NULL\n                    OR agent_card_last_attempted_at <\n                        now() - make_interval(secs => $1::double precision))\n             ORDER BY agent_card_last_attempted_at NULLS FIRST\n             LIMIT 1\n             FOR UPDATE SKIP LOCKED\n        )\n        UPDATE agents\n           SET agent_card_last_attempted_at = now()\n         WHERE id = (SELECT id FROM candidate)\n         RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "33d002f8e4a7fcee780f3d94e464517f46682354762f41e496e6d67046cbebd4"
+}

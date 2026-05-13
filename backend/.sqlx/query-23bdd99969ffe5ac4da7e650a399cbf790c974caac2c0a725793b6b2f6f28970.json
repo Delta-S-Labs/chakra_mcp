@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT a.agent_card_url, a.slug AS agent_slug,\n               acc.slug AS account_slug,\n               a.agent_card_cached\n          FROM agents a\n          JOIN accounts acc ON acc.id = a.account_id\n         WHERE a.id = $1\n           AND a.tombstoned_at IS NULL\n           AND acc.tombstoned_at IS NULL\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "agent_card_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "agent_slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "account_slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "agent_card_cached",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "23bdd99969ffe5ac4da7e650a399cbf790c974caac2c0a725793b6b2f6f28970"
+}

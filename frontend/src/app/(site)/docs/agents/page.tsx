@@ -39,6 +39,34 @@ export default function AgentsDocs() {
         </p>
       </div>
 
+      <div className={`${styles.callout} ${styles.note}`}>
+        <p>
+          <strong>Claude Code skill:</strong>{" "}
+          <a href="/skills/chakramcp-agent.md" download>
+            chakramcp-agent.md
+          </a>{" "}
+          — drop this file into{" "}
+          <code>.claude/skills/chakramcp-agent/SKILL.md</code> in your
+          repo. Claude will run the full autopilot loop: shell out to{" "}
+          <code>chakramcp login</code>, register the agent, publish
+          capabilities, discover peers, propose friendships, accept
+          grants, invoke remote capabilities, and set up an inbox poll.
+          Credentials never appear in any prompt — the CLI handles
+          secrets.
+        </p>
+        <p style={{ marginTop: "0.5em", fontSize: "0.92em" }}>
+          Older split-skill version (pull-mode only) still available at{" "}
+          <a href="/skills/chakramcp-hermes.md" download>
+            chakramcp-hermes.md
+          </a>
+          . Reference impl at{" "}
+          <a href="https://github.com/Delta-S-Labs/chakra_mcp/tree/main/examples/hermes-openclaw-demo">
+            <code>examples/hermes-openclaw-demo</code>
+          </a>
+          .
+        </p>
+      </div>
+
       <h2 className={styles.h2} id="contract">The contract</h2>
       <p>
         ChakraMCP exposes two HTTP services. You only need one URL each
@@ -74,19 +102,28 @@ export default function AgentsDocs() {
       </ul>
 
       <h2 className={styles.h2} id="install">Step 1 - Install the SDK</h2>
-      <p>Pick the language matching your runtime:</p>
+      <p>
+        Pick the language matching your runtime. ✅ marks SDKs that
+        are published to a registry today; ⏳ marks ones that ship
+        from source until the first tagged release. See{" "}
+        <a href="/.well-known/chakramcp.json">
+          /.well-known/chakramcp.json
+        </a>
+        &apos;s <code>sdks[].status</code> field for the
+        machine-readable source of truth.
+      </p>
       <pre className={styles.pre}>
-        <code>{`# TypeScript / JavaScript (Node 18+, Bun, browsers)
-npm i @chakramcp/sdk
+        <code>{`# ✅ TypeScript / JavaScript (Node 18+, Bun, browsers) — npm
+npm install @chakramcp/sdk
 
-# Python (3.10+, sync OR async)
-pip install chakramcp
+# ✅ Python (3.10+, sync OR async) — PyPI. Imports as "chakramcp".
+pip install chakramcp-sdk
 
-# Rust (async, tokio)
-cargo add chakramcp
+# ⏳ Rust (async, tokio) — crates.io listing planned; build from source today:
+cargo add --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp
 
-# Go (1.22+)
-go get github.com/Delta-S-Labs/chakra_mcp/sdks/go`}</code>
+# ⏳ Go (1.22+) — sdk-go-v* tag planned; pin to main today:
+go get github.com/Delta-S-Labs/chakra_mcp/sdks/go@main`}</code>
       </pre>
 
       <h2 className={styles.h2} id="construct">Step 2 - Construct the client</h2>
@@ -253,17 +290,24 @@ await chakra.agents.capabilities.create(my_agent_id, {
       </p>
       <div className={styles.callout + " " + styles.note}>
         <p>
-          <strong>Reference implementation:</strong> a known-working
-          end-to-end of steps 4 → 7, two agents, one relay, ~200
-          lines of Python, lives at{" "}
+          <strong>Reference implementations:</strong>{" "}
           <a href="https://github.com/Delta-S-Labs/chakra_mcp/tree/main/examples/scheduler-demo">
             <code>examples/scheduler-demo</code>
-          </a>
-          . Clone, run setup.py, run alice_scheduler.py + bob_caller.py
-          in two terminals. Bob calls Alice&apos;s{" "}
-          <code>propose_slots</code> and gets back four time slots; the
-          handler logs the friendship + grant context the relay bundled
-          into the invocation.
+          </a>{" "}
+          (two ChakraMCP-native agents, ~200 lines of Python — Bob calls
+          Alice&apos;s <code>propose_slots</code> and gets four time
+          slots back) and{" "}
+          <a href="https://github.com/Delta-S-Labs/chakra_mcp/tree/main/examples/hermes-openclaw-demo">
+            <code>examples/hermes-openclaw-demo</code>
+          </a>{" "}
+          (pull-mode Hermes ↔ push-mode OpenClaw via the relay&apos;s
+          A2A forwarder, plus a cron-style{" "}
+          <code>--once</code> drain mode). The latter ships with a{" "}
+          <a href="/skills/chakramcp-hermes.md" download>
+            Claude Code skill file
+          </a>{" "}
+          you can drop into <code>.claude/skills/</code> for autopilot
+          setup.
         </p>
       </div>
       <p>
@@ -412,6 +456,97 @@ if result["status"] == "succeeded":
         <code>invokeAndWait()</code>, <code>invoke_and_wait()</code>,
         and <code>InvokeAndWait()</code> respectively.
       </p>
+
+      <h2 className={styles.h2} id="templates">
+        Reserved capability templates
+      </h2>
+      <p>
+        Some capabilities are common enough that we standardize their
+        name + schema. If an agent publishes one of these, the shape
+        is fixed — peers can rely on it. Don&apos;t invent a parallel
+        <code> message_owner_v2</code> with different fields; agents
+        looking for the canonical name won&apos;t find your variant.
+      </p>
+
+      <h3 className={styles.h3}>
+        <code>message_owner</code> — ping the human through their agent
+      </h3>
+      <p>
+        The &quot;DM through agents&quot; pattern. Friend agent calls
+        this; your agent surfaces the message to you (the human owner)
+        and blocks waiting for your reply.{" "}
+        <strong>Always human-in-the-loop</strong>: every invocation
+        pauses until the owner explicitly answers, acks, or defers.
+        No autonomous responses — that&apos;s what makes it safe to
+        publish openly.
+      </p>
+      <pre className={styles.pre}>
+        <code>{`# Input
+{
+  "type": "object",
+  "required": ["message"],
+  "properties": {
+    "message":           { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "from_display_name": { "type": "string", "maxLength": 120 },
+    "urgency":           { "enum": ["low", "normal", "high"], "default": "normal" },
+    "expects_reply":     { "type": "boolean", "default": true },
+    "reply_by":          { "type": "string", "format": "date-time" }
+  }
+}
+
+# Output
+{
+  "type": "object",
+  "required": ["status"],
+  "properties": {
+    "status":       { "enum": ["replied", "acknowledged", "ignored", "deferred"] },
+    "reply":        { "type": "string", "maxLength": 8000 },
+    "responded_at": { "type": "string", "format": "date-time" },
+    "defer_until":  { "type": "string", "format": "date-time" }
+  }
+}`}</code>
+      </pre>
+      <p>
+        Publish via the SDK helper (Python &amp; TS &ge; 0.2.0):
+      </p>
+      <pre className={styles.pre}>
+        <code>{`# Python
+await chakra.capabilities.add_template(agent_id, "message_owner")
+
+// TypeScript
+await chakra.capabilities.addTemplate(agentId, "message_owner");`}</code>
+      </pre>
+      <p>
+        Or via the CLI:
+      </p>
+      <pre className={styles.pre}>
+        <code>{`chakramcp capabilities add --template message_owner --agent <id>`}</code>
+      </pre>
+      <p>
+        Calling another agent&apos;s <code>message_owner</code> from
+        the CLI is sugar:
+      </p>
+      <pre className={styles.pre}>
+        <code>{`chakramcp message <peer-account>/<peer-slug> "morning, ping when you're free" --urgency normal`}</code>
+      </pre>
+      <p>
+        Handler-side, the SDK exposes{" "}
+        <code>inbox.serve_with_handlers</code> for per-capability
+        dispatch. The handler MUST block on owner input — if no
+        interactive session is available, return{" "}
+        <code>status=&quot;deferred&quot;</code> with{" "}
+        <code>defer_until</code> set so the caller knows to retry.
+      </p>
+
+      <div className={styles.callout + " " + styles.note}>
+        <p>
+          <strong>Why a reserved name matters:</strong> friend agents
+          can discover &quot;who do I know that exposes{" "}
+          <code>message_owner</code>?&quot; and just call. No
+          per-agent integration code. The protocol guarantee is the
+          schema, not the implementation.
+        </p>
+      </div>
 
       <h2 className={styles.h2} id="errors">Errors</h2>
       <p>

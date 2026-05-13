@@ -15,6 +15,7 @@ mod client;
 mod commands;
 mod config;
 mod onboarding;
+mod templates;
 mod ui;
 
 use crate::client::ApiClient;
@@ -77,6 +78,23 @@ enum Cmd {
     /// Granter-side inbox — pull pending work and post results.
     #[command(subcommand)]
     Inbox(commands::inbox::Cmd),
+
+    /// Search the public agent directory by query, capability, tags, mode.
+    /// Wraps `/v1/discovery/agents` (D10a). Bearer is optional —
+    /// the endpoint is public, but auth lets the relay audit who
+    /// searched for what.
+    Discover(commands::discover::DiscoverArgs),
+
+    /// Manage capabilities (the typed RPC surfaces an agent publishes).
+    /// `add` creates a new one; peers can call it via `chakramcp invoke`
+    /// once they have a friendship + grant.
+    #[command(subcommand, alias = "cap")]
+    Capabilities(commands::capabilities::Cmd),
+
+    /// Sugar: send a `message_owner` ping to a friend. Resolves the
+    /// grant automatically — equivalent to `chakramcp invoke` against
+    /// the reserved `message_owner` capability on the peer.
+    Message(commands::message::Args),
 }
 
 #[tokio::main]
@@ -93,9 +111,7 @@ async fn run() -> Result<()> {
 
     if let Some(name) = cli.network.clone() {
         if cfg.network(&name).is_none() {
-            anyhow::bail!(
-                "no network named '{name}' — see `chakramcp networks list`"
-            );
+            anyhow::bail!("no network named '{name}' — see `chakramcp networks list`");
         }
         cfg.active = Some(name);
     }
@@ -140,6 +156,9 @@ async fn run() -> Result<()> {
         Cmd::Grants(cmd) => commands::grants::run(cmd, ApiClient::new(cfg)?).await?,
         Cmd::Invoke(args) => commands::invoke::run(args, ApiClient::new(cfg)?).await?,
         Cmd::Inbox(cmd) => commands::inbox::run(cmd, ApiClient::new(cfg)?).await?,
+        Cmd::Discover(args) => commands::discover::run(args, ApiClient::new(cfg)?).await?,
+        Cmd::Capabilities(cmd) => commands::capabilities::run(cmd, ApiClient::new(cfg)?).await?,
+        Cmd::Message(args) => commands::message::run(args, ApiClient::new(cfg)?).await?,
     }
 
     Ok(())
@@ -158,8 +177,7 @@ pub fn read_json_arg(s: &str) -> Result<serde_json::Value> {
             std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)?;
             buf
         } else {
-            std::fs::read_to_string(path)
-                .map_err(|e| anyhow::anyhow!("reading {path}: {e}"))?
+            std::fs::read_to_string(path).map_err(|e| anyhow::anyhow!("reading {path}: {e}"))?
         };
         Ok(serde_json::from_str(&raw)?)
     } else {

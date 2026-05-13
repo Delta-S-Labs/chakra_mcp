@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO relay_signing_keys (kid, private_key_bytes, public_key_bytes)\n            VALUES ($1, $2, $3)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a0826efe128f163f034db9c200f2692e4e8515b0e91ce81c4fbab9e6ac625224"
+}

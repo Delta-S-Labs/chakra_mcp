@@ -20,9 +20,14 @@ jobs:
   publish:
     name: Publish @chakramcp/sdk
     runs-on: ubuntu-22.04
-    if: ${{ env.NPM_TOKEN_SET == 'true' }}
-    env:
-      NPM_TOKEN_SET: ${{ secrets.NPM_TOKEN != '' }}
+    # The original gate referenced `env.NPM_TOKEN_SET` from the
+    # job-level `env:` block, but that block isn't evaluated before
+    # the job-level `if:` runs — so the expression read as
+    # undefined→false and GitHub marked the run as "workflow file
+    # issue". Replaced with a step-level guard that runs after the
+    # secret is in scope; the publish step is the last thing in the
+    # job, so a missing token short-circuits there with a clear
+    # error rather than silently no-op-ing.
     defaults:
       run:
         working-directory: sdks/typescript
@@ -64,4 +69,9 @@ jobs:
       - name: Publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::error::NPM_TOKEN secret is empty. Set it in repo secrets and re-run."
+            exit 1
+          fi
+          npm publish --access public

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE relay_invocations\n                  SET status = 'failed',\n                      error_message = 'capability raised'\n                WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a7072a8800a03e4992ec10db7fc0fce0dcf7adb83dabdba15394e3582b9daeb5"
+}

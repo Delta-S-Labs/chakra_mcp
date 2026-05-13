@@ -5,12 +5,13 @@
 //! machine via `brew install chakramcp-server`.
 //!
 //! Subcommands:
-//!   * init    — write a sensible default config to ~/.chakramcp/server.toml
-//!               (generates a fresh JWT_SECRET).
-//!   * migrate — apply pending migrations against DATABASE_URL and exit.
-//!   * start   — run app on $APP_PORT (default 8080) and relay on
-//!               $RELAY_PORT (default 8090). Migrations are applied
-//!               automatically on startup.
+//!
+//! - `init`    — write a sensible default config to ~/.chakramcp/server.toml
+//!   (generates a fresh JWT_SECRET).
+//! - `migrate` — apply pending migrations against DATABASE_URL and exit.
+//! - `start`   — run app on $APP_PORT (default 8080) and relay on
+//!   $RELAY_PORT (default 8090). Migrations are applied
+//!   automatically on startup.
 
 use std::fs;
 use std::net::SocketAddr;
@@ -104,8 +105,7 @@ fn init(
     rand::thread_rng().fill_bytes(&mut secret_bytes);
     let jwt_secret = hex::encode(secret_bytes);
 
-    let database_url =
-        database_url.unwrap_or_else(|| "postgres:///chakramcp".to_string());
+    let database_url = database_url.unwrap_or_else(|| "postgres:///chakramcp".to_string());
 
     let admin_line = match admin_email.as_deref() {
         Some(e) if !e.is_empty() => format!("admin_email = \"{e}\"\n"),
@@ -158,7 +158,10 @@ async fn migrate(explicit_path: Option<PathBuf>) -> Result<()> {
         .run(&pool)
         .await
         .context("running migrations")?;
-    eprintln!("migrations applied to {}", redact_url(&cfg.shared.database_url));
+    eprintln!(
+        "migrations applied to {}",
+        redact_url(&cfg.shared.database_url)
+    );
     Ok(())
 }
 
@@ -170,6 +173,25 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
 
     let pool: PgPool = db::connect(&cfg.shared.database_url).await?;
     sqlx::migrate!("../migrations").run(&pool).await?;
+
+    // Spawn the Agent Card refresh job before mounting the routers
+    // so it picks up any push-mode rows immediately on startup. Only
+    // active when DISCOVERY_V2 is on; otherwise the job idles and
+    // wastes a connection.
+    let refresh_shutdown = if cfg.shared.discovery_v2_enabled {
+        use chakramcp_relay::agent_card::refresh_job::{
+            spawn as spawn_refresh_job, DEFAULT_STALENESS_SECONDS, DEFAULT_TICK_INTERVAL_SECONDS,
+        };
+        tracing::info!("DISCOVERY_V2 enabled — spawning Agent Card refresh job (server mode)");
+        Some(spawn_refresh_job(
+            pool.clone(),
+            cfg.shared.relay_base_url.clone(),
+            DEFAULT_TICK_INTERVAL_SECONDS,
+            DEFAULT_STALENESS_SECONDS,
+        ))
+    } else {
+        None
+    };
 
     let app_state = AppState::new(pool.clone(), cfg.shared.clone());
     let relay_state = RelayState::new(pool, cfg.shared.clone());
@@ -207,6 +229,11 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
             tracing::warn!("relay server stopped — initiating shutdown");
         }
     }
+    // Stop the refresh loop cleanly so its current tick (if any)
+    // can finish before the DB pool drops.
+    if let Some(tx) = refresh_shutdown {
+        let _ = tx.send(true);
+    }
     Ok(())
 }
 
@@ -219,7 +246,7 @@ struct ServerConfig {
     relay_port: u16,
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Default, serde::Deserialize)]
 struct ServerFile {
     database_url: Option<String>,
     jwt_secret: Option<String>,
@@ -228,6 +255,7 @@ struct ServerFile {
     frontend_base_url: Option<String>,
     app_base_url: Option<String>,
     relay_base_url: Option<String>,
+    discovery_v2_enabled: Option<bool>,
     app_port: Option<u16>,
     relay_port: Option<u16>,
     log_filter: Option<String>,
@@ -243,10 +271,8 @@ fn load_config(explicit_path: Option<PathBuf>) -> Result<ServerConfig> {
         .as_ref()
         .filter(|p| p.exists())
         .map(|p| {
-            let raw = fs::read_to_string(p)
-                .with_context(|| format!("reading {}", p.display()))?;
-            toml::from_str::<ServerFile>(&raw)
-                .with_context(|| format!("parsing {}", p.display()))
+            let raw = fs::read_to_string(p).with_context(|| format!("reading {}", p.display()))?;
+            toml::from_str::<ServerFile>(&raw).with_context(|| format!("parsing {}", p.display()))
         })
         .transpose()?
         .unwrap_or_default_marker();
@@ -265,18 +291,19 @@ fn load_config(explicit_path: Option<PathBuf>) -> Result<ServerConfig> {
     let jwt_secret = std::env::var("JWT_SECRET")
         .ok()
         .or(from_file.jwt_secret)
-        .ok_or_else(|| {
-            anyhow!(
-                "JWT_SECRET is required — set it in env or in the config file"
-            )
-        })?;
+        .ok_or_else(|| anyhow!("JWT_SECRET is required — set it in env or in the config file"))?;
     let admin_email = std::env::var("ADMIN_EMAIL")
         .ok()
         .or(from_file.admin_email)
         .filter(|s| !s.trim().is_empty());
     let survey_enabled = std::env::var("SURVEY_ENABLED")
         .ok()
-        .map(|s| matches!(s.trim().to_lowercase().as_str(), "true" | "1" | "yes" | "on"))
+        .map(|s| {
+            matches!(
+                s.trim().to_lowercase().as_str(),
+                "true" | "1" | "yes" | "on"
+            )
+        })
         .or(from_file.survey_enabled)
         .unwrap_or(false);
 
@@ -292,6 +319,17 @@ fn load_config(explicit_path: Option<PathBuf>) -> Result<ServerConfig> {
         .ok()
         .or(from_file.relay_base_url)
         .unwrap_or_else(|| "http://localhost:8090".into());
+
+    let discovery_v2_enabled = std::env::var("DISCOVERY_V2")
+        .ok()
+        .map(|s| {
+            matches!(
+                s.trim().to_lowercase().as_str(),
+                "true" | "1" | "yes" | "on"
+            )
+        })
+        .or(from_file.discovery_v2_enabled)
+        .unwrap_or(false);
 
     let log_filter = std::env::var("RUST_LOG")
         .ok()
@@ -318,6 +356,7 @@ fn load_config(explicit_path: Option<PathBuf>) -> Result<ServerConfig> {
             frontend_base_url,
             app_base_url,
             relay_base_url,
+            discovery_v2_enabled,
             log_filter,
         },
         app_port,
@@ -339,25 +378,6 @@ fn redact_url(url: &str) -> String {
             u.to_string()
         }
         Err(_) => url.to_string(),
-    }
-}
-
-// `Default` for ServerFile so the missing-file path returns an
-// all-None struct without us writing it out by hand.
-impl Default for ServerFile {
-    fn default() -> Self {
-        Self {
-            database_url: None,
-            jwt_secret: None,
-            admin_email: None,
-            survey_enabled: None,
-            frontend_base_url: None,
-            app_base_url: None,
-            relay_base_url: None,
-            app_port: None,
-            relay_port: None,
-            log_filter: None,
-        }
     }
 }
 

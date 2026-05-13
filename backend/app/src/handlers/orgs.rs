@@ -95,7 +95,10 @@ pub async fn create(
     if slug.is_empty() {
         return Err(ApiError::InvalidRequest("slug is required".into()));
     }
-    if !slug.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+    if !slug
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
         return Err(ApiError::InvalidRequest(
             "slug may only contain a-z, 0-9, hyphens, underscores".into(),
         ));
@@ -252,7 +255,9 @@ pub async fn create_invite(
 ) -> ApiResult<Json<InviteDto>> {
     let role = req.role.unwrap_or_else(|| "member".to_string());
     if !matches!(role.as_str(), "owner" | "admin" | "member") {
-        return Err(ApiError::InvalidRequest("role must be owner|admin|member".into()));
+        return Err(ApiError::InvalidRequest(
+            "role must be owner|admin|member".into(),
+        ));
     }
     if req.email.trim().is_empty() {
         return Err(ApiError::InvalidRequest("email is required".into()));

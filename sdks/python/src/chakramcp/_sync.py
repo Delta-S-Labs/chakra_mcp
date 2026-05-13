@@ -177,6 +177,29 @@ class _CapabilitiesClient:
     ) -> Capability:
         return self._c._relay("POST", f"/v1/agents/{agent_id}/capabilities", dict(body))
 
+    def add_template(
+        self,
+        agent_id: str,
+        template_id: str,
+        *,
+        description: str | None = None,
+        visibility: str | None = None,
+    ) -> Capability:
+        """Publish a reserved-name capability with its canonical schema.
+
+        See `AsyncCapabilitiesClient.add_template` for full docs.
+        """
+        from copy import deepcopy
+
+        from ._templates import get_template
+
+        body = deepcopy(get_template(template_id))
+        if description is not None:
+            body["description"] = description
+        if visibility is not None:
+            body["visibility"] = visibility
+        return self._c._relay("POST", f"/v1/agents/{agent_id}/capabilities", body)
+
     def delete(self, agent_id: str, capability_id: str) -> None:
         self._c._relay("DELETE", f"/v1/agents/{agent_id}/capabilities/{capability_id}")
 

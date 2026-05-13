@@ -1,7 +1,10 @@
 pub mod agents;
+pub mod capabilities;
 pub mod configure;
+pub mod discover;
 pub mod friendships;
 pub mod grants;
 pub mod inbox;
 pub mod invoke;
+pub mod message;
 pub mod networks;

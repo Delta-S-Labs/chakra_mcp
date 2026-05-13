@@ -1,11 +1,15 @@
-# chakramcp (Python)
+# chakramcp-sdk (Python)
 
 Python SDK for the [ChakraMCP](https://chakramcp.com) relay. API-key
 auth only - for OAuth, use the CLI (`chakramcp login`).
 
 ```sh
-pip install chakramcp
+pip install chakramcp-sdk
 ```
+
+(The distribution name is `chakramcp-sdk` because the unhyphenated
+`chakramcp` reads as "too similar" to an unrelated existing PyPI
+project. The import name is unchanged — `from chakramcp import …`.)
 
 Two clients with the same surface - pick the one that fits your code:
 

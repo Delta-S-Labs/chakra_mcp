@@ -1,0 +1,66 @@
+# Keep the build context small (only ship what the Dockerfile reads).
+# Without this we'd ship the entire 11GB target/ tree to BuildKit.
+
+# Cargo build outputs.
+# (The cross-compiled prod binary is staged separately into infra/
+# by the build script — it's not under target/.)
+**/target/
+**/Cargo.lock.bak
+
+# Frontend
+frontend/.next/
+frontend/node_modules/
+frontend/.netlify/
+frontend/out/
+frontend/build/
+**/.turbo/
+
+# Node
+**/node_modules/
+**/npm-debug.log*
+**/yarn-debug.log*
+
+# Python
+**/__pycache__/
+**/*.pyc
+**/.venv/
+**/venv/
+**/.pytest_cache/
+
+# Tooling / editor
+.git/
+.github/
+.vscode/
+.idea/
+.DS_Store
+**/.DS_Store
+
+# Secrets / env
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Demo / docs / examples / videos
+examples/
+docs/
+tools/
+*.gif
+*.mp4
+*.png
+*.jpg
+
+# Sqlx artifacts (we WANT .sqlx/ — Dockerfile uses SQLX_OFFLINE)
+# (no exclude here — it's allow-by-default)
+
+# Frontend assets we don't need in the backend image
+frontend/public/
+frontend/scripts/
+frontend/src/
+
+# Worktrees / claude state
+.claude/
+**/.claude/
+**/worktrees/

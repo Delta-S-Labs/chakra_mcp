@@ -45,6 +45,19 @@ tasks:
       - pnpm install --frozen-lockfile=false
       - pnpm exec playwright install chromium
 
+  install:hooks:
+    desc: Activate the lefthook pre-commit + pre-push git hooks
+    cmds:
+      - |
+        if ! command -v lefthook >/dev/null 2>&1; then
+          echo "lefthook not found. Install with:"
+          echo "  brew install lefthook              # mac"
+          echo "  go install github.com/evilmartians/lefthook@latest"
+          exit 1
+        fi
+      - lefthook install
+      - 'echo "git hooks active. Test: touch a .rs file, git add, git commit. (Bypass with --no-verify.)"'
+
   # ─── Local development ────────────────────────────────────
 
   dev:

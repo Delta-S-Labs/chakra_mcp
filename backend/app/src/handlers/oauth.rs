@@ -37,10 +37,7 @@ fn random_token(byte_len: usize) -> String {
     use rand::RngCore;
     let mut bytes = vec![0u8; byte_len];
     rand::thread_rng().fill_bytes(&mut bytes);
-    base64::Engine::encode(
-        &base64::engine::general_purpose::URL_SAFE_NO_PAD,
-        &bytes,
-    )
+    base64::Engine::encode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, &bytes)
 }
 
 // ─── GET /.well-known/oauth-authorization-server ─────────
@@ -390,7 +387,12 @@ pub async fn token(
     .fetch_one(&state.db)
     .await?;
 
-    let claims = jwt::UserClaims::new(row.user_id, user.email, user.is_admin, ACCESS_TOKEN_TTL_HOURS);
+    let claims = jwt::UserClaims::new(
+        row.user_id,
+        user.email,
+        user.is_admin,
+        ACCESS_TOKEN_TTL_HOURS,
+    );
     let access_token = jwt::encode_jwt(&claims, &state.config.jwt_secret)?;
 
     Ok(Json(TokenResponse {

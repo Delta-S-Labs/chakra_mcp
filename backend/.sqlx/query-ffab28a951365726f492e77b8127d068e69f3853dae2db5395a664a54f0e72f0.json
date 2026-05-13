@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                UPDATE agents\n                   SET agent_card_cached = $2,\n                       agent_card_fetched_at = now(),\n                       agent_card_signed = $3,\n                       -- We don't verify upstream signatures in v1.\n                       -- Set false explicitly to make this clear in audit.\n                       agent_card_signature_verified = false\n                 WHERE id = $1\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ffab28a951365726f492e77b8127d068e69f3853dae2db5395a664a54f0e72f0"
+}

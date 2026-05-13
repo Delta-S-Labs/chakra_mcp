@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT status, granter_agent_id, grantee_agent_id, capability_id, input_preview\n                 FROM relay_invocations LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "granter_agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "grantee_agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "capability_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "input_preview",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "cf46f387ee4935f4a702c3d6dac54924771e0f2978f1b1ba25942a6f14859013"
+}

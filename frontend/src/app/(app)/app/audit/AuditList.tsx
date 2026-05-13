@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { Invocation, InvocationStatus } from "@/lib/relay";
+import type { Agent, Invocation, InvocationStatus } from "@/lib/relay";
 import styles from "./audit.module.css";
 
 const STATUSES: InvocationStatus[] = [
@@ -18,21 +18,53 @@ const DIRECTIONS = [
   { id: "inbound", label: "Inbound" },
 ] as const;
 
-export function AuditList({ items }: { items: Invocation[] }) {
+export function AuditList({
+  items,
+  agents,
+}: {
+  items: Invocation[];
+  agents: Agent[];
+}) {
   const [direction, setDirection] = useState<"all" | "outbound" | "inbound">("all");
   const [statusFilter, setStatusFilter] = useState<InvocationStatus | "all">("all");
+  const [agentId, setAgentId] = useState<string>(""); // "" = all my agents
   const [openId, setOpenId] = useState<string | null>(null);
 
   const filtered = useMemo(
     () =>
       items.filter((i) => {
-        if (direction === "outbound" && !i.i_served) return false;
-        if (direction === "inbound" && !i.i_invoked) return false;
+        // Direction semantics:
+        //   outbound = the focal agent INVOKED someone (grantee side)
+        //   inbound  = the focal agent SERVED a call (granter side)
+        //
+        // When `agentId` is set, the focal agent is that specific one —
+        // and a row only counts if THAT agent is on the matching side.
+        // When `agentId` is empty, fall back to "any of my agents on
+        // the matching side" via the i_served / i_invoked flags.
+        if (agentId) {
+          if (direction === "outbound" && i.grantee_agent_id !== agentId) return false;
+          if (direction === "inbound" && i.granter_agent_id !== agentId) return false;
+          if (
+            direction === "all" &&
+            i.granter_agent_id !== agentId &&
+            i.grantee_agent_id !== agentId
+          ) {
+            return false;
+          }
+        } else {
+          if (direction === "outbound" && !i.i_invoked) return false;
+          if (direction === "inbound" && !i.i_served) return false;
+        }
         if (statusFilter !== "all" && i.status !== statusFilter) return false;
         return true;
       }),
-    [items, direction, statusFilter],
+    [items, direction, statusFilter, agentId],
   );
+
+  const focalLabel =
+    agentId
+      ? agents.find((a) => a.id === agentId)?.display_name ?? "selected agent"
+      : "any of my agents";
 
   if (items.length === 0) {
     return (
@@ -47,6 +79,27 @@ export function AuditList({ items }: { items: Invocation[] }) {
   return (
     <>
       <div className={styles.filters}>
+        {agents.length > 0 && (
+          <label className={styles.agentPicker}>
+            <span className={styles.agentPickerLabel}>Focal agent</span>
+            <select
+              value={agentId}
+              onChange={(e) => setAgentId(e.target.value)}
+              className={styles.agentSelect}
+            >
+              <option value="">All my agents</option>
+              {agents.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.display_name} ({a.slug})
+                </option>
+              ))}
+            </select>
+            <span className={styles.agentPickerHint}>
+              Outbound = {focalLabel} invoked someone · Inbound ={" "}
+              {focalLabel} served a call
+            </span>
+          </label>
+        )}
         <div className={styles.tabs}>
           {DIRECTIONS.map((d) => (
             <button

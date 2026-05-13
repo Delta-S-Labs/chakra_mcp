@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { auth, signOut } from "@/auth";
 import { AppNav } from "./AppNav";
 import styles from "./shell.module.css";
@@ -50,7 +52,15 @@ export default async function AppShellLayout({ children }: { children: ReactNode
             <form
               action={async () => {
                 "use server";
-                await signOut({ redirectTo: "/login" });
+                // Two-step: signOut clears cookies synchronously,
+                // then we redirect. The single-call form
+                // `signOut({ redirectTo })` races the NEXT_REDIRECT
+                // throw against the Set-Cookie writes in NextAuth v5
+                // beta and sometimes leaves the cookie alive — see
+                // AlreadySignedIn.tsx for the full note.
+                await signOut({ redirect: false });
+                revalidatePath("/", "layout");
+                redirect("/login");
               }}
             >
               <button type="submit" className={styles.signOut}>

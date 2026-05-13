@@ -1,0 +1,199 @@
+name: CD (deploy on merge to main)
+
+# Continuous deployment. After a PR is merged into `main`:
+#   - If frontend/**       changed → deploy frontend to Netlify
+#   - If backend/**        changed → build + push image to ECR
+#   - If backend/migrations changed → run migrations BEFORE
+#                                     restarting the relay
+#   - If infra/**          changed → re-build the image (configs
+#                                     baked into the runtime)
+#
+# Branch protection on `main` already enforces:
+#   - PR with required status checks green
+#   - No force-push, no deletion
+#   - Conversation resolution required
+# so anything that reaches this workflow has passed pre-merge tests.
+#
+# Required repo secrets (set via `gh secret set <NAME>`):
+#   NETLIFY_AUTH_TOKEN    — user → Netlify settings → applications → personal token
+#   NETLIFY_SITE_ID       — already known: ef540682-67b3-46e6-a425-afbe85437f88
+#   AWS_ACCESS_KEY_ID     — IAM user with ECR push + (optional) SSM access
+#   AWS_SECRET_ACCESS_KEY — pair of above
+#   LIGHTSAIL_SSH_KEY     — the private key content for ubuntu@54.84.88.246
+#                            (multi-line; ensure newlines preserved)
+#
+# Manual run via `workflow_dispatch` with `which: frontend|backend|both`
+# is useful for re-deploys without a code change.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      which:
+        description: "Force a deploy regardless of path filters"
+        required: true
+        type: choice
+        default: both
+        options: [both, frontend, backend]
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false  # don't cancel mid-deploy; finish, then queue
+
+permissions:
+  contents: read
+  id-token: write  # for future AWS OIDC trust
+
+jobs:
+
+  # ─── Detect which paths changed ─────────────────────────────────
+  detect:
+    name: Detect changes
+    runs-on: ubuntu-22.04
+    outputs:
+      frontend: ${{ steps.f.outputs.frontend }}
+      backend:  ${{ steps.f.outputs.backend }}
+      migrations: ${{ steps.f.outputs.migrations }}
+      force_which: ${{ github.event.inputs.which || 'auto' }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2  # need previous commit for diff
+      - id: f
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            frontend:
+              - 'frontend/**'
+            backend:
+              - 'backend/**'
+              - 'infra/**'
+            migrations:
+              - 'backend/migrations/**'
+
+  # ─── Frontend deploy ────────────────────────────────────────────
+  # Intentionally NOT run from this workflow. Netlify's built-in
+  # GitHub integration already auto-deploys every push to main and
+  # every PR (as a deploy preview). Running `netlify deploy` from
+  # here would duplicate that build for no benefit.
+  #
+  # If you ever need to force a redeploy without a code change:
+  #   - Trigger from Netlify UI ("Deploys" → "Trigger deploy")
+  #   - Or via Netlify CLI from your laptop:
+  #       cd frontend && npx netlify-cli deploy --prod --build
+  # That path uses your local `netlify login` session — no token
+  # to manage in GitHub secrets.
+  #
+  # NETLIFY_SITE_ID is kept as a repo secret in case we ever wire
+  # a workflow that needs to address the site programmatically
+  # (e.g. clearing edge caches), but no current job consumes it.
+
+  surface-frontend-changes:
+    name: Note frontend changes (Netlify autodeploys)
+    needs: detect
+    if: needs.detect.outputs.frontend == 'true'
+    runs-on: ubuntu-22.04
+    steps:
+      - run: |
+          echo "::notice::frontend/** changed — Netlify's GitHub integration is autodeploying."
+          echo "  Watch progress: https://app.netlify.com/projects/chakra-mcp/deploys"
+
+  # ─── Backend → ECR → Lightsail (with migrations gate) ───────────
+  deploy-backend:
+    name: Deploy backend (Lightsail)
+    needs: detect
+    if: |
+      needs.detect.outputs.backend == 'true' ||
+      needs.detect.outputs.force_which == 'backend' ||
+      needs.detect.outputs.force_which == 'both'
+    runs-on: ubuntu-22.04
+    env:
+      AWS_REGION: us-east-1
+      ECR_REGISTRY: 877326604850.dkr.ecr.us-east-1.amazonaws.com
+      ECR_REPO: chakramcp-server
+      LIGHTSAIL_HOST: 54.84.88.246
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+          key: cd-backend
+
+      # ─── Build the chakramcp-server binary natively on the
+      # Linux runner (no zigbuild + qemu nonsense needed — the
+      # runner IS x86_64). ───────────────────────────────────────
+      - name: Build chakramcp-server
+        working-directory: backend
+        env:
+          SQLX_OFFLINE: "true"
+        run: cargo build --release --bin chakramcp-server --locked
+
+      # ─── Stage binary where Dockerfile.thin expects it ────────
+      - name: Stage binary
+        run: cp backend/target/release/chakramcp-server infra/chakramcp-server
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region "$AWS_REGION" \
+            | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+
+      - name: Build + push image
+        run: |
+          sha="${GITHUB_SHA:0:7}"
+          tag_sha="${ECR_REGISTRY}/${ECR_REPO}:${sha}"
+          tag_latest="${ECR_REGISTRY}/${ECR_REPO}:latest"
+          docker build -f infra/Dockerfile.thin -t "$tag_sha" -t "$tag_latest" .
+          docker push "$tag_sha"
+          docker push "$tag_latest"
+          echo "IMAGE_TAG=$tag_sha" >> "$GITHUB_ENV"
+
+      # ─── SSH key setup ─────────────────────────────────────────
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.LIGHTSAIL_SSH_KEY }}" > ~/.ssh/lightsail
+          chmod 600 ~/.ssh/lightsail
+          ssh-keyscan -H "$LIGHTSAIL_HOST" >> ~/.ssh/known_hosts
+
+      # ─── Run migrations BEFORE restart (if any new) ────────────
+      - name: Run migrations
+        if: needs.detect.outputs.migrations == 'true'
+        run: |
+          ssh -i ~/.ssh/lightsail ubuntu@"$LIGHTSAIL_HOST" "
+            set -e
+            cd /opt/chakramcp
+            docker compose pull migrate || true
+            docker compose --profile migrate run --rm migrate
+          "
+
+      # ─── Pull new image + restart relay ────────────────────────
+      - name: Restart relay with new image
+        run: |
+          ssh -i ~/.ssh/lightsail ubuntu@"$LIGHTSAIL_HOST" "
+            set -e
+            cd /opt/chakramcp
+            docker compose pull relay
+            docker compose up -d --force-recreate relay
+            sleep 8
+            docker compose ps relay --format '  {{.Service}} · {{.Status}}'
+          "
+
+      # ─── Sanity check ──────────────────────────────────────────
+      - name: Probe public health
+        run: |
+          for ep in /healthz /readyz /v1/discovery/agents; do
+            code=$(curl -sk -o /dev/null -w "%{http_code}" "https://relay.chakramcp.com$ep")
+            echo "  GET $ep → $code"
+            [ "$code" = "200" ] || { echo "::error::$ep returned $code"; exit 1; }
+          done

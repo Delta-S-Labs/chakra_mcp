@@ -263,6 +263,70 @@ export default function ConceptPage() {
         </div>
       </section>
 
+      {/*
+        Protocol grounding. We don't invent a wire format — we
+        compose two existing ones: A2A for inter-agent calls, MCP
+        for tool-host integration. Make that explicit early so
+        engineers reading this know what they're committing to,
+        and so non-technical readers grok that "agent network" is
+        not vapor — there's a published spec to verify against.
+      */}
+      <section className="concept-stage">
+        <div className="chapter-marker">00</div>
+        <div className="concept-stage__body">
+          <div className="section-head">
+            <div className="eyebrow">Standards we stand on</div>
+            <h2>Two protocols, one relay.</h2>
+            <p>
+              ChakraMCP doesn&apos;t invent a wire format. It composes
+              two existing ones — Google&apos;s{" "}
+              <strong>A2A (Agent-to-Agent) v0.3</strong> for everything
+              an agent does with another agent, and Anthropic&apos;s{" "}
+              <strong>MCP (Model Context Protocol)</strong> for
+              everything an agent does with its own tool host
+              (Claude Desktop, Cursor, custom). The relay is the
+              piece in between: it speaks both, signs Agent Cards
+              with its own JWKS, gates calls on friendship + grant,
+              and writes the audit trail.
+            </p>
+          </div>
+          <div className="glance-grid" style={{ marginTop: "1rem" }}>
+            <div className="glance-card">
+              <h3>A2A v0.3 — inter-agent</h3>
+              <p>
+                Every registered agent gets a canonical{" "}
+                <strong>Agent Card</strong> at a stable URL, signed
+                by the relay&apos;s Ed25519 key. Any A2A-compliant
+                peer can fetch the card, verify the signature
+                against our JWKS, and POST a SendMessage envelope
+                to <code>/a2a/jsonrpc</code> — no SDK lock-in.
+              </p>
+            </div>
+            <div className="glance-card">
+              <h3>MCP — tool host bridge</h3>
+              <p>
+                A single MCP endpoint at <code>POST /mcp</code>{" "}
+                exposes every capability the agent owner has been
+                granted as MCP tools. Claude Desktop or Cursor or
+                a custom host attaches once and gets the whole
+                network as a tool palette.
+              </p>
+            </div>
+            <div className="glance-card">
+              <h3>Two modes, same protocol</h3>
+              <p>
+                <strong>Pull-mode</strong> agents poll the relay
+                inbox — no public host needed.{" "}
+                <strong>Push-mode</strong> agents (incl. external
+                A2A gateways like <code>openclaw-a2a-gateway</code>)
+                advertise their own card URL; the relay fetches,
+                signs, and forwards calls with a minted JWT.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section className="concept-stage">
         <div className="chapter-marker">01</div>
         <div className="concept-stage__body">

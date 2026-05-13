@@ -1,0 +1,220 @@
+# Pre-commit + pre-push hooks for ChakraMCP.
+#
+# Activate once per clone:
+#   brew install lefthook                 # mac
+#   # or `go install github.com/evilmartians/lefthook@latest`
+#   lefthook install                      # writes .git/hooks/{pre-commit,pre-push}
+#
+# Or via the Taskfile:  task install:hooks
+#
+# These hooks catch the same things CI does (we hit
+# react-hooks/set-state-in-effect, clippy::useless-format, and
+# sqlx-cache drift in the same week — all preventable here).
+# Hooks run only on staged/changed files so the loop stays fast.
+#
+# Bypass for an emergency commit:  git commit --no-verify
+
+# ─── Pre-commit: fast, files-only checks ────────────────────────────
+pre-commit:
+  parallel: true
+  commands:
+
+    # ─── Rust formatting (workspace-aware) ──────────────────────────
+    rust-fmt:
+      glob: "backend/**/*.rs"
+      run: cd backend && cargo fmt --check
+      stage_fixed: false
+      fail_text: |
+        Rust formatting check failed. Run:
+            cd backend && cargo fmt
+        then re-stage the changes.
+
+    # ─── Frontend lint (only on staged files) ───────────────────────
+    eslint:
+      glob: "frontend/src/**/*.{ts,tsx,js,jsx}"
+      root: "frontend/"
+      run: npx eslint --max-warnings 0 {staged_files}
+      fail_text: |
+        ESLint failed on staged frontend files. Fix the errors and re-stage.
+        Auto-fix what you can:
+            cd frontend && npx eslint --fix {staged_files}
+
+    # ─── TypeScript type-check ──────────────────────────────────────
+    # tsc doesn't have a "files-only" mode that respects tsconfig
+    # path aliases, so we just typecheck the whole frontend project.
+    # Fast enough on Next 16's tsc (~3s incremental).
+    tsc:
+      glob: "frontend/src/**/*.{ts,tsx}"
+      root: "frontend/"
+      run: npx tsc --noEmit -p .
+      fail_text: |
+        TypeScript errors. Fix and re-stage.
+
+    # ─── Install-doc sync check ─────────────────────────────────────
+    # If you change anything that affects a published install path
+    # (SDK manifest, CLI Cargo.toml, install.sh, Dockerfile, release
+    # workflow, descriptor `status` field) and DON'T also touch
+    # README.md / docs/INSTALL.md / the matching sdks/*/README.md,
+    # the install instructions drift from reality. We hit this with
+    # the rust/go SDK "cargo add" / "go get" claims that didn't
+    # match what was actually published. Block the commit until
+    # docs are part of the same change.
+    install-docs-sync:
+      glob: "{sdks/python/pyproject.toml,sdks/typescript/package.json,sdks/rust/Cargo.toml,sdks/go/go.mod,backend/cli/Cargo.toml,frontend/public/install.sh,infra/Dockerfile*,.github/workflows/sdk-*-release.yml,.github/workflows/cli-release.yml,frontend/public/.well-known/chakramcp.json}"
+      run: |
+        staged_paths=$(git diff --cached --name-only)
+        triggers=$(echo "$staged_paths" | grep -E "(sdks/python/pyproject|sdks/typescript/package|sdks/rust/Cargo|sdks/go/go\.mod|backend/cli/Cargo|frontend/public/install\.sh|infra/Dockerfile|sdk-.*-release\.yml|cli-release\.yml|chakramcp\.json)$" || true)
+        if [ -z "$triggers" ]; then
+          exit 0
+        fi
+        readme_changed=$(echo "$staged_paths" | grep -E "^README\.md$" | wc -l | tr -d ' ')
+        install_changed=$(echo "$staged_paths" | grep -E "^docs/INSTALL\.md$" | wc -l | tr -d ' ')
+        # If the trigger is a per-SDK file, require that SDK's README
+        # to be staged. Otherwise require README.md and docs/INSTALL.md.
+        per_sdk_drift=""
+        for sdk in python typescript rust go; do
+          sdk_triggered=$(echo "$triggers" | grep -E "^sdks/$sdk/" || true)
+          sdk_readme=$(echo "$staged_paths" | grep -E "^sdks/$sdk/README\.md$" || true)
+          if [ -n "$sdk_triggered" ] && [ -z "$sdk_readme" ]; then
+            per_sdk_drift="$per_sdk_drift sdks/$sdk/README.md"
+          fi
+        done
+        if [ "$readme_changed" = "0" ] || [ "$install_changed" = "0" ] || [ -n "$per_sdk_drift" ]; then
+          echo "::warning::You changed an install-affecting file but didn't update:"
+          [ "$readme_changed" = "0" ] && echo "  - README.md (top-level install matrix)"
+          [ "$install_changed" = "0" ] && echo "  - docs/INSTALL.md (long-form install guide)"
+          for missing in $per_sdk_drift; do
+            echo "  - $missing"
+          done
+          echo ""
+          echo "Triggered by:"
+          echo "$triggers" | sed 's/^/  - /'
+          echo ""
+          echo "Why this matters: install instructions in the docs are the"
+          echo "first thing users see. Drift = misleading users. If the doc"
+          echo "really doesn't need an update (rare), bypass with"
+          echo "    git commit --no-verify"
+          exit 1
+        fi
+      fail_text: |
+        Install docs drifted from a release-affecting source change.
+        Update README.md / docs/INSTALL.md / the matching sdks/*/README.md,
+        or pass --no-verify if this is genuinely a no-op rename / formatting.
+
+    # ─── Capability-template sync check ─────────────────────────────
+    # The reserved-template registries live in three places (Python
+    # SDK, TS SDK, Rust CLI) plus the protocol spec on /docs/agents
+    # plus the host descriptor's `skills[]`. Keeping all five in sync
+    # is the whole point of "reserved" — if you touched a template
+    # but didn't touch the protocol page + descriptor, peers will see
+    # different shapes depending on which SDK they pulled. Hard fail
+    # on commit.
+    capability-templates-sync:
+      glob: "{sdks/python/src/chakramcp/_templates.py,sdks/typescript/src/templates.ts,backend/cli/src/templates.rs}"
+      run: |
+        # If any template registry file is staged, require that the
+        # docs page AND the host descriptor are also staged. Brittle
+        # but loud — better than silently drifting.
+        registry_changed=false
+        if echo "{staged_files}" | grep -qE "(_templates\.py|templates\.ts|templates\.rs)$"; then
+          registry_changed=true
+        fi
+        if [ "$registry_changed" = true ]; then
+          docs_changed=$(git diff --cached --name-only | grep -E "frontend/src/app/\(site\)/docs/agents/page\.tsx$" | wc -l | tr -d ' ')
+          descriptor_changed=$(git diff --cached --name-only | grep -E "frontend/public/\.well-known/chakramcp\.json$" | wc -l | tr -d ' ')
+          if [ "$docs_changed" = "0" ] || [ "$descriptor_changed" = "0" ]; then
+            echo "::warning::You changed a capability-template registry but didn't touch:"
+            [ "$docs_changed" = "0" ] && echo "  - frontend/src/app/(site)/docs/agents/page.tsx (protocol spec)"
+            [ "$descriptor_changed" = "0" ] && echo "  - frontend/public/.well-known/chakramcp.json (host descriptor skills[])"
+            echo ""
+            echo "Reserved templates MUST stay in sync across all three SDKs + docs + descriptor."
+            echo "Bypass for true cross-stack-aligned changes: git commit --no-verify"
+            exit 1
+          fi
+        fi
+      fail_text: |
+        Template registries drifted from the protocol spec. Either:
+          - Update /docs/agents and chakramcp.json to match the registry change, or
+          - Run `git commit --no-verify` if you really mean to skip.
+
+    # ─── sqlx cache integrity ──────────────────────────────────────
+    # Only triggers when SQL-touching files or .sqlx/ change. Requires
+    # a running local Postgres at the default DATABASE_URL — skip with
+    # --no-verify if you're committing on a plane.
+    sqlx-prepare-check:
+      glob: "backend/**/*.{rs,sql}"
+      run: |
+        if [ -z "$DATABASE_URL" ]; then
+          export DATABASE_URL=postgres://chakramcp:chakramcp@localhost:5432/chakramcp
+        fi
+        # CI runs `prepare --check -- --tests` (note the trailing flag),
+        # which means test-only sqlx::test query!() calls are included
+        # in the cache. Mirror that exactly so the hook can't pass
+        # while CI fails for the same diff.
+        cd backend && cargo sqlx prepare --workspace --check -- --tests
+      fail_text: |
+        .sqlx cache is stale. Regenerate:
+            cd backend && cargo sqlx prepare --workspace -- --tests
+        Make sure your local Postgres is up first (task db:up). Note
+        the trailing `-- --tests` — without it, test-only queries are
+        skipped and CI will reject the cache.
+
+# ─── Pre-push: slower checks, runs once per push ────────────────────
+pre-push:
+  commands:
+
+    # ─── Clippy on workspace (catches what fmt doesn't) ─────────────
+    rust-clippy:
+      run: cd backend && cargo clippy --workspace -- -D warnings
+      fail_text: |
+        Clippy errors on push. Fix them locally — CI will fail otherwise.
+
+    # ─── Frontend build smoke-test ──────────────────────────────────
+    frontend-lint-all:
+      root: "frontend/"
+      run: npx eslint "src/**/*.{ts,tsx}" --max-warnings 0
+      fail_text: |
+        ESLint errors on the full frontend tree (not just your changes).
+
+# ─── Post-push: watch CI in the background ──────────────────────────
+# After a successful push, fork a process that polls `gh run watch`
+# on the pushed sha. The push itself returns immediately; if CI fails,
+# the watcher prints to the terminal so you can act without manually
+# refreshing the Actions tab. Lefthook auto-skips this on machines
+# without `gh` installed.
+post-push:
+  commands:
+    watch-ci:
+      run: |
+        if ! command -v gh >/dev/null 2>&1; then
+          exit 0
+        fi
+        # Push event tells us the local branch + tip sha. Use the
+        # local HEAD as the most recent thing we just sent up.
+        sha=$(git rev-parse HEAD)
+        branch=$(git rev-parse --abbrev-ref HEAD)
+        (
+          # Brief sleep so GitHub registers the workflow_run rows.
+          sleep 6
+          echo ""
+          echo "⏵ watching CI for $branch@${sha:0:7} (post-push hook)"
+          # `gh run watch` blocks until terminal. --exit-status returns
+          # non-zero on any failure. We discard stdout because the
+          # status lines are noisy; only surface red.
+          if ! AWS_PAGER="" gh run watch --exit-status --interval 10 \
+                  $(AWS_PAGER="" gh run list --branch "$branch" --commit "$sha" --limit 1 \
+                       --json databaseId --jq '.[0].databaseId' 2>/dev/null) \
+                  >/dev/null 2>&1; then
+            echo ""
+            echo "🟥 CI failed on $branch@${sha:0:7}. Run:"
+            echo "   gh run list --branch $branch --commit $sha"
+            echo "   gh run view <id> --log-failed"
+          else
+            echo "🟩 CI green on $branch@${sha:0:7}"
+          fi
+        ) &
+        disown
+        exit 0
+      fail_text: |
+        Post-push CI watcher couldn't start. Push succeeded; check Actions
+        manually: gh run list --branch $(git rev-parse --abbrev-ref HEAD)

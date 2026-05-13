@@ -85,11 +85,7 @@ pub struct ListQuery {
 /// One row joined with proposer + target + their accounts. Returned by
 /// every endpoint here so the frontend can render without extra round
 /// trips.
-async fn fetch_friendship(
-    db: &PgPool,
-    user_id: Uuid,
-    id: Uuid,
-) -> Result<FriendshipDto, ApiError> {
+async fn fetch_friendship(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<FriendshipDto, ApiError> {
     let r = sqlx::query!(
         r#"
         SELECT
@@ -107,6 +103,10 @@ async fn fetch_friendship(
         JOIN agents ta   ON ta.id   = f.target_agent_id
         JOIN accounts tacc ON tacc.id = ta.account_id
         WHERE f.id = $1
+          AND pa.tombstoned_at  IS NULL
+          AND ta.tombstoned_at  IS NULL
+          AND pacc.tombstoned_at IS NULL
+          AND tacc.tombstoned_at IS NULL
         "#,
         id,
         user_id,
@@ -170,7 +170,10 @@ pub async fn list(
         ));
     }
     if let Some(s) = q.status.as_deref() {
-        if !matches!(s, "proposed" | "accepted" | "rejected" | "cancelled" | "countered") {
+        if !matches!(
+            s,
+            "proposed" | "accepted" | "rejected" | "cancelled" | "countered"
+        ) {
             return Err(ApiError::InvalidRequest("invalid status".into()));
         }
     }
@@ -200,6 +203,10 @@ pub async fn list(
              OR ($3::boolean AND EXISTS(SELECT 1 FROM account_memberships m WHERE m.account_id = ta.account_id AND m.user_id = $1))
             )
             AND ($4::text IS NULL OR f.status = $4)
+            AND pa.tombstoned_at  IS NULL
+            AND ta.tombstoned_at  IS NULL
+            AND pacc.tombstoned_at IS NULL
+            AND tacc.tombstoned_at IS NULL
         ORDER BY f.updated_at DESC
         "#,
         user.user_id,
@@ -291,15 +298,15 @@ pub async fn propose(
     .await
     .map_err(|e| match e {
         sqlx::Error::Database(db_err) if db_err.code().as_deref() == Some("23505") => {
-            ApiError::Conflict(
-                "a proposal between these agents is already in flight".into(),
-            )
+            ApiError::Conflict("a proposal between these agents is already in flight".into())
         }
         other => other.into(),
     })?
     .ok_or_else(|| ApiError::Internal(anyhow::anyhow!("insert returned no row")))?;
 
-    Ok(Json(fetch_friendship(&state.db, user.user_id, inserted.id).await?))
+    Ok(Json(
+        fetch_friendship(&state.db, user.user_id, inserted.id).await?,
+    ))
 }
 
 // ─── POST /v1/friendships/{id}/cancel ────────────────────
@@ -486,7 +493,7 @@ pub async fn counter(
         VALUES ($1, $2, $3, 'proposed', $4, $5)
         "#,
         new_id,
-        row.target_agent_id,    // counter swaps direction
+        row.target_agent_id, // counter swaps direction
         row.proposer_agent_id,
         req.proposer_message,
         id,
@@ -495,14 +502,14 @@ pub async fn counter(
     .await
     .map_err(|e| match e {
         sqlx::Error::Database(db_err) if db_err.code().as_deref() == Some("23505") => {
-            ApiError::Conflict(
-                "the reverse direction already has an active proposal".into(),
-            )
+            ApiError::Conflict("the reverse direction already has an active proposal".into())
         }
         other => other.into(),
     })?;
 
     tx.commit().await?;
 
-    Ok(Json(fetch_friendship(&state.db, user.user_id, new_id).await?))
+    Ok(Json(
+        fetch_friendship(&state.db, user.user_id, new_id).await?,
+    ))
 }

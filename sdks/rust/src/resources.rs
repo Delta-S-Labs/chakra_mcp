@@ -61,7 +61,10 @@ impl CapabilitiesClient<'_> {
         body: &CreateCapabilityRequest,
     ) -> Result<Capability> {
         self.parent
-            .relay_post(&format!("/v1/agents/{}/capabilities", urlencode(agent_id)), body)
+            .relay_post(
+                &format!("/v1/agents/{}/capabilities", urlencode(agent_id)),
+                body,
+            )
             .await
     }
     pub async fn delete(&self, agent_id: &str, capability_id: &str) -> Result<()> {
@@ -103,9 +106,7 @@ impl<'a> FriendshipsClient<'a> {
         } else {
             format!("?{}", q.join("&"))
         };
-        self.parent
-            .relay_get(&format!("/v1/friendships{qs}"))
-            .await
+        self.parent.relay_get(&format!("/v1/friendships{qs}")).await
     }
 
     pub async fn get(&self, id: &str) -> Result<Friendship> {
@@ -180,9 +181,7 @@ impl<'a> GrantsClient<'a> {
         } else {
             format!("?{}", q.join("&"))
         };
-        self.parent
-            .relay_get(&format!("/v1/grants{qs}"))
-            .await
+        self.parent.relay_get(&format!("/v1/grants{qs}")).await
     }
     pub async fn get(&self, id: &str) -> Result<Grant> {
         self.parent
@@ -234,9 +233,7 @@ impl<'a> InvocationsClient<'a> {
         } else {
             format!("?{}", q.join("&"))
         };
-        self.parent
-            .relay_get(&format!("/v1/invocations{qs}"))
-            .await
+        self.parent.relay_get(&format!("/v1/invocations{qs}")).await
     }
     pub async fn get(&self, id: &str) -> Result<Invocation> {
         self.parent

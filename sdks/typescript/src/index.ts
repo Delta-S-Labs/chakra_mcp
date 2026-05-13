@@ -26,6 +26,8 @@
  */
 
 export * from "./types.js";
+export * from "./templates.js";
+import { getTemplate } from "./templates.js";
 import {
   Agent,
   AgentSummary,
@@ -229,6 +231,30 @@ export class AgentsClient {
         `/v1/agents/${encodeURIComponent(agentId)}/capabilities`,
         body,
       ),
+    /**
+     * Publish a reserved-name capability with its canonical schema.
+     *
+     * `templateId` is one of `templateNames()` (e.g. `"message_owner"`).
+     * The input/output schemas come from the registry — overriding
+     * them defeats the point of having a reserved name. Description
+     * and visibility *can* be overridden; if you don't pass them, the
+     * template's defaults apply.
+     */
+    addTemplate: (
+      agentId: string,
+      templateId: string,
+      opts?: { description?: string; visibility?: "network" | "private" },
+    ): Promise<Capability> => {
+      const tpl = getTemplate(templateId);
+      const body: CreateCapabilityRequest = { ...tpl };
+      if (opts?.description !== undefined) body.description = opts.description;
+      if (opts?.visibility !== undefined) body.visibility = opts.visibility;
+      return this.chakra.relayRequest(
+        "POST",
+        `/v1/agents/${encodeURIComponent(agentId)}/capabilities`,
+        body,
+      );
+    },
     delete: (agentId: string, capabilityId: string): Promise<void> =>
       this.chakra.relayRequest(
         "DELETE",

@@ -36,7 +36,11 @@ impl UserClaims {
 }
 
 pub fn encode_jwt(claims: &UserClaims, secret: &str) -> jsonwebtoken::errors::Result<String> {
-    encode(&Header::default(), claims, &EncodingKey::from_secret(secret.as_bytes()))
+    encode(
+        &Header::default(),
+        claims,
+        &EncodingKey::from_secret(secret.as_bytes()),
+    )
 }
 
 pub fn decode_jwt(token: &str, secret: &str) -> jsonwebtoken::errors::Result<UserClaims> {

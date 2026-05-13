@@ -57,3 +57,7 @@ examples/typescript-mastra/dist/
 .vscode/
 .claude/worktrees/
 .claude/scheduled_tasks.lock
+
+# Staged production binary (output of cargo-zigbuild → copied here by the
+# deploy script for Dockerfile.thin to pick up). Never commit binaries.
+infra/chakramcp-server

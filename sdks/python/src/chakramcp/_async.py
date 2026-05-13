@@ -165,6 +165,37 @@ class _AsyncCapabilitiesClient:
             "POST", f"/v1/agents/{agent_id}/capabilities", dict(body)
         )
 
+    async def add_template(
+        self,
+        agent_id: str,
+        template_id: str,
+        *,
+        description: str | None = None,
+        visibility: str | None = None,
+    ) -> Capability:
+        """Publish a reserved-name capability with its canonical schema.
+
+        ``template_id`` is one of ``chakramcp.template_names()`` (e.g.
+        ``"message_owner"``). The input/output schemas come from the
+        registry — overriding them defeats the point of having a
+        reserved name. Description and visibility *can* be overridden;
+        if you don't pass them, the template's defaults apply.
+
+        Returns the same shape as ``create()``.
+        """
+        from copy import deepcopy
+
+        from ._templates import get_template
+
+        body = deepcopy(get_template(template_id))
+        if description is not None:
+            body["description"] = description
+        if visibility is not None:
+            body["visibility"] = visibility
+        return await self._c._relay(
+            "POST", f"/v1/agents/{agent_id}/capabilities", body
+        )
+
     async def delete(self, agent_id: str, capability_id: str) -> None:
         await self._c._relay(
             "DELETE", f"/v1/agents/{agent_id}/capabilities/{capability_id}"

@@ -37,7 +37,9 @@ impl FromRequestParts<RelayState> for AuthUser {
             .and_then(|v| v.to_str().ok())
             .ok_or(ApiError::Unauthorized)?;
 
-        let token = header.strip_prefix("Bearer ").ok_or(ApiError::Unauthorized)?;
+        let token = header
+            .strip_prefix("Bearer ")
+            .ok_or(ApiError::Unauthorized)?;
 
         if let Ok(claims) = jwt::decode_jwt(token, state.jwt_secret()) {
             return Ok(AuthUser {
@@ -97,7 +99,11 @@ async fn api_key_lookup(db: &PgPool, token: &str) -> Result<Option<AuthUser>, Ap
 }
 
 /// Returns true if the user is a member of the given account.
-pub async fn user_is_member(db: &PgPool, user_id: Uuid, account_id: Uuid) -> Result<bool, ApiError> {
+pub async fn user_is_member(
+    db: &PgPool,
+    user_id: Uuid,
+    account_id: Uuid,
+) -> Result<bool, ApiError> {
     let row = sqlx::query!(
         r#"
         SELECT 1 as one FROM account_memberships

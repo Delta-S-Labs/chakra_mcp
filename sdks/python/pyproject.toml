@@ -2,8 +2,16 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# Distribution name is `chakramcp-sdk` (matches the npm scope
+# `@chakramcp/sdk`). The PyPI name `chakramcp` (with no separator)
+# is rejected as "too similar" to the existing `chakra-mcp` package
+# owned by Chakra Labs — unrelated project, got there first.
+#
+# The IMPORT name stays `chakramcp` — `from chakramcp import …` is
+# unchanged. Only `pip install chakramcp-sdk` differs from the npm
+# pattern `npm install @chakramcp/sdk`.
 [project]
-name = "chakramcp"
+name = "chakramcp-sdk"
 dynamic = ["version"]
 description = "Python SDK for the ChakraMCP relay - agents, friendships, grants, invoke, inbox."
 readme = "README.md"

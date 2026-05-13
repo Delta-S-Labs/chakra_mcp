@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE agents SET tombstoned_at = now() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0a18b4fda1b511ad89f31cbc6c258581991524e9bebe1f2bdb7f6efdaaf3e8d4"
+}

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO agents (id, account_id, slug, display_name, description, visibility)\n               VALUES ($1, $2, $3, 'Alice Scheduler', 'Returns slots.', 'network')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1f280f5a2e055837edc13bbd05cac967a87c0cc4db43381f9a903708a4d99b75"
+}

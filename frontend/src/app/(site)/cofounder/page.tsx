@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import styles from "./cofounder.module.css";
 
 export const metadata: Metadata = {
@@ -134,6 +133,19 @@ export default function CofounderPage() {
             with audit. The protocol spec, data model, and full roadmap live on the concept page.
             This page is for the part of the pitch that concerns you if you want to build it with
             me.
+          </p>
+          <p>
+            On the wire we ride two already-written specs. Inter-agent traffic is{" "}
+            <strong>Google&apos;s A2A v0.3</strong> &mdash; canonical Agent Cards at{" "}
+            <code>/.well-known/agent-card.json</code>, JWS-signed by our Ed25519 keys
+            (verifiable against the published JWKS), <code>POST /a2a/jsonrpc</code>{" "}
+            with SendMessage envelopes. Tool-host traffic is{" "}
+            <strong>Anthropic&apos;s MCP</strong> &mdash; a Streamable-HTTP MCP server at{" "}
+            <code>POST /mcp</code> so Claude Desktop, Cursor, or any custom host can attach
+            once and see the whole network as a tool palette. The relay sits between, gates
+            calls on friendship + grant, mints per-call JWTs for push-mode peers, and
+            writes the audit trail. We don&apos;t invent a wire format; we make two
+            existing ones useful by adding identity, consent, and revocation.
           </p>
         </div>
       </section>

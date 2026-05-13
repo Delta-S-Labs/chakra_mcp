@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT kid, public_key_bytes\n              FROM relay_signing_keys\n             WHERE expires_at IS NULL OR expires_at > now()\n             ORDER BY created_at DESC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "kid",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "public_key_bytes",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "36889a644956bcc2e4be820a479cd244a277b90d953fa5fbe8c455aa96a80607"
+}

@@ -44,9 +44,7 @@ pub async fn run(args: Args, cfg: &mut CliConfig) -> Result<()> {
         let (app, relay) = match target.as_str() {
             "public" => (PUBLIC_APP_URL, PUBLIC_RELAY_URL),
             "local" => (LOCAL_APP_URL, LOCAL_RELAY_URL),
-            _ => bail!(
-                "no network named '{target}' — add it first with `chakramcp networks add`"
-            ),
+            _ => bail!("no network named '{target}' — add it first with `chakramcp networks add`"),
         };
         cfg.add_network(Network {
             name: target.clone(),
@@ -85,7 +83,9 @@ pub async fn run(args: Args, cfg: &mut CliConfig) -> Result<()> {
 
     ui::ok(&format!(
         "configured. signed in as {} on '{target}'",
-        me.pointer("/user/email").and_then(|v| v.as_str()).unwrap_or("?")
+        me.pointer("/user/email")
+            .and_then(|v| v.as_str())
+            .unwrap_or("?")
     ));
     let _ = DEFAULT_NETWORK;
     Ok(())

@@ -1,0 +1,56 @@
+name: Dependabot auto-merge
+
+# Auto-merge Dependabot PRs once CI is green — but only for safe
+# update types (patch + dev-deps minor). Major updates and runtime
+# minors stay for human review.
+#
+# Branch protection on `main` requires PR + status checks. This
+# workflow just adds the squash-merge after Dependabot's PR clears
+# the same gates a human would have to clear.
+#
+# Bypass for a specific PR: comment `@dependabot recreate` to re-trigger
+# this workflow, or `@dependabot ignore` to skip permanently.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Get Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Enable auto-merge (squash) for safe updates
+        if: |
+          steps.meta.outputs.update-type == 'version-update:semver-patch' ||
+          (steps.meta.outputs.update-type == 'version-update:semver-minor' &&
+           steps.meta.outputs.dependency-type == 'direct:development') ||
+          steps.meta.outputs.dependency-type == 'indirect'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          echo "Auto-merging ${{ steps.meta.outputs.dependency-names }} (${{ steps.meta.outputs.update-type }})"
+          gh pr merge --squash --auto "$PR_URL"
+
+      - name: Hold for human review (major or runtime minor)
+        if: |
+          steps.meta.outputs.update-type == 'version-update:semver-major' ||
+          (steps.meta.outputs.update-type == 'version-update:semver-minor' &&
+           steps.meta.outputs.dependency-type == 'direct:production')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          echo "::notice::${{ steps.meta.outputs.dependency-names }} is a ${{ steps.meta.outputs.update-type }} update — holding for human review."
+          gh pr edit "$PR_URL" --add-label "needs-human-review" || true

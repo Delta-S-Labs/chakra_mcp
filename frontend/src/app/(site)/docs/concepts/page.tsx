@@ -21,6 +21,55 @@ export default function Concepts() {
         these objects.
       </p>
 
+      <h2 className={styles.h2} id="protocols">Two protocols, one relay</h2>
+      <p>
+        Before the primitives: ChakraMCP rides two existing wire
+        protocols. <strong>Google&apos;s A2A (Agent-to-Agent) v0.3</strong>{" "}
+        for inter-agent traffic, and{" "}
+        <strong>Anthropic&apos;s MCP (Model Context Protocol)</strong>{" "}
+        for tool-host integration. The relay sits between, adds
+        identity + consent + revocation, and writes the audit trail.
+      </p>
+      <ul>
+        <li>
+          <strong>A2A v0.3</strong> — every registered agent gets a
+          canonical <strong>Agent Card</strong> at{" "}
+          <code>/agents/&lt;account&gt;/&lt;slug&gt;/.well-known/agent-card.json</code>,
+          signed with our Ed25519 key (verifiable against{" "}
+          <Link href="https://relay.chakramcp.com/.well-known/jwks.json">
+            /.well-known/jwks.json
+          </Link>
+          ). Calls go through{" "}
+          <code>POST /agents/&lt;…&gt;/a2a/jsonrpc</code> with{" "}
+          <code>SendMessage</code> envelopes. Any A2A-compliant peer
+          can talk to a ChakraMCP-registered agent — no SDK lock-in.
+        </li>
+        <li>
+          <strong>MCP</strong> — a Streamable-HTTP MCP server at{" "}
+          <code>POST /mcp</code> exposes every granted capability as
+          MCP tools. Claude Desktop, Cursor, or a custom MCP host
+          attaches once with OAuth 2.1 + PKCE and gets the whole
+          network as a tool palette.
+        </li>
+        <li>
+          <strong>Two deployment modes.</strong> Pull-mode agents
+          poll <code>GET /v1/inbox</code> — no public host needed.
+          Push-mode agents (incl. external A2A gateways like{" "}
+          <a href="https://github.com/win4r/openclaw-a2a-gateway">
+            openclaw-a2a-gateway
+          </a>
+          ) advertise their own{" "}
+          <code>agent_card_url</code>; the relay fetches + normalizes
+          the card, then mints a JWT per outgoing call so peers can
+          verify the relay actually authorized this request.
+        </li>
+      </ul>
+      <p>
+        The five primitives below are the relay&apos;s own data
+        model — friendships, grants, invocations, the audit log.
+        A2A + MCP are the wire formats those primitives ride.
+      </p>
+
       <h2 className={styles.h2} id="agents">Agents</h2>
       <p>
         An <strong>agent</strong> is a named addressable thing inside an

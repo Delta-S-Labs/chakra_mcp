@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO slug_aliases\n                (id, scope, account_id, old_slug, new_slug, expires_at)\n            VALUES (gen_random_uuid(), 'agent', $1, $2, $3,\n                    now() + interval '90 days')\n            ON CONFLICT (scope, account_id, old_slug) DO UPDATE\n                SET new_slug = EXCLUDED.new_slug,\n                    expires_at = EXCLUDED.expires_at,\n                    created_at = now()\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "afdbd1a698e410e6372ae963965dab737a389ed2c0b43a1b919b1216fac08bfb"
+}

@@ -1,0 +1,116 @@
+# Production stack on a single Lightsail instance:
+#   caddy   → TLS termination + reverse proxy (ports 80/443 → relay/app)
+#   relay   → chakramcp-server, exposes :8080 (app) + :8090 (relay)
+#   pg      → Postgres 16 with persistent volume
+#
+# Env (write to .env next to this file BEFORE first-up):
+#   CHAKRAMCP_IMAGE       — registry URL of the image we built locally
+#                           (e.g. 877326604850.dkr.ecr.us-east-1.amazonaws.com/chakramcp-server:latest)
+#   POSTGRES_PASSWORD     — random 32+ chars (rotated per env)
+#   JWT_SECRET            — random 64+ chars (NEVER reuse from dev)
+#   ADMIN_EMAIL           — kaustav@chakramcp.com
+#   APP_PUBLIC_URL        — https://app.chakramcp.com  (or main domain)
+#   RELAY_PUBLIC_URL      — https://relay.chakramcp.com
+#   GOOGLE_CLIENT_ID/SECRET, GITHUB_CLIENT_ID/SECRET — OAuth providers
+#   RECAPTCHA_*           — if you keep captcha on
+#
+# First-time bring-up (on the Lightsail box):
+#   docker compose -f docker-compose.prod.yml --profile migrate run --rm migrate
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Subsequent deploys (after pushing a new image tag):
+#   docker compose -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.prod.yml up -d
+
+services:
+  pg:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: chakramcp
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: chakramcp
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chakramcp -d chakramcp"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks: [internal]
+
+  # One-shot migration runner. Use:
+  #   docker compose --profile migrate run --rm migrate
+  # Won't start under `docker compose up` because of the profile.
+  # Shares the relay's full env block — chakramcp-server validates
+  # JWT_SECRET / WEBHOOK_SIGNING_SECRET even for the `migrate`
+  # subcommand, so they have to be present.
+  migrate:
+    profiles: ["migrate"]
+    image: ${CHAKRAMCP_IMAGE}
+    depends_on:
+      pg: { condition: service_healthy }
+    environment:
+      DATABASE_URL: postgres://chakramcp:${POSTGRES_PASSWORD}@pg:5432/chakramcp
+      JWT_SECRET: ${JWT_SECRET}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      WEBHOOK_SIGNING_SECRET: ${WEBHOOK_SIGNING_SECRET}
+    command: ["migrate"]
+    networks: [internal]
+
+  relay:
+    image: ${CHAKRAMCP_IMAGE}
+    restart: unless-stopped
+    depends_on:
+      pg: { condition: service_healthy }
+    environment:
+      DATABASE_URL: postgres://chakramcp:${POSTGRES_PASSWORD}@pg:5432/chakramcp
+      JWT_SECRET: ${JWT_SECRET}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      APP_PORT: "8080"
+      RELAY_PORT: "8090"
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL}
+      RELAY_PUBLIC_URL: ${RELAY_PUBLIC_URL}
+      DISCOVERY_V2: "true"
+      RUST_LOG: info,chakramcp_app=info,chakramcp_relay=info,sqlx=warn
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      RECAPTCHA_SITE_KEY: ${RECAPTCHA_SITE_KEY:-}
+      RECAPTCHA_SECRET_KEY: ${RECAPTCHA_SECRET_KEY:-}
+      CAPTCHA_ENABLED: ${CAPTCHA_ENABLED:-false}
+      WEBHOOK_SIGNING_SECRET: ${WEBHOOK_SIGNING_SECRET}
+    networks: [internal]
+    expose:
+      - "8080"
+      - "8090"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8090/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      relay: { condition: service_healthy }
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"  # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data       # certs persisted here
+      - caddy_config:/config
+    networks: [internal]
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
