@@ -8,13 +8,11 @@ on:
       - "backend/Cargo.toml"
       - "backend/Cargo.lock"
       - ".github/workflows/cli-ci.yml"
+  # Always run on PRs so required-status checks always post.
+  # Otherwise PRs that don't touch backend/cli/ get stuck on
+  # "expected — waiting" forever (branch-protection trap).
   pull_request:
     branches: [main]
-    paths:
-      - "backend/cli/**"
-      - "backend/Cargo.toml"
-      - "backend/Cargo.lock"
-      - ".github/workflows/cli-ci.yml"
 
 concurrency:
   group: cli-ci-${{ github.ref }}

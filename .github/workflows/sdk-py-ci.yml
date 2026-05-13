@@ -6,11 +6,11 @@ on:
     paths:
       - "sdks/python/**"
       - ".github/workflows/sdk-py-ci.yml"
+  # Always run on PRs so required-status checks always post.
+  # Otherwise PRs that don't touch sdks/python/ get stuck on
+  # "expected — waiting" forever (branch-protection trap).
   pull_request:
     branches: [main]
-    paths:
-      - "sdks/python/**"
-      - ".github/workflows/sdk-py-ci.yml"
 
 concurrency:
   group: sdk-py-ci-${{ github.ref }}
