@@ -307,16 +307,28 @@ fn load_config(explicit_path: Option<PathBuf>) -> Result<ServerConfig> {
         .or(from_file.survey_enabled)
         .unwrap_or(false);
 
+    // Production compose passes *_PUBLIC_URL; older configs use
+    // *_BASE_URL. Accept either to avoid silently defaulting to
+    // localhost — which would leak into /.well-known discovery
+    // metadata, the OAuth issuer claim, and the device-flow
+    // verification_uri.
     let frontend_base_url = std::env::var("FRONTEND_BASE_URL")
         .ok()
+        .or_else(|| std::env::var("FRONTEND_PUBLIC_URL").ok())
+        // Caddy fronts both the marketing site and the OAuth API on
+        // the same hostname today, so APP_PUBLIC_URL is the right
+        // last-mile fallback before localhost.
+        .or_else(|| std::env::var("APP_PUBLIC_URL").ok())
         .or(from_file.frontend_base_url)
         .unwrap_or_else(|| "http://localhost:3000".into());
     let app_base_url = std::env::var("APP_BASE_URL")
         .ok()
+        .or_else(|| std::env::var("APP_PUBLIC_URL").ok())
         .or(from_file.app_base_url)
         .unwrap_or_else(|| "http://localhost:8080".into());
     let relay_base_url = std::env::var("RELAY_BASE_URL")
         .ok()
+        .or_else(|| std::env::var("RELAY_PUBLIC_URL").ok())
         .or(from_file.relay_base_url)
         .unwrap_or_else(|| "http://localhost:8090".into());
 
