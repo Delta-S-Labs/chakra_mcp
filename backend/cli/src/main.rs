@@ -15,6 +15,7 @@ mod client;
 mod commands;
 mod config;
 mod onboarding;
+mod templates;
 mod ui;
 
 use crate::client::ApiClient;
@@ -89,6 +90,11 @@ enum Cmd {
     /// once they have a friendship + grant.
     #[command(subcommand, alias = "cap")]
     Capabilities(commands::capabilities::Cmd),
+
+    /// Sugar: send a `message_owner` ping to a friend. Resolves the
+    /// grant automatically — equivalent to `chakramcp invoke` against
+    /// the reserved `message_owner` capability on the peer.
+    Message(commands::message::Args),
 }
 
 #[tokio::main]
@@ -152,6 +158,7 @@ async fn run() -> Result<()> {
         Cmd::Inbox(cmd) => commands::inbox::run(cmd, ApiClient::new(cfg)?).await?,
         Cmd::Discover(args) => commands::discover::run(args, ApiClient::new(cfg)?).await?,
         Cmd::Capabilities(cmd) => commands::capabilities::run(cmd, ApiClient::new(cfg)?).await?,
+        Cmd::Message(args) => commands::message::run(args, ApiClient::new(cfg)?).await?,
     }
 
     Ok(())

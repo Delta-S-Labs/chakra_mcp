@@ -10,11 +10,17 @@ Both share the same sub-clients (``.agents``, ``.friendships``,
 helpers (``invoke_and_wait``, ``inbox.serve``).
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 from ._async import AsyncChakraMCP
 from ._errors import ChakraMCPError
 from ._sync import ChakraMCP
+from ._templates import (
+    CHAKRAMCP_TEMPLATES,
+    MESSAGE_OWNER,
+    get_template,
+    template_names,
+)
 from ._types import (
     TERMINAL_STATUSES,
     Agent,
@@ -48,6 +54,10 @@ __all__ = [
     "AsyncChakraMCP",
     "ChakraMCP",
     "ChakraMCPError",
+    "CHAKRAMCP_TEMPLATES",
+    "MESSAGE_OWNER",
+    "get_template",
+    "template_names",
     "TERMINAL_STATUSES",
     "Agent",
     "AgentSummary",

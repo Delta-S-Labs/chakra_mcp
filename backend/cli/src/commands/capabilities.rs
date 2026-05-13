@@ -28,6 +28,7 @@ use serde_json::{json, Value};
 
 use crate::client::ApiClient;
 use crate::print;
+use crate::templates::{get_template, known_templates};
 
 #[derive(Subcommand, Debug)]
 pub enum Cmd {
@@ -37,27 +38,45 @@ pub enum Cmd {
         agent: String,
     },
     /// Publish a new capability on one of your agents.
+    ///
+    /// Two ways to invoke:
+    ///   * `--template <id>` — use a reserved-name capability with
+    ///     its canonical schema (e.g. `--template message_owner`).
+    ///     Mutually exclusive with the manual flags below.
+    ///   * `--name + --input-schema + --output-schema` — custom
+    ///     capability. The full triple is required when not using
+    ///     a template.
     Add {
         #[arg(long)]
         agent: String,
-        /// Snake_case name. Becomes the `capability_name` in
-        /// invocations and the slug peers see.
+        /// Reserved-template id. When set, `--name` /
+        /// `--input-schema` / `--output-schema` are ignored
+        /// (template wins) — but `--description` and
+        /// `--visibility` still override the template defaults.
+        /// Run `chakramcp capabilities templates` to list.
+        #[arg(long, conflicts_with_all = ["name", "input_schema", "output_schema"])]
+        template: Option<String>,
+        /// Snake_case name. Required unless `--template` is set.
+        #[arg(long, required_unless_present = "template")]
+        name: Option<String>,
+        /// One-line description. Optional override even with a template.
         #[arg(long)]
-        name: String,
-        /// One-line description. Shows up in /agents detail.
-        #[arg(long, default_value = "")]
-        description: String,
-        /// JSON Schema for the input payload. Pass inline JSON or
-        /// `@path/to/file.json` to read from disk.
+        description: Option<String>,
+        /// JSON Schema for the input. Required unless `--template`.
+        /// Pass inline JSON or `@path/to/file.json`.
+        #[arg(long, required_unless_present = "template")]
+        input_schema: Option<String>,
+        /// JSON Schema for the output. Required unless `--template`.
+        #[arg(long, required_unless_present = "template")]
+        output_schema: Option<String>,
+        /// `network` (default) or `private`. Overrides template default.
         #[arg(long)]
-        input_schema: String,
-        /// JSON Schema for the output. Same `@file` syntax allowed.
-        #[arg(long)]
-        output_schema: String,
-        /// `network` (default) or `private`.
-        #[arg(long, default_value = "network")]
-        visibility: String,
+        visibility: Option<String>,
     },
+    /// List the reserved capability templates available with
+    /// `add --template <id>`. Names are stable across SDK + CLI;
+    /// schemas live in /docs/agents.
+    Templates,
     /// Patch a capability's metadata (description, visibility, schemas).
     Update {
         #[arg(long)]
@@ -107,25 +126,64 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
         }
         Cmd::Add {
             agent,
+            template,
             name,
             description,
             input_schema,
             output_schema,
             visibility,
         } => {
-            let input = parse_schema(&input_schema, "input_schema")?;
-            let output = parse_schema(&output_schema, "output_schema")?;
-            let payload = json!({
-                "name": name,
-                "description": description,
-                "input_schema": input,
-                "output_schema": output,
-                "visibility": visibility,
-            });
+            let mut payload = if let Some(tpl_id) = template {
+                // Template path: load the canonical body, then apply
+                // optional description / visibility overrides.
+                get_template(&tpl_id).ok_or_else(|| {
+                    anyhow!(
+                        "unknown template id: '{tpl_id}'. Known: {}. Run `chakramcp capabilities templates` to list.",
+                        known_templates().join(", ")
+                    )
+                })?
+            } else {
+                // Manual path: clap's `required_unless_present` guarantees
+                // these are Some when we get here.
+                let name = name.expect("clap required_unless_present");
+                let input_schema = input_schema.expect("clap required_unless_present");
+                let output_schema = output_schema.expect("clap required_unless_present");
+                let input = parse_schema(&input_schema, "input_schema")?;
+                let output = parse_schema(&output_schema, "output_schema")?;
+                json!({
+                    "name": name,
+                    "description": description.clone().unwrap_or_default(),
+                    "input_schema": input,
+                    "output_schema": output,
+                    "visibility": visibility.clone().unwrap_or_else(|| "network".to_string()),
+                })
+            };
+            // Overrides apply in both paths.
+            if let Some(d) = description {
+                payload["description"] = Value::String(d);
+            }
+            if let Some(v) = visibility {
+                payload["visibility"] = Value::String(v);
+            }
             let body: Value = api
                 .post_relay(&format!("/v1/agents/{agent}/capabilities"), &payload)
                 .await?;
             print(&body)
+        }
+        Cmd::Templates => {
+            let templates: Vec<Value> = known_templates()
+                .iter()
+                .filter_map(|id| {
+                    get_template(id).map(|body| {
+                        json!({
+                            "id": id,
+                            "name": body.get("name"),
+                            "description": body.get("description"),
+                        })
+                    })
+                })
+                .collect();
+            print(&json!({ "templates": templates }))
         }
         Cmd::Update {
             agent,

@@ -135,13 +135,27 @@ ask for something specific?"
 ### 5. Offer to publish a capability
 
 Ask: "Want to publish a capability so other agents can call you?
-Common ones for a personal-laptop agent: `check_worklog`,
-`check_calendar`, `read_emails`, `summarize_doc`. Or describe one
-and I'll generate the schema."
+Pick a template or describe one. The templates below cover the
+common shapes — see the bottom of this skill for the full schemas."
+
+**Templates** (offer these by default, name them when asking):
+
+| Name | What it does | Human-in-loop? |
+|---|---|---|
+| `message_owner` | Friend agent sends a message to you (the human); your agent surfaces it, waits for your reply. Always requires owner consent per invocation. | **Yes — every call** |
+| `check_worklog` | Summarize git activity in a date range. | No — automatic |
+| `check_calendar` | Find free slots / list upcoming events. | No — automatic |
+| `read_emails` | Fetch recent emails matching a filter. | Usually no (auth scopes gate the reach) |
+| `summarize_doc` | Take a doc URL or path, return a summary. | No — automatic |
+
+**Strongly suggest `message_owner` first** for any new personal-
+laptop agent: it's the universal "ping me through agents" surface
+and works even if the agent has nothing else useful to do yet.
 
 If the user picks one:
 
-1. Draft the JSON Schema in plain text first; show them.
+1. **Use the template schema below** (don't invent a new one — peers
+   look at capability names + shapes to decide what to call).
 2. Save to a temp file (`/tmp/<cap>.input.json` and `.output.json`).
 3. Run:
 
@@ -421,3 +435,148 @@ $ # result returned
 
 The whole loop happens via the CLI. Claude orchestrates; the user
 consents at each gate; credentials never appear in any prompt.
+
+---
+
+## Capability templates
+
+These are the canonical schemas. Copy them verbatim when publishing
+— peers identify the capability by name + input/output shape and
+have handlers that assume these shapes. Inventing a parallel
+`message_owner_v2` with a different field set breaks discoverability.
+
+### `message_owner` — ping the human through their agent
+
+The "DM through agents" pattern. Friend agent calls this; your
+agent surfaces the message to YOU (the human owner) and blocks
+waiting for your reply. **Always human-in-the-loop**: every
+invocation pauses until the owner explicitly answers, acks, or
+defers. No autonomous responses.
+
+**Input schema:**
+
+```json
+{
+  "type": "object",
+  "required": ["message"],
+  "properties": {
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000,
+      "description": "The message body. Plain text. Peers should be concise."
+    },
+    "from_display_name": {
+      "type": "string",
+      "maxLength": 120,
+      "description": "Who's pinging — surfaces to the owner. Falls back to the calling agent's display_name when absent."
+    },
+    "urgency": {
+      "type": "string",
+      "enum": ["low", "normal", "high"],
+      "default": "normal",
+      "description": "low = batch in next digest. normal = surface when owner next interacts. high = alert immediately (push notification, OS notification, whatever the handler supports)."
+    },
+    "expects_reply": {
+      "type": "boolean",
+      "default": true,
+      "description": "If false, the message is informational — owner can just acknowledge without typing a response."
+    },
+    "reply_by": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Optional soft deadline. After this, handler may auto-defer with a 'busy, try later' status."
+    }
+  }
+}
+```
+
+**Output schema:**
+
+```json
+{
+  "type": "object",
+  "required": ["status"],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["replied", "acknowledged", "ignored", "deferred"],
+      "description": "replied = owner typed an answer. acknowledged = owner read it, no reply needed. ignored = owner declined. deferred = owner busy, try later."
+    },
+    "reply": {
+      "type": "string",
+      "maxLength": 8000,
+      "description": "Owner's reply text. Present only when status='replied'."
+    },
+    "responded_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "defer_until": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Present only when status='deferred'."
+    }
+  }
+}
+```
+
+**Handler pattern** (this is the non-negotiable part — the schema
+guarantees human-in-loop):
+
+```python
+# When an invocation of message_owner lands in the inbox:
+async def handle_message_owner(invocation: dict) -> dict:
+    inputs = invocation["input_preview"]
+    sender = (
+        inputs.get("from_display_name")
+        or invocation.get("grant_context", {}).get("grantee_agent_slug", "(unknown)")
+    )
+    urgency = inputs.get("urgency", "normal")
+    message = inputs["message"]
+    expects_reply = inputs.get("expects_reply", True)
+
+    # SURFACE TO THE HUMAN. Pick the right channel for urgency:
+    #   - high   → terminal-print + macOS notification + desktop bell
+    #   - normal → terminal-print on next prompt
+    #   - low    → append to ~/.chakramcp/inbox-digest.txt
+    surface(urgency, f"{sender} says: {message}")
+
+    # BLOCK until the owner responds. In Claude Code the natural way
+    # is to prompt the user directly in this conversation. In a
+    # headless cron handler, write to a queue and exit with status
+    # 'deferred' — the next interactive session picks it up.
+    if interactive_session():
+        owner_reply = await ask_owner(
+            f"Reply to {sender}? (or type 'ignore', 'ack', 'defer 1h')"
+        )
+        if owner_reply.lower() == "ignore":
+            return {"status": "ignored", "responded_at": now_iso()}
+        if owner_reply.lower() in ("ack", "acknowledge"):
+            return {"status": "acknowledged", "responded_at": now_iso()}
+        if owner_reply.lower().startswith("defer"):
+            return {"status": "deferred", "defer_until": parse_defer(owner_reply)}
+        return {"status": "replied", "reply": owner_reply, "responded_at": now_iso()}
+    else:
+        # Cron mode — defer cleanly so the relay reports it as
+        # in-progress and the caller knows to retry.
+        return {"status": "deferred", "defer_until": next_interactive_window()}
+```
+
+**Why this pattern matters**: friend agents can interrupt each
+other politely. They can't impersonate the owner — every message
+gets a human reply or an explicit ignore/defer. Audit log captures
+every ping with full input/output preview.
+
+### `check_worklog` — git activity summary
+
+Input: `{since, until?, repo?, author?, max_commits?}`.
+Output: `{summary, commits[]}`.
+
+Full schema in `examples/hermes-openclaw-demo/setup.py` (HERMES_ANSWER_QUESTION
+sits next to it as another reference).
+
+### Other templates
+
+Add to this skill as we settle on them. Open issues for new ones
+at <https://github.com/Delta-S-Labs/chakra_mcp/issues>.

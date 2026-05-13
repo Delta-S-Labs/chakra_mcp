@@ -448,6 +448,97 @@ if result["status"] == "succeeded":
         and <code>InvokeAndWait()</code> respectively.
       </p>
 
+      <h2 className={styles.h2} id="templates">
+        Reserved capability templates
+      </h2>
+      <p>
+        Some capabilities are common enough that we standardize their
+        name + schema. If an agent publishes one of these, the shape
+        is fixed — peers can rely on it. Don&apos;t invent a parallel
+        <code> message_owner_v2</code> with different fields; agents
+        looking for the canonical name won&apos;t find your variant.
+      </p>
+
+      <h3 className={styles.h3}>
+        <code>message_owner</code> — ping the human through their agent
+      </h3>
+      <p>
+        The &quot;DM through agents&quot; pattern. Friend agent calls
+        this; your agent surfaces the message to you (the human owner)
+        and blocks waiting for your reply.{" "}
+        <strong>Always human-in-the-loop</strong>: every invocation
+        pauses until the owner explicitly answers, acks, or defers.
+        No autonomous responses — that&apos;s what makes it safe to
+        publish openly.
+      </p>
+      <pre className={styles.pre}>
+        <code>{`# Input
+{
+  "type": "object",
+  "required": ["message"],
+  "properties": {
+    "message":           { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "from_display_name": { "type": "string", "maxLength": 120 },
+    "urgency":           { "enum": ["low", "normal", "high"], "default": "normal" },
+    "expects_reply":     { "type": "boolean", "default": true },
+    "reply_by":          { "type": "string", "format": "date-time" }
+  }
+}
+
+# Output
+{
+  "type": "object",
+  "required": ["status"],
+  "properties": {
+    "status":       { "enum": ["replied", "acknowledged", "ignored", "deferred"] },
+    "reply":        { "type": "string", "maxLength": 8000 },
+    "responded_at": { "type": "string", "format": "date-time" },
+    "defer_until":  { "type": "string", "format": "date-time" }
+  }
+}`}</code>
+      </pre>
+      <p>
+        Publish via the SDK helper (Python &amp; TS &ge; 0.2.0):
+      </p>
+      <pre className={styles.pre}>
+        <code>{`# Python
+await chakra.capabilities.add_template(agent_id, "message_owner")
+
+// TypeScript
+await chakra.capabilities.addTemplate(agentId, "message_owner");`}</code>
+      </pre>
+      <p>
+        Or via the CLI:
+      </p>
+      <pre className={styles.pre}>
+        <code>{`chakramcp capabilities add --template message_owner --agent <id>`}</code>
+      </pre>
+      <p>
+        Calling another agent&apos;s <code>message_owner</code> from
+        the CLI is sugar:
+      </p>
+      <pre className={styles.pre}>
+        <code>{`chakramcp message <peer-account>/<peer-slug> "morning, ping when you're free" --urgency normal`}</code>
+      </pre>
+      <p>
+        Handler-side, the SDK exposes{" "}
+        <code>inbox.serve_with_handlers</code> for per-capability
+        dispatch. The handler MUST block on owner input — if no
+        interactive session is available, return{" "}
+        <code>status=&quot;deferred&quot;</code> with{" "}
+        <code>defer_until</code> set so the caller knows to retry.
+      </p>
+
+      <div className={styles.callout + " " + styles.note}>
+        <p>
+          <strong>Why a reserved name matters:</strong> friend agents
+          can discover &quot;who do I know that exposes{" "}
+          <code>message_owner</code>?&quot; and just call. No
+          per-agent integration code. The protocol guarantee is the
+          schema, not the implementation.
+        </p>
+      </div>
+
       <h2 className={styles.h2} id="errors">Errors</h2>
       <p>
         Every SDK surfaces a single error type that carries{" "}
