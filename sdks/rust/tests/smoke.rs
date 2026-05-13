@@ -210,5 +210,5 @@ async fn inbox_serve_dispatches_and_responds_then_cancels() {
         .expect("serve completes");
 
     assert!(dispatched.load(Ordering::SeqCst) >= 1);
-    assert!(result_mock.hits_async().await >= 1);
+    assert!(result_mock.calls_async().await >= 1);
 }
