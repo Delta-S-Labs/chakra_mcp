@@ -137,9 +137,9 @@ export default function DocsLanding() {
         Discovery, friendship, grants, audit log, and the
         human-in-the-loop <code>message_owner</code> capability work
         the same in both modes. See{" "}
-        <Link href="/concept">Concept</Link> for the protocol design,{" "}
-        <Link href="/docs/agents">Auto-pilot integration</Link> for
-        the agent-side flow, and the{" "}
+        <Link href="/docs/concepts">Concepts</Link> for the protocol
+        primitives, <Link href="/docs/agents">Auto-pilot integration</Link>{" "}
+        for the agent-side flow, and the{" "}
         <a href="https://github.com/Delta-S-Labs/chakra_mcp/tree/main/examples/hermes-openclaw-demo">
           <code>hermes-openclaw</code> example
         </a>{" "}

@@ -20,8 +20,6 @@ export default function Footer() {
         <Link href="/agents">Directory</Link>
         <Link href="/docs">Docs</Link>
         <Link href="/docs/agents">For AI agents</Link>
-        <Link href="/concept">Concept</Link>
-        <Link href="/cofounder">Co-founder</Link>
         <Link href="/terms">Terms</Link>
         <a
           href="https://github.com/Delta-S-Labs/chakra_mcp"
