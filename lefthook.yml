@@ -50,6 +50,57 @@ pre-commit:
       fail_text: |
         TypeScript errors. Fix and re-stage.
 
+    # ─── Install-doc sync check ─────────────────────────────────────
+    # If you change anything that affects a published install path
+    # (SDK manifest, CLI Cargo.toml, install.sh, Dockerfile, release
+    # workflow, descriptor `status` field) and DON'T also touch
+    # README.md / docs/INSTALL.md / the matching sdks/*/README.md,
+    # the install instructions drift from reality. We hit this with
+    # the rust/go SDK "cargo add" / "go get" claims that didn't
+    # match what was actually published. Block the commit until
+    # docs are part of the same change.
+    install-docs-sync:
+      glob: "{sdks/python/pyproject.toml,sdks/typescript/package.json,sdks/rust/Cargo.toml,sdks/go/go.mod,backend/cli/Cargo.toml,frontend/public/install.sh,infra/Dockerfile*,.github/workflows/sdk-*-release.yml,.github/workflows/cli-release.yml,frontend/public/.well-known/chakramcp.json}"
+      run: |
+        staged_paths=$(git diff --cached --name-only)
+        triggers=$(echo "$staged_paths" | grep -E "(sdks/python/pyproject|sdks/typescript/package|sdks/rust/Cargo|sdks/go/go\.mod|backend/cli/Cargo|frontend/public/install\.sh|infra/Dockerfile|sdk-.*-release\.yml|cli-release\.yml|chakramcp\.json)$" || true)
+        if [ -z "$triggers" ]; then
+          exit 0
+        fi
+        readme_changed=$(echo "$staged_paths" | grep -E "^README\.md$" | wc -l | tr -d ' ')
+        install_changed=$(echo "$staged_paths" | grep -E "^docs/INSTALL\.md$" | wc -l | tr -d ' ')
+        # If the trigger is a per-SDK file, require that SDK's README
+        # to be staged. Otherwise require README.md and docs/INSTALL.md.
+        per_sdk_drift=""
+        for sdk in python typescript rust go; do
+          sdk_triggered=$(echo "$triggers" | grep -E "^sdks/$sdk/" || true)
+          sdk_readme=$(echo "$staged_paths" | grep -E "^sdks/$sdk/README\.md$" || true)
+          if [ -n "$sdk_triggered" ] && [ -z "$sdk_readme" ]; then
+            per_sdk_drift="$per_sdk_drift sdks/$sdk/README.md"
+          fi
+        done
+        if [ "$readme_changed" = "0" ] || [ "$install_changed" = "0" ] || [ -n "$per_sdk_drift" ]; then
+          echo "::warning::You changed an install-affecting file but didn't update:"
+          [ "$readme_changed" = "0" ] && echo "  - README.md (top-level install matrix)"
+          [ "$install_changed" = "0" ] && echo "  - docs/INSTALL.md (long-form install guide)"
+          for missing in $per_sdk_drift; do
+            echo "  - $missing"
+          done
+          echo ""
+          echo "Triggered by:"
+          echo "$triggers" | sed 's/^/  - /'
+          echo ""
+          echo "Why this matters: install instructions in the docs are the"
+          echo "first thing users see. Drift = misleading users. If the doc"
+          echo "really doesn't need an update (rare), bypass with"
+          echo "    git commit --no-verify"
+          exit 1
+        fi
+      fail_text: |
+        Install docs drifted from a release-affecting source change.
+        Update README.md / docs/INSTALL.md / the matching sdks/*/README.md,
+        or pass --no-verify if this is genuinely a no-op rename / formatting.
+
     # ─── Capability-template sync check ─────────────────────────────
     # The reserved-template registries live in three places (Python
     # SDK, TS SDK, Rust CLI) plus the protocol spec on /docs/agents

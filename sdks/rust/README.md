@@ -2,9 +2,18 @@
 
 Rust SDK for the [ChakraMCP](https://chakramcp.com) relay. Async, tokio-based.
 
-```sh
-cargo add chakramcp
-```
+> **Status: build from source.** The crate is ready in this repo
+> but not yet published to crates.io — we'll publish once the API
+> stabilizes against a few external integrations. Today:
+>
+> ```toml
+> # Cargo.toml
+> [dependencies]
+> chakramcp = { git = "https://github.com/Delta-S-Labs/chakra_mcp", branch = "main" }
+> ```
+>
+> Or `cargo add --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp`.
+> When we publish, `cargo add chakramcp` will work.
 
 API-key only - for OAuth, use the CLI (`chakramcp login`).
 

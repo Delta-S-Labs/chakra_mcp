@@ -9,17 +9,22 @@ everyone who doesn't.
 
 ## What ships from this repo
 
-| Surface | What it is | How to install |
+| Surface | What it is | How to install **today** |
 |---|---|---|
-| **`chakramcp` CLI** | Talk to a network from a terminal — manage agents, run an inbox loop, invoke. | `brew install chakramcp` (or `npm i -g @chakramcp/cli`, `cargo install chakramcp-cli`, [`curl install.sh`](https://chakramcp.com/install.sh)) |
-| **`chakramcp-server`** | Run a private network on your own box. App + relay supervised in one process. | `brew install chakramcp-server` |
-| **MCP server** | OAuth 2.1 + PKCE for any MCP client (Claude Desktop, Cursor, Goose). | `chakramcp.com/mcp` (or your self-host URL) |
-| **TypeScript SDK** | API-key client for Node + browsers + Bun. | `npm i @chakramcp/sdk` |
-| **Python SDK** | Sync **and** async clients (httpx). | `pip install chakramcp-sdk` |
-| **Rust SDK** | Async crate (tokio). | `cargo add chakramcp` |
-| **Go SDK** | Standard library + context.Context. | `go get github.com/Delta-S-Labs/chakra_mcp/sdks/go` |
+| **`chakramcp` CLI** | Talk to a network from a terminal — manage agents, run an inbox loop, invoke. | `cargo install --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp-cli` *(Homebrew tap, npm wrapper, `crates.io` listing, and pre-built binaries via `install.sh` all planned — none published yet.)* |
+| **`chakramcp-server`** | Run a private network on your own box. App + relay supervised in one process. | Build from source: clone, then `cd backend && cargo build --release --bin chakramcp-server`. *(Homebrew formula planned.)* See [`infra/Dockerfile.thin`](infra/Dockerfile.thin) for the production build path. |
+| **MCP server** | OAuth 2.1 + PKCE for any MCP client (Claude Desktop, Cursor, Goose). | `https://relay.chakramcp.com/mcp` (or your self-host URL) — runs as part of `chakramcp-server`. |
+| **TypeScript SDK** | API-key client for Node + browsers + Bun. ESM + CJS + types. | ✅ `npm install @chakramcp/sdk` ([npm](https://www.npmjs.com/package/@chakramcp/sdk)) |
+| **Python SDK** | Sync **and** async clients (httpx). | ✅ `pip install chakramcp-sdk` ([PyPI](https://pypi.org/project/chakramcp-sdk/)) |
+| **Rust SDK** | Async crate (tokio). | Build from source: `cargo add --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp`. *(`crates.io` listing planned.)* |
+| **Go SDK** | Standard library + context.Context. | Build from source: clone + `go build ./sdks/go/...`. *(Tagged release for `go get …@vX.Y.Z` planned.)* |
 
-Full install guide for every channel: [`docs/INSTALL.md`](docs/INSTALL.md).
+Want to know what's published vs planned in machine-readable form?
+The host descriptor at <https://chakramcp.com/.well-known/chakramcp.json>
+lists every SDK with a `status` field (`"published"` or `"planned"`)
+and the install command — that's the source of truth this table mirrors.
+
+Full install guide for every channel (incl. self-hosting): [`docs/INSTALL.md`](docs/INSTALL.md).
 
 ## What ChakraMCP gives an agent
 
@@ -71,12 +76,13 @@ sign-in flow works on both. The MCP server uses the same Bearer
 extractor — OAuth-issued JWTs and `ck_…` API keys both work without
 special casing.
 
-## Quick start (15 seconds)
+## Quick start
 
 ```bash
-# Install the CLI
-brew tap delta-s-labs/chakramcp https://github.com/Delta-S-Labs/chakra_mcp
-brew install chakramcp
+# Install the CLI from source (Homebrew + crates.io + npm wrapper
+# coming once we cut the first cli-v* release; until then this is
+# the supported path):
+cargo install --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp-cli
 
 # Sign in via OAuth (browser pops up)
 chakramcp login
@@ -105,16 +111,38 @@ No LLM keys, no mocks.
 
 ## Self-hosting
 
-The whole stack runs on one machine via Homebrew:
+The whole stack runs on one machine. Two paths today:
+
+**Build from source (developers):**
 
 ```bash
-brew install chakramcp-server          # pulls in postgresql@16
-brew services start postgresql@16
-createdb chakramcp
-chakramcp-server init                   # writes ~/.chakramcp/server.toml
-chakramcp-server migrate
-chakramcp-server start                  # or: brew services start chakramcp-server
+git clone https://github.com/Delta-S-Labs/chakra_mcp
+cd chakra_mcp/backend
+cargo build --release --bin chakramcp-server
+# Postgres prereq
+brew services start postgresql@16 && createdb chakramcp
+# Run
+./target/release/chakramcp-server init       # ~/.chakramcp/server.toml
+./target/release/chakramcp-server migrate
+./target/release/chakramcp-server start
 ```
+
+**Docker (production-shaped):**
+
+```bash
+# Cross-compile + ship image; see infra/Dockerfile.thin + the
+# CI/CD pipeline at .github/workflows/cd.yml for the full path.
+cargo build --release --bin chakramcp-server
+cp target/release/chakramcp-server ../infra/chakramcp-server
+docker build -f infra/Dockerfile.thin -t chakramcp-server:local ..
+docker run --rm -p 8080:8080 -p 8090:8090 \
+    -e DATABASE_URL=postgres://… -e JWT_SECRET=… chakramcp-server:local start
+```
+
+Homebrew formula (`brew install chakramcp-server`) is planned once
+we cut a `cli-v*` release. The host descriptor's `self_host.status`
+field will flip from `"available"` to include `"homebrew"` when that
+ships.
 
 Docker / Kubernetes / bare-metal options live in [`docs/INSTALL.md`](docs/INSTALL.md).
 
