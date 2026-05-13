@@ -1,0 +1,275 @@
+/*
+ * Editorial dispatch log for the tax-agent shopping flow.
+ * 16-second seamless loop: 18 log lines fade in at staggered moments,
+ * hold for ~2s, fade out together, loop.
+ *
+ * Visual style mirrors CoffeeLoop.module.css; accent shifts toward
+ * the butter/green register, with the user's decision moment painted
+ * in butter so it pops against the cooler "out / in" exchange.
+ */
+
+.root {
+  width: 100%;
+  border-radius: 1.4rem;
+  border: 1px solid color-mix(in oklab, var(--line) 82%, var(--ink) 18%);
+  background:
+    repeating-linear-gradient(
+      0deg,
+      transparent 0 32px,
+      color-mix(in oklab, var(--line) 14%, transparent) 32px 33px
+    ),
+    linear-gradient(180deg, var(--paper-soft), color-mix(in oklab, var(--paper) 92%, var(--paper-warm) 8%));
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+
+/* --- Header --- */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1.25rem;
+  border-bottom: 1px dashed color-mix(in oklab, var(--line) 80%, var(--ink) 20%);
+  background: color-mix(in oklab, var(--paper-warm) 36%, var(--paper-soft));
+}
+
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.statusDot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 999px;
+  background: var(--accent-butter);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent-butter) 32%, transparent);
+  animation: statusPulse 1.8s ease-in-out infinite;
+}
+@keyframes statusPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(0.88); }
+}
+
+.title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 0.82rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.clock {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  color: var(--ink-muted);
+  letter-spacing: 0.04em;
+}
+.clockStart, .clockEnd { min-width: 4.5rem; }
+.clockEnd { color: var(--ink); font-weight: 600; }
+.clockTrack {
+  position: relative;
+  width: clamp(80px, 12vw, 130px);
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--line) 60%, transparent);
+  overflow: hidden;
+}
+.clockFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  right: 0;
+  background: linear-gradient(90deg, var(--accent-butter), oklch(62% 0.15 150));
+  border-radius: 999px;
+  transform-origin: left;
+  transform: scaleX(0);
+  animation: clockFill 16s linear infinite;
+}
+@keyframes clockFill {
+  0% { transform: scaleX(0); }
+  72% { transform: scaleX(0.98); }
+  84% { transform: scaleX(1); }
+  92% { transform: scaleX(1); }
+  100% { transform: scaleX(0); }
+}
+
+/* --- Log lines --- */
+.log {
+  padding: 0.85rem 1.25rem 1.1rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.line {
+  display: grid;
+  grid-template-columns: 3.4rem minmax(11rem, auto) 1fr;
+  gap: 0.5rem 1rem;
+  align-items: baseline;
+  padding: 0.35rem 0.6rem;
+  border-radius: 0.6rem;
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+/* Each line runs the same duration, with its own keyframe window
+   so the visibility rises at the right moment of a single 16s loop. */
+.at0  { animation: show0  16s infinite; }
+.at3  { animation: show3  16s infinite; }
+.at6  { animation: show6  16s infinite; }
+.at9  { animation: show9  16s infinite; }
+.at12 { animation: show12 16s infinite; }
+.at15 { animation: show15 16s infinite; }
+.at18 { animation: show18 16s infinite; }
+.at22 { animation: show22 16s infinite; }
+.at26 { animation: show26 16s infinite; }
+.at30 { animation: show30 16s infinite; }
+.at34 { animation: show34 16s infinite; }
+.at38 { animation: show38 16s infinite; }
+.at42 { animation: show42 16s infinite; }
+.at48 { animation: show48 16s infinite; }
+.at54 { animation: show54 16s infinite; }
+.at62 { animation: show62 16s infinite; }
+.at68 { animation: show68 16s infinite; }
+.at74 { animation: show74 16s infinite; }
+
+@keyframes show0  { 0%       { opacity: 0; transform: translateY(6px); } 2%,  90% { opacity: 1; transform: translateY(0); } 97%, 100% { opacity: 0; transform: translateY(-4px); } }
+@keyframes show3  { 0%, 2%   { opacity: 0; transform: translateY(6px); } 4%,  90% { opacity: 1; transform: translateY(0); } 97%, 100% { opacity: 0; transform: translateY(-4px); } }
+@keyframes show6  { 0%, 5%   { opacity: 0; transform: translateY(6px); } 7%,  90% { opacity: 1; transform: translateY(0); } 97%, 100% { opacity: 0; transform: translateY(-4px); } }
+@keyframes show9  { 0%, 8%   { opacity: 0; transform: translateY(6px); } 10%, 90% { opacity: 1; transform: translateY(0); } 97%, 100% { opacity: 0; transform: translateY(-4px); } }
+@keyframes show12 { 0%, 11%  { opacity: 0; transform: translateY(6px); } 13%, 90% { opacity: 1; transform: translateY(0); } 97%, 100% { opacity: 0; transform: translateY(-4px); } }
+@keyframes show15 { 0%, 14%  { opacity: 0; transform: translateY(6px); } 16%, 90% { opacity: 1; transform: translateY(0); } 97%, 100% { opacity: 0; transform: translateY(-4px); } }
+@keyframes show18 { 0%, 17%  { opacity: 0; transform: translateY(6px); } 19%, 90% { opacity: 1; transform: translateY(0); } 97%, 100% { opacity: 0; transform: translateY(-4px); } }
+@keyframes show22 { 0%, 21%  { opacity: 0; transform: translateY(6px); } 23%, 90% { opacity: 1; transform: translateY(0); } 97%, 100% { opacity: 0; transform: translateY(-4px); } }
+@keyframes show26 { 0%, 25%  { opacity: 0; transform: translateY(6px); } 27%, 90% { opacity: 1; transform: translateY(0); } 97%, 100% { opacity: 0; transform: translateY(-4px); } }
+@keyframes show30 { 0%, 29%  { opacity: 0; transform: translateY(6px); } 31%, 90% { opacity: 1; transform: translateY(0); } 97%, 100% { opacity: 0; transform: translateY(-4px); } }
+@keyframes show34 { 0%, 33%  { opacity: 0; transform: translateY(6px); } 35%, 90% { opacity: 1; transform: translateY(0); } 97%, 100% { opacity: 0; transform: translateY(-4px); } }
+@keyframes show38 { 0%, 37%  { opacity: 0; transform: translateY(6px); } 39%, 90% { opacity: 1; transform: translateY(0); } 97%, 100% { opacity: 0; transform: translateY(-4px); } }
+@keyframes show42 { 0%, 41%  { opacity: 0; transform: translateY(6px); } 43%, 90% { opacity: 1; transform: translateY(0); } 97%, 100% { opacity: 0; transform: translateY(-4px); } }
+@keyframes show48 { 0%, 47%  { opacity: 0; transform: translateY(6px); } 49%, 90% { opacity: 1; transform: translateY(0); } 97%, 100% { opacity: 0; transform: translateY(-4px); } }
+@keyframes show54 { 0%, 53%  { opacity: 0; transform: translateY(6px); } 55%, 90% { opacity: 1; transform: translateY(0); } 97%, 100% { opacity: 0; transform: translateY(-4px); } }
+@keyframes show62 { 0%, 61%  { opacity: 0; transform: translateY(6px); } 63%, 90% { opacity: 1; transform: translateY(0); } 97%, 100% { opacity: 0; transform: translateY(-4px); } }
+@keyframes show68 { 0%, 67%  { opacity: 0; transform: translateY(6px); } 69%, 90% { opacity: 1; transform: translateY(0); } 97%, 100% { opacity: 0; transform: translateY(-4px); } }
+@keyframes show74 { 0%, 73%  { opacity: 0; transform: translateY(6px); } 75%, 90% { opacity: 1; transform: translateY(0); } 97%, 100% { opacity: 0; transform: translateY(-4px); } }
+
+.time {
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  color: var(--ink-muted);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.route {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.actor {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  color: var(--ink);
+}
+
+.from, .to { font-family: var(--font-mono); font-size: 0.8rem; }
+.from { color: var(--ink-soft); }
+.to   { color: var(--ink); }
+
+.arrow { font-family: var(--font-mono); font-weight: 700; }
+
+.body {
+  font-family: var(--font-body);
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: var(--ink);
+  max-width: none;
+}
+
+/* --- Line kinds --- */
+.line--alert {
+  background: color-mix(in oklab, var(--accent-butter) 26%, transparent);
+  border-left: 2px solid oklch(62% 0.15 150);
+}
+.line--alert .body {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.96rem;
+  letter-spacing: -0.01em;
+}
+
+.line--out .arrow { color: oklch(62% 0.15 150); }
+.line--out .to {
+  background: color-mix(in oklab, oklch(82% 0.14 150) 42%, var(--paper-soft));
+  padding: 0.04rem 0.4rem;
+  border-radius: 0.3rem;
+}
+
+.line--in .arrow { color: oklch(55% 0.16 145); }
+.line--in .from {
+  background: color-mix(in oklab, oklch(82% 0.14 140) 42%, var(--paper-soft));
+  padding: 0.04rem 0.4rem;
+  border-radius: 0.3rem;
+  color: var(--ink);
+}
+
+/* Decision moment: the user picks tax-aurora. */
+.line--pick {
+  background: color-mix(in oklab, var(--accent-butter) 60%, transparent);
+  border-left: 2px solid var(--accent-butter);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent-butter) 38%, transparent);
+}
+.line--pick .actor { color: var(--ink); }
+.line--pick .body {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1rem;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+/* --- Footer --- */
+.footer {
+  padding: 0.85rem 1.25rem;
+  border-top: 1px dashed color-mix(in oklab, var(--line) 80%, var(--ink) 20%);
+  background: color-mix(in oklab, var(--paper-warm) 22%, var(--paper-soft));
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.74rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+/* --- Reduced motion --- */
+@media (prefers-reduced-motion: reduce) {
+  .at0, .at3, .at6, .at9, .at12, .at15, .at18, .at22, .at26, .at30,
+  .at34, .at38, .at42, .at48, .at54, .at62, .at68, .at74,
+  .statusDot, .clockFill {
+    animation: none !important;
+  }
+  .line { opacity: 1; transform: none; }
+  .clockFill { transform: scaleX(1); }
+}
+
+/* --- Responsive --- */
+@media (max-width: 640px) {
+  .line { grid-template-columns: 1fr; gap: 0.2rem; }
+  .header { flex-wrap: wrap; }
+  .clockTrack { width: 80px; }
+}
