@@ -6,11 +6,11 @@ on:
     paths:
       - "sdks/go/**"
       - ".github/workflows/sdk-go-ci.yml"
+  # Always run on PRs so required-status checks always post.
+  # Otherwise PRs that don't touch sdks/go/ get stuck on
+  # "expected — waiting" forever (branch-protection trap).
   pull_request:
     branches: [main]
-    paths:
-      - "sdks/go/**"
-      - ".github/workflows/sdk-go-ci.yml"
 
 concurrency:
   group: sdk-go-ci-${{ github.ref }}

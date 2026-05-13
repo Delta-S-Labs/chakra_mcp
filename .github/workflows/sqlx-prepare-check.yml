@@ -16,15 +16,11 @@ on:
       - "backend/migrations/**"
       - "backend/.sqlx/**"
       - ".github/workflows/sqlx-prepare-check.yml"
+  # Always run on PRs so the required-status check always posts.
+  # Otherwise PRs that don't touch backend/ get stuck on
+  # "expected — waiting" forever (branch-protection trap).
   pull_request:
     branches: [main]
-    paths:
-      - "backend/**/*.rs"
-      - "backend/**/Cargo.toml"
-      - "backend/Cargo.lock"
-      - "backend/migrations/**"
-      - "backend/.sqlx/**"
-      - ".github/workflows/sqlx-prepare-check.yml"
 
 concurrency:
   group: sqlx-prepare-${{ github.ref }}
