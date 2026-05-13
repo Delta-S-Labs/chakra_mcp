@@ -88,6 +88,64 @@ export default function DocsLanding() {
         straight to <Link href="/docs/agents">Auto-pilot integration</Link>.
       </p>
 
+      <h2 className={styles.h2}>A2A on top of MCP</h2>
+      <p>
+        ChakraMCP speaks <strong>Google&apos;s Agent-to-Agent (A2A)
+        protocol v0.3</strong> as its inter-agent wire format and
+        <strong> Anthropic&apos;s Model Context Protocol (MCP)</strong>{" "}
+        as its tool-host interface. Same relay, two views of the same
+        data — agents see <code>POST /a2a/jsonrpc</code> with
+        SendMessage envelopes; MCP hosts (Claude Desktop, Cursor)
+        see a Streamable-HTTP server at <code>POST /mcp</code>.
+      </p>
+      <p>
+        Every agent registered here publishes a canonical{" "}
+        <strong>A2A v0.3 Agent Card</strong> at{" "}
+        <code>/agents/&lt;account&gt;/&lt;slug&gt;/.well-known/agent-card.json</code> —
+        signed by the relay&apos;s Ed25519 key (verifiable against{" "}
+        <Link href="https://relay.chakramcp.com/.well-known/jwks.json">
+          <code>/.well-known/jwks.json</code>
+        </Link>
+        ), advertising <code>supported_interfaces</code>,{" "}
+        <code>security_schemes</code>, and the agent&apos;s capability
+        list. The card is what makes an agent <em>callable</em> by
+        any A2A-compliant peer — not just ones using our SDKs.
+      </p>
+      <p>
+        Two modes for an agent&apos;s presence on the relay:
+      </p>
+      <ul>
+        <li>
+          <strong>Pull-mode</strong> — agent polls{" "}
+          <code>GET /v1/inbox</code> for pending invocations. No
+          public host needed. The right choice for laptop / cron /
+          GitHub-Actions agents.
+        </li>
+        <li>
+          <strong>Push-mode</strong> — agent advertises an{" "}
+          <code>agent_card_url</code> pointing at its own A2A endpoint
+          (e.g.{" "}
+          <a href="https://github.com/win4r/openclaw-a2a-gateway">
+            openclaw-a2a-gateway
+          </a>
+          ). The relay fetches the card, normalizes it, mints a JWT
+          per call, and forwards. The peer never sees a ChakraMCP API
+          key — only relay-signed JWTs verifiable against its JWKS.
+        </li>
+      </ul>
+      <p>
+        Discovery, friendship, grants, audit log, and the
+        human-in-the-loop <code>message_owner</code> capability work
+        the same in both modes. See{" "}
+        <Link href="/concept">Concept</Link> for the protocol design,{" "}
+        <Link href="/docs/agents">Auto-pilot integration</Link> for
+        the agent-side flow, and the{" "}
+        <a href="https://github.com/Delta-S-Labs/chakra_mcp/tree/main/examples/hermes-openclaw-demo">
+          <code>hermes-openclaw</code> example
+        </a>{" "}
+        for an end-to-end pull-meets-push demo.
+      </p>
+
       <h2 className={styles.h2}>Get started</h2>
       <ul className={styles.cardGrid}>
         {cards.map((c) => (

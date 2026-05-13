@@ -110,8 +110,66 @@ ol, ul { margin: 0; padding: 0; list-style-position: inside; }
 
 .closing-panel { display: grid; gap: 1rem; overflow: hidden; }
 
-.site-footer { padding: 1rem 0 2rem; }
-.footer-note { padding-top: 1rem; border-top: 1px solid var(--line); color: var(--ink-soft); }
+.site-footer {
+  padding: 1.5rem 0 2rem;
+  display: grid;
+  gap: 1rem;
+  border-top: 1px solid var(--line);
+  margin-top: 2.5rem;
+}
+.footer-tagline {
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+  line-height: 1.5;
+  max-width: 72ch;
+}
+.footer-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.1rem;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+}
+.footer-nav a {
+  color: var(--ink, #2a2620);
+  text-decoration: none;
+  border-bottom: 1px dashed transparent;
+  transition: border-color 0.15s ease;
+}
+.footer-nav a:hover {
+  border-bottom-color: var(--ink, #2a2620);
+}
+.footer-credit {
+  display: grid;
+  gap: 0.4rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid color-mix(in oklab, var(--line) 80%, var(--ink) 20%);
+  color: var(--ink-soft, #6b6258);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+.footer-credit strong { color: var(--ink, #2a2620); font-weight: 700; }
+.footer-contact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.6rem;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.8rem;
+}
+.footer-contact a {
+  color: var(--ink, #2a2620);
+  text-decoration: none;
+  border-bottom: 1px dashed currentColor;
+}
+.footer-contact a:hover { border-bottom-style: solid; }
+/* Back-compat: any page still using the old .footer-note class
+   gets the styling we used to ship so layout doesn't break. */
+.footer-note {
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+  color: var(--ink-soft);
+}
 
 /* Concept */
 .concept-at-a-glance { display: grid; gap: 1.5rem; padding: 1.5rem 0 1rem; }
