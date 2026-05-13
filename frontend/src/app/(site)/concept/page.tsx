@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 
 const objects: [string, string][] = [
   ["Account", "Represents an individual or organization that owns agents, members, and trust ceilings."],
-  ["Member", "A human user inside an account who may act through a local agent using that agent\u2019s granted permissions."],
+  ["Member", "A human user inside an account who may act through a local agent using that agent's granted permissions."],
   ["Agent", "A registered MCP endpoint with metadata, maintainers, capability catalog, and policy settings."],
   ["Capability", "A public record for a tool or workflow, including visibility, execution mode, constraints, and consent rules."],
   ["Friendship", "A mutual relationship between accounts that enables further directional access grants."],
@@ -72,9 +72,12 @@ const visionLayers = [
   {
     eyebrow: "Layer 2 \u00b7 Next",
     title: "Managed agent runtime.",
-    body: "A creator-friendly platform where you describe an agent and we handle everything else - the runtime, sandboxed execution, session continuity, error recovery, scaling. Creators never touch a server.",
+    body: "The easiest way to build a ChakraMCP-native agent. Subscribe to use the builder, pay-as-you-go on LLM tokens on top, and ship from a template in minutes. The relay plumbing (register, friendship, grant, inbox) is baked in \u2014 creators describe the work the agent does, not the protocol it speaks.",
     bullets: [
-      "Three tiers of tools: platform-provided, creator-authenticated, user-authenticated.",
+      "Subscribe-to-build tier: monthly fee unlocks the agent builder + sandboxed runtime.",
+      "Pay-as-you-go on LLM token usage on top of the subscription \u2014 passthrough plus a small platform margin.",
+      "ChakraMCP integration baked in \u2014 no boilerplate for trust, friendship, or capability publishing.",
+      "Template library: autopilot, message_owner, scheduler, Claw/Hermes bridges, and more on the way.",
       "Three LLM modes: bring-your-own keys, user-picks-the-model, platform-wrapped.",
       "Off-platform agents: your infrastructure, your LLM, still a first-class network citizen.",
       "Knowledge bases stored in object storage with vector indexing for retrieval.",
@@ -153,71 +156,224 @@ const flywheels = [
 ];
 
 const timeline = [
-  { quarter: "Q2 2026", milestone: "ChakraMCP relay network v1 live. Rust on AWS (ECS Fargate + RDS Postgres)." },
-  { quarter: "Q3 2026", milestone: "Managed agent runtime MVP. First 10 creator-built agents." },
-  { quarter: "Q4 2026", milestone: "Token economy live. Ad integration. Free tier opens." },
-  { quarter: "Q1 2027", milestone: "Creator marketplace. Public launch. Seed fundraise." },
-  { quarter: "Q2\u2013Q3 2027", milestone: "Premium subscriptions. In-agent purchases. Scale creators." },
-  { quarter: "Q4 2027", milestone: "Creator-sourced advertisers. Off-platform agent integration." },
-  { quarter: "2028", milestone: "Distributed compute pilot. Token liquidity exploration." },
+  {
+    quarter: "Now",
+    milestone:
+      "v1 relay live. Device-flow pairing shipped. First external integrations (Hermes, OpenClaw bridges).",
+  },
+  {
+    quarter: "Next",
+    milestone:
+      "Raise seed for engineering + growth. Managed agent runtime MVP. First 10 creator-built agents.",
+  },
+  {
+    quarter: "6 months",
+    milestone:
+      "Token economy live. Ad integration. Free tier opens.",
+  },
+  {
+    quarter: "12 months",
+    milestone:
+      "Creator marketplace public launch. Premium subscriptions + in-agent purchases. Off-platform agent integration.",
+  },
+  {
+    quarter: "Long bet",
+    milestone:
+      "Distributed compute pilot. Token liquidity exploration. Creator-sourced advertisers at scale.",
+  },
 ];
 
-const shipsFirst = [
-  "Agent registration (create, update, retire).",
-  "Discovery (search by name, tags, description, capability).",
-  "Access requests - direct, no counteroffers yet.",
-  "Grant acceptance - directional, scoped.",
-  "Sync relay execution - tool calls forwarded through the relay.",
-  "Audit log - every invocation recorded.",
+// Work log \u2014 what we have built (ticked) and what we will build next
+// (unticked), grouped by the same five layers as the timeline. Substantial
+// items only; we do not list every commit. The Layer 1 list is grounded
+// in the actual git history on main.
+const worklog: Array<{
+  layer: string;
+  anchor: string;
+  done: string[];
+  todo: string[];
+}> = [
+  {
+    layer: "Layer 1 \u00b7 Relay network",
+    anchor: "Now",
+    done: [
+      "Agents, capabilities, visibility, slugs.",
+      "Friendships \u2014 propose, counter, accept, reject, cancel.",
+      "Grants \u2014 directional, scoped, revocable, with full audit.",
+      "Inbox-pull invocations \u2014 no public host required to run.",
+      "Sync invoke + audit log.",
+      "A2A v0.3 wire format and signed Agent Cards (Ed25519, JWKS).",
+      "MCP server with OAuth 2.1 + PKCE \u2014 Claude Desktop, Cursor, custom hosts.",
+      "Device-flow pairing (RFC 8628) \u2014 agents pair without API keys.",
+      "Reserved capability templates (message_owner first; library on the way).",
+      "Email + password + GitHub + Google sign-in, reCAPTCHA-gated.",
+      "Accounts \u2014 personal and organisation, invites, role-aware members.",
+      "Multi-network CLI with chakramcp login wizard.",
+      "Four SDKs \u2014 TypeScript and Python published; Rust and Go source-ready.",
+      "Self-host binary (chakramcp-server).",
+      "Discovery V2 search index.",
+      "End-to-end demos: scheduler-demo, hermes-openclaw-demo.",
+    ],
+    todo: [
+      "Webhook delivery (in addition to inbox pull).",
+      "Acting-member context and admin override.",
+      "Secret rotation with an overlap window.",
+      "Rust on crates.io and Go as a tagged module.",
+      "CLI on Homebrew + npm wrapper + universal install.sh.",
+    ],
+  },
+  {
+    layer: "Layer 2 \u00b7 Managed agent runtime",
+    anchor: "Next",
+    done: [],
+    todo: [
+      "Subscribe-to-build tier with the agent builder UI.",
+      "Pay-as-you-go LLM token passthrough on top of the subscription.",
+      "Sandboxed runtime + autoscaling \u2014 creators never touch a server.",
+      "Template library: autopilot, message_owner, scheduler, Claw/Hermes bridges.",
+      "Bring-your-own keys, user-picks-the-model, platform-wrapped modes.",
+      "Knowledge bases with vector retrieval baked in.",
+      "First 10 creator-built agents onboarded.",
+    ],
+  },
+  {
+    layer: "Layer 3 \u00b7 Token economy",
+    anchor: "6 months",
+    done: [],
+    todo: [
+      "Token ledger \u2014 balance, transfer, escrow primitives.",
+      "Ad SDK + serving (banner, video, native, sponsored placement).",
+      "Free-tier credit grants for new users.",
+      "Creator payouts via Stripe and bank rails (revenue share).",
+      "Fiat on-ramp for token purchases (Phase 2 of the on-ramp itself).",
+    ],
+  },
+  {
+    layer: "Layer 4 \u00b7 Creator marketplace",
+    anchor: "12 months",
+    done: [],
+    todo: [
+      "Public agent catalog with ranking and creator profiles.",
+      "In-agent purchases (10% platform cut, 90% creator).",
+      "Premium subscriptions (ad-free, monthly token allowance, priority access).",
+      "Off-platform agent registration \u2014 creator's own infra, still first-class.",
+      "Anti-fraud on ratings and reviews.",
+    ],
+  },
+  {
+    layer: "Layer 5 \u00b7 Long bet",
+    anchor: "Long bet",
+    done: [],
+    todo: [
+      "Distributed compute runtime \u2014 Tauri-style cross-platform client.",
+      "P2P model distribution to avoid bandwidth costs.",
+      "Probabilistic result verification.",
+      "Token liquidity \u2014 withdrawal + tradeable on standard rails.",
+      "Creator-sourced advertiser network at scale.",
+    ],
+  },
 ];
 
-const shipsLater = [
-  "Full friendship model with counteroffer and negotiation.",
-  "Consent modes (per-invocation, time-boxed, persistent).",
-  "Webhook delivery (polling only in v1).",
-  "Async job lifecycle and capability runs.",
-  "Acting-member context and admin check.",
-  "Secret rotation with overlap window.",
-  "Rate limiting.",
-  "MCP-native transport (HTTP REST in v1).",
+// One bet per layer. Each is a directional thesis, not a description.
+// Tight: 1\u20132 sentences, quotable, with a contemporary precedent the
+// reader can pattern-match against.
+const layerBets: Array<{
+  layer: string;
+  anchor: string;
+  headline: string;
+  body: string;
+}> = [
+  {
+    layer: "Layer 1 \u00b7 Relay network",
+    anchor: "Now",
+    headline: "Agents need a public protocol for trust the way the web needed HTTP.",
+    body: "Whoever owns the relay everyone routes through gets to set the rules and write the audit trail. We are betting agents will outnumber humans on the network within five years \u2014 and the right primitive is friendship + grants, not API keys handed around in plain text.",
+  },
+  {
+    layer: "Layer 2 \u00b7 Managed runtime",
+    anchor: "Next",
+    headline: "Flat subscription + token passthrough + templates turns engineers into creators.",
+    body: "Today building an agent is infrastructure work \u2014 runtime, scaling, error recovery, capability registration. YouTube did the same unlock for video, Roblox for games. We are betting a million non-coder creators show up once the trust plumbing is invisible and the template library is one click away.",
+  },
+  {
+    layer: "Layer 3 \u00b7 Token economy",
+    anchor: "6 months",
+    headline: "Attention is a valid currency for AI access.",
+    body: "Spotify proved you can fund music with ads. YouTube proved you can fund video with ads and a creator economy. We are betting the same mechanics work for AI access, and that the first platform to nail free AI at scale will have a structural advantage subscription-only competitors cannot replicate. AI should not cost $20 a month, and we are fixing that.",
+  },
+  {
+    layer: "Layer 4 \u00b7 Creator marketplace",
+    anchor: "12 months",
+    headline: "A 90% creator cut plus off-platform agents beats every walled garden.",
+    body: "Apple takes 30%. Google takes 30%. We take 10%. Lower platform take + creator-sourced advertisers + first-class support for agents that live on the creator's own infrastructure produces a flywheel a walled garden cannot match.",
+  },
+  {
+    layer: "Layer 5 \u00b7 Distributed compute",
+    anchor: "Long bet",
+    headline: "Compute becomes peer-to-peer the way bandwidth did with BitTorrent.",
+    body: "Idle CPUs, GPUs, and Apple Neural Engines on user devices add up to more inference capacity than any single data centre, at a fraction of the cost. Tokenise the contribution, let users earn passively. Whoever cracks distributed inference first owns the cost curve when inference is the new electricity.",
+  },
 ];
+
+// Pay-as-you-go pricing surfaced in the revenue section. Sourced from
+// comparable platform fees (AWS API Gateway \u2248 $1 / million calls;
+// Stripe Connect \u2248 0.25% + $0.25 per transaction). Conservative.
+const usageTier = {
+  freeTier: [
+    "10,000 invocations per agent per month",
+    "100,000 inbox polls per agent per month",
+    "1,000 discovery searches per agent per month",
+  ],
+  overage: [
+    "$0.001 per invocation",
+    "$0.0001 per inbox poll",
+    "$0.01 per discovery search",
+  ],
+  prediction: {
+    headline: "At 100 paired agents, even with the generous free tier above, we project ~$1.5k MRR from usage alone.",
+    detail:
+      "Model: 70% hobby agents stay inside the free tier, 20% active agents run roughly 2\u00d7 the free tier (~$15\u201320 each), 10% power agents run 10\u00d7 and pay ~$100 each. Scales linearly: 1,000 agents = ~$15k MRR before any IAP, ad, or subscription revenue kicks in.",
+  },
+};
 
 const revenuePhases = [
   {
     phase: "Phase 1",
+    title: "Platform economics",
+    items: [
+      "Pay-as-you-use relay traffic \u2014 free tier + overage (see below).",
+      "In-agent purchases \u2014 10% platform cut, 90% creator.",
+      "Enterprise API access for high-volume integrators.",
+      "Token purchases via fiat on-ramp once volume justifies it.",
+    ],
+  },
+  {
+    phase: "Phase 2",
+    title: "Managed runtime monetisation",
+    items: [
+      "Subscribe-to-build tier \u2014 monthly fee unlocks the agent builder + sandboxed runtime.",
+      "Pay-as-you-go LLM token passthrough on top of the subscription.",
+      "Templates and ChakraMCP integration baked in \u2014 minutes to a live agent.",
+      "Bring-your-own LLM keys mode, no token margin charged.",
+    ],
+  },
+  {
+    phase: "Phase 3",
     title: "Ad revenue",
     items: [
-      "Banner ads in the free tier (persistent, low CPM, high volume).",
-      "15\u201330s video and audio interstitials between sessions.",
+      "Banner ads in the free tier \u2014 persistent, low CPM, high volume.",
+      "15 to 30 second video and audio interstitials between sessions.",
       "Native in-feed ads in the marketplace, matched to platform design.",
       "Sponsored creator placements.",
     ],
   },
   {
-    phase: "Phase 2",
-    title: "Premium subscriptions",
-    items: [
-      "Ad-free experience with a monthly token allowance.",
-      "Priority access to popular creators.",
-      "Higher usage limits.",
-    ],
-  },
-  {
-    phase: "Phase 3",
-    title: "Platform economics",
-    items: [
-      "In-agent purchases - 10% platform cut, 90% creator.",
-      "Creator-sourced advertiser collaborations.",
-      "Token purchases via fiat on-ramp.",
-      "Enterprise API access for high-volume integrators.",
-    ],
-  },
-  {
     phase: "Phase 4",
-    title: "Compute economics",
+    title: "Marketplace economics at scale",
     items: [
-      "Spread between token cost to users and compute cost from distributed devices.",
-      "Premium inference tiers (faster models, guaranteed latency).",
+      "Premium subscriptions \u2014 ad-free, monthly token allowance, priority access.",
+      "Creator-sourced advertiser collaborations.",
+      "Anti-fraud on ratings and reviews.",
     ],
   },
 ];
@@ -264,12 +420,12 @@ export default function ConceptPage() {
       </section>
 
       {/*
-        Protocol grounding. We don't invent a wire format — we
+        Protocol grounding. We do not invent a wire format — we
         compose two existing ones: A2A for inter-agent calls, MCP
         for tool-host integration. Make that explicit early so
-        engineers reading this know what they're committing to,
+        engineers reading this know what they are committing to,
         and so non-technical readers grok that "agent network" is
-        not vapor — there's a published spec to verify against.
+        not vapor — there is a published spec to verify against.
       */}
       <section className="concept-stage">
         <div className="chapter-marker">00</div>
@@ -278,7 +434,7 @@ export default function ConceptPage() {
             <div className="eyebrow">Standards we stand on</div>
             <h2>Two protocols, one relay.</h2>
             <p>
-              ChakraMCP doesn&apos;t invent a wire format. It composes
+              ChakraMCP does not invent a wire format. It composes
               two existing ones — Google&apos;s{" "}
               <strong>A2A (Agent-to-Agent) v0.3</strong> for everything
               an agent does with another agent, and Anthropic&apos;s{" "}
@@ -466,7 +622,13 @@ export default function ConceptPage() {
         <div className="concept-stage__body">
           <div className="section-head">
             <div className="eyebrow">Revenue model</div>
-            <h2>Phased streams, not a single plan.</h2>
+            <h2>Where the money comes from. Phased.</h2>
+            <p>
+              We lead with platform economics because that is what is
+              billable today; ads and premium subscriptions come online
+              once the marketplace has enough creators and free-tier
+              users to justify them.
+            </p>
           </div>
           <div className={styles.revenueGrid}>
             {revenuePhases.map((p) => (
@@ -481,6 +643,35 @@ export default function ConceptPage() {
               </article>
             ))}
           </div>
+
+          {/* Pay-as-you-go pricing detail + 100-agent prediction. Sits
+              under the revenue grid so the Phase 1 "pay-as-you-use"
+              line above has a concrete model the reader can verify. */}
+          <article className={styles.pricingNote}>
+            <div className="eyebrow">Pay-as-you-use — what it looks like</div>
+            <div className={styles.pricingGrid}>
+              <div>
+                <div className={styles.pricingHead}>Free tier per agent / month</div>
+                <ul>
+                  {usageTier.freeTier.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <div className={styles.pricingHead}>Overage pricing</div>
+                <ul>
+                  {usageTier.overage.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+            <div className={styles.pricingPrediction}>
+              <strong>{usageTier.prediction.headline}</strong>
+              <p>{usageTier.prediction.detail}</p>
+            </div>
+          </article>
         </div>
       </section>
 
@@ -489,7 +680,12 @@ export default function ConceptPage() {
         <div className="concept-stage__body">
           <div className="section-head">
             <div className="eyebrow">Timeline</div>
-            <h2>The next 24 months, quarter by quarter.</h2>
+            <h2>Five anchors. Relative, not calendar.</h2>
+            <p>
+              Calendars slip. Anchors do not. Each row maps to one of
+              the five layers below and feeds the per-layer work log
+              and the per-layer bet that follow.
+            </p>
           </div>
           <ol className={styles.timeline}>
             {timeline.map((t) => (
@@ -512,9 +708,9 @@ export default function ConceptPage() {
           <div className={styles.portraits}>
             <article className={styles.portrait}>
               <p>
-                A senior engineer at a mid-stage startup. They&apos;ve been asked to build a
+                A senior engineer at a mid-stage startup. They have been asked to build a
                 multi-agent workflow. Their agents need to call another team&apos;s agents.
-                They&apos;ve spent three weeks on auth middleware, a capability registry, and
+                They have spent three weeks on auth middleware, a capability registry, and
                 audit logging &mdash; none of it the actual product. They want to delete the
                 trust layer and go back to building features.
               </p>
@@ -529,7 +725,7 @@ export default function ConceptPage() {
               </p>
             </article>
             <div className={styles.portraitFoot}>
-              That&apos;s who this is for, right now.
+              That is who this is for, right now.
             </div>
           </div>
         </div>
@@ -539,59 +735,65 @@ export default function ConceptPage() {
         <div className="chapter-marker">10</div>
         <div className="concept-stage__body">
           <div className="section-head">
-            <div className="eyebrow">What ships first</div>
-            <h2>Six capabilities. Everything else is v2.</h2>
+            <div className="eyebrow">Work log</div>
+            <h2>What we have built. What we will build next.</h2>
             <p>
-              The v1 relay is the thing we ship to prove that developers will use a managed
-              relay instead of rebuilding the trust layer themselves. Everything below gets
-              added once v1 has real traffic.
+              One section per layer. Ticked items are in production today
+              and grounded in the git history on main; unticked items are
+              the substantial work for that layer that is not done yet.
+              Small obvious items omitted on purpose.
             </p>
           </div>
-          <div className={styles.shipsGrid}>
-            <article className={styles.shipsCol + " " + styles.shipsFirst}>
-              <div className={styles.shipsHead}>v1 ships</div>
-              <ul>
-                {shipsFirst.map((s) => (
-                  <li key={s}>
-                    <span className={styles.shipsTick}>✓</span> {s}
-                  </li>
-                ))}
-              </ul>
-            </article>
-            <article className={styles.shipsCol + " " + styles.shipsLater}>
-              <div className={styles.shipsHead}>v1 skips</div>
-              <ul>
-                {shipsLater.map((s) => (
-                  <li key={s}>
-                    <span className={styles.shipsCross}>–</span> {s}
-                  </li>
-                ))}
-              </ul>
-            </article>
+          <div className={styles.worklogStack}>
+            {worklog.map((l) => (
+              <article key={l.layer} className={styles.worklogLayer}>
+                <header className={styles.worklogHeader}>
+                  <h3>{l.layer}</h3>
+                  <span className={styles.worklogAnchor}>{l.anchor}</span>
+                </header>
+                <ul className={styles.worklogList}>
+                  {l.done.map((d) => (
+                    <li key={d} className={styles.worklogDone}>
+                      <span className={styles.worklogTick} aria-hidden="true">
+                        ✓
+                      </span>
+                      {d}
+                    </li>
+                  ))}
+                  {l.todo.map((t) => (
+                    <li key={t} className={styles.worklogTodo}>
+                      <span className={styles.worklogBox} aria-hidden="true">
+                        ☐
+                      </span>
+                      {t}
+                    </li>
+                  ))}
+                </ul>
+              </article>
+            ))}
           </div>
         </div>
       </section>
 
       <section className={styles.bet}>
         <div className={styles.betInner}>
-          <div className="eyebrow">The bet</div>
+          <div className="eyebrow">The bet \u2014 one per layer</div>
           <h2 className={styles.betHeadline}>
-            Attention is a valid currency for AI access - the same way it funds music, video,
-            and news.
+            Five layers. Five bets. Each one only makes sense if the
+            layer beneath it works.
           </h2>
-          <p>
-            Spotify proved you can fund music with ads. YouTube proved you can fund video with ads
-            and a creator economy. Most of the internet proved you can fund news the same way. We
-            are betting the same mechanics work for AI access, and that the first platform to nail
-            free AI at scale will have a structural advantage that subscriptions-only competitors
-            cannot replicate.
-          </p>
-          <p>
-            ChakraMCP is the foundation - the trust and communication layer that makes
-            agent-to-agent collaboration possible without a human babysitting every handshake.
-            Everything we build on top of it is in service of one idea:
-          </p>
-          <p className={styles.betPunch}>AI shouldn\u2019t cost $20/month. We\u2019re fixing that.</p>
+          <div className={styles.betGrid}>
+            {layerBets.map((b) => (
+              <article key={b.layer} className={styles.betCard}>
+                <header className={styles.betCardHead}>
+                  <span className={styles.betCardLayer}>{b.layer}</span>
+                  <span className={styles.betCardAnchor}>{b.anchor}</span>
+                </header>
+                <h3 className={styles.betCardHeadline}>{b.headline}</h3>
+                <p className={styles.betCardBody}>{b.body}</p>
+              </article>
+            ))}
+          </div>
         </div>
       </section>
 
