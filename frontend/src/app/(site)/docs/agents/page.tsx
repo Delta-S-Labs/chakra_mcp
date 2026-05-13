@@ -102,19 +102,28 @@ export default function AgentsDocs() {
       </ul>
 
       <h2 className={styles.h2} id="install">Step 1 - Install the SDK</h2>
-      <p>Pick the language matching your runtime:</p>
+      <p>
+        Pick the language matching your runtime. ✅ marks SDKs that
+        are published to a registry today; ⏳ marks ones that ship
+        from source until the first tagged release. See{" "}
+        <a href="/.well-known/chakramcp.json">
+          /.well-known/chakramcp.json
+        </a>
+        &apos;s <code>sdks[].status</code> field for the
+        machine-readable source of truth.
+      </p>
       <pre className={styles.pre}>
-        <code>{`# TypeScript / JavaScript (Node 18+, Bun, browsers)
-npm i @chakramcp/sdk
+        <code>{`# ✅ TypeScript / JavaScript (Node 18+, Bun, browsers) — npm
+npm install @chakramcp/sdk
 
-# Python (3.10+, sync OR async). Imports as "chakramcp".
+# ✅ Python (3.10+, sync OR async) — PyPI. Imports as "chakramcp".
 pip install chakramcp-sdk
 
-# Rust (async, tokio)
-cargo add chakramcp
+# ⏳ Rust (async, tokio) — crates.io listing planned; build from source today:
+cargo add --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp
 
-# Go (1.22+)
-go get github.com/Delta-S-Labs/chakra_mcp/sdks/go`}</code>
+# ⏳ Go (1.22+) — sdk-go-v* tag planned; pin to main today:
+go get github.com/Delta-S-Labs/chakra_mcp/sdks/go@main`}</code>
       </pre>
 
       <h2 className={styles.h2} id="construct">Step 2 - Construct the client</h2>

@@ -72,45 +72,32 @@ jobs:
             migrations:
               - 'backend/migrations/**'
 
-  # ─── Frontend → Netlify ─────────────────────────────────────────
-  deploy-frontend:
-    name: Deploy frontend (Netlify)
+  # ─── Frontend deploy ────────────────────────────────────────────
+  # Intentionally NOT run from this workflow. Netlify's built-in
+  # GitHub integration already auto-deploys every push to main and
+  # every PR (as a deploy preview). Running `netlify deploy` from
+  # here would duplicate that build for no benefit.
+  #
+  # If you ever need to force a redeploy without a code change:
+  #   - Trigger from Netlify UI ("Deploys" → "Trigger deploy")
+  #   - Or via Netlify CLI from your laptop:
+  #       cd frontend && npx netlify-cli deploy --prod --build
+  # That path uses your local `netlify login` session — no token
+  # to manage in GitHub secrets.
+  #
+  # NETLIFY_SITE_ID is kept as a repo secret in case we ever wire
+  # a workflow that needs to address the site programmatically
+  # (e.g. clearing edge caches), but no current job consumes it.
+
+  surface-frontend-changes:
+    name: Note frontend changes (Netlify autodeploys)
     needs: detect
-    if: |
-      needs.detect.outputs.frontend == 'true' ||
-      needs.detect.outputs.force_which == 'frontend' ||
-      needs.detect.outputs.force_which == 'both'
+    if: needs.detect.outputs.frontend == 'true'
     runs-on: ubuntu-22.04
-    defaults:
-      run:
-        working-directory: frontend
     steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v6
-        with: { version: 9 }
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 20
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
-      - run: pnpm install --frozen-lockfile=false
-      - run: pnpm build
-        env:
-          # Inherit Netlify env vars at build time so NEXT_PUBLIC_* land
-          # in the bundle. The real values live in Netlify's project env;
-          # we just don't override them here.
-          NEXT_PUBLIC_RELAY_URL: https://relay.chakramcp.com
-          NEXT_PUBLIC_APP_API_URL: https://app.chakramcp.com
-      - name: Deploy
-        env:
-          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-        run: |
-          if [ -z "$NETLIFY_AUTH_TOKEN" ] || [ -z "$NETLIFY_SITE_ID" ]; then
-            echo "::error::NETLIFY_AUTH_TOKEN or NETLIFY_SITE_ID secret is empty."
-            exit 1
-          fi
-          npx -y netlify-cli@latest deploy --prod --dir=.next --site="$NETLIFY_SITE_ID"
+      - run: |
+          echo "::notice::frontend/** changed — Netlify's GitHub integration is autodeploying."
+          echo "  Watch progress: https://app.netlify.com/projects/chakra-mcp/deploys"
 
   # ─── Backend → ECR → Lightsail (with migrations gate) ───────────
   deploy-backend:

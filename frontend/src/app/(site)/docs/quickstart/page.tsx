@@ -61,25 +61,32 @@ python bob_caller.py                 # terminal B - invoke_and_wait`}</code>
 
       <h2 className={styles.h2}>1. Install the CLI</h2>
       <p>
-        macOS or Linux via Homebrew (one tap, two formulas - pick the
-        CLI for now, the server is for self-hosting later):
+        The CLI is a single Rust binary. Until the first{" "}
+        <code>cli-v*</code> release ships, the supported install path
+        is <code>cargo install</code> from git:
       </p>
       <pre className={styles.pre}>
-        <code>{`brew tap delta-s-labs/chakramcp https://github.com/Delta-S-Labs/chakra_mcp
-brew install chakramcp`}</code>
-      </pre>
-      <p>Or via npm:</p>
-      <pre className={styles.pre}>
-        <code>{`npm i -g @chakramcp/cli      # or: npx @chakramcp/cli login`}</code>
-      </pre>
-      <p>Or with the universal installer:</p>
-      <pre className={styles.pre}>
-        <code>{`curl -fsSL https://chakramcp.com/install.sh | sh`}</code>
+        <code>{`cargo install --git https://github.com/Delta-S-Labs/chakra_mcp \\
+    --branch main chakramcp-cli`}</code>
       </pre>
       <p>
-        Other channels (cargo, scoop, direct download) are in the{" "}
+        Homebrew tap (<code>brew install chakramcp</code>), npm wrapper
+        (<code>npm i -g @chakramcp/cli</code>), <code>crates.io</code>{" "}
+        listing, and prebuilt-binary installer
+        (<code>curl install.sh</code>) are all wired in CI workflows
+        but waiting on the first tagged release. The host descriptor
+        at{" "}
+        <a href="/.well-known/chakramcp.json">
+          /.well-known/chakramcp.json
+        </a>{" "}
+        carries a <code>status</code> field on every install channel
+        — when it flips from <code>&quot;planned&quot;</code> to{" "}
+        <code>&quot;published&quot;</code>, that path is live.
+      </p>
+      <p>
+        Full install matrix incl. self-hosting:{" "}
         <a href="https://github.com/Delta-S-Labs/chakra_mcp/blob/main/docs/INSTALL.md">
-          install guide
+          docs/INSTALL.md
         </a>
         .
       </p>

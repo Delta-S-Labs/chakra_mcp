@@ -45,10 +45,13 @@ dispatch). It runs three jobs:
 1. **detect** — `dorny/paths-filter` sets booleans for `frontend`,
    `backend`, and `migrations`. The downstream jobs gate on these.
 
-2. **deploy-frontend** — if `frontend/**` changed:
-   - `pnpm install && pnpm build`
-   - `npx netlify-cli deploy --prod` with `NETLIFY_AUTH_TOKEN` +
-     `NETLIFY_SITE_ID`.
+2. **surface-frontend-changes** — if `frontend/**` changed, just
+   posts a workflow annotation. **Netlify's GitHub integration
+   handles the actual deploy** (auto-build on push to main + a
+   deploy preview on every PR). No token required from us. If you
+   ever need to force a redeploy without a code change, do it from
+   the Netlify UI or via `npx netlify-cli deploy --prod --build`
+   from your laptop's `netlify login` session.
 
 3. **deploy-backend** — if `backend/**` or `infra/**` changed:
    - `cargo build --release --bin chakramcp-server` natively on
@@ -71,11 +74,14 @@ Set once via `gh secret set <NAME> --repo Delta-S-Labs/chakra_mcp`:
 
 | Secret | What | How to get it |
 |---|---|---|
-| `NETLIFY_AUTH_TOKEN` | Personal token for `netlify deploy` | Netlify → User settings → Applications → New token |
-| `NETLIFY_SITE_ID` | `ef540682-67b3-46e6-a425-afbe85437f88` | Already known; just set the value |
+| `NETLIFY_SITE_ID` | `ef540682-67b3-46e6-a425-afbe85437f88` | Stored for future workflow needs (cache clear, etc.); no current job uses it. |
 | `AWS_ACCESS_KEY_ID` | IAM user creds for ECR push | Create user `cd-publisher` with `AmazonEC2ContainerRegistryPowerUser` policy |
 | `AWS_SECRET_ACCESS_KEY` | Pair of above | Same user |
 | `LIGHTSAIL_SSH_KEY` | Private key for `ubuntu@54.84.88.246` | Contents of `~/.ssh/lightsail-chakramcp-prod.pem` |
+| `NPM_TOKEN` | Automation token for `npm publish` | Already set — npmjs.com → Access tokens → Automation |
+
+No `NETLIFY_AUTH_TOKEN` needed — Netlify deploys via its GitHub
+integration, not via our workflow.
 
 OIDC trust to AWS is the production upgrade path — replaces the
 long-lived access key with a per-run token. Configure the OIDC
