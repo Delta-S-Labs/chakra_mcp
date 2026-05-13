@@ -72,6 +72,19 @@ async function fetchDirectory(
   }
 }
 
+/** Allowed page sizes for the per-page selector. The backend caps
+ *  `limit` at 100 (D10a) — these are reasonable buckets. Default 20
+ *  matches `DEFAULT_PAGE_SIZE` in the relay so first-page UX matches
+ *  what an unauthenticated `curl /v1/discovery/agents` returns. */
+const PAGE_SIZES = [10, 20, 30, 40, 50] as const;
+type PageSize = (typeof PAGE_SIZES)[number];
+
+function clampPageSize(raw: string | undefined): PageSize {
+  const n = Number.parseInt(raw ?? "", 10);
+  if ((PAGE_SIZES as readonly number[]).includes(n)) return n as PageSize;
+  return 20;
+}
+
 export default async function AgentsPage({
   searchParams,
 }: {
@@ -81,15 +94,18 @@ export default async function AgentsPage({
     verified?: string;
     tags?: string;
     cursor?: string;
+    per_page?: string;
   }>;
 }) {
   const sp = await searchParams;
+  const perPage = clampPageSize(sp.per_page);
   const params = new URLSearchParams();
   if (sp.q) params.set("q", sp.q);
   if (sp.mode === "push" || sp.mode === "pull") params.set("mode", sp.mode);
   if (sp.verified === "true") params.set("verified", "true");
   if (sp.tags) params.set("tags", sp.tags);
   if (sp.cursor) params.set("cursor", sp.cursor);
+  params.set("limit", String(perPage));
 
   const data = await fetchDirectory(params);
 
@@ -143,6 +159,16 @@ export default async function AgentsPage({
               aria-label="Comma-separated tags"
             />
           </label>
+          <label>
+            <span>Per page</span>
+            <select name="per_page" defaultValue={String(perPage)}>
+              {PAGE_SIZES.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </label>
           <button type="submit" className={styles.submit}>
             Apply
           </button>
@@ -154,7 +180,12 @@ export default async function AgentsPage({
         </fieldset>
       </form>
 
-      <Summary count={data.agents.length} total={data.total_estimate} />
+      <Summary
+        count={data.agents.length}
+        total={data.total_estimate}
+        perPage={perPage}
+        hasNextPage={!!data.next_cursor}
+      />
 
       {data.agents.length === 0 ? (
         <EmptyState unreachable={data._unreachable === true} />
@@ -168,7 +199,9 @@ export default async function AgentsPage({
         </ul>
       )}
 
-      {data.next_cursor && <NextPageLink params={params} cursor={data.next_cursor} />}
+      {data.next_cursor && (
+        <NextPageLink params={params} cursor={data.next_cursor} perPage={perPage} />
+      )}
     </main>
   );
 }
@@ -183,16 +216,33 @@ function hasActiveFilter(sp: {
   return Boolean(sp.q || sp.mode || sp.verified || sp.tags || sp.cursor);
 }
 
-function Summary({ count, total }: { count: number; total?: number }) {
+function Summary({
+  count,
+  total,
+  perPage,
+  hasNextPage,
+}: {
+  count: number;
+  total?: number;
+  perPage: PageSize;
+  hasNextPage: boolean;
+}) {
   if (count === 0) return null;
   if (total !== undefined && total > count) {
     return (
       <p className={styles.summary}>
-        Showing {count} of {total.toLocaleString()} matching agents.
+        Showing {count} of {total.toLocaleString()} matching agents · {perPage}{" "}
+        per page
+        {hasNextPage ? "" : " · last page"}
       </p>
     );
   }
-  return <p className={styles.summary}>{count} agents.</p>;
+  return (
+    <p className={styles.summary}>
+      {count} agent{count === 1 ? "" : "s"} · {perPage} per page
+      {hasNextPage ? " · more available →" : ""}
+    </p>
+  );
 }
 
 function EmptyState({ unreachable }: { unreachable: boolean }) {
@@ -277,12 +327,19 @@ function ModeBadge({ mode }: { mode: "push" | "pull" }) {
 function NextPageLink({
   params,
   cursor,
+  perPage,
 }: {
   params: URLSearchParams;
   cursor: string;
+  perPage: PageSize;
 }) {
   const next = new URLSearchParams(params);
   next.set("cursor", cursor);
+  // Preserve the operator's per_page choice across page boundaries.
+  // `params` already carries it as `limit=` (server-side name), but
+  // the UI form uses `per_page=` — keep both in sync on the URL so
+  // refresh / share-link round-trips don't reset to 20.
+  next.set("per_page", String(perPage));
   return (
     <p className={styles.pager}>
       <Link href={`/agents?${next.toString()}`}>Next page →</Link>

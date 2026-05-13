@@ -1,0 +1,143 @@
+name: Security scan
+
+# Periodic security checks:
+#   - cargo audit  (Rust dep CVEs)
+#   - pnpm audit   (frontend + TS SDK npm CVEs)
+#   - pip-audit    (Python SDK + examples PyPI CVEs)
+#   - secret scan  (gitleaks across the repo)
+#   - DAST         (ZAP baseline against the deployed relay)
+#
+# Runs on a daily cron + every PR + manual trigger. Each step is
+# allow-fail except the secret scan — a leaked credential is the one
+# class of issue that should block a PR immediately.
+#
+# Findings surface as workflow annotations + SARIF uploaded to the
+# repo's Security tab (Code scanning alerts).
+
+on:
+  schedule:
+    # 03:17 UTC daily — staggered off the hour to avoid cron-storm.
+    - cron: "17 3 * * *"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write   # for SARIF upload
+  pull-requests: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  # ─── Rust dependency CVEs ───────────────────────────────────────
+  cargo-audit:
+    name: cargo audit (Rust deps)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+          key: cargo-audit
+      - name: Install cargo-audit
+        run: cargo install --locked cargo-audit
+      - name: Audit backend
+        working-directory: backend
+        run: cargo audit --json > /tmp/cargo-audit.json || true
+      - name: Audit Rust SDK
+        working-directory: sdks/rust
+        run: cargo audit || true
+      - name: Surface findings
+        if: always()
+        run: |
+          if [ -f /tmp/cargo-audit.json ]; then
+            crit=$(jq '.vulnerabilities.count // 0' /tmp/cargo-audit.json)
+            echo "::notice::cargo-audit found $crit vulnerabilities"
+            if [ "$crit" -gt 0 ]; then
+              jq -r '.vulnerabilities.list[]? | "  - " + .advisory.id + " (" + .advisory.title + ")"' /tmp/cargo-audit.json
+            fi
+          fi
+
+  # ─── Frontend + TS SDK CVEs ─────────────────────────────────────
+  pnpm-audit:
+    name: pnpm audit (frontend + TS SDK)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+        with: { version: 9 }
+      - uses: actions/setup-node@v6
+        with: { node-version: 20 }
+      - name: frontend
+        working-directory: frontend
+        run: |
+          pnpm install --frozen-lockfile=false
+          pnpm audit --audit-level moderate || echo "::warning::frontend dep CVEs"
+      - name: TS SDK
+        working-directory: sdks/typescript
+        run: |
+          pnpm install --frozen-lockfile=false
+          pnpm audit --audit-level moderate || echo "::warning::TS SDK dep CVEs"
+
+  # ─── Python SDK + examples CVEs ─────────────────────────────────
+  pip-audit:
+    name: pip-audit (Python deps)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with: { python-version: "3.12" }
+      - name: Install pip-audit
+        run: pip install pip-audit
+      - name: SDK
+        working-directory: sdks/python
+        run: |
+          pip install -e .
+          pip-audit || echo "::warning::Python SDK dep CVEs"
+      - name: Example demos
+        run: |
+          for req in examples/*/requirements.txt; do
+            [ -f "$req" ] || continue
+            echo "::group::$req"
+            pip install -r "$req" || true
+            pip-audit -r "$req" || echo "::warning::CVE in $req"
+            echo "::endgroup::"
+          done
+
+  # ─── Secret scan ────────────────────────────────────────────────
+  # This one BLOCKS — a leaked credential should never reach main.
+  gitleaks:
+    name: gitleaks (secret scan)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # gitleaks needs full history
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─── DAST: ZAP baseline against the deployed relay ──────────────
+  # Only runs on schedule + manual trigger — pull_request doesn't
+  # need to hit the live API. Allow-fail (DAST findings are usually
+  # advisory; the workflow annotations point to anything serious).
+  zap-baseline:
+    name: ZAP baseline (deployed relay)
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: https://relay.chakramcp.com
+          # Don't fail the workflow on warnings — read the report.
+          cmd_options: "-a -j -m 5 -T 10"
+          allow_issue_writing: false
+        continue-on-error: true

@@ -50,6 +50,42 @@ pre-commit:
       fail_text: |
         TypeScript errors. Fix and re-stage.
 
+    # ─── Capability-template sync check ─────────────────────────────
+    # The reserved-template registries live in three places (Python
+    # SDK, TS SDK, Rust CLI) plus the protocol spec on /docs/agents
+    # plus the host descriptor's `skills[]`. Keeping all five in sync
+    # is the whole point of "reserved" — if you touched a template
+    # but didn't touch the protocol page + descriptor, peers will see
+    # different shapes depending on which SDK they pulled. Hard fail
+    # on commit.
+    capability-templates-sync:
+      glob: "{sdks/python/src/chakramcp/_templates.py,sdks/typescript/src/templates.ts,backend/cli/src/templates.rs}"
+      run: |
+        # If any template registry file is staged, require that the
+        # docs page AND the host descriptor are also staged. Brittle
+        # but loud — better than silently drifting.
+        registry_changed=false
+        if echo "{staged_files}" | grep -qE "(_templates\.py|templates\.ts|templates\.rs)$"; then
+          registry_changed=true
+        fi
+        if [ "$registry_changed" = true ]; then
+          docs_changed=$(git diff --cached --name-only | grep -E "frontend/src/app/\(site\)/docs/agents/page\.tsx$" | wc -l | tr -d ' ')
+          descriptor_changed=$(git diff --cached --name-only | grep -E "frontend/public/\.well-known/chakramcp\.json$" | wc -l | tr -d ' ')
+          if [ "$docs_changed" = "0" ] || [ "$descriptor_changed" = "0" ]; then
+            echo "::warning::You changed a capability-template registry but didn't touch:"
+            [ "$docs_changed" = "0" ] && echo "  - frontend/src/app/(site)/docs/agents/page.tsx (protocol spec)"
+            [ "$descriptor_changed" = "0" ] && echo "  - frontend/public/.well-known/chakramcp.json (host descriptor skills[])"
+            echo ""
+            echo "Reserved templates MUST stay in sync across all three SDKs + docs + descriptor."
+            echo "Bypass for true cross-stack-aligned changes: git commit --no-verify"
+            exit 1
+          fi
+        fi
+      fail_text: |
+        Template registries drifted from the protocol spec. Either:
+          - Update /docs/agents and chakramcp.json to match the registry change, or
+          - Run `git commit --no-verify` if you really mean to skip.
+
     # ─── sqlx cache integrity ──────────────────────────────────────
     # Only triggers when SQL-touching files or .sqlx/ change. Requires
     # a running local Postgres at the default DATABASE_URL — skip with
@@ -88,3 +124,46 @@ pre-push:
       run: npx eslint "src/**/*.{ts,tsx}" --max-warnings 0
       fail_text: |
         ESLint errors on the full frontend tree (not just your changes).
+
+# ─── Post-push: watch CI in the background ──────────────────────────
+# After a successful push, fork a process that polls `gh run watch`
+# on the pushed sha. The push itself returns immediately; if CI fails,
+# the watcher prints to the terminal so you can act without manually
+# refreshing the Actions tab. Lefthook auto-skips this on machines
+# without `gh` installed.
+post-push:
+  commands:
+    watch-ci:
+      run: |
+        if ! command -v gh >/dev/null 2>&1; then
+          exit 0
+        fi
+        # Push event tells us the local branch + tip sha. Use the
+        # local HEAD as the most recent thing we just sent up.
+        sha=$(git rev-parse HEAD)
+        branch=$(git rev-parse --abbrev-ref HEAD)
+        (
+          # Brief sleep so GitHub registers the workflow_run rows.
+          sleep 6
+          echo ""
+          echo "⏵ watching CI for $branch@${sha:0:7} (post-push hook)"
+          # `gh run watch` blocks until terminal. --exit-status returns
+          # non-zero on any failure. We discard stdout because the
+          # status lines are noisy; only surface red.
+          if ! AWS_PAGER="" gh run watch --exit-status --interval 10 \
+                  $(AWS_PAGER="" gh run list --branch "$branch" --commit "$sha" --limit 1 \
+                       --json databaseId --jq '.[0].databaseId' 2>/dev/null) \
+                  >/dev/null 2>&1; then
+            echo ""
+            echo "🟥 CI failed on $branch@${sha:0:7}. Run:"
+            echo "   gh run list --branch $branch --commit $sha"
+            echo "   gh run view <id> --log-failed"
+          else
+            echo "🟩 CI green on $branch@${sha:0:7}"
+          fi
+        ) &
+        disown
+        exit 0
+      fail_text: |
+        Post-push CI watcher couldn't start. Push succeeded; check Actions
+        manually: gh run list --branch $(git rev-parse --abbrev-ref HEAD)

@@ -32,32 +32,39 @@
       "language": "typescript",
       "package": "@chakramcp/sdk",
       "registry": "npm",
+      "status": "published",
+      "version": "0.2.0",
+      "install": "npm install @chakramcp/sdk",
       "readme": "https://github.com/Delta-S-Labs/chakra_mcp/blob/main/sdks/typescript/README.md"
     },
     {
       "language": "python",
-      "package": "chakramcp",
+      "package": "chakramcp-sdk",
       "registry": "pypi",
+      "status": "published",
+      "version": "0.2.0",
+      "install": "pip install chakramcp-sdk",
       "readme": "https://github.com/Delta-S-Labs/chakra_mcp/blob/main/sdks/python/README.md"
     },
     {
       "language": "rust",
       "package": "chakramcp",
       "registry": "crates.io",
+      "status": "planned",
       "readme": "https://github.com/Delta-S-Labs/chakra_mcp/blob/main/sdks/rust/README.md"
     },
     {
       "language": "go",
       "package": "github.com/Delta-S-Labs/chakra_mcp/sdks/go",
       "registry": "go-modules",
+      "status": "planned",
       "readme": "https://github.com/Delta-S-Labs/chakra_mcp/blob/main/sdks/go/README.md"
     }
   ],
   "cli": {
     "binary_name": "chakramcp",
-    "homebrew_tap": "delta-s-labs/chakramcp",
-    "install_script": "https://chakramcp.com/install.sh",
-    "npm_package": "@chakramcp/cli"
+    "status": "planned",
+    "comment": "Built and tested in repo; not yet published to a registry. Build from source: `cargo install --path backend/cli` from a clone."
   },
   "skills": [
     {
@@ -81,7 +88,8 @@
   ],
   "self_host": {
     "binary_name": "chakramcp-server",
-    "homebrew_formula": "chakramcp-server",
+    "status": "available",
+    "comment": "Cross-compile via cargo-zigbuild (instructions in infra/Dockerfile.thin). Homebrew formula planned.",
     "depends_on": ["postgresql@16"]
   },
   "license": "MIT",
