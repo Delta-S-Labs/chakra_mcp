@@ -166,28 +166,54 @@ jobs:
           chmod 600 ~/.ssh/lightsail
           ssh-keyscan -H "$LIGHTSAIL_HOST" >> ~/.ssh/known_hosts
 
+      # ─── Mint a short-lived ECR login for the VM ──────────────
+      # Lightsail's docker daemon isn't authenticated to ECR (we
+      # don't want to put long-lived AWS creds on the box). Grab a
+      # one-hour token here, pass it to the SSH session, and do the
+      # `docker login` on the VM before any `docker compose pull`.
+      - name: Mint ECR token for VM
+        id: ecr_token
+        run: |
+          token=$(aws ecr get-login-password --region "$AWS_REGION")
+          echo "::add-mask::$token"
+          # Output is consumed only by subsequent steps in this job,
+          # masked in logs by GitHub.
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+
       # ─── Run migrations BEFORE restart (if any new) ────────────
       - name: Run migrations
         if: needs.detect.outputs.migrations == 'true'
+        env:
+          ECR_PASSWORD: ${{ steps.ecr_token.outputs.token }}
         run: |
-          ssh -i ~/.ssh/lightsail ubuntu@"$LIGHTSAIL_HOST" "
-            set -e
-            cd /opt/chakramcp
-            docker compose pull migrate || true
-            docker compose --profile migrate run --rm migrate
-          "
+          ssh -i ~/.ssh/lightsail ubuntu@"$LIGHTSAIL_HOST" \
+              "ECR_PASSWORD='${ECR_PASSWORD}' bash -s" <<'REMOTE'
+          set -e
+          echo "$ECR_PASSWORD" | docker login \
+              --username AWS \
+              --password-stdin 877326604850.dkr.ecr.us-east-1.amazonaws.com
+          cd /opt/chakramcp
+          docker compose pull migrate || true
+          docker compose --profile migrate run --rm migrate
+          REMOTE
 
       # ─── Pull new image + restart relay ────────────────────────
       - name: Restart relay with new image
+        env:
+          ECR_PASSWORD: ${{ steps.ecr_token.outputs.token }}
         run: |
-          ssh -i ~/.ssh/lightsail ubuntu@"$LIGHTSAIL_HOST" "
-            set -e
-            cd /opt/chakramcp
-            docker compose pull relay
-            docker compose up -d --force-recreate relay
-            sleep 8
-            docker compose ps relay --format '  {{.Service}} · {{.Status}}'
-          "
+          ssh -i ~/.ssh/lightsail ubuntu@"$LIGHTSAIL_HOST" \
+              "ECR_PASSWORD='${ECR_PASSWORD}' bash -s" <<'REMOTE'
+          set -e
+          echo "$ECR_PASSWORD" | docker login \
+              --username AWS \
+              --password-stdin 877326604850.dkr.ecr.us-east-1.amazonaws.com
+          cd /opt/chakramcp
+          docker compose pull relay
+          docker compose up -d --force-recreate relay
+          sleep 8
+          docker compose ps relay --format '  {{.Service}} · {{.Status}}'
+          REMOTE
 
       # ─── Sanity check ──────────────────────────────────────────
       - name: Probe public health
