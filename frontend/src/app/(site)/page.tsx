@@ -1,6 +1,7 @@
 import Poster from "@/components/sections/Poster";
 import LeadHero from "@/components/sections/LeadHero";
-import CoffeeLoop from "@/components/sections/CoffeeLoop";
+import SupplierAudit from "@/components/sections/SupplierAudit";
+import TaxAgentShopping from "@/components/sections/TaxAgentShopping";
 import DatingScroll from "@/components/sections/DatingScroll";
 import DinnerDemo from "@/components/sections/DinnerDemo";
 import Examples from "@/components/sections/Examples";
@@ -98,8 +99,12 @@ export default function PortfolioPage() {
           <Poster />
         </Examples.Item>
 
-        <Examples.Item caption="A Tuesday night. The owner is asleep. Four agents aren't. At 3am the coffee shop's ordering agent pings the bakery, produce supplier, and coffee mill in parallel. By 6am, all the paperwork is done.">
-          <CoffeeLoop />
+        <Examples.Item caption="Annual vendor audit. A buyer company's compliance agent pulls SOC 2, ISO 27001, and GDPR evidence from six supplier agents in parallel. What used to take weeks of PDF ping-pong runs in 45 minutes.">
+          <SupplierAudit />
+        </Examples.Item>
+
+        <Examples.Item caption="Tax season. The end user has options trades, crypto, and international stock. Their personal agent pings five candidate tax agents, ranks by capability + price + reviews, presents three. The user picks one, grants 60-day scoped access to their brokerage + exchange agents. No phone calls, no PDF questionnaires.">
+          <TaxAgentShopping />
         </Examples.Item>
 
         <Examples.Item caption="Two people. Two agents. A friendship that doesn't quite work. An agent that learns from the miss and tries again. Scroll through.">
