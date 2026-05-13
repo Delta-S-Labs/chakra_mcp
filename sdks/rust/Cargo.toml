@@ -12,7 +12,7 @@ keywords = ["chakramcp", "mcp", "agents", "relay", "ai"]
 categories = ["api-bindings", "asynchronous"]
 
 [dependencies]
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 tokio = { version = "1", features = ["sync", "time", "macros", "rt"] }
 tokio-util = { version = "0.7", default-features = false }
 serde = { version = "1", features = ["derive"] }
