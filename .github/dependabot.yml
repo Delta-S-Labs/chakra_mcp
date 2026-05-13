@@ -1,27 +1,65 @@
 version: 2
 updates:
+
+  # Frontend npm deps. Grouped so we don't get N separate PRs for
+  # related libraries (next + eslint-config-next bump together).
   - package-ecosystem: npm
     directory: "/frontend"
-    schedule:
-      interval: weekly
+    schedule: { interval: weekly }
     open-pull-requests-limit: 5
+    labels: ["deps", "frontend"]
     groups:
       nextjs:
-        patterns:
-          - "next"
-          - "eslint-config-next"
-          - "@next/*"
+        patterns: ["next", "eslint-config-next", "@next/*"]
       react:
-        patterns:
-          - "react"
-          - "react-dom"
-          - "@types/react"
-          - "@types/react-dom"
+        patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
       types:
-        patterns:
-          - "@types/*"
+        patterns: ["@types/*"]
 
+  # TS SDK deps — same ecosystem, separate package.json.
+  - package-ecosystem: npm
+    directory: "/sdks/typescript"
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 3
+    labels: ["deps", "sdk-ts"]
+
+  # Rust workspace deps. Group the heavy ecosystems so we don't
+  # ship 20 PRs every time hyper bumps its tower-internal versions.
+  - package-ecosystem: cargo
+    directory: "/backend"
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    labels: ["deps", "rust", "backend"]
+    groups:
+      tokio-ecosystem:
+        patterns: ["tokio*", "tower*", "hyper*", "reqwest"]
+      sqlx-ecosystem:
+        patterns: ["sqlx*"]
+      axum-ecosystem:
+        patterns: ["axum*"]
+
+  - package-ecosystem: cargo
+    directory: "/sdks/rust"
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 3
+    labels: ["deps", "rust", "sdk-rust"]
+
+  # Python SDK deps.
+  - package-ecosystem: pip
+    directory: "/sdks/python"
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 3
+    labels: ["deps", "python", "sdk-py"]
+
+  # Go SDK deps.
+  - package-ecosystem: gomod
+    directory: "/sdks/go"
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 3
+    labels: ["deps", "go", "sdk-go"]
+
+  # Workflow + action pins.
   - package-ecosystem: github-actions
     directory: "/"
-    schedule:
-      interval: weekly
+    schedule: { interval: weekly }
+    labels: ["deps", "ci"]
