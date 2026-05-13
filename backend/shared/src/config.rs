@@ -58,12 +58,25 @@ impl SharedConfig {
             })
             .unwrap_or(false);
 
-        let frontend_base_url =
-            env::var("FRONTEND_BASE_URL").unwrap_or_else(|_| "http://localhost:3000".to_string());
-        let app_base_url =
-            env::var("APP_BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
-        let relay_base_url =
-            env::var("RELAY_BASE_URL").unwrap_or_else(|_| "http://localhost:8090".to_string());
+        // Production compose passes APP_PUBLIC_URL / RELAY_PUBLIC_URL /
+        // FRONTEND_PUBLIC_URL; older configs and the dev workflow use
+        // *_BASE_URL. Accept either to avoid a silent fallback to the
+        // localhost defaults — which would land in /.well-known
+        // discovery metadata, the device_authorization response, and
+        // every OAuth issuer claim. Caused a real prod incident.
+        let frontend_base_url = env::var("FRONTEND_BASE_URL")
+            .or_else(|_| env::var("FRONTEND_PUBLIC_URL"))
+            // Same host serves frontend + app for chakramcp.com today,
+            // so APP_PUBLIC_URL is a safe last-mile fallback before
+            // localhost.
+            .or_else(|_| env::var("APP_PUBLIC_URL"))
+            .unwrap_or_else(|_| "http://localhost:3000".to_string());
+        let app_base_url = env::var("APP_BASE_URL")
+            .or_else(|_| env::var("APP_PUBLIC_URL"))
+            .unwrap_or_else(|_| "http://localhost:8080".to_string());
+        let relay_base_url = env::var("RELAY_BASE_URL")
+            .or_else(|_| env::var("RELAY_PUBLIC_URL"))
+            .unwrap_or_else(|_| "http://localhost:8090".to_string());
 
         let discovery_v2_enabled = env::var("DISCOVERY_V2")
             .ok()

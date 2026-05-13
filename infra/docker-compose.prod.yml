@@ -71,6 +71,13 @@ services:
       RELAY_PORT: "8090"
       APP_PUBLIC_URL: ${APP_PUBLIC_URL}
       RELAY_PUBLIC_URL: ${RELAY_PUBLIC_URL}
+      # Single host serves both the marketing/app frontend and the
+      # /oauth/* API endpoints (caddy routes /oauth/* → :8080,
+      # everything else → Netlify), so FRONTEND_PUBLIC_URL matches
+      # APP_PUBLIC_URL. shared/config.rs reads either *_PUBLIC_URL or
+      # *_BASE_URL; specifying both keeps older deploys + newer code
+      # honest.
+      FRONTEND_PUBLIC_URL: ${FRONTEND_PUBLIC_URL:-${APP_PUBLIC_URL}}
       DISCOVERY_V2: "true"
       RUST_LOG: info,chakramcp_app=info,chakramcp_relay=info,sqlx=warn
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
