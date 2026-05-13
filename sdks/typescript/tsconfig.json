@@ -10,7 +10,11 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "declaration": true,
-    "outDir": "dist"
+    "outDir": "dist",
+    // tsup's dts generator pulls in a `baseUrl` from its internal
+    // tsconfig — TypeScript 6 deprecated it. Silence until tsup
+    // ships a fix.
+    "ignoreDeprecations": "6.0"
   },
   "include": ["src/**/*", "test/**/*"]
 }
