@@ -23,7 +23,7 @@ rand = { workspace = true }
 hex = { workspace = true }
 
 clap = { version = "4", features = ["derive", "env"] }
-toml = "0.8"
+toml = "1.1"
 directories = "5"
 
 anyhow = { workspace = true }
