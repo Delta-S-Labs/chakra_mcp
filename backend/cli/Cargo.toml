@@ -21,7 +21,7 @@ base64 = { workspace = true }
 rand = { workspace = true }
 
 clap = { version = "4", features = ["derive", "env"] }
-toml = "0.8"
+toml = "1.1"
 directories = "5"
 url = "2"
 webbrowser = "1"
