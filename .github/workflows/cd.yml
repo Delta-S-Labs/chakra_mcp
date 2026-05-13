@@ -61,7 +61,7 @@ jobs:
         with:
           fetch-depth: 2  # need previous commit for diff
       - id: f
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         with:
           filters: |
             frontend:
