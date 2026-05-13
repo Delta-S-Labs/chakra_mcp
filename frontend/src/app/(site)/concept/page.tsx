@@ -336,20 +336,23 @@ const usageTier = {
   },
 };
 
+// Each phase corresponds to one layer-era from the timeline above \u2014
+// Phase N is what becomes billable when Layer N is live. Items that
+// require creators (Layer 2), tokens (Layer 3), or the marketplace
+// (Layer 4) cannot appear in earlier phases, no matter how attractive
+// they sound on a slide.
 const revenuePhases = [
   {
     phase: "Phase 1",
-    title: "Platform economics",
+    title: "Relay-era revenue",
     items: [
       "Pay-as-you-use relay traffic \u2014 free tier + overage (see below).",
-      "In-agent purchases \u2014 10% platform cut, 90% creator.",
-      "Enterprise API access for high-volume integrators.",
-      "Token purchases via fiat on-ramp once volume justifies it.",
+      "Enterprise managed private network \u2014 companies pay for a hosted chakramcp-server deployment on their own domain with SLAs, SSO, and dedicated support.",
     ],
   },
   {
     phase: "Phase 2",
-    title: "Managed runtime monetisation",
+    title: "Runtime-era revenue",
     items: [
       "Subscribe-to-build tier \u2014 monthly fee unlocks the agent builder + sandboxed runtime.",
       "Pay-as-you-go LLM token passthrough on top of the subscription.",
@@ -359,18 +362,20 @@ const revenuePhases = [
   },
   {
     phase: "Phase 3",
-    title: "Ad revenue",
+    title: "Token-era revenue",
     items: [
       "Banner ads in the free tier \u2014 persistent, low CPM, high volume.",
       "15 to 30 second video and audio interstitials between sessions.",
       "Native in-feed ads in the marketplace, matched to platform design.",
       "Sponsored creator placements.",
+      "Token purchases via fiat on-ramp once volume justifies it.",
     ],
   },
   {
     phase: "Phase 4",
-    title: "Marketplace economics at scale",
+    title: "Marketplace-era revenue",
     items: [
+      "In-agent purchases \u2014 10% platform cut, 90% creator.",
       "Premium subscriptions \u2014 ad-free, monthly token allowance, priority access.",
       "Creator-sourced advertiser collaborations.",
       "Anti-fraud on ratings and reviews.",
@@ -622,12 +627,15 @@ export default function ConceptPage() {
         <div className="concept-stage__body">
           <div className="section-head">
             <div className="eyebrow">Revenue model</div>
-            <h2>Where the money comes from. Phased.</h2>
+            <h2>One phase per layer. Nothing earlier than it can be.</h2>
             <p>
-              We lead with platform economics because that is what is
-              billable today; ads and premium subscriptions come online
-              once the marketplace has enough creators and free-tier
-              users to justify them.
+              Each phase below maps to one of the five layers in the
+              timeline. A revenue line only appears in a phase when the
+              thing it depends on actually exists — no creator
+              economics in Phase 1, no in-agent purchases before the
+              marketplace, no token sales before the token economy
+              ships. Phase 1 is just what is billable from the live
+              relay today.
             </p>
           </div>
           <div className={styles.revenueGrid}>
