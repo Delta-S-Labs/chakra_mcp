@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT a.slug AS agent_slug, acc.slug AS account_slug\n            FROM agents a\n            JOIN accounts acc ON acc.id = a.account_id\n            WHERE a.id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "agent_slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_slug",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "38e8aa9c3597c3760c93149260cd7e4cce554a2f6cc83da5550ff9e5ee5829e6"
+}

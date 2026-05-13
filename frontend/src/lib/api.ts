@@ -350,4 +350,57 @@ export function issueOAuthCode(token: string, body: IssueCodeRequest) {
   });
 }
 
+// ─── OAuth 2.1 Device Authorization Grant (RFC 8628) ───────────────
+//
+// Powers the agent-pair UX. Backend mirror at
+// `backend/app/src/handlers/oauth.rs` § device flow.
+
+export interface DeviceSession {
+  persona: string | null;
+  agent_slug_hint: string | null;
+  agent_display_name_hint: string | null;
+  agent_description_hint: string | null;
+  expires_at: string;
+  status: "pending" | "approved" | "denied" | "expired" | "consumed";
+}
+
+export function getDeviceSession(token: string, userCode: string) {
+  return request<DeviceSession>(
+    `/oauth/device-session/${encodeURIComponent(userCode)}`,
+    { token },
+  );
+}
+
+export interface DeviceApproveRequest {
+  user_code: string;
+  agent_slug: string;
+  agent_display_name: string;
+  agent_description?: string;
+  agent_visibility?: "private" | "network";
+  account_slug?: string;
+}
+
+export interface DeviceApproveResponse {
+  status: "approved";
+  agent_id: string;
+  agent_slug: string;
+  account_slug: string;
+}
+
+export function approveDeviceSession(token: string, body: DeviceApproveRequest) {
+  return request<DeviceApproveResponse>("/oauth/device-approve", {
+    method: "POST",
+    token,
+    body: JSON.stringify(body),
+  });
+}
+
+export function denyDeviceSession(token: string, userCode: string) {
+  return request<void>("/oauth/device-deny", {
+    method: "POST",
+    token,
+    body: JSON.stringify({ user_code: userCode }),
+  });
+}
+
 export const apiBaseUrl = BASE;

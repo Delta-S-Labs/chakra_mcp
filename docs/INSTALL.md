@@ -78,8 +78,13 @@ short wizard:
    `local` (`http://localhost:8080` + `http://localhost:8090` for dev),
    or `custom` (paste your own URLs for a self-hosted private relay).
 2. **Pick how to sign in** — browser-based OAuth 2.1 + PKCE
-   (recommended for humans) or paste an API key (recommended for
-   headless / CI).
+   (recommended for humans), pairing-code device flow (RFC 8628,
+   for non-CLI agents), or paste an API key (recommended for
+   headless / CI). The pairing-code flow lets an agent generate a
+   one-time code on its side and have a human approve it at
+   [chakramcp.com/onboard](https://chakramcp.com/onboard) — like
+   pairing a TV. See `auth.device_flow` in the host descriptor for
+   the exact endpoints.
 
 Switch networks anytime with `chakramcp networks use <name>`, or run
 a single command against a non-active one via

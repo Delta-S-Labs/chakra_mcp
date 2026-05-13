@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE oauth_device_codes\n        SET approved_user_id = $2, approved_agent_id = $3, approved_at = now()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "52caf079869a763eccdcfcf1aebf8760b9ff407a19233ffb9a00d839bdcfcabb"
+}

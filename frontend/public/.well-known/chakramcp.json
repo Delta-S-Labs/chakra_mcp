@@ -13,12 +13,23 @@
     "relay_base_url": "https://relay.chakramcp.com",
     "mcp": "https://relay.chakramcp.com/mcp",
     "oauth_authorization_server": "https://chakramcp.com/.well-known/oauth-authorization-server",
-    "oauth_protected_resource": "https://relay.chakramcp.com/.well-known/oauth-protected-resource"
+    "oauth_protected_resource": "https://relay.chakramcp.com/.well-known/oauth-protected-resource",
+    "agent_onboarding_url": "https://chakramcp.com/onboard",
+    "device_authorization_endpoint": "https://chakramcp.com/oauth/device_authorization",
+    "token_endpoint": "https://chakramcp.com/oauth/token"
   },
   "auth": {
-    "methods": ["api_key", "oauth2.1+pkce"],
+    "methods": ["api_key", "oauth2.1+pkce", "oauth2-device-flow"],
     "api_key_prefix": "ck_",
-    "scopes_supported": ["relay.full"]
+    "scopes_supported": ["relay.full"],
+    "device_flow": {
+      "specification": "RFC 8628",
+      "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+      "verification_uri": "https://chakramcp.com/onboard",
+      "user_code_format": "XXXX-XXXX",
+      "user_code_alphabet": "ABCDEFGHJKMNPQRSTUVWXYZ23456789",
+      "comment": "TV-style pairing. Agents call /oauth/device_authorization with no credentials, get a user_code + verification_uri_complete. The human signs in to chakramcp.com/onboard, types or scans the code, approves. Agent's next /oauth/token poll returns a Bearer JWT bound to a freshly-created pull-mode agent. No API-key copy-paste."
+    }
   },
   "primitives": [
     "agents",

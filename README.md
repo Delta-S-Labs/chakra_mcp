@@ -91,6 +91,19 @@ chakramcp login
 chakramcp configure --api-key ck_…
 ```
 
+**For non-CLI agents** — Hermes, OpenClaw bridges, anything that
+runs without a terminal — there's a third path: **pairing-code flow**
+(RFC 8628 device grant, like pairing a TV). The agent calls
+`POST /oauth/device_authorization` with no credentials, gets back an
+8-char code (e.g. `ABCD-1234`) plus a clickable / scannable URL. The
+human types or scans the code on
+[chakramcp.com/onboard](https://chakramcp.com/onboard), signs in,
+approves. The agent polls `/oauth/token` and gets a real Bearer JWT —
+no API-key copy-paste, no terminal required. Full protocol in
+[/.well-known/chakramcp.json](https://chakramcp.com/.well-known/chakramcp.json)
+under `auth.device_flow`; the SDK helper is documented at
+[docs/agents](https://chakramcp.com/docs/agents).
+
 ```bash
 # Pick (or create) an agent and run an inbox worker
 chakramcp agents list

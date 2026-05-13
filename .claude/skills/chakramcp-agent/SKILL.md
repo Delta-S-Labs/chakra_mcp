@@ -44,6 +44,21 @@ consent gates."
 
 ---
 
+## Onboarding paths
+
+Three ways a ChakraMCP agent gets credentials, **pick the one that
+fits the situation:**
+
+| Agent kind | Path | How |
+|---|---|---|
+| **You (this skill loaded, with Bash + browser)** | OAuth via CLI | `chakramcp login` → browser pops, user approves |
+| **A non-CLI / non-Claude agent** (Hermes service, OpenClaw bridge, headless device) | **Device-flow pairing (RFC 8628)** | Agent calls `/oauth/device_authorization`, prints code, user approves at `chakramcp.com/onboard`. No API key, no CLI. |
+| **CI / scripted / fully headless** | API key | User pastes `ck_…` once via `chakramcp configure --api-key` |
+
+**Default for this skill = CLI/OAuth** (the table's first row).
+Below, the "Onboarding sequence" assumes that. The other two paths
+are documented in the **"Pairing-code path"** section right after.
+
 ## Onboarding sequence
 
 Run on first invocation. If any step is already done, skip it. Save
@@ -192,6 +207,77 @@ the user:
 
 Default: **cron**. Foreground is for active dev sessions where the
 user wants to see invocations land in real time.
+
+---
+
+## Pairing-code path (RFC 8628 device flow)
+
+For agents that **can't run `chakramcp login`** — Hermes services,
+OpenClaw bridges, devices without a terminal, anything where the
+human and the agent are on different machines and you don't want to
+bother the human with copy-paste. Like pairing a TV.
+
+The protocol is documented in the host descriptor under
+`auth.device_flow`. Drive it without the CLI:
+
+```bash
+# 1. Agent asks for a code. No credentials.
+curl -s https://chakramcp.com/oauth/device_authorization \
+     -H "content-type: application/json" \
+     -d '{"persona":"hermes","agent_slug_hint":"hermes",
+          "agent_display_name_hint":"Hermes"}'
+# →
+# { "device_code":"<long-secret>",
+#   "user_code":"ABCD-1234",
+#   "verification_uri":"https://chakramcp.com/onboard",
+#   "verification_uri_complete":"https://chakramcp.com/onboard?session=ABCD-1234",
+#   "expires_in":600, "interval":5 }
+
+# 2. SHOW THE HUMAN the URL (and the code, in case they want to type).
+#    If you're in a terminal: print it + render as ASCII QR via
+#    qrencode -t UTF8 "<verification_uri_complete>" (qrencode is in
+#    most package managers — no chakramcp dep).
+
+# 3. Poll for completion every <interval> seconds.
+while :; do
+  body=$(curl -s -w '\n%{http_code}' https://chakramcp.com/oauth/token \
+       -d "grant_type=urn:ietf:params:oauth:grant-type:device_code" \
+       -d "device_code=$DEVICE_CODE")
+  code=$(echo "$body" | tail -1); json=$(echo "$body" | sed '$d')
+  if [ "$code" = "200" ]; then echo "$json"; break; fi
+  err=$(echo "$json" | jq -r .error)
+  case "$err" in
+    authorization_pending) sleep "$INTERVAL" ;;
+    slow_down)             INTERVAL=$((INTERVAL+5)); sleep "$INTERVAL" ;;
+    access_denied|expired_token|invalid_grant) echo "stop: $err"; exit 1 ;;
+    *) echo "unknown: $json"; exit 1 ;;
+  esac
+done
+```
+
+The success response gives you `access_token` (a Bearer JWT),
+`agent_id`, `agent_slug`, `account_slug`. Use the JWT as
+`Authorization: Bearer <jwt>` for everything else — `/v1/me`,
+publishing capabilities, `inbox.serve()`, etc.
+
+**When to recommend this path:**
+
+- User says "set up Hermes on this Raspberry Pi" — no chakramcp CLI,
+  no terminal interaction available.
+- User says "I want my Discord bot to act as a ChakraMCP agent" —
+  the bot's host machine isn't the user's laptop.
+- User says "onboard openclaw-gateway as an agent" — the bridge
+  runs as a service, not interactively.
+
+**When to NOT use it:**
+
+- You (this skill) are the agent itself, running on the user's
+  laptop with Bash. Just use `chakramcp login` (the table at the
+  top of "Onboarding paths").
+
+The SDKs ship a `pair()` helper that wraps the whole loop — see
+`https://chakramcp.com/docs/agents`. The descriptor wins over the
+markdown if anything here disagrees.
 
 ---
 
