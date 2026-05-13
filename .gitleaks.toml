@@ -1,0 +1,59 @@
+# gitleaks configuration.
+#
+# The default `generic-api-key` rule is aggressive — any long
+# base32/base64 token-shaped string trips it. Most of our matches
+# are documentation examples (ULID idempotency keys, ChakraMCP
+# event ids, test fixtures) — none are real secrets. This
+# allowlist keeps the rule sharp on actual credential leaks while
+# letting protocol/spec docs ship with realistic-looking sample
+# payloads.
+#
+# Real credential rules (AWS, GitHub PAT, npm token, etc.) keep
+# their full strictness — we don't touch them.
+
+title = "ChakraMCP gitleaks config"
+
+# Inherit the upstream rule pack — we just add allowlist entries
+# on top, no rule overrides.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Documentation examples + per-rule false-positive carve-outs."
+
+# Paths where examples + spec docs live. False positives in these
+# files don't represent leaked credentials — they're illustrative
+# payloads showing what wire formats look like.
+paths = [
+    '''docs/ChakraMCP Design System/''',
+    '''docs/chakramcp-build-spec\.md$''',
+    '''docs/superpowers/''',
+    '''examples/''',
+    '''sdks/.*/(README|tests|examples)\.''',
+    # The host descriptor is JSON of public URLs + status fields;
+    # any "long string" here is a documented machine-readable id.
+    '''frontend/public/\.well-known/''',
+    # llms.txt is markdown for AI agents — same docs-style content
+    # as the design-system files.
+    '''frontend/public/llms\.txt$''',
+]
+
+# Patterns common in our docs that gitleaks mis-detects as secrets:
+#   evt_<ULID>  — event identifiers shown in examples
+#   inv_<ULID>  — invocation identifiers
+#   gr_<ULID>   — grant identifiers
+#   fr_<ULID>   — friendship identifiers
+#   ag_<ULID>   — agent identifiers
+#   ck_test_*   — fake API keys in copy/paste-able examples
+#   ck_example* — same
+# Real credentials use `ck_` followed by entropy, so we explicitly
+# only allow the `test_` / `example_` prefixed forms.
+regexes = [
+    '''evt_[0-9A-HJKMNP-TV-Z]{20,}''',
+    '''inv_[0-9A-HJKMNP-TV-Z]{20,}''',
+    '''gr_[0-9A-HJKMNP-TV-Z]{20,}''',
+    '''fr_[0-9A-HJKMNP-TV-Z]{20,}''',
+    '''ag_[0-9A-HJKMNP-TV-Z]{20,}''',
+    '''ck_test_[A-Za-z0-9_-]+''',
+    '''ck_example[A-Za-z0-9_-]*''',
+]
