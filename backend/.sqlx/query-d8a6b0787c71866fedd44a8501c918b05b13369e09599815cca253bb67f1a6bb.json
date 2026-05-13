@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT a.id, a.slug\n            FROM accounts a\n            JOIN account_memberships m ON m.account_id = a.id\n            WHERE m.user_id = $1\n              AND a.account_type = 'individual'\n              AND a.tombstoned_at IS NULL\n            ORDER BY a.created_at ASC\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "slug",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "d8a6b0787c71866fedd44a8501c918b05b13369e09599815cca253bb67f1a6bb"
+}

@@ -38,6 +38,20 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/oauth/issue-code", post(handlers::oauth::issue_code))
         .route("/oauth/token", post(handlers::oauth::token))
+        // ─── OAuth 2.1 Device Authorization Grant (RFC 8628)
+        .route(
+            "/oauth/device_authorization",
+            post(handlers::oauth::device_authorization),
+        )
+        .route(
+            "/oauth/device-session/{user_code}",
+            get(handlers::oauth::device_session),
+        )
+        .route(
+            "/oauth/device-approve",
+            post(handlers::oauth::device_approve),
+        )
+        .route("/oauth/device-deny", post(handlers::oauth::device_deny))
         // ─── Sign-in callback from frontend ────────────
         .route("/v1/users/upsert", post(handlers::users::upsert))
         // ─── Email + password auth ─────────────────────
