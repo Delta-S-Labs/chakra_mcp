@@ -36,6 +36,49 @@
   box-shadow: 0 30px 60px -30px rgba(0, 0, 0, 0.18);
 }
 
+/* Landing-page code-entry: smaller, centered. */
+.codeCard {
+  background: var(--paper-soft);
+  border: 1px solid var(--line);
+  border-radius: 1.2rem;
+  padding: 1.5rem 1.75rem;
+  display: grid;
+  gap: 1rem;
+  width: min(540px, 100%);
+  margin: 0 auto;
+  text-align: center;
+}
+
+.codeCard .cardTitle {
+  font-size: 1rem;
+  text-align: center;
+}
+
+.codeCardFoot {
+  font-family: var(--font-body);
+  font-size: 0.84rem;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  margin: 0;
+  text-align: center;
+}
+
+.codeCardFoot a {
+  color: var(--accent-coral);
+  text-decoration: none;
+  font-weight: 600;
+}
+.codeCardFoot a:hover { text-decoration: underline; }
+
+.codeCardFoot code {
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: 0.86em;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 0.32rem;
+  padding: 0.1rem 0.32rem;
+}
+
 .cardTitle {
   font-family: var(--font-display);
   font-weight: 700;
@@ -208,4 +251,229 @@
   border: 1px solid rgba(10, 107, 58, 0.25);
   border-radius: 0.5rem;
   padding: 0.85rem 1rem;
+}
+
+/* ─── Paired agents list ─── */
+
+.pairSection {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.pairHead {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.sectionTitle {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.3rem;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin: 0;
+}
+
+.pairHint {
+  position: relative;
+}
+
+.pairHint summary {
+  list-style: none;
+  cursor: help;
+  width: 1.4rem;
+  height: 1.4rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+}
+
+.pairHint summary::-webkit-details-marker { display: none; }
+
+.pairHint[open] summary {
+  border-color: var(--accent-coral);
+  color: oklch(38% 0.14 28);
+}
+
+.pairHintBody {
+  position: absolute;
+  top: 1.8rem;
+  left: -0.5rem;
+  width: min(340px, 80vw);
+  padding: 0.75rem 0.9rem;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  font-family: var(--font-body);
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  box-shadow: 0 14px 30px -16px rgba(0, 0, 0, 0.25);
+  z-index: 10;
+}
+
+.pairList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.pairRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  background: var(--paper-soft);
+  flex-wrap: wrap;
+}
+
+.pairRowRevoked {
+  opacity: 0.6;
+}
+
+.pairRowLeft {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-width: 0;
+  flex: 1 1 320px;
+}
+
+.pairRowText {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.pairRowName {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.94rem;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pairRowMeta {
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  color: var(--ink-muted);
+}
+
+.pairRowMeta code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  padding: 0.04rem 0.32rem;
+  border-radius: 0.28rem;
+  background: color-mix(in oklab, var(--accent-butter) 38%, transparent);
+  color: var(--ink);
+}
+
+.tipped { border-bottom: 1px dotted color-mix(in oklab, var(--ink-muted) 60%, transparent); }
+
+.pairRowRight {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.kindBadge {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.kindBadgeDevice {
+  background: color-mix(in oklab, var(--accent-coral) 18%, var(--paper));
+  border-color: color-mix(in oklab, var(--accent-coral) 55%, var(--line));
+  color: oklch(38% 0.14 28);
+}
+.kindBadgeOauth {
+  background: color-mix(in oklab, var(--accent-butter) 52%, var(--paper));
+  border-color: color-mix(in oklab, var(--accent-butter) 70%, var(--line));
+  color: oklch(36% 0.07 70);
+}
+.kindBadgeApiKey {
+  background: color-mix(in oklab, oklch(75% 0.18 145) 22%, var(--paper));
+  border-color: color-mix(in oklab, oklch(75% 0.18 145) 60%, var(--line));
+  color: oklch(35% 0.13 145);
+}
+
+.statusBadge {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.statusBadgeActive {
+  background: color-mix(in oklab, oklch(75% 0.18 145) 22%, var(--paper-soft));
+  border-color: color-mix(in oklab, oklch(75% 0.18 145) 55%, var(--line));
+  color: oklch(35% 0.13 145);
+}
+.statusBadgeRevoked {
+  background: color-mix(in oklab, var(--ink-muted) 14%, var(--paper-soft));
+  color: var(--ink-muted);
+}
+
+.revokeBtn {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.4rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--paper-soft);
+  color: var(--ink);
+  cursor: pointer;
+}
+.revokeBtn:hover {
+  border-color: var(--accent-coral);
+  color: oklch(38% 0.14 28);
+}
+.revokeBtn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.pairError {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--accent-coral);
+  border-radius: 0.45rem;
+  background: color-mix(in oklab, var(--accent-coral) 14%, var(--paper-soft));
+  color: oklch(38% 0.14 28);
+  font-size: 0.86rem;
+}
+
+@media (max-width: 720px) {
+  .pairRow { flex-direction: column; align-items: flex-start; }
+  .pairRowRight { width: 100%; justify-content: flex-end; }
 }

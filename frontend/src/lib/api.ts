@@ -299,6 +299,123 @@ export function revokeApiKey(token: string, id: string) {
   });
 }
 
+export function rotateApiKey(token: string, id: string) {
+  return request<CreateApiKeyResponse>(
+    `/v1/api-keys/${encodeURIComponent(id)}/rotate`,
+    { method: "POST", token },
+  );
+}
+
+// ─── API-key usage ───────────────────────────────────────
+//
+// Backend at `backend/app/src/handlers/api_keys.rs::usage`. Until the
+// relay invoke handler is wired to stamp `api_key_id` on every
+// invocation, this endpoint reads zeros — the shape is real but the
+// numbers will be empty arrays. Build the UI assuming live data lands.
+
+export interface ApiKeyUsageCapability {
+  capability_name: string;
+  count: number;
+}
+
+export interface ApiKeyUsageAgent {
+  agent_id: string;
+  agent_slug: string;
+  count: number;
+}
+
+export interface ApiKeyUsageDaily {
+  /** YYYY-MM-DD (naive date from server). */
+  date: string;
+  count: number;
+}
+
+export interface ApiKeyUsage {
+  key_id: string;
+  from: string;
+  to: string;
+  total_requests: number;
+  by_capability_type: ApiKeyUsageCapability[];
+  by_agent: ApiKeyUsageAgent[];
+  daily: ApiKeyUsageDaily[];
+}
+
+export function getApiKeyUsage(
+  token: string,
+  id: string,
+  range: { from?: string; to?: string } = {},
+) {
+  const qs = new URLSearchParams();
+  if (range.from) qs.set("from", range.from);
+  if (range.to) qs.set("to", range.to);
+  const tail = qs.toString();
+  const path = `/v1/api-keys/${encodeURIComponent(id)}/usage${tail ? `?${tail}` : ""}`;
+  return request<ApiKeyUsage>(path, { token });
+}
+
+export function getApiKey(token: string, id: string) {
+  // The list endpoint already returns the full row; there's no
+  // dedicated GET-one, so we filter the list. Cheap at our scale and
+  // keeps the API surface honest.
+  return listApiKeys(token).then((all) => all.find((k) => k.id === id) ?? null);
+}
+
+// ─── Agent re-parenting ──────────────────────────────────
+
+export interface MoveToPersonalResponse {
+  agent_id: string;
+  old_account_slug: string;
+  new_account_slug: string;
+  new_agent_slug: string;
+}
+
+export function moveAgentToPersonal(token: string, agentId: string) {
+  return request<MoveToPersonalResponse>(
+    `/v1/agents/${encodeURIComponent(agentId)}/move-to-personal`,
+    { method: "POST", token },
+  );
+}
+
+// ─── Org delete ──────────────────────────────────────────
+
+export function deleteOrg(token: string, slug: string) {
+  return request<void>(`/v1/orgs/${encodeURIComponent(slug)}`, {
+    method: "DELETE",
+    token,
+  });
+}
+
+// ─── Unified pairings (device-flow / oauth / api_key) ────
+//
+// Mirror of `backend/app/src/handlers/pairings.rs::PairingDto`. The
+// backend returns a `label` (api-key name, or agent display-name hint
+// for device flow, or oauth client_name) — no `account_slug` here, but
+// `agent_slug` covers the common "what's this paired to" rendering.
+
+export type PairingKind = "device_flow" | "oauth" | "api_key";
+
+export interface Pairing {
+  kind: PairingKind;
+  id: string;
+  agent_id: string | null;
+  agent_slug: string | null;
+  label: string | null;
+  paired_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+}
+
+export function listPairings(token: string) {
+  return request<Pairing[]>("/v1/pairings", { token });
+}
+
+export function revokePairing(token: string, kind: PairingKind, id: string) {
+  return request<void>(
+    `/v1/pairings/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/revoke`,
+    { method: "POST", token },
+  );
+}
+
 // ─── Admin ───────────────────────────────────────────────
 
 export function adminListUsers(token: string) {

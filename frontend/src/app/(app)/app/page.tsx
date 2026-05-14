@@ -65,8 +65,11 @@ export default async function AppDashboard() {
     redirect("/app/welcome");
   }
 
-  const personal = memberships.find((m) => m.account_type === "individual");
-  const orgs = memberships.filter((m) => m.account_type === "organization");
+  // Memberships are still loaded above because the `/v1/me` call
+  // doubles as the survey-required check. We no longer surface the
+  // accounts block here — the personal-account page and the orgs page
+  // own that view.
+  void memberships;
 
   const agentCount = agents.length;
   const networkAgentCount = agents.filter((a) => a.visibility === "network").length;
@@ -184,34 +187,6 @@ export default async function AppDashboard() {
         )}
       </section>
 
-      <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>Your accounts</h2>
-        <div className={styles.accountList}>
-          {personal && (
-            <article className={styles.accountTile}>
-              <div className={styles.tileEyebrow}>Personal</div>
-              <h3>{personal.display_name}</h3>
-              <p className={styles.tileMeta}>
-                <code>{personal.slug}</code> · {personal.role}
-              </p>
-            </article>
-          )}
-          {orgs.map((o) => (
-            <article key={o.account_id} className={styles.accountTile}>
-              <div className={styles.tileEyebrow}>Organization</div>
-              <h3>{o.display_name}</h3>
-              <p className={styles.tileMeta}>
-                <code>{o.slug}</code> · {o.role}
-              </p>
-            </article>
-          ))}
-          {!personal && orgs.length === 0 && !backendError && (
-            <article className={styles.accountTile}>
-              <p>No accounts yet - try signing out and back in to bootstrap.</p>
-            </article>
-          )}
-        </div>
-      </section>
     </>
   );
 }

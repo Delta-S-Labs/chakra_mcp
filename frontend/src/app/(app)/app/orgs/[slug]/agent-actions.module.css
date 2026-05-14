@@ -1,0 +1,101 @@
+.actionBtn {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.4rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--paper-soft);
+  color: var(--ink);
+  cursor: pointer;
+}
+.actionBtn:hover {
+  border-color: var(--accent-coral);
+  color: oklch(38% 0.14 28);
+}
+
+.modalError {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--accent-coral);
+  border-radius: 0.45rem;
+  background: color-mix(in oklab, var(--accent-coral) 14%, var(--paper-soft));
+  color: oklch(38% 0.14 28);
+  font-size: 0.86rem;
+}
+
+.movedNote {
+  margin: 0.35rem 0 0;
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+
+.movedNote code {
+  font-family: var(--font-mono);
+  font-size: 0.84em;
+  padding: 0.04rem 0.34rem;
+  border-radius: 0.28rem;
+  background: color-mix(in oklab, var(--accent-butter) 38%, transparent);
+  color: var(--ink);
+}
+
+.dangerZone {
+  margin-top: 1rem;
+  padding: 1.1rem 1.2rem;
+  border: 1px dashed color-mix(in oklab, var(--accent-coral) 55%, var(--line));
+  border-radius: 1rem;
+  background: color-mix(in oklab, var(--accent-coral) 4%, var(--paper-soft));
+  display: grid;
+  gap: 0.65rem;
+}
+
+.dangerTitle {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.74rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: oklch(38% 0.14 28);
+  margin: 0;
+}
+
+.dangerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.dangerLabel {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--ink);
+}
+
+.dangerBody {
+  margin: 0.2rem 0 0;
+  font-family: var(--font-body);
+  font-size: 0.86rem;
+  color: var(--ink-soft);
+  max-width: 60ch;
+}
+
+.dangerBtn {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.55rem 1rem;
+  border-radius: 999px;
+  background: var(--accent-coral);
+  color: var(--paper-soft);
+  border: 1px solid color-mix(in oklab, var(--accent-coral) 70%, var(--ink));
+  cursor: pointer;
+}
+.dangerBtn:hover { background: oklch(58% 0.18 28); }

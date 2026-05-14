@@ -1,0 +1,96 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: color-mix(in oklab, var(--ink) 38%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.card {
+  width: min(440px, 100%);
+  display: grid;
+  gap: 0.85rem;
+  padding: 1.4rem 1.5rem;
+  background: var(--paper-soft);
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.35);
+}
+
+.title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.2rem;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin: 0;
+}
+
+.body {
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.body code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  padding: 0.04rem 0.34rem;
+  border-radius: 0.28rem;
+  background: color-mix(in oklab, var(--accent-butter) 38%, transparent);
+  color: var(--ink);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 0.35rem;
+}
+
+.cancel,
+.confirm,
+.confirmDanger {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.55rem 1rem;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.cancel {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  color: var(--ink);
+}
+.cancel:hover { border-color: var(--ink-muted); }
+
+.confirm {
+  background: var(--ink);
+  color: var(--paper);
+  border: 1px solid var(--ink);
+}
+.confirm:hover { background: var(--accent-coral); border-color: var(--accent-coral); }
+
+.confirmDanger {
+  background: var(--accent-coral);
+  color: var(--paper-soft);
+  border: 1px solid color-mix(in oklab, var(--accent-coral) 70%, var(--ink));
+}
+.confirmDanger:hover {
+  background: oklch(58% 0.18 28);
+}
+
+.cancel:disabled,
+.confirm:disabled,
+.confirmDanger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
