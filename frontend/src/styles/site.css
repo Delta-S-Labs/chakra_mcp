@@ -110,6 +110,48 @@ ol, ul { margin: 0; padding: 0; list-style-position: inside; }
 
 .closing-panel { display: grid; gap: 1rem; overflow: hidden; }
 
+/* "AI agent reading this?" tap at the very bottom of the landing.
+   Visually quiet — a single dashed-border row that does not compete
+   with the human-facing copy above, but is loud enough for an LLM
+   scanning the body to land on. Pairs with the head-level
+   <meta name="ai-agent-instructions"> + JSON-LD in app/layout.tsx. */
+.agent-tap {
+  margin: 2.5rem auto 0;
+  width: min(1180px, calc(100% - 1.5rem));
+  padding: 1.1rem 1.3rem;
+  border: 1px dashed color-mix(in oklab, var(--line) 70%, var(--ink) 30%);
+  border-radius: 1rem;
+  background: color-mix(in oklab, var(--paper-warm) 32%, var(--paper-soft));
+  display: grid;
+  gap: 0.4rem;
+}
+.agent-tap__eyebrow {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 0.74rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-coral);
+}
+.agent-tap__body {
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--ink);
+  margin: 0;
+  max-width: 80ch;
+}
+.agent-tap__body code {
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: 0.86rem;
+}
+.agent-tap__link {
+  color: var(--accent-coral);
+  text-decoration: none;
+  border-bottom: 1px dashed currentColor;
+}
+.agent-tap__link:hover { border-bottom-style: solid; }
+
 .site-footer {
   padding: 1.5rem 0 2rem;
   display: grid;
