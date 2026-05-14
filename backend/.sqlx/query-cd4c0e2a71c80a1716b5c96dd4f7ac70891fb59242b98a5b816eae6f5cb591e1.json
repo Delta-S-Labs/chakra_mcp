@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT a.id, a.slug, a.account_id, acc.slug AS account_slug\n        FROM agents a\n        JOIN accounts acc ON acc.id = a.account_id\n        WHERE a.id = $1 AND a.tombstoned_at IS NULL\n        FOR UPDATE OF a\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "account_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "account_slug",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "cd4c0e2a71c80a1716b5c96dd4f7ac70891fb59242b98a5b816eae6f5cb591e1"
+}

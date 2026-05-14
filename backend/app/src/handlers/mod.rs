@@ -1,8 +1,10 @@
 pub mod admin;
+pub mod agents;
 pub mod api_keys;
 pub mod auth;
 pub mod health;
 pub mod oauth;
 pub mod orgs;
+pub mod pairings;
 pub mod surveys;
 pub mod users;

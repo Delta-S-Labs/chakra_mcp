@@ -229,10 +229,7 @@ pub async fn login(
 //
 // Idempotent on the `jti` PK — repeat calls before the cookie clear
 // commits are a no-op via ON CONFLICT.
-pub async fn signout(
-    State(state): State<AppState>,
-    user: AuthUser,
-) -> ApiResult<StatusCode> {
+pub async fn signout(State(state): State<AppState>, user: AuthUser) -> ApiResult<StatusCode> {
     // API-key requests don't carry a jti and have their own revocation
     // path (`api_keys.revoked_at`). Treat them as a no-op rather than
     // an error so the frontend doesn't have to special-case which
