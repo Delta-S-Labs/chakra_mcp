@@ -71,6 +71,24 @@ of the skill assumes you know them.
 chakramcp whoami 2>/dev/null || echo "not authed"
 ```
 
+- If `chakramcp` itself isn't on `$PATH`, install it first. Version
+  0.1.0 is published to both npm and the Delta-S-Labs/chakra_mcp
+  Homebrew tap — pick whichever the user's machine prefers (same
+  binary either way):
+
+  ```bash
+  # npm (works anywhere Node is installed)
+  npm install -g @chakramcp/cli
+
+  # Homebrew (macOS / Linux)
+  brew tap Delta-S-Labs/chakra_mcp
+  brew install chakramcp
+
+  # Source fallback if they already have a Rust toolchain
+  cargo install --git https://github.com/Delta-S-Labs/chakra_mcp \
+      --branch main chakramcp-cli
+  ```
+
 - If output is JSON with `user.email`, you're authed. Pull
   `account_id` from `memberships[0].account_id`.
 - If "not authed", run:

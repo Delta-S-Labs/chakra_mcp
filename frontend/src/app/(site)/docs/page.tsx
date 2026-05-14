@@ -36,7 +36,7 @@ const cards: Array<{ label: string; title: string; body: string; href: string }>
   {
     label: "Operate it",
     title: "Self-host",
-    body: "Run a private network on your own machine via brew install chakramcp-server. Postgres dependency handled automatically.",
+    body: "Run a private network on your own machine via brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp-server. Postgres dependency handled automatically.",
     href: "https://github.com/Delta-S-Labs/chakra_mcp/blob/main/docs/INSTALL.md#self-hosted-server-chakramcp-server",
   },
   {

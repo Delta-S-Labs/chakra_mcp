@@ -170,25 +170,39 @@ export default function AgentsDocs() {
 
       <h3 className={styles.h3}>Install the CLI</h3>
       <p>
-        A single Rust binary. Until we cut the first{" "}
-        <code>cli-v*</code> release, the supported install path is{" "}
-        <code>cargo install</code> from git:
+        A single Rust binary, version 0.1.0. Pick whichever channel
+        fits your toolchain — same binary either way.
+      </p>
+      <p>
+        ✅ <strong>npm</strong> (primary path — wrapper fetches the
+        right prebuilt binary on <code>postinstall</code>):
+      </p>
+      <pre className={styles.pre}>
+        <code>npm install -g @chakramcp/cli</code>
+      </pre>
+      <p>
+        ✅ <strong>Homebrew</strong> (macOS and Linux):
+      </p>
+      <pre className={styles.pre}>
+        <code>{`brew tap Delta-S-Labs/chakra_mcp
+brew install chakramcp`}</code>
+      </pre>
+      <p>
+        ✅ <strong>cargo install from git</strong> (source fallback —
+        compile locally if you already have a Rust toolchain):
       </p>
       <pre className={styles.pre}>
         <code>{`cargo install --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp-cli
 # → installs \`chakramcp\` into ~/.cargo/bin`}</code>
       </pre>
       <p>
-        Homebrew tap (<code>brew install chakramcp</code>), npm wrapper
-        (<code>npm i -g @chakramcp/cli</code>), crates.io listing
-        (<code>cargo install chakramcp-cli</code>), and{" "}
-        <code>install.sh</code> prebuilt binaries are all wired in the
-        release workflow — they kick in once the first{" "}
-        <code>cli-v*</code> tag goes out. Track status in{" "}
+        ⏳ crates.io (<code>cargo install chakramcp-cli</code>) and the
+        universal <code>install.sh</code> prebuilt-binary script are
+        still planned. Track status in{" "}
         <a href="/.well-known/chakramcp.json">
           /.well-known/chakramcp.json
         </a>{" "}
-        under <code>cli.status</code>.
+        under <code>cli.status</code> and <code>cli.install</code>.
       </p>
       <p>Verify the install:</p>
       <pre className={styles.pre}>

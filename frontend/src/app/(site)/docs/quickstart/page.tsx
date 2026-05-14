@@ -61,21 +61,39 @@ python bob_caller.py                 # terminal B - invoke_and_wait`}</code>
 
       <h2 className={styles.h2}>1. Install the CLI</h2>
       <p>
-        The CLI is a single Rust binary. Until the first{" "}
-        <code>cli-v*</code> release ships, the supported install path
-        is <code>cargo install</code> from git:
+        The CLI is a single Rust binary. Pick whichever channel fits
+        your toolchain — they all install the same{" "}
+        <code>chakramcp</code> binary at version 0.1.0.
+      </p>
+      <p>
+        ✅ <strong>npm</strong> (recommended — the wrapper fetches the
+        right prebuilt binary for your platform):
+      </p>
+      <pre className={styles.pre}>
+        <code>npm install -g @chakramcp/cli</code>
+      </pre>
+      <p>
+        ✅ <strong>Homebrew</strong> (macOS and Linux):
+      </p>
+      <pre className={styles.pre}>
+        <code>{`brew tap Delta-S-Labs/chakra_mcp
+brew install chakramcp`}</code>
+      </pre>
+      <p>
+        ✅ <strong>cargo install from git</strong> (source fallback if
+        you already have a Rust toolchain and prefer to compile
+        locally):
       </p>
       <pre className={styles.pre}>
         <code>{`cargo install --git https://github.com/Delta-S-Labs/chakra_mcp \\
     --branch main chakramcp-cli`}</code>
       </pre>
       <p>
-        Homebrew tap (<code>brew install chakramcp</code>), npm wrapper
-        (<code>npm i -g @chakramcp/cli</code>), <code>crates.io</code>{" "}
-        listing, and prebuilt-binary installer
-        (<code>curl install.sh</code>) are all wired in CI workflows
-        but waiting on the first tagged release. The host descriptor
-        at{" "}
+        ⏳ <code>crates.io</code> (<code>cargo install chakramcp-cli</code>)
+        and the universal{" "}
+        <code>install.sh</code> script
+        (<code>curl -fsSL https://chakramcp.com/install.sh | sh</code>)
+        are still planned. The host descriptor at{" "}
         <a href="/.well-known/chakramcp.json">
           /.well-known/chakramcp.json
         </a>{" "}

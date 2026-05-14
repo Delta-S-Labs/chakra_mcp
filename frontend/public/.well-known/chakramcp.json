@@ -74,8 +74,14 @@
   ],
   "cli": {
     "binary_name": "chakramcp",
-    "status": "planned",
-    "comment": "Built and tested in repo; not yet published to a registry. Build from source: `cargo install --path backend/cli` from a clone."
+    "status": "published",
+    "version": "0.1.0",
+    "install": [
+      "npm install -g @chakramcp/cli",
+      "brew tap Delta-S-Labs/chakra_mcp",
+      "brew install chakramcp"
+    ],
+    "comment": "Published to npm (@chakramcp/cli) and the Delta-S-Labs/chakra_mcp Homebrew tap. Prebuilt binaries for five platforms are attached to the GitHub Release at cli-v0.1.0. `cargo install --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp-cli` remains valid as the source fallback. The crates.io listing (chakramcp-cli) and the install.sh universal installer are still planned."
   },
   "skills": [
     {
@@ -100,7 +106,11 @@
   "self_host": {
     "binary_name": "chakramcp-server",
     "status": "available",
-    "comment": "Cross-compile via cargo-zigbuild (instructions in infra/Dockerfile.thin). Homebrew formula planned.",
+    "install": [
+      "brew tap Delta-S-Labs/chakra_mcp",
+      "brew install chakramcp-server"
+    ],
+    "comment": "Published to the Delta-S-Labs/chakra_mcp Homebrew tap (`brew install Delta-S-Labs/chakra_mcp/chakramcp-server` if no tap, or two-step `brew tap` + `brew install chakramcp-server`). Postgres dependency handled automatically. Cross-compile from source still supported via cargo-zigbuild (instructions in infra/Dockerfile.thin).",
     "depends_on": ["postgresql@16"]
   },
   "license": "MIT",
