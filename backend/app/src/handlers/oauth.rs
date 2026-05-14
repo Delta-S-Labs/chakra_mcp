@@ -707,8 +707,8 @@ pub async fn device_authorization(
     };
 
     let frontend = state.config.frontend_base_url.trim_end_matches('/');
-    let verification_uri = format!("{frontend}/onboard");
-    let verification_uri_complete = format!("{frontend}/onboard?session={inserted}");
+    let verification_uri = format!("{frontend}/app/pair");
+    let verification_uri_complete = format!("{frontend}/app/pair?session={inserted}");
 
     Ok(Json(DeviceAuthResponse {
         device_code,

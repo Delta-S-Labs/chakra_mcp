@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import {
   approveDeviceSession,
   denyDeviceSession,
   ApiClientError,
 } from "@/lib/api";
-import styles from "./onboard.module.css";
+import styles from "./pair.module.css";
 
 /**
  * Consent UI for an in-flight device-flow pairing session.
@@ -108,7 +109,7 @@ export function ConsentForm({
           <code>
             {approvedAgent.account_slug}/{approvedAgent.slug}
           </code>
-          . You can manage it from <a href="/app">your dashboard</a>.
+          . You can manage it from <Link href="/app/agents">your agents</Link>.
         </p>
       </div>
     );

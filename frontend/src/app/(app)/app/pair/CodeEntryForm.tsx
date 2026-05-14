@@ -2,13 +2,13 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import styles from "./onboard.module.css";
+import styles from "./pair.module.css";
 
 /**
  * "Enter your pairing code" form — the TV-style manual entry path.
  *
  * The agent printed something like `ABCD-1234`; the user types it here
- * and we redirect to /onboard?session=<canonical>. The consent screen
+ * and we redirect to /app/pair?session=<canonical>. The consent screen
  * takes over from there.
  */
 export function CodeEntryForm() {
@@ -28,7 +28,7 @@ export function CodeEntryForm() {
       return;
     }
     const canonical = `${cleaned.slice(0, 4)}-${cleaned.slice(4)}`;
-    router.push(`/onboard?session=${canonical}`);
+    router.push(`/app/pair?session=${canonical}`);
   }
 
   return (

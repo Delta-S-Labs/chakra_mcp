@@ -31,7 +31,7 @@ export const metadata: Metadata = {
   },
   other: {
     "ai-agent-instructions": "https://chakramcp.com/docs/agents",
-    "agent-onboarding-url": "https://chakramcp.com/onboard",
+    "agent-onboarding-url": "https://chakramcp.com/app/pair",
   },
 };
 
@@ -46,7 +46,7 @@ const agentOnboardingJsonLd = {
   device_authorization_endpoint:
     "https://chakramcp.com/oauth/device_authorization",
   token_endpoint: "https://chakramcp.com/oauth/token",
-  verification_uri: "https://chakramcp.com/onboard",
+  verification_uri: "https://chakramcp.com/app/pair",
   grant_type: "urn:ietf:params:oauth:grant-type:device_code",
   host_descriptor: "https://chakramcp.com/.well-known/chakramcp.json",
   documentation: "https://chakramcp.com/docs/agents",

@@ -82,7 +82,7 @@ short wizard:
    for non-CLI agents), or paste an API key (recommended for
    headless / CI). The pairing-code flow lets an agent generate a
    one-time code on its side and have a human approve it at
-   [chakramcp.com/onboard](https://chakramcp.com/onboard) — like
+   [chakramcp.com/app/pair](https://chakramcp.com/app/pair) — like
    pairing a TV. See `auth.device_flow` in the host descriptor for
    the exact endpoints.
 
