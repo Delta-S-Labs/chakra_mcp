@@ -22,6 +22,12 @@ pub struct AuthUser {
     pub email: String,
     #[allow(dead_code)]
     pub is_admin: bool,
+    /// `api_keys.id` if the caller authenticated with a `ck_` token,
+    /// `None` if they authenticated with a user JWT (web session,
+    /// OAuth, device flow). Recorded on every `relay_invocations`
+    /// row this user creates so `/v1/api-keys/{id}/usage` can attribute
+    /// traffic per-key.
+    pub api_key_id: Option<Uuid>,
 }
 
 impl FromRequestParts<RelayState> for AuthUser {
@@ -55,6 +61,8 @@ impl FromRequestParts<RelayState> for AuthUser {
                 user_id: claims.sub,
                 email: claims.email,
                 is_admin: claims.is_admin,
+                // JWT path — no api_keys row backs this credential.
+                api_key_id: None,
             });
         }
 
@@ -86,7 +94,7 @@ async fn api_key_lookup(db: &PgPool, token: &str) -> Result<Option<AuthUser>, Ap
 
     let row = sqlx::query!(
         r#"
-        SELECT u.id as user_id, u.email, u.is_admin
+        SELECT k.id as key_id, u.id as user_id, u.email, u.is_admin
         FROM api_keys k
         JOIN users u ON u.id = k.user_id
         WHERE k.key_hash = $1
@@ -111,6 +119,7 @@ async fn api_key_lookup(db: &PgPool, token: &str) -> Result<Option<AuthUser>, Ap
             user_id: r.user_id,
             email: r.email,
             is_admin: r.is_admin,
+            api_key_id: Some(r.key_id),
         }))
     } else {
         Ok(None)

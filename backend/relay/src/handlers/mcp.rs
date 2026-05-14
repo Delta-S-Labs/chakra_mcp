@@ -547,13 +547,18 @@ async fn invoke(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiE
         }
     }
 
+    // `api_key_id` follows the same caller-side semantics as
+    // POST /v1/invoke (see handlers/invoke.rs): the credential that
+    // authed this MCP `invoke` tool call. NULL when the caller used
+    // a user JWT.
     let id = Uuid::now_v7();
     sqlx::query!(
         r#"
         INSERT INTO relay_invocations
             (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
-             capability_name, invoked_by_user_id, status, input_preview)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8)
+             capability_name, invoked_by_user_id, status, input_preview,
+             api_key_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9)
         "#,
         id,
         row.grant_id,
@@ -563,6 +568,7 @@ async fn invoke(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiE
         row.capability_name,
         user.user_id,
         a.input,
+        user.api_key_id,
     )
     .execute(db)
     .await?;

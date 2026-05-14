@@ -211,13 +211,19 @@ async fn persist_invocation(
     input_preview: Option<serde_json::Value>,
     output_preview: Option<serde_json::Value>,
 ) -> Result<(), sqlx::Error> {
+    // `api_key_id` attributes the call to the **caller** (grantee side)
+    // — the credential the policy gate validated before forwarding.
+    // NULL on the JWT path (web session / OAuth / device flow); set on
+    // the ck_ path so the per-key dashboard at /v1/api-keys/{id}/usage
+    // can render this row.
     sqlx::query!(
         r#"
         INSERT INTO relay_invocations
             (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
              capability_name, invoked_by_user_id, status, http_status,
-             elapsed_ms, error_message, input_preview, output_preview)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+             elapsed_ms, error_message, input_preview, output_preview,
+             api_key_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         "#,
         id,
         authz.grant_id,
@@ -232,6 +238,7 @@ async fn persist_invocation(
         error_message,
         input_preview,
         output_preview,
+        authz.api_key_id,
     )
     .execute(db)
     .await?;
@@ -514,6 +521,7 @@ mod tests {
             capability_id: cap,
             grant_id: grant,
             target_is_push: true,
+            api_key_id: None,
         }
     }
 
