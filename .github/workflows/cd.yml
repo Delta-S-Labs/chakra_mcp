@@ -166,6 +166,57 @@ jobs:
           chmod 600 ~/.ssh/lightsail
           ssh-keyscan -H "$LIGHTSAIL_HOST" >> ~/.ssh/known_hosts
 
+      # ─── Sync infra config (compose YAML + Caddyfile) to the VM ─
+      # CD used to only run `docker compose pull` + `up -d` on the
+      # box — it never touched the compose YAML itself. That meant
+      # any change to env-var mappings or service definitions in
+      # infra/docker-compose.prod.yml stayed on GitHub and did
+      # nothing in production until someone scp'd by hand. (Caught
+      # us when adding FRONTEND_PUBLIC_URL — the relay container
+      # kept defaulting to localhost URLs in /.well-known.)
+      #
+      # Both files are tiny, so we always scp the compose YAML;
+      # for the Caddyfile we hash-compare first so we only reload
+      # caddy when the rules actually changed.
+      - name: Sync infra config to VM
+        id: sync_infra
+        run: |
+          set -euo pipefail
+          # Caddyfile hash — local vs. remote. Missing remote ⇒ "changed".
+          local_caddy_hash=$(sha256sum infra/Caddyfile | awk '{print $1}')
+          remote_caddy_hash=$(ssh -i ~/.ssh/lightsail ubuntu@"$LIGHTSAIL_HOST" \
+            "sha256sum /opt/chakramcp/Caddyfile 2>/dev/null | awk '{print \$1}' || echo missing")
+          if [ "$local_caddy_hash" != "$remote_caddy_hash" ]; then
+            echo "caddy_changed=true" >> "$GITHUB_OUTPUT"
+            echo "Caddyfile changed (${remote_caddy_hash:0:12} → ${local_caddy_hash:0:12}) — will reload."
+          else
+            echo "caddy_changed=false" >> "$GITHUB_OUTPUT"
+            echo "Caddyfile unchanged — no caddy reload needed."
+          fi
+          # Always scp both. Compose YAML is sub-kilobyte; the cost
+          # is rounding error vs. the cost of forgetting it.
+          scp -i ~/.ssh/lightsail -q \
+              infra/docker-compose.prod.yml \
+              ubuntu@"$LIGHTSAIL_HOST":/opt/chakramcp/docker-compose.yml
+          scp -i ~/.ssh/lightsail -q \
+              infra/Caddyfile \
+              ubuntu@"$LIGHTSAIL_HOST":/opt/chakramcp/Caddyfile
+
+      # Reload caddy in-place if its rules changed. `caddy reload`
+      # is graceful (no dropped connections); skipping it when
+      # nothing changed avoids the (small) brownout window.
+      - name: Reload caddy if Caddyfile changed
+        if: steps.sync_infra.outputs.caddy_changed == 'true'
+        run: |
+          ssh -i ~/.ssh/lightsail ubuntu@"$LIGHTSAIL_HOST" bash -s <<'REMOTE'
+          set -e
+          cd /opt/chakramcp
+          docker compose exec -T caddy caddy reload \
+              --config /etc/caddy/Caddyfile \
+              --adapter caddyfile
+          echo "caddy reloaded."
+          REMOTE
+
       # ─── Mint a short-lived ECR login for the VM ──────────────
       # Lightsail's docker daemon isn't authenticated to ECR (we
       # don't want to put long-lived AWS creds on the box). Grab a
