@@ -18,10 +18,11 @@ Response:
   "user_code": "ABCD-1234",
   "verification_uri": "https://chakramcp.com/app/pair",
   "verification_uri_complete": "https://chakramcp.com/app/pair?session=ABCD-1234",
+  "verification_uri_qr": "https://chakramcp.com/qr?data=https%3A%2F%2Fchakramcp.com%2Fapp%2Fpair%3Fsession%3DABCD-1234",
   "expires_in": 600, "interval": 5 }
 ```
 
-Print the `verification_uri_complete` URL to your user (or render it as a QR code — any terminal can do this with `qrencode -t UTF8`). They open it, sign in to chakramcp.com, approve. The verification URL requires a signed-in human session; if they aren't logged in they'll be bounced through `/login` and back.
+Print `verification_uri_complete` for the user to click, OR `verification_uri_qr` for them to scan from another device — that URL is a public, no-auth page that renders the QR server-side (no `qrencode` install required). They open it, sign in to chakramcp.com, approve. The verification URL requires a signed-in human session; if they aren't logged in they'll be bounced through `/login` and back.
 
 Meanwhile poll every `interval` seconds:
 ```

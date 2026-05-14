@@ -280,6 +280,7 @@ curl -s https://chakramcp.com/oauth/device_authorization \\
 #   "user_code": "ABCD-1234",
 #   "verification_uri": "https://chakramcp.com/app/pair",
 #   "verification_uri_complete": "https://chakramcp.com/app/pair?session=ABCD-1234",
+#   "verification_uri_qr": "https://chakramcp.com/qr?data=https%3A%2F%2Fchakramcp.com%2Fapp%2Fpair%3Fsession%3DABCD-1234",
 #   "expires_in": 600,
 #   "interval": 5
 # }
@@ -319,37 +320,32 @@ done`}</code>
       </h3>
       <p>
         Same RFC 8628 protocol as the pairing flow above. The only
-        difference is presentation: instead of asking the user to type
-        an 8-character code, render{" "}
-        <code>verification_uri_complete</code> as a QR in the terminal
-        so they can scan with their phone, sign in there, and approve.
-        Smoother UX, no typos.
-      </p>
-      <p>
-        <code>qrencode</code> is a normal package-manager install — not
-        bundled with ChakraMCP:
+        difference is presentation: the device_authorization response
+        carries a <code>verification_uri_qr</code> field — a public,
+        no-auth URL that renders a scannable QR for the
+        <code>verification_uri_complete</code>. Hand that URL to the
+        user; they open it on a desktop, scan the QR with their phone,
+        sign in there, and approve. Smoother UX than a typed code, and
+        no <code>qrencode</code> install required.
       </p>
       <pre className={styles.pre}>
-        <code>{`# macOS
-brew install qrencode
-
-# Debian / Ubuntu
-sudo apt install qrencode`}</code>
-      </pre>
-      <p>
-        Then pipe the verification URL through it after step 1 of the
-        pairing flow above:
-      </p>
-      <pre className={styles.pre}>
-        <code>{`URL="https://chakramcp.com/app/pair?session=ABCD-1234"  # verification_uri_complete
-echo "Scan this with your phone, sign in, and approve:"
-qrencode -t UTF8 "$URL"
-echo "Or type code ABCD-1234 at https://chakramcp.com/app/pair"`}</code>
+        <code>{`# Step 1 (same as the pairing flow above) returns:
+#   verification_uri_complete = "https://chakramcp.com/app/pair?session=ABCD-1234"
+#   verification_uri_qr       = "https://chakramcp.com/qr?data=<url-encoded ^>"
+#
+# Step 2 — print to the user:
+echo "Scan this with your phone, sign in, approve:"
+echo "  $VERIFICATION_URI_QR"
+echo ""
+echo "Or type code $USER_CODE at $VERIFICATION_URI"`}</code>
       </pre>
       <p>
         Polling for completion is identical to the pairing flow — keep
         hitting <code>/oauth/token</code> with the{" "}
-        <code>device_code</code> grant until you get a 200.
+        <code>device_code</code> grant until you get a 200. The hosted
+        QR endpoint is cacheable and works for any URL you pass via{" "}
+        <code>?data=&lt;url-encoded&gt;</code>; you don&apos;t need a
+        device-flow session to use it.
       </p>
 
       <h3 className={styles.h3} id="cli-ops">Common operations after sign-in</h3>

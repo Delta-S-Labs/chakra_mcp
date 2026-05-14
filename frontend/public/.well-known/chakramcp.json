@@ -16,7 +16,8 @@
     "oauth_protected_resource": "https://relay.chakramcp.com/.well-known/oauth-protected-resource",
     "agent_onboarding_url": "https://chakramcp.com/app/pair",
     "device_authorization_endpoint": "https://chakramcp.com/oauth/device_authorization",
-    "token_endpoint": "https://chakramcp.com/oauth/token"
+    "token_endpoint": "https://chakramcp.com/oauth/token",
+    "qr_endpoint": "https://chakramcp.com/qr?data="
   },
   "auth": {
     "methods": ["api_key", "oauth2.1+pkce", "oauth2-device-flow"],
@@ -28,7 +29,7 @@
       "verification_uri": "https://chakramcp.com/app/pair",
       "user_code_format": "XXXX-XXXX",
       "user_code_alphabet": "ABCDEFGHJKMNPQRSTUVWXYZ23456789",
-      "comment": "TV-style pairing. Agents call /oauth/device_authorization with no credentials, get a user_code + verification_uri_complete. The human signs in to chakramcp.com, opens /app/pair, types or scans the code, approves. Agent's next /oauth/token poll returns a Bearer JWT bound to a freshly-created pull-mode agent. No API-key copy-paste."
+      "comment": "TV-style pairing. Agents call /oauth/device_authorization with no credentials. Response carries verification_uri_complete (clickable) AND verification_uri_qr (a public, no-auth chakramcp.com/qr?data=... URL that renders a scannable QR for the verification URL — no qrencode install needed on the agent side). The human signs in to chakramcp.com, opens /app/pair via whichever surface, approves. Agent's next /oauth/token poll returns a Bearer JWT bound to a freshly-created pull-mode agent. No API-key copy-paste."
     }
   },
   "primitives": [
