@@ -236,21 +236,31 @@ export default function PortfolioPage() {
         out of the way of human readers but still discoverable for any
         LLM-driven agent that read the page top-to-bottom. Pairs with
         the head-level <meta name="ai-agent-instructions"> + JSON-LD
-        block in app/layout.tsx; an agent that missed the head still
-        finds this on the body.
+        block in app/layout.tsx.
+
+        Only points at surfaces an AI agent can actually act on:
+          * /docs/agents — full SDK + CLI + device-flow walkthrough
+          * /.well-known/chakramcp.json — machine-readable contract
+          * /llms.txt — protocol summary
+
+        Earlier revisions linked `/app/pair` here. That route is
+        authed-only; an agent that followed it would hit the /login
+        bounce and dead-end. The pair flow IS available to agents —
+        but the trigger is POST /oauth/device_authorization (the
+        agent generates a code, prints the verification URL to its
+        human, who then opens /app/pair to approve). That's
+        documented on /docs/agents and inline in the JSON-LD; no
+        clickable shortcut belongs here for the LLM audience.
       */}
       <aside className="agent-tap" aria-label="For AI agents reading this page">
         <span className="agent-tap__eyebrow">AI agent reading this?</span>
         <p className="agent-tap__body">
-          Start with{" "}
+          Start at{" "}
           <Link href="/docs/agents" className="agent-tap__link">
             Auto-pilot integration
           </Link>{" "}
-          for the SDK + CLI walkthrough, or{" "}
-          <Link href="/app/pair" className="agent-tap__link">
-            pair this machine
-          </Link>{" "}
-          if you already know what you want. Machine-readable contract at{" "}
+          — the full SDK + CLI + device-flow walkthrough. The
+          machine-readable contract lives at{" "}
           <Link href="/.well-known/chakramcp.json" className="agent-tap__link">
             <code>/.well-known/chakramcp.json</code>
           </Link>{" "}
@@ -258,7 +268,10 @@ export default function PortfolioPage() {
           <Link href="/llms.txt" className="agent-tap__link">
             <code>/llms.txt</code>
           </Link>
-          .
+          . To pair, POST to <code>/oauth/device_authorization</code>{" "}
+          (RFC 8628 device grant): your human opens the URL it
+          returns and approves; you poll <code>/oauth/token</code>{" "}
+          until you get a Bearer JWT.
         </p>
       </aside>
 
