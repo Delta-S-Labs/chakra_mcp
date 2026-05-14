@@ -313,6 +313,18 @@ async fn resolve_bearer(
 ) -> Result<Option<CallerIdentity>, sqlx::Error> {
     // Try JWT first (cheap, no DB).
     if let Ok(claims) = jwt::decode_jwt(token, state.jwt_secret()) {
+        // Honor revocation here too — a stolen JWT could otherwise
+        // continue authorizing proxied A2A calls through the relay
+        // even after the human signed out.
+        let revoked = sqlx::query!(
+            r#"SELECT 1 as one FROM revoked_tokens WHERE jti = $1 LIMIT 1"#,
+            claims.jti,
+        )
+        .fetch_optional(&state.db)
+        .await?;
+        if revoked.is_some() {
+            return Ok(None);
+        }
         return Ok(Some(CallerIdentity {
             user_id: claims.sub,
         }));

@@ -67,16 +67,22 @@
  *     `/login` lands on a different page so there is no stale RSC
  *     fragment of the authed shell to bust.
  *
- * # Backend session invalidation — NOT done here
+ * # Backend JWT revocation
  *
  * The backend (`backend/app/src/handlers/auth.rs`) issues stateless
- * JWTs with no server-side session table and no revocation endpoint.
- * The JWT lives inside the NextAuth cookie payload, so clearing the
- * cookie hides it from the user agent — which is the full extent of
- * what the client can do today. A stolen / exfiltrated JWT remains
- * valid until its 24h `exp`. Adding a revocation list (or short
- * access tokens + refresh tokens) is tracked as a separate backend
- * slice; this file cannot fix it.
+ * 24h JWTs. Clearing the cookie hides the JWT from the user agent
+ * but doesn't kill the token itself — anyone who exfiltrated the
+ * plaintext can keep using it until natural expiry.
+ *
+ * We close that hole by POSTing `/v1/auth/signout` *before* the
+ * cookie purge, while we still have the Bearer. The backend records
+ * the `jti` in its `revoked_tokens` table and the JWT-decode
+ * middleware rejects any further request that carries it.
+ *
+ * The backend call is best-effort: if it fails (network down, server
+ * unreachable, or the token was already revoked and the call 401s),
+ * we still continue with the cookie purge + redirect. The local
+ * logout always works, even when the server is gone.
  */
 
 "use server";
@@ -84,7 +90,8 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { signOut } from "@/auth";
+import { auth, signOut } from "@/auth";
+import { apiBaseUrl } from "@/lib/api";
 
 /**
  * Every cookie NextAuth v5 may have set. We try to delete all of
@@ -141,6 +148,36 @@ const NEXT_AUTH_COOKIES: readonly CookieDeleteOptions[] = [
  * header for why.
  */
 export async function signOutAndRedirect(): Promise<never> {
+  // Server-side JWT revocation FIRST, while we still have the
+  // Bearer. Clearing the cookie hides the token from this browser
+  // but doesn't kill it; only the backend can do that. We swallow
+  // any failure: network errors, 401 (token already revoked), or a
+  // backend outage must not block the local logout.
+  try {
+    const session = await auth();
+    const backendToken = session?.backendToken;
+    if (backendToken) {
+      const res = await fetch(`${apiBaseUrl}/v1/auth/signout`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${backendToken}` },
+        cache: "no-store",
+      });
+      if (!res.ok && res.status !== 401) {
+        // 401 is expected if the token is already revoked (e.g. the
+        // user double-clicked sign out). Anything else gets logged
+        // but does not abort the cookie purge.
+        console.warn(
+          `[auth] backend signout returned ${res.status}; proceeding with cookie purge`,
+        );
+      }
+    }
+  } catch (err) {
+    console.warn(
+      "[auth] backend signout failed; proceeding with cookie purge",
+      err,
+    );
+  }
+
   // Run NextAuth's own signOut so any wired-up `events.signOut` hook
   // fires. We pass `redirect: false` because we own the redirect
   // ourselves, after the manual cookie purge below.

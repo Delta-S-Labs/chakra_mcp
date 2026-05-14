@@ -57,6 +57,7 @@ pub fn router(state: AppState) -> Router {
         // ─── Email + password auth ─────────────────────
         .route("/v1/auth/signup", post(handlers::auth::signup))
         .route("/v1/auth/login", post(handlers::auth::login))
+        .route("/v1/auth/signout", post(handlers::auth::signout))
         // ─── Authenticated user routes ─────────────────
         .route("/v1/me", get(handlers::users::me))
         .route(

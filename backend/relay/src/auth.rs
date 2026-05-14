@@ -42,6 +42,15 @@ impl FromRequestParts<RelayState> for AuthUser {
             .ok_or(ApiError::Unauthorized)?;
 
         if let Ok(claims) = jwt::decode_jwt(token, state.jwt_secret()) {
+            // Revocation check — mirror of `chakramcp-app`'s
+            // `AuthUser` extractor. The two services share
+            // JWT_SECRET, so a JWT minted by `app` works against
+            // either. Revocation has to be honored at both ends or
+            // signing-out doesn't actually kick anything out of the
+            // relay.
+            if is_token_revoked(&state.db, claims.jti).await? {
+                return Err(ApiError::Unauthorized);
+            }
             return Ok(AuthUser {
                 user_id: claims.sub,
                 email: claims.email,
@@ -55,6 +64,16 @@ impl FromRequestParts<RelayState> for AuthUser {
 
         Err(ApiError::Unauthorized)
     }
+}
+
+async fn is_token_revoked(db: &PgPool, jti: Uuid) -> Result<bool, ApiError> {
+    let row = sqlx::query!(
+        r#"SELECT 1 as one FROM revoked_tokens WHERE jti = $1 LIMIT 1"#,
+        jti,
+    )
+    .fetch_optional(db)
+    .await?;
+    Ok(row.is_some())
 }
 
 async fn api_key_lookup(db: &PgPool, token: &str) -> Result<Option<AuthUser>, ApiError> {

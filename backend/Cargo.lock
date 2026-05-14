@@ -270,6 +270,7 @@ dependencies = [
  "chrono",
  "dotenvy",
  "hex",
+ "http-body-util",
  "jsonwebtoken",
  "password-hash 0.6.1",
  "rand 0.8.6",
