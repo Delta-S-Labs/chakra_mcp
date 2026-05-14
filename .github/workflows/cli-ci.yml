@@ -48,6 +48,25 @@ jobs:
           targets: ${{ matrix.target }}
           components: rustfmt, clippy
 
+      # macos-14 hosted-image workaround — see cli-release.yml for the
+      # full note. Some image revs route /usr/local/bin/cargo to
+      # rustup-init; this step forces ~/.cargo/bin onto PATH and runs
+      # `rustup default stable` to break the shim. No-op on healthy
+      # images. Safe on all platforms (Windows ignores ~/.cargo/bin
+      # not existing because of the `-d` guard).
+      - name: Ensure cargo on PATH (macos-14 rustup-init shim workaround)
+        shell: bash
+        run: |
+          set -e
+          if [ -d "$HOME/.cargo/bin" ]; then
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+          rustup default stable 2>/dev/null || true
+          rustup target add "${{ matrix.target }}" 2>/dev/null || true
+          cargo --version
+          rustc --version
+
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: backend
