@@ -42,6 +42,12 @@ yarn-error.log*
 # vercel
 .vercel
 
+# Netlify edge-function build artifact (Netlify's adapter uses Deno
+# under the hood and drops this lockfile during build/dev). The
+# `.netlify/` build output is already ignored via root .gitignore;
+# this catches the top-level lockfile sibling it spits out too.
+deno.lock
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
