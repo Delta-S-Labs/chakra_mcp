@@ -15,6 +15,7 @@ const tabs: Tab[] = [
   { label: "Inbox", href: "/app/inbox" },
   { label: "Audit", href: "/app/audit" },
   { label: "API keys", href: "/app/api-keys" },
+  { label: "Pair agent", href: "/app/pair" },
 ];
 
 const adminTab: Tab = { label: "Admin", href: "/app/admin" };

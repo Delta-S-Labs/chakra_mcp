@@ -14,7 +14,7 @@
     "mcp": "https://relay.chakramcp.com/mcp",
     "oauth_authorization_server": "https://chakramcp.com/.well-known/oauth-authorization-server",
     "oauth_protected_resource": "https://relay.chakramcp.com/.well-known/oauth-protected-resource",
-    "agent_onboarding_url": "https://chakramcp.com/onboard",
+    "agent_onboarding_url": "https://chakramcp.com/app/pair",
     "device_authorization_endpoint": "https://chakramcp.com/oauth/device_authorization",
     "token_endpoint": "https://chakramcp.com/oauth/token"
   },
@@ -25,10 +25,10 @@
     "device_flow": {
       "specification": "RFC 8628",
       "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
-      "verification_uri": "https://chakramcp.com/onboard",
+      "verification_uri": "https://chakramcp.com/app/pair",
       "user_code_format": "XXXX-XXXX",
       "user_code_alphabet": "ABCDEFGHJKMNPQRSTUVWXYZ23456789",
-      "comment": "TV-style pairing. Agents call /oauth/device_authorization with no credentials, get a user_code + verification_uri_complete. The human signs in to chakramcp.com/onboard, types or scans the code, approves. Agent's next /oauth/token poll returns a Bearer JWT bound to a freshly-created pull-mode agent. No API-key copy-paste."
+      "comment": "TV-style pairing. Agents call /oauth/device_authorization with no credentials, get a user_code + verification_uri_complete. The human signs in to chakramcp.com, opens /app/pair, types or scans the code, approves. Agent's next /oauth/token poll returns a Bearer JWT bound to a freshly-created pull-mode agent. No API-key copy-paste."
     }
   },
   "primitives": [

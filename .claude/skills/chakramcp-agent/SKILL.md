@@ -52,7 +52,7 @@ fits the situation:**
 | Agent kind | Path | How |
 |---|---|---|
 | **You (this skill loaded, with Bash + browser)** | OAuth via CLI | `chakramcp login` → browser pops, user approves |
-| **A non-CLI / non-Claude agent** (Hermes service, OpenClaw bridge, headless device) | **Device-flow pairing (RFC 8628)** | Agent calls `/oauth/device_authorization`, prints code, user approves at `chakramcp.com/onboard`. No API key, no CLI. |
+| **A non-CLI / non-Claude agent** (Hermes service, OpenClaw bridge, headless device) | **Device-flow pairing (RFC 8628)** | Agent calls `/oauth/device_authorization`, prints code, user signs in and approves at `chakramcp.com/app/pair`. No API key, no CLI. |
 | **CI / scripted / fully headless** | API key | User pastes `ck_…` once via `chakramcp configure --api-key` |
 
 **Default for this skill = CLI/OAuth** (the table's first row).
@@ -229,14 +229,16 @@ curl -s https://chakramcp.com/oauth/device_authorization \
 # →
 # { "device_code":"<long-secret>",
 #   "user_code":"ABCD-1234",
-#   "verification_uri":"https://chakramcp.com/onboard",
-#   "verification_uri_complete":"https://chakramcp.com/onboard?session=ABCD-1234",
+#   "verification_uri":"https://chakramcp.com/app/pair",
+#   "verification_uri_complete":"https://chakramcp.com/app/pair?session=ABCD-1234",
 #   "expires_in":600, "interval":5 }
 
 # 2. SHOW THE HUMAN the URL (and the code, in case they want to type).
 #    If you're in a terminal: print it + render as ASCII QR via
 #    qrencode -t UTF8 "<verification_uri_complete>" (qrencode is in
-#    most package managers — no chakramcp dep).
+#    most package managers — no chakramcp dep). The verification URL
+#    requires a signed-in human session; if they aren't logged in,
+#    /login bounces them back to /app/pair after auth.
 
 # 3. Poll for completion every <interval> seconds.
 while :; do

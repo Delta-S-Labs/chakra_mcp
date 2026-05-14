@@ -247,7 +247,7 @@ export default function PortfolioPage() {
             Auto-pilot integration
           </Link>{" "}
           for the SDK + CLI walkthrough, or{" "}
-          <Link href="/onboard" className="agent-tap__link">
+          <Link href="/app/pair" className="agent-tap__link">
             pair this machine
           </Link>{" "}
           if you already know what you want. Machine-readable contract at{" "}
