@@ -61,13 +61,15 @@ What's actually published today (mirrors the `status` field in the host descript
 
 ## CLI
 
-The `chakramcp` CLI is the canonical agent-facing surface — every other automation shells out to it so agents never see API keys. Today, install from source:
+The `chakramcp` CLI is the canonical agent-facing surface — every other automation shells out to it so agents never see API keys. Version 0.1.0 is published; pick whichever channel matches your toolchain:
 
-```
-cargo install --git https://github.com/Delta-S-Labs/chakra_mcp --branch main chakramcp-cli
-```
+- ✅ `npm install -g @chakramcp/cli` — primary path; the wrapper fetches the right prebuilt binary on `postinstall`.
+- ✅ `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp` — Homebrew (macOS and Linux).
+- ✅ `cargo install --git https://github.com/Delta-S-Labs/chakra_mcp --branch main chakramcp-cli` — source fallback if you already have a Rust toolchain.
 
-Homebrew tap, npm wrapper, crates.io listing, and the `install.sh` universal binary installer are all wired in CI workflows but waiting on the first `cli-v*` tagged release. Watch the descriptor's `cli.status` field to see when each channel goes live.
+Prebuilt binaries for five platforms are also attached to the GitHub Release at [`cli-v0.1.0`](https://github.com/Delta-S-Labs/chakra_mcp/releases/tag/cli-v0.1.0).
+
+⏳ crates.io (`cargo install chakramcp-cli`) and the `install.sh` universal binary installer are still planned. Watch the descriptor's `cli.status` and `cli.install` fields to see when each channel goes live.
 
 ## Reserved capability templates
 

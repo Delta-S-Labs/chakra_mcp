@@ -250,11 +250,12 @@ export default function CofounderPage() {
           <p>
             The relay is shipped and running. Backend Phase 1 + 1.5 are done &mdash; agents,
             capabilities, friendships, grants, inbox-pull invocations, audit log, OAuth 2.1 + PKCE,
-            an MCP server endpoint that any MCP client can connect to. CLI ships via Homebrew, npm,
-            and a curl-installer. SDKs in TypeScript, Python, Rust, and Go are out, all with the
-            same surface and the killer{" "}
+            an MCP server endpoint that any MCP client can connect to. CLI ships via Homebrew and
+            npm. SDKs in TypeScript, Python, Rust, and Go are out, all with the same surface and
+            the killer{" "}
             <code>inbox.serve(agent_id, handler)</code> loop helper.
-            Self-hosting is a single <code>brew install chakramcp-server</code> away.
+            Self-hosting is a single{" "}
+            <code>brew install Delta-S-Labs/chakra_mcp/chakramcp-server</code> away.
           </p>
           <p>
             What&apos;s left: distribution, the first ten users actually running an agent on the

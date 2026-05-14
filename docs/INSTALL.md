@@ -4,8 +4,8 @@ Two surfaces ship from this repo:
 
 | What               | When you want it                                        | Status today                          |
 |--------------------|---------------------------------------------------------|---------------------------------------|
-| **`chakramcp` CLI** | Talk to a relay from your terminal — manage agents, run an inbox loop, invoke peers. | Build from source via `cargo install --git …`. Homebrew tap, npm wrapper, `crates.io`, and `install.sh` binaries are all **planned** (the workflows exist; we haven't cut a `cli-v*` release yet). |
-| **`chakramcp-server`** | Run a private relay on your own box.                  | Build from source. Production-shaped Docker image via `infra/Dockerfile.thin`. Homebrew formula **planned**. |
+| **`chakramcp` CLI** | Talk to a relay from your terminal — manage agents, run an inbox loop, invoke peers. | ✅ `npm install -g @chakramcp/cli` *or* `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp` (release [`cli-v0.1.0`](https://github.com/Delta-S-Labs/chakra_mcp/releases/tag/cli-v0.1.0); prebuilt binaries on five platforms). `cargo install --git …` is the source fallback. `crates.io` listing and the `install.sh` universal installer are still **planned**. |
+| **`chakramcp-server`** | Run a private relay on your own box.                  | ✅ `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp-server` (Postgres dependency handled automatically). Build from source or production-shaped Docker image via `infra/Dockerfile.thin` both still supported. |
 
 | SDK                | Status today | Install                                  |
 |--------------------|--------------|------------------------------------------|
@@ -25,8 +25,29 @@ Two surfaces ship from this repo:
 
 ## CLI (`chakramcp`)
 
-A single Rust binary. Until we cut the first `cli-v*` release the
-supported install path is `cargo install` from git:
+A single Rust binary, version 0.1.0. Pick whichever channel matches
+your toolchain — the binary is identical either way.
+
+### npm (recommended — published)
+
+```sh
+npm install -g @chakramcp/cli
+# → installs `chakramcp` on your $PATH via a tiny postinstall wrapper
+#   that fetches the right prebuilt binary for your platform.
+```
+
+### Homebrew (published)
+
+```sh
+brew tap Delta-S-Labs/chakra_mcp
+brew install chakramcp
+```
+
+(Or one-shot: `brew install Delta-S-Labs/chakra_mcp/chakramcp`.)
+
+### cargo install from git (source fallback)
+
+If you already have a Rust toolchain and prefer to compile locally:
 
 ```sh
 cargo install --git https://github.com/Delta-S-Labs/chakra_mcp \
@@ -43,23 +64,18 @@ cargo install --git https://github.com/Delta-S-Labs/chakra_mcp \
 
 ### Planned (not yet shipped)
 
-The release workflow already exists for all of these — they kick in
-once we push the first `cli-v*` tag. Tracked in
-`/.well-known/chakramcp.json` so machine consumers know when to flip
-their install commands.
+The release workflow already runs these slots; they will flip from
+**planned** to **published** as soon as the listings go live.
+Tracked in `/.well-known/chakramcp.json` under `cli.status` and
+`cli.install` so machine consumers know when to switch.
 
-- **Homebrew tap** (`brew install chakramcp`): the formula lives at
-  `Formula/chakramcp.rb` in this repo; the tap will be
-  `delta-s-labs/chakramcp`.
-- **npm wrapper** (`npm i -g @chakramcp/cli`): downloads the right
-  prebuilt binary during `postinstall`. Not a Node port.
 - **crates.io** (`cargo install chakramcp-cli`): same crate as the
   one we currently install via `--git`.
 - **`install.sh`** (`curl -fsSL https://chakramcp.com/install.sh | sh`):
   fetches the latest `cli-v*` release tarball and drops the binary
   into `/usr/local/bin` or `~/.local/bin`. The script exists at
-  `frontend/public/install.sh` and is served — it just can't find a
-  release to download until one exists.
+  `frontend/public/install.sh` and is served — wiring it to the
+  prebuilt binaries is the remaining step.
 - **Scoop bucket** (Windows): planned, not yet bootstrapped.
 
 ### Verify
