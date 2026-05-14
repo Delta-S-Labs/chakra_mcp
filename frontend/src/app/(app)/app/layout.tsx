@@ -1,22 +1,25 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { auth } from "@/auth";
-import { signOutAndRedirect } from "@/lib/auth-actions";
 import { AppNav } from "./AppNav";
+import { UserMenu } from "./UserMenu";
 import styles from "./shell.module.css";
 
 /**
  * Layout for `/app` and its children.
  *
- * Renders the app shell - top bar with brandmark, user menu, sign-out
- * button. Children render in <main>.
+ * Renders the app shell - top bar with brandmark, main nav, and a
+ * profile dropdown (UserMenu) that holds API keys / Pair agent /
+ * Audit / Admin plus sign out. Children render in <main>.
  *
  * Middleware ensures we never reach here without a session, but we
  * still defensively check.
  *
- * The sign-out form delegates to `signOutAndRedirect` (see
- * `src/lib/auth-actions.ts`) which does the belt-and-braces cookie
- * purge needed under NextAuth v5 beta + Next.js 16.
+ * Sign-out lives inside UserMenu and delegates to
+ * `signOutAndRedirect` (see `src/lib/auth-actions.ts`) — that helper
+ * does the belt-and-braces cookie purge needed under NextAuth v5 beta
+ * + Next.js 16 (raw `signOut()` leaves cookies behind in some edge
+ * paths).
  */
 export default async function AppShellLayout({ children }: { children: ReactNode }) {
   const session = await auth();
@@ -41,23 +44,14 @@ export default async function AppShellLayout({ children }: { children: ReactNode
             <span className={styles.brandWord}>ChakraMCP</span>
           </Link>
 
-          <AppNav isAdmin={!!is_admin} />
+          <AppNav />
 
-          <div className={styles.user}>
-            {image && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={image} alt="" className={styles.avatar} />
-            )}
-            <div className={styles.userMeta}>
-              <div className={styles.userName}>{name ?? "Signed in"}</div>
-              {email && <div className={styles.userEmail}>{email}</div>}
-            </div>
-            <form action={signOutAndRedirect}>
-              <button type="submit" className={styles.signOut}>
-                Sign out
-              </button>
-            </form>
-          </div>
+          <UserMenu
+            name={name}
+            email={email}
+            image={image}
+            isAdmin={!!is_admin}
+          />
         </header>
 
         <main className={styles.main}>{children}</main>
