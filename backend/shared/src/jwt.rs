@@ -20,6 +20,13 @@ pub struct UserClaims {
     pub iat: i64,
     /// Expiry (unix seconds).
     pub exp: i64,
+    /// Token id — unique UUID v7, used as the primary key of the
+    /// `revoked_tokens` table so a leaked JWT can be killed before
+    /// natural expiry. Legacy tokens minted before this field was
+    /// introduced deserialize with `Uuid::nil()`; the revocation
+    /// check is a no-op for those (no row will ever have a nil jti).
+    #[serde(default)]
+    pub jti: Uuid,
 }
 
 impl UserClaims {
@@ -31,6 +38,7 @@ impl UserClaims {
             is_admin,
             iat: now.timestamp(),
             exp: (now + Duration::hours(ttl_hours)).timestamp(),
+            jti: Uuid::now_v7(),
         }
     }
 }

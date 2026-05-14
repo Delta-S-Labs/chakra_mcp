@@ -10,6 +10,7 @@
 
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
+use chrono::{DateTime, TimeZone, Utc};
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -24,6 +25,14 @@ pub struct AuthUser {
     pub user_id: Uuid,
     pub email: String,
     pub is_admin: bool,
+    /// JWT token id, if this request authenticated via a JWT. `None`
+    /// for API-key requests — they have their own revocation path
+    /// (`api_keys.revoked_at`) and never enter the `revoked_tokens`
+    /// table.
+    pub jti: Option<Uuid>,
+    /// JWT `exp` translated to a `TIMESTAMPTZ`-compatible value, for
+    /// the sign-out handler to mirror into `revoked_tokens.expires_at`.
+    pub token_expires_at: Option<DateTime<Utc>>,
 }
 
 impl FromRequestParts<AppState> for AuthUser {
@@ -45,10 +54,26 @@ impl FromRequestParts<AppState> for AuthUser {
 
         // Try JWT first; if that fails, try API key.
         if let Ok(claims) = jwt::decode_jwt(token, &state.config.jwt_secret) {
+            // Revocation check: one indexed SELECT against revoked_tokens
+            // before we hand the request a trusted identity. If the
+            // token has been revoked (sign-out, admin action, etc.),
+            // treat it as if the signature were invalid.
+            //
+            // Legacy tokens minted before the jti field existed
+            // deserialize with `Uuid::nil()`. No real row can have a
+            // nil jti (it's generated via `Uuid::now_v7()`), so this
+            // query is safely a miss for those.
+            if is_token_revoked(&state.db, claims.jti).await? {
+                return Err(ApiError::Unauthorized);
+            }
+
+            let token_expires_at = Utc.timestamp_opt(claims.exp, 0).single();
             return Ok(AuthUser {
                 user_id: claims.sub,
                 email: claims.email,
                 is_admin: claims.is_admin,
+                jti: Some(claims.jti),
+                token_expires_at,
             });
         }
 
@@ -59,6 +84,21 @@ impl FromRequestParts<AppState> for AuthUser {
 
         Err(ApiError::Unauthorized)
     }
+}
+
+/// Returns true if the given JWT id is recorded in `revoked_tokens`.
+///
+/// A nil jti (legacy token, pre-revocation field) is never matched —
+/// no row can exist with PK = nil — so this is a fast miss for old
+/// tokens still in flight.
+async fn is_token_revoked(db: &PgPool, jti: Uuid) -> Result<bool, ApiError> {
+    let row = sqlx::query!(
+        r#"SELECT 1 as one FROM revoked_tokens WHERE jti = $1 LIMIT 1"#,
+        jti,
+    )
+    .fetch_optional(db)
+    .await?;
+    Ok(row.is_some())
 }
 
 /// Convenience: same as `AuthUser` but rejects non-admins.
@@ -123,6 +163,8 @@ async fn api_key_lookup(db: &PgPool, token: &str) -> Result<Option<AuthUser>, Ap
             user_id: r.user_id,
             email: r.email,
             is_admin: r.is_admin,
+            jti: None,
+            token_expires_at: None,
         }))
     } else {
         Ok(None)

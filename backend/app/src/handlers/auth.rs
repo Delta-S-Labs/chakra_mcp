@@ -18,6 +18,7 @@ use argon2::password_hash::rand_core::OsRng;
 use argon2::password_hash::SaltString;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use axum::extract::State;
+use axum::http::StatusCode;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -25,6 +26,7 @@ use uuid::Uuid;
 use chakramcp_shared::error::{ApiError, ApiResult};
 use chakramcp_shared::jwt;
 
+use crate::auth::AuthUser;
 use crate::handlers::users::{MembershipDto, UserDto};
 use crate::state::AppState;
 
@@ -213,6 +215,49 @@ pub async fn login(
 }
 
 // ─────────────────────────────────────────────────────────
+// POST /v1/auth/signout
+// ─────────────────────────────────────────────────────────
+//
+// Records the caller's JWT in `revoked_tokens` so it can no longer
+// authenticate, even if the plaintext was previously exfiltrated.
+// Clearing the NextAuth cookie alone isn't enough — a stolen JWT
+// lives until its 24h `exp` unless we kill it here.
+//
+// The `AuthUser` extractor already ran the revocation check, so a
+// token can't be used to sign itself out twice (and an already-revoked
+// token gets the same 401 every other request gets).
+//
+// Idempotent on the `jti` PK — repeat calls before the cookie clear
+// commits are a no-op via ON CONFLICT.
+pub async fn signout(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<StatusCode> {
+    // API-key requests don't carry a jti and have their own revocation
+    // path (`api_keys.revoked_at`). Treat them as a no-op rather than
+    // an error so the frontend doesn't have to special-case which
+    // credential the session is using.
+    let (Some(jti), Some(expires_at)) = (user.jti, user.token_expires_at) else {
+        return Ok(StatusCode::NO_CONTENT);
+    };
+
+    sqlx::query!(
+        r#"
+        INSERT INTO revoked_tokens (jti, user_id, expires_at, reason)
+        VALUES ($1, $2, $3, 'user_signout')
+        ON CONFLICT (jti) DO NOTHING
+        "#,
+        jti,
+        user.user_id,
+        expires_at,
+    )
+    .execute(&state.db)
+    .await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ─────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────
 
@@ -273,4 +318,180 @@ fn personal_slug(email: &str) -> String {
         s.push_str("user");
     }
     format!("{}-{}", s, &Uuid::now_v7().simple().to_string()[..8])
+}
+
+#[cfg(test)]
+mod signout_tests {
+    //! End-to-end test of the revocation flow:
+    //!
+    //!   1. Mint a JWT for a fresh user.
+    //!   2. Hit a protected endpoint (`GET /v1/me`) → 200.
+    //!   3. POST /v1/auth/signout with the same JWT → 204.
+    //!   4. Re-hit the protected endpoint with the SAME JWT → 401.
+    //!
+    //! Also covers the idempotency path (sign-out twice → second call
+    //! is the same 401 the protected endpoint gives, since the
+    //! extractor refuses revoked tokens before the handler runs).
+
+    use axum::body::Body;
+    use axum::http::{header, Request, StatusCode};
+    use chakramcp_shared::config::SharedConfig;
+    use chakramcp_shared::jwt;
+    use sqlx::PgPool;
+    use tower::ServiceExt;
+    use uuid::Uuid;
+
+    const TEST_SECRET: &str = "test-secret-test-secret-test-secret-test-secret";
+
+    fn config() -> SharedConfig {
+        SharedConfig {
+            database_url: "ignored".into(),
+            jwt_secret: TEST_SECRET.into(),
+            admin_email: None,
+            survey_enabled: false,
+            frontend_base_url: "http://localhost:3000".into(),
+            app_base_url: "http://localhost:8080".into(),
+            relay_base_url: "http://localhost:8090".into(),
+            discovery_v2_enabled: false,
+            log_filter: "warn".into(),
+        }
+    }
+
+    async fn seed_user_and_token(pool: &PgPool) -> String {
+        let user_id = Uuid::now_v7();
+        let email = format!("{user_id}@t.local");
+        sqlx::query!(
+            r#"INSERT INTO users (id, email, display_name, password_hash)
+               VALUES ($1, $2, 'Test User', 'x')"#,
+            user_id,
+            email,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        let claims = jwt::UserClaims::new(user_id, email, false, 1);
+        jwt::encode_jwt(&claims, TEST_SECRET).unwrap()
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn signout_revokes_token_and_kills_future_requests(pool: PgPool) {
+        let token = seed_user_and_token(&pool).await;
+        let state = crate::AppState::new(pool, config());
+
+        // (1 + 2) /v1/me with a fresh token → 200.
+        let res = crate::router(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/me")
+                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            res.status(),
+            StatusCode::OK,
+            "fresh JWT should be accepted by /v1/me"
+        );
+
+        // (3) /v1/auth/signout → 204.
+        let res = crate::router(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/signout")
+                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            res.status(),
+            StatusCode::NO_CONTENT,
+            "sign-out with a valid token should return 204",
+        );
+
+        // (4) Same JWT against /v1/me → 401. This is the whole point of
+        // the slice — exfiltrated tokens stop working at sign-out.
+        let res = crate::router(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/me")
+                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            res.status(),
+            StatusCode::UNAUTHORIZED,
+            "a revoked JWT must not authenticate further requests",
+        );
+
+        // (5) Re-signing-out should now itself 401 — the extractor's
+        // revocation check fires before the handler runs.
+        let res = crate::router(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/signout")
+                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            res.status(),
+            StatusCode::UNAUTHORIZED,
+            "double sign-out should be rejected by the extractor",
+        );
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn unrevoked_token_continues_to_work(pool: PgPool) {
+        // Sanity check that the revocation check is targeted — a
+        // *different* user's sign-out must not affect this user's
+        // token.
+        let alice_token = seed_user_and_token(&pool).await;
+        let bob_token = seed_user_and_token(&pool).await;
+        let state = crate::AppState::new(pool, config());
+
+        // Bob signs out.
+        let res = crate::router(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/signout")
+                    .header(header::AUTHORIZATION, format!("Bearer {bob_token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NO_CONTENT);
+
+        // Alice is still authenticated.
+        let res = crate::router(state)
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/me")
+                    .header(header::AUTHORIZATION, format!("Bearer {alice_token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            res.status(),
+            StatusCode::OK,
+            "another user's revocation must not invalidate this user's token",
+        );
+    }
 }
