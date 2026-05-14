@@ -1,8 +1,11 @@
 //! `chakramcp` — command-line client for the relay.
 //!
-//! Two auth paths share one Bearer header at the wire:
-//!   * `chakramcp login`               — OAuth 2.1 + PKCE
-//!   * `chakramcp configure --api-key` — paste an `ck_…` API key
+//! Three auth paths share one Bearer header at the wire:
+//!
+//! * `chakramcp login` — OAuth 2.1 + PKCE (same device).
+//! * `chakramcp pair` — device-flow (RFC 8628; user and agent on
+//!   different devices, QR or 8-char code).
+//! * `chakramcp configure --api-key` — paste an `ck_…` API key.
 //!
 //! Output is pretty-printed JSON to stdout so it pipes straight into jq
 //! or your agent code. Human messages go to stderr.
@@ -46,7 +49,14 @@ enum Cmd {
         #[arg(long)]
         network: Option<String>,
     },
-    /// Configure an API key (alternative to `login`).
+    /// Device-flow pair (RFC 8628). Use when this agent and the user
+    /// are on different devices — prints a QR URL, a clickable URL,
+    /// and an 8-char code, then polls until the user approves on
+    /// chakramcp.com/app/pair. No API-key paste, no in-terminal QR
+    /// renderer needed.
+    Pair(commands::pair::Args),
+
+    /// Configure an API key (alternative to `login` / `pair`).
     Configure(commands::configure::Args),
     /// Forget any saved credentials for the active network.
     Logout,
@@ -123,6 +133,7 @@ async fn run() -> Result<()> {
                 ui::closing(&outcome.network, &email);
             }
         }
+        Cmd::Pair(args) => commands::pair::run(args, &mut cfg).await?,
         Cmd::Configure(args) => commands::configure::run(args, &mut cfg).await?,
         Cmd::Logout => {
             if let Some(net) = cfg.active_network_mut() {

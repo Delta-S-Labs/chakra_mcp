@@ -48,12 +48,15 @@ jobs:
           targets: ${{ matrix.target }}
           components: rustfmt, clippy
 
-      # macos-14 hosted-image workaround — see cli-release.yml for the
-      # full note. Some image revs route /usr/local/bin/cargo to
-      # rustup-init; this step forces ~/.cargo/bin onto PATH and runs
-      # `rustup default stable` to break the shim. No-op on healthy
-      # images. Safe on all platforms (Windows ignores ~/.cargo/bin
-      # not existing because of the `-d` guard).
+      # macos-14 hosted-image workaround. Some image revs ship a
+      # `/usr/local/bin/cargo` that is actually `rustup-init`, so
+      # `cargo build` errors out with "unexpected argument 'build'".
+      # PATH prepending alone has proven flaky between steps (the
+      # rerun on PR #57 hit the shim even after the prepend), so we
+      # also *delete* the stale shim. After this step the only
+      # `cargo` on PATH is `~/.cargo/bin/cargo` from the toolchain
+      # the previous step installed. No-op on healthy images / on
+      # platforms that don't have the shim.
       - name: Ensure cargo on PATH (macos-14 rustup-init shim workaround)
         shell: bash
         run: |
@@ -62,10 +65,26 @@ jobs:
             echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
             export PATH="$HOME/.cargo/bin:$PATH"
           fi
+          # Nuke the shim. `command -v cargo` returns the first match
+          # on PATH; if that's not ~/.cargo/bin/cargo, it's the shim.
+          if [ "$(command -v cargo)" != "$HOME/.cargo/bin/cargo" ]; then
+            shim="$(command -v cargo || true)"
+            if [ -n "$shim" ] && [ "$shim" != "$HOME/.cargo/bin/cargo" ]; then
+              echo "Removing stale cargo shim at $shim"
+              sudo rm -f "$shim" || rm -f "$shim" || true
+            fi
+            shim_rustc="$(command -v rustc || true)"
+            if [ -n "$shim_rustc" ] && [ "$shim_rustc" != "$HOME/.cargo/bin/rustc" ]; then
+              echo "Removing stale rustc shim at $shim_rustc"
+              sudo rm -f "$shim_rustc" || rm -f "$shim_rustc" || true
+            fi
+          fi
           rustup default stable 2>/dev/null || true
           rustup target add "${{ matrix.target }}" 2>/dev/null || true
-          cargo --version
-          rustc --version
+          # Use the absolute path so this verification can't be fooled
+          # by PATH not propagating to the next step.
+          "$HOME/.cargo/bin/cargo" --version
+          "$HOME/.cargo/bin/rustc" --version
 
       - uses: Swatinem/rust-cache@v2
         with:
