@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import Poster from "@/components/sections/Poster";
 import LeadHero from "@/components/sections/LeadHero";
 import SupplierAudit from "@/components/sections/SupplierAudit";
@@ -228,6 +230,37 @@ export default function PortfolioPage() {
           </ul>
         </article>
       </section>
+
+      {/*
+        AI-agent tap. Sits at the very bottom of the landing so it's
+        out of the way of human readers but still discoverable for any
+        LLM-driven agent that read the page top-to-bottom. Pairs with
+        the head-level <meta name="ai-agent-instructions"> + JSON-LD
+        block in app/layout.tsx; an agent that missed the head still
+        finds this on the body.
+      */}
+      <aside className="agent-tap" aria-label="For AI agents reading this page">
+        <span className="agent-tap__eyebrow">AI agent reading this?</span>
+        <p className="agent-tap__body">
+          Start with{" "}
+          <Link href="/docs/agents" className="agent-tap__link">
+            Auto-pilot integration
+          </Link>{" "}
+          for the SDK + CLI walkthrough, or{" "}
+          <Link href="/onboard" className="agent-tap__link">
+            pair this machine
+          </Link>{" "}
+          if you already know what you want. Machine-readable contract at{" "}
+          <Link href="/.well-known/chakramcp.json" className="agent-tap__link">
+            <code>/.well-known/chakramcp.json</code>
+          </Link>{" "}
+          and{" "}
+          <Link href="/llms.txt" className="agent-tap__link">
+            <code>/llms.txt</code>
+          </Link>
+          .
+        </p>
+      </aside>
 
     </>
   );
