@@ -28,6 +28,7 @@
   align-items: center;
   gap: 0.5rem;
   text-decoration: none;
+  flex-shrink: 0;
 }
 
 .dot {
@@ -67,6 +68,7 @@
   text-decoration: none;
   border: 1px solid transparent;
   transition: background 180ms, border-color 180ms;
+  white-space: nowrap;
 }
 
 .navLink:hover {
@@ -78,15 +80,33 @@
   border-color: color-mix(in oklab, var(--accent-coral) 35%, var(--line));
 }
 
-/* ─── User cluster ─── */
-.user {
+/* ─── User menu (<details> dropdown) ─── */
+.userMenu {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.userMenu > summary {
+  list-style: none;
+  cursor: pointer;
+}
+.userMenu > summary::-webkit-details-marker { display: none; }
+
+.userTrigger {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.25rem 0.4rem 0.25rem 0.3rem;
+  gap: 0.45rem;
+  padding: 0.22rem 0.55rem 0.22rem 0.3rem;
   border-radius: 999px;
   background: var(--paper-soft);
   border: 1px solid var(--line);
+  transition: border-color 180ms, background 180ms;
+}
+
+.userMenu[open] .userTrigger,
+.userTrigger:hover {
+  border-color: color-mix(in oklab, var(--accent-coral) 40%, var(--line));
+  background: color-mix(in oklab, var(--accent-butter) 16%, var(--paper-soft));
 }
 
 .avatar {
@@ -97,13 +117,29 @@
   object-fit: cover;
 }
 
-.userMeta {
-  display: grid;
-  line-height: 1.1;
-  max-width: 12rem;
+.avatarFallback {
+  width: 1.85rem;
+  height: 1.85rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in oklab, var(--accent-butter) 60%, var(--paper-soft));
+  border: 1px solid color-mix(in oklab, var(--accent-coral) 30%, var(--line));
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 0.78rem;
+  color: var(--ink);
 }
 
-.userName {
+.userTriggerMeta {
+  display: inline-flex;
+  flex-direction: column;
+  line-height: 1.1;
+  max-width: 11rem;
+}
+
+.userTriggerName {
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 0.74rem;
@@ -113,44 +149,108 @@
   text-overflow: ellipsis;
 }
 
-.userEmail {
-  font-family: var(--font-body);
+.userTriggerCaret {
   font-size: 0.7rem;
   color: var(--ink-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1;
 }
 
-.signOut {
-  margin-left: 0.4rem;
-  padding: 0.4rem 0.7rem;
-  border-radius: 999px;
-  border: 1px solid var(--line);
+.userDropdown {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 50;
+  min-width: 14rem;
+  display: grid;
+  padding: 0.35rem;
+  border-radius: 0.85rem;
+  border: 1px solid color-mix(in oklab, var(--line) 70%, var(--ink) 30%);
   background: var(--paper-soft);
+  box-shadow: var(--shadow-lg, 0 12px 30px -10px rgba(0, 0, 0, 0.22));
+}
+
+.userDropdownIdentity {
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.55rem 0.7rem 0.65rem;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 0.25rem;
+}
+
+.userDropdownName {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 0.66rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 0.82rem;
   color: var(--ink);
+  line-height: 1.2;
+}
+
+.userDropdownEmail {
+  font-family: var(--font-body);
+  font-size: 0.74rem;
+  color: var(--ink-muted);
+  line-height: 1.2;
+  word-break: break-all;
+}
+
+.userDropdownSection {
+  display: grid;
+  gap: 0.05rem;
+  padding: 0.15rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.userDropdownSection:last-child {
+  border-bottom: none;
+}
+
+.userDropdownItem {
+  display: block;
+  padding: 0.45rem 0.7rem;
+  border-radius: 0.45rem;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.74rem;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  text-decoration: none;
+  transition: background 140ms;
+}
+
+.userDropdownItem:hover {
+  background: color-mix(in oklab, var(--accent-butter) 38%, transparent);
+}
+
+.userDropdownSignOut {
+  width: 100%;
+  text-align: left;
+  padding: 0.45rem 0.7rem;
+  border-radius: 0.45rem;
+  border: none;
+  background: transparent;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.74rem;
+  letter-spacing: 0.04em;
+  color: var(--accent-coral);
   cursor: pointer;
-  transition: border-color 180ms, background 180ms;
+  transition: background 140ms;
 }
 
-.signOut:hover {
-  border-color: var(--accent-coral);
-  background: color-mix(in oklab, var(--accent-coral) 10%, var(--paper-soft));
+.userDropdownSignOut:hover {
+  background: color-mix(in oklab, var(--accent-coral) 12%, transparent);
 }
 
-/* ─── Main ─── */
 .main {
   display: grid;
   gap: 2rem;
 }
 
+@media (max-width: 920px) {
+  .userTriggerMeta { display: none; }
+}
+
 @media (max-width: 760px) {
   .header { flex-wrap: wrap; }
   .nav { order: 3; flex-basis: 100%; justify-content: center; }
-  .userMeta { display: none; }
 }

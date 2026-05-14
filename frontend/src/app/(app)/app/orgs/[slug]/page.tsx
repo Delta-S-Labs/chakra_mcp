@@ -1,6 +1,8 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@/auth";
 import { getOrg, listMembers } from "@/lib/api";
+import { listMyAgents, type Agent } from "@/lib/relay";
 import { InviteForm } from "./InviteForm";
 import styles from "../orgs.module.css";
 
@@ -22,6 +24,21 @@ export default async function OrgDetailsPage({
     notFound();
   }
 
+  // Agents under this org. The relay's /v1/agents lists every agent
+  // across all the accounts the caller is a member of, so we filter
+  // client-side by account_id. If the relay is down we still render
+  // the members section - just without agents.
+  let allMyAgents: Agent[] = [];
+  let relayError: string | null = null;
+  try {
+    allMyAgents = await listMyAgents(token);
+  } catch (err) {
+    relayError = err instanceof Error ? err.message : "Relay unavailable.";
+  }
+  const agents = allMyAgents
+    .filter((a) => a.account_id === org.id)
+    .sort((x, y) => x.display_name.localeCompare(y.display_name));
+
   const canInvite = org.role === "owner" || org.role === "admin";
   const myEmail = session?.user?.email;
 
@@ -36,6 +53,60 @@ export default async function OrgDetailsPage({
           <code>{org.slug}</code> · you are a <strong>{org.role}</strong>.
         </p>
       </header>
+
+      <section>
+        <h2 className={styles.sectionTitle}>
+          Agents <span className={styles.count}>{agents.length}</span>
+          <Link href="/app/agents" className={styles.viewAll}>
+            register →
+          </Link>
+        </h2>
+
+        {relayError && (
+          <p className={styles.empty}>
+            Couldn&apos;t reach the relay: {relayError}
+          </p>
+        )}
+
+        {!relayError && agents.length === 0 && (
+          <p className={styles.empty}>
+            No agents registered under <strong>{org.display_name}</strong> yet.
+            Head over to <Link href="/app/agents">Agents</Link> to register one.
+          </p>
+        )}
+
+        {agents.length > 0 && (
+          <ul className={styles.list}>
+            {agents.map((a) => (
+              <li key={a.id} className={styles.row}>
+                <div>
+                  <div className={styles.rowName}>
+                    {a.display_name}{" "}
+                    <span
+                      className={`${styles.visibilityBadge} ${
+                        a.visibility === "network" ? styles.visibilityBadgeOn : ""
+                      }`}
+                    >
+                      {a.visibility}
+                    </span>
+                  </div>
+                  <div className={styles.rowMeta}>
+                    <code>
+                      {a.account_slug}/{a.slug}
+                    </code>{" "}
+                    · {a.capability_count}{" "}
+                    {a.capability_count === 1 ? "capability" : "capabilities"}
+                    {a.description ? ` · ${a.description}` : ""}
+                  </div>
+                </div>
+                <Link className={styles.openLink} href={`/app/agents/${a.id}`}>
+                  Open →
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <section>
         <h2 className={styles.sectionTitle}>

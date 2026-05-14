@@ -321,3 +321,171 @@
   .fields,
   .capFields { grid-template-columns: 1fr; }
 }
+
+/* ─── "Just created" confirmation panel ─── */
+.created {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem 1.1rem 1.1rem;
+  border: 2px solid color-mix(in oklab, var(--accent-coral) 55%, var(--line));
+  border-radius: 0.95rem;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--accent-butter) 30%, var(--paper-soft)), var(--paper-soft));
+}
+
+.createdHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.createdEyebrow {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 0.66rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent-coral);
+  margin-bottom: 0.2rem;
+}
+
+.createdTitle {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.35rem;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin: 0 0 0.3rem;
+}
+
+.createdLede {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 0.92rem;
+  color: var(--ink-soft);
+  max-width: 52ch;
+}
+
+.copyField {
+  display: grid;
+  gap: 0.32rem;
+}
+
+.copyFieldLabel {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.copyFieldRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.copyFieldValue,
+.copyFieldValueMono {
+  flex: 1;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.55rem;
+  background: var(--paper);
+  font-size: 0.9rem;
+  color: var(--ink);
+  word-break: break-all;
+}
+
+.copyFieldValueMono {
+  font-family: var(--font-mono);
+  font-size: 0.86rem;
+}
+
+.copyBtn {
+  padding: 0.5rem 0.9rem;
+  border-radius: 0.55rem;
+  background: var(--accent-coral);
+  color: var(--paper-soft);
+  border: 1px solid color-mix(in oklab, var(--accent-coral) 70%, var(--ink));
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.copyBtnGhost {
+  padding: 0.32rem 0.7rem;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.copyBtnGhost:hover {
+  border-color: color-mix(in oklab, var(--accent-coral) 50%, var(--line));
+  color: var(--accent-coral);
+}
+
+.createdSnippets {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.copyBlock {
+  display: grid;
+  gap: 0.32rem;
+  padding: 0.65rem 0.8rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  background: var(--paper);
+}
+
+.copyBlockHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.copyBlockPre {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  margin: 0;
+  padding: 0.5rem 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ink);
+}
+
+.createdDismiss {
+  justify-self: flex-end;
+  background: transparent;
+  border: none;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  cursor: pointer;
+  padding: 0.3rem 0.5rem;
+}
+
+.createdDismiss:hover { color: var(--ink); }
+
+@media (max-width: 720px) {
+  .copyFieldRow { flex-direction: column; align-items: stretch; }
+}

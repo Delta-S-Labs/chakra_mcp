@@ -57,6 +57,17 @@
   gap: 0.6rem;
 }
 
+.viewAll {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-coral);
+  text-decoration: none;
+  margin-left: auto;
+}
+
 .count {
   font-family: var(--font-display);
   font-weight: 700;
@@ -73,7 +84,14 @@
   margin: 0;
 }
 
-/* ─── Create form ─── */
+.empty a {
+  color: var(--accent-coral);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.empty a:hover { text-decoration: underline; }
+
 .createForm {
   padding: 1.2rem;
   border: 1px solid var(--line);
@@ -141,7 +159,6 @@
 }
 .create:disabled { opacity: 0.55; cursor: not-allowed; }
 
-/* ─── Lists ─── */
 .list {
   list-style: none;
   padding: 0;
@@ -223,7 +240,6 @@
   color: var(--ink);
 }
 
-/* ─── Invite panel ─── */
 .invitePanel {
   display: grid;
   gap: 0.85rem;
@@ -282,7 +298,145 @@
   cursor: pointer;
 }
 
+/* ─── Account cards (with embedded agents list) ─── */
+.cardList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+  gap: 0.85rem;
+}
+
+.card {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem 1.1rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.95rem;
+  background: var(--paper-soft);
+}
+
+.cardHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.85rem;
+}
+
+.cardAgents {
+  display: grid;
+  gap: 0.45rem;
+  padding-top: 0.6rem;
+  border-top: 1px dashed var(--line);
+}
+
+.cardAgentsHead {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.subEmpty {
+  font-family: var(--font-body);
+  font-size: 0.86rem;
+  color: var(--ink-muted);
+  margin: 0;
+}
+
+.subEmpty a {
+  color: var(--accent-coral);
+  text-decoration: none;
+  font-weight: 600;
+}
+.subEmpty a:hover { text-decoration: underline; }
+
+.agentList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.agentRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 0.55rem;
+  background: color-mix(in oklab, var(--paper) 92%, var(--paper-warm) 8%);
+}
+
+.agentLink {
+  display: grid;
+  gap: 0.18rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.agentLink:hover .agentName {
+  color: var(--accent-coral);
+}
+
+.agentName {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--ink);
+  transition: color 140ms;
+}
+
+.agentSlug {
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  color: var(--ink-muted);
+}
+
+.agentMeta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.agentMetaCount {
+  font-family: var(--font-body);
+  font-size: 0.76rem;
+  color: var(--ink-muted);
+}
+
+.visibilityBadge {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.16rem 0.5rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--paper-warm) 36%, var(--paper-soft));
+  border: 1px solid var(--line);
+  color: var(--ink-muted);
+}
+
+.visibilityBadgeOn {
+  background: color-mix(in oklab, var(--accent-coral) 22%, var(--paper-soft));
+  border-color: color-mix(in oklab, var(--accent-coral) 60%, var(--line));
+  color: oklch(38% 0.14 28);
+}
+
 @media (max-width: 720px) {
   .fields,
   .inviteForm { grid-template-columns: 1fr; }
+  .agentRow { flex-wrap: wrap; }
+  .agentMeta { justify-content: flex-start; }
 }
