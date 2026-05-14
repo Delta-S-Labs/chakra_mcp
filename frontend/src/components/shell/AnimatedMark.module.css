@@ -1,0 +1,214 @@
+/*
+ * AnimatedMark + Stamp styles.
+ *
+ * The composite mark shows hub → arc → chakra. Animations narrate the
+ * traffic: spokes flow inward, the hub pulses, a bright dot rides the
+ * arc to the chakra, the chakra orbit rotates, the chakra core flashes
+ * on arrival.
+ *
+ * Every animated element is paused/cleared inside the
+ * prefers-reduced-motion override at the bottom — the static SVG that
+ * remains is byte-equivalent to public/brand/mark-composite.svg.
+ */
+
+.wrap {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+}
+
+.svg {
+  width: 100%;
+  height: auto;
+  max-width: 100%;
+  display: block;
+  overflow: visible;
+}
+
+/* --- Satellites: staggered glow pulse --- */
+.satellite {
+  transform-box: fill-box;
+  transform-origin: center;
+  filter: drop-shadow(0 0 6px color-mix(in oklab, var(--accent-lime) 55%, transparent));
+  animation: satellitePulse 2.5s var(--ease-gentle, ease-in-out) infinite;
+}
+
+.satelliteButter {
+  filter: drop-shadow(0 0 6px color-mix(in oklab, var(--accent-butter) 65%, transparent));
+}
+
+.satellite-0 { animation-delay: 0s; }
+.satellite-1 { animation-delay: 0.32s; }
+.satellite-2 { animation-delay: 0.64s; }
+.satellite-3 { animation-delay: 0.96s; }
+.satellite-4 { animation-delay: 1.28s; }
+.satellite-5 { animation-delay: 1.6s; }
+.satellite-6 { animation-delay: 1.92s; }
+
+@keyframes satellitePulse {
+  0%, 100% {
+    opacity: 0.4;
+    filter: drop-shadow(0 0 3px color-mix(in oklab, var(--accent-lime) 40%, transparent));
+  }
+  50% {
+    opacity: 0.95;
+    filter: drop-shadow(0 0 12px color-mix(in oklab, var(--accent-lime) 75%, transparent));
+  }
+}
+
+/* --- Spokes: dashes flow inward toward the hub --- */
+.spokes {
+  /* dasharray on the original SVG is "10 14"; one period = 24 units.
+     Animating from offset 24 → 0 moves dashes by one period, which
+     in SVG coordinate space looks like inward motion toward (0,0). */
+  animation: spokeFlow 4s linear infinite;
+}
+
+@keyframes spokeFlow {
+  from { stroke-dashoffset: 24; }
+  to   { stroke-dashoffset: 0; }
+}
+
+/* --- Hub core: gentle glow pulse, brighter flash on arc-pulse departure --- */
+.hubCore {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: hubPulse 3.4s var(--ease-gentle, ease-in-out) infinite;
+}
+
+@keyframes hubPulse {
+  /* Synced to arcDot (3.4s). Hub flashes when the dot departs (0%),
+     dims as the dot travels, recovers as the cycle restarts. */
+  0% {
+    opacity: 1;
+    filter: drop-shadow(0 0 18px color-mix(in oklab, var(--accent-coral) 85%, transparent));
+  }
+  18% {
+    opacity: 0.92;
+    filter: drop-shadow(0 0 10px color-mix(in oklab, var(--accent-coral) 60%, transparent));
+  }
+  60% {
+    opacity: 0.86;
+    filter: drop-shadow(0 0 6px color-mix(in oklab, var(--accent-coral) 40%, transparent));
+  }
+  100% {
+    opacity: 1;
+    filter: drop-shadow(0 0 18px color-mix(in oklab, var(--accent-coral) 85%, transparent));
+  }
+}
+
+/* --- Arc-traveling dot --- */
+/* The dot is driven by <animateMotion> (declarative SMIL inside the
+   SVG) — see AnimatedMark.tsx. We also give it a soft glow here. */
+.arcDot {
+  filter: drop-shadow(0 0 8px color-mix(in oklab, var(--accent-coral) 90%, transparent));
+}
+
+/* --- Chakra outer halo: opacity pulse synced with arc-dot arrival --- */
+.chakraHalo {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: haloPulse 3.4s var(--ease-gentle, ease-in-out) infinite;
+}
+
+@keyframes haloPulse {
+  /* Arc-dot arrives near 95% of cycle; halo brightens then. */
+  0%, 70% { opacity: 0.30; }
+  90%     { opacity: 0.55; }
+  98%     { opacity: 0.65; }
+  100%    { opacity: 0.30; }
+}
+
+/* --- Chakra dashed orbit: slow rotation --- */
+.chakraOrbit {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: orbitSpin 16s linear infinite;
+}
+
+@keyframes orbitSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* --- Chakra core: glow pulse on arrival, same cadence as arc-dot --- */
+.chakraCore {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: chakraCorePulse 3.4s var(--ease-gentle, ease-in-out) infinite;
+}
+
+@keyframes chakraCorePulse {
+  0%, 70% {
+    opacity: 0.88;
+    filter: drop-shadow(0 0 6px color-mix(in oklab, var(--accent-coral) 50%, transparent));
+  }
+  90% {
+    opacity: 1;
+    filter: drop-shadow(0 0 16px color-mix(in oklab, var(--accent-coral) 80%, transparent));
+  }
+  100% {
+    opacity: 0.88;
+    filter: drop-shadow(0 0 6px color-mix(in oklab, var(--accent-coral) 50%, transparent));
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Stamp — passport-style rubber stamp for "PAPERWORK, NOT MAGIC"     */
+/* ------------------------------------------------------------------ */
+
+.stamp {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.55rem 1.05rem 0.5rem;
+  border: 2.5px solid var(--accent-coral);
+  border-radius: 0.55rem;
+  background: color-mix(in oklab, var(--paper-warm) 40%, transparent);
+  transform: rotate(-8deg);
+  color: var(--accent-coral);
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 0.74rem;
+  letter-spacing: 0.13em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+  /* Distressed edge — feTurbulence + feDisplacementMap filter defined
+     inline in the SVG below the stamp. The filter id is intentionally
+     stable so the CSS can reference it. */
+  filter: url(#stampGrunge);
+  /* A faint inner ring on top of the displaced border sells "ink soaked
+     paper" without needing a second border element. */
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--accent-coral) 40%, transparent),
+    0 1px 0 color-mix(in oklab, var(--accent-coral) 18%, transparent);
+}
+
+/* ------------------------------------------------------------------ */
+/* Reduced motion: freeze everything, restore static appearance        */
+/* ------------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  .satellite,
+  .satelliteButter,
+  .spokes,
+  .hubCore,
+  .chakraHalo,
+  .chakraOrbit,
+  .chakraCore {
+    animation: none !important;
+  }
+  /* Reset filters/opacities back to the static SVG's published values. */
+  .satellite,
+  .satelliteButter { filter: none; opacity: 1; }
+  .hubCore { filter: none; opacity: 1; }
+  .chakraHalo { opacity: 0.30; }
+  .chakraCore { filter: none; opacity: 1; }
+  .arcDot { display: none; }
+}

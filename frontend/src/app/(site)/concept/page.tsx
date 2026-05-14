@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import RelayDiagram from "@/components/shell/RelayDiagram";
+import AnimatedMark, { Stamp } from "@/components/shell/AnimatedMark";
 import styles from "./concept.module.css";
 
 export const metadata: Metadata = {
@@ -401,8 +401,8 @@ export default function ConceptPage() {
           </div>
         </div>
         <aside className="hero-board reveal">
-          <div className="note-badge">Paperwork, not magic</div>
-          <RelayDiagram />
+          <Stamp>Paperwork, not magic</Stamp>
+          <AnimatedMark />
         </aside>
       </section>
 
