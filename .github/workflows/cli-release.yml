@@ -79,6 +79,31 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      # Workaround for the macos-14 hosted-image bug that has bitten
+      # this repo on PRs #23, #31, #33, #40, #41, #42, #43, #44 in the
+      # last 24h: some image revs route `/usr/local/bin/cargo` to
+      # `rustup-init` instead of the toolchain's real cargo binary,
+      # so the next step fails with "rustup-init: unexpected argument
+      # 'build' found". Force cargo's true home onto PATH and rerun
+      # `rustup default stable` to break the shim.
+      #
+      # Safe on all platforms — on a healthy image this is a no-op
+      # (PATH already prefers ~/.cargo/bin, rustup default is a noop).
+      # On a broken image it deterministically recovers without
+      # waiting for the next GitHub-hosted image refresh.
+      - name: Ensure cargo on PATH (macos-14 rustup-init shim workaround)
+        shell: bash
+        run: |
+          set -e
+          if [ -d "$HOME/.cargo/bin" ]; then
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+          rustup default stable 2>/dev/null || true
+          rustup target add "${{ matrix.target }}" 2>/dev/null || true
+          cargo --version
+          rustc --version
+
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: backend
