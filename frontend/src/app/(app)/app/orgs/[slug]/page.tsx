@@ -4,6 +4,8 @@ import { auth } from "@/auth";
 import { getOrg, listMembers } from "@/lib/api";
 import { listMyAgents, type Agent } from "@/lib/relay";
 import { InviteForm } from "./InviteForm";
+import { MoveAgentButton } from "./MoveAgentButton";
+import { DeleteOrgButton } from "./DeleteOrgButton";
 import styles from "../orgs.module.css";
 
 export default async function OrgDetailsPage({
@@ -99,9 +101,18 @@ export default async function OrgDetailsPage({
                     {a.description ? ` · ${a.description}` : ""}
                   </div>
                 </div>
-                <Link className={styles.openLink} href={`/app/agents/${a.id}`}>
-                  Open →
-                </Link>
+                <div className={styles.rowActions}>
+                  <MoveAgentButton
+                    token={token}
+                    agentId={a.id}
+                    agentDisplayName={a.display_name}
+                    agentSlug={a.slug}
+                    fromAccountSlug={a.account_slug}
+                  />
+                  <Link className={styles.openLink} href={`/app/agents/${a.id}`}>
+                    Open →
+                  </Link>
+                </div>
               </li>
             ))}
           </ul>
@@ -136,6 +147,15 @@ export default async function OrgDetailsPage({
 
       {canInvite && org.account_type === "organization" && (
         <InviteForm slug={org.slug} token={token} />
+      )}
+
+      {org.account_type === "organization" && org.role === "owner" && (
+        <DeleteOrgButton
+          token={token}
+          slug={org.slug}
+          displayName={org.display_name}
+          agentCount={agents.length}
+        />
       )}
     </div>
   );

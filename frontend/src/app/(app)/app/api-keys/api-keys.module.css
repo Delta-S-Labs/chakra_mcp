@@ -192,7 +192,8 @@
   color: var(--ink);
 }
 
-.revoke {
+.revoke,
+.rotate {
   padding: 0.4rem 0.8rem;
   border-radius: 999px;
   border: 1px solid var(--line);
@@ -209,8 +210,47 @@
   border-color: var(--accent-coral);
   color: oklch(38% 0.14 28);
 }
+.rotate:hover {
+  border-color: color-mix(in oklab, oklch(75% 0.18 145) 60%, var(--line));
+  color: oklch(35% 0.13 145);
+}
+.rotate:disabled,
+.revoke:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.rowLink {
+  flex: 1 1 auto;
+  display: block;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.rowLink:hover .rowName {
+  color: var(--accent-coral);
+}
+
+.rowActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.openLink {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-coral);
+  text-decoration: none;
+  padding: 0.4rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--accent-coral) 50%, var(--line));
+}
 
 @media (max-width: 720px) {
   .form { grid-template-columns: 1fr; }
   .row { flex-direction: column; align-items: stretch; }
+  .rowActions { justify-content: flex-end; }
 }

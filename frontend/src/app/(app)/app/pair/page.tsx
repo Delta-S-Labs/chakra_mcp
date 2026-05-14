@@ -1,8 +1,14 @@
 import type { Metadata } from "next";
 import { auth } from "@/auth";
-import { getDeviceSession, ApiClientError } from "@/lib/api";
+import {
+  ApiClientError,
+  getDeviceSession,
+  listPairings,
+  type Pairing,
+} from "@/lib/api";
 import { CodeEntryForm } from "./CodeEntryForm";
 import { ConsentForm } from "./ConsentForm";
+import { PairingsList } from "./PairingsList";
 import styles from "./pair.module.css";
 
 export const metadata: Metadata = {
@@ -41,9 +47,26 @@ export default async function PairPage({
   const authSession = await auth();
   const token = authSession?.backendToken;
 
-  // No code in the URL → show the code-entry form.
+  // No code in the URL → show the code-entry form + the paired
+  // agents list.
   if (!session) {
-    return <Landing />;
+    let pairings: Pairing[] = [];
+    let pairingsError: string | null = null;
+    if (token) {
+      try {
+        pairings = await listPairings(token);
+      } catch (err) {
+        pairingsError =
+          err instanceof Error ? err.message : "Couldn't load paired agents.";
+      }
+    }
+    return (
+      <Landing
+        pairings={pairings}
+        pairingsError={pairingsError}
+        token={token ?? null}
+      />
+    );
   }
 
   // Normalise the code: uppercase, strip whitespace. Accept both
@@ -143,7 +166,17 @@ export default async function PairPage({
   );
 }
 
-function Landing({ badCode = false }: { badCode?: boolean }) {
+function Landing({
+  badCode = false,
+  pairings = [],
+  pairingsError = null,
+  token = null,
+}: {
+  badCode?: boolean;
+  pairings?: Pairing[];
+  pairingsError?: string | null;
+  token?: string | null;
+}) {
   return (
     <div className={styles.page}>
       <header className={styles.head}>
@@ -157,7 +190,7 @@ function Landing({ badCode = false }: { badCode?: boolean }) {
         </p>
       </header>
 
-      <div className={styles.card}>
+      <div className={styles.codeCard}>
         <h2 className={styles.cardTitle}>Enter your pairing code</h2>
         {badCode && (
           <div className={styles.error}>
@@ -166,13 +199,33 @@ function Landing({ badCode = false }: { badCode?: boolean }) {
           </div>
         )}
         <CodeEntryForm />
-        <p className={styles.body}>
+        <p className={styles.codeCardFoot}>
           Don&apos;t have a code yet?{" "}
           <a href="/docs/agents">Set up a new agent</a> — the SDK&apos;s{" "}
           <code>pair()</code> helper prints the code (plus a clickable URL
           and an ASCII QR) the first time your agent starts.
         </p>
       </div>
+
+      <section className={styles.pairSection}>
+        <div className={styles.pairHead}>
+          <h2 className={styles.sectionTitle}>Paired agents</h2>
+          <details className={styles.pairHint}>
+            <summary aria-label="What appears in this list?">?</summary>
+            <div className={styles.pairHintBody}>
+              This list mixes every credential pathway you have on file:
+              device-flow pairings (QR or code), browser OAuth sessions, and
+              API keys. They all revoke through the same surface.
+            </div>
+          </details>
+        </div>
+
+        {pairingsError && <p className={styles.error}>{pairingsError}</p>}
+
+        {!pairingsError && token && (
+          <PairingsList initial={pairings} token={token} />
+        )}
+      </section>
     </div>
   );
 }

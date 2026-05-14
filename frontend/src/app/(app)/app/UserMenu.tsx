@@ -62,6 +62,9 @@ export function UserMenu({
         </div>
 
         <div className={styles.userDropdownSection}>
+          <Link className={styles.userDropdownItem} href="/app/account">
+            My account
+          </Link>
           <Link className={styles.userDropdownItem} href="/app/api-keys">
             API keys
           </Link>

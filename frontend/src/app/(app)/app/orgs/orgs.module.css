@@ -213,6 +213,14 @@
   border: 1px solid color-mix(in oklab, var(--accent-coral) 50%, var(--line));
 }
 
+.rowActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .memberLeft {
   display: flex;
   align-items: center;
