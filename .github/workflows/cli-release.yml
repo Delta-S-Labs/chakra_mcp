@@ -261,7 +261,16 @@ jobs:
           set -e
           git config user.name  'chakramcp-release-bot'
           git config user.email 'release-bot@users.noreply.github.com'
-          if git diff --quiet -- Formula/; then
+          # Stage the rendered files first. `git diff -- Formula/` (no
+          # `--cached`) does NOT see untracked paths, so on the *first*
+          # release — when `Formula/` doesn't exist on main — the diff
+          # check incorrectly reports "nothing to do" and the step
+          # exits without opening a PR. Caught on cli-v0.1.0 (the
+          # release succeeded otherwise; the formula PR just never
+          # opened, and the docs claimed `brew install chakramcp`
+          # would work).
+          git add Formula/chakramcp.rb Formula/chakramcp-server.rb
+          if git diff --cached --quiet -- Formula/; then
             echo "Formulas already up to date for ${VERSION}; nothing to do."
             exit 0
           fi
