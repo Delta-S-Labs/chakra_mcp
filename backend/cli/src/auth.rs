@@ -115,14 +115,14 @@ pub async fn login(cfg: &mut CliConfig, network_name: &str) -> Result<String> {
 
     // PKCE pair + state.
     let mut verifier_bytes = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut verifier_bytes);
+    rand::rng().fill_bytes(&mut verifier_bytes);
     let verifier = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(verifier_bytes);
     let mut h = Sha256::new();
     h.update(verifier.as_bytes());
     let challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(h.finalize());
 
     let mut state_bytes = [0u8; 16];
-    rand::thread_rng().fill_bytes(&mut state_bytes);
+    rand::rng().fill_bytes(&mut state_bytes);
     let state = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(state_bytes);
 
     let auth_url = {
