@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT k.id as key_id, u.id as user_id, u.email, u.is_admin\n        FROM api_keys k\n        JOIN users u ON u.id = k.user_id\n        WHERE k.key_hash = $1\n          AND k.revoked_at IS NULL\n          AND (k.expires_at IS NULL OR k.expires_at > now())\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "key_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "email",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "is_admin",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "a3acca36f55180a84c3e0c3c973babc947241ce31a45887229b6a5745264f57c"
+}

@@ -24,6 +24,12 @@ pub struct Authorized {
     /// True if the target is in push mode (proxy). False = pull mode
     /// (park in inbox bridge).
     pub target_is_push: bool,
+    /// The `api_keys.id` that authorised this call, if the caller
+    /// authenticated with a `ck_` token. `None` for user-JWT callers
+    /// (web session / OAuth / device flow). Recorded on the
+    /// `relay_invocations` row so the per-key usage dashboard at
+    /// `/v1/api-keys/{id}/usage` can attribute traffic.
+    pub api_key_id: Option<Uuid>,
 }
 
 /// One of the structured failure modes. Each maps to a JSON-RPC error

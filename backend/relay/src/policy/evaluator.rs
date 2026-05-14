@@ -242,12 +242,17 @@ pub async fn evaluate(
         capability_id,
         grant_id,
         target_is_push,
+        api_key_id: caller.api_key_id,
     })
 }
 
 /// Internal: who the bearer resolves to.
 struct CallerIdentity {
     user_id: Uuid,
+    /// `api_keys.id` if the bearer was a `ck_` token, else `None`
+    /// (JWT path). Propagated into `Authorized` so the per-key usage
+    /// dashboard can attribute proxied A2A traffic.
+    api_key_id: Option<Uuid>,
 }
 
 /// Resolve `(caller_agent_id)` for a GetTask call. Reuses the same
@@ -327,6 +332,10 @@ async fn resolve_bearer(
         }
         return Ok(Some(CallerIdentity {
             user_id: claims.sub,
+            // JWTs are issued by the user sign-in path and do not
+            // belong to an api_keys row — leave NULL so the per-key
+            // dashboard counts only actual ck_ traffic.
+            api_key_id: None,
         }));
     }
     // Then API key.
@@ -336,7 +345,7 @@ async fn resolve_bearer(
         let key_hash = hex::encode(hasher.finalize());
         let row = sqlx::query!(
             r#"
-            SELECT k.user_id
+            SELECT k.id, k.user_id
               FROM api_keys k
              WHERE k.key_hash = $1
                AND k.revoked_at IS NULL
@@ -350,6 +359,7 @@ async fn resolve_bearer(
         if let Some(row) = row {
             return Ok(Some(CallerIdentity {
                 user_id: row.user_id,
+                api_key_id: Some(row.id),
             }));
         }
     }

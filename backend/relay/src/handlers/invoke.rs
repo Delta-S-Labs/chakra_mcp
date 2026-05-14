@@ -204,6 +204,7 @@ async fn record_terminal(
     elapsed_ms: i32,
     error_message: Option<&str>,
     input_preview: Option<&Value>,
+    api_key_id: Option<Uuid>,
 ) -> Result<Uuid, ApiError> {
     let id = Uuid::now_v7();
     sqlx::query!(
@@ -211,8 +212,8 @@ async fn record_terminal(
         INSERT INTO relay_invocations
             (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
              capability_name, invoked_by_user_id, status, elapsed_ms,
-             error_message, input_preview)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             error_message, input_preview, api_key_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         "#,
         id,
         grant_id,
@@ -225,6 +226,7 @@ async fn record_terminal(
         elapsed_ms,
         error_message,
         input_preview.cloned().unwrap_or(Value::Null),
+        api_key_id,
     )
     .execute(db)
     .await?;
@@ -274,6 +276,7 @@ pub async fn invoke(
             0,
             Some("grantee_agent_id does not match the grant"),
             Some(&input_preview),
+            user.api_key_id,
         )
         .await?;
         return Ok((
@@ -309,6 +312,7 @@ pub async fn invoke(
             0,
             Some(&msg),
             Some(&input_preview),
+            user.api_key_id,
         )
         .await?;
         return Ok((
@@ -335,6 +339,7 @@ pub async fn invoke(
                 0,
                 Some(&msg),
                 Some(&input_preview),
+                user.api_key_id,
             )
             .await?;
             return Ok((
@@ -349,13 +354,20 @@ pub async fn invoke(
     }
 
     // Enqueue the invocation. Granter side will pull it from /v1/inbox.
+    //
+    // `api_key_id` attributes the call to the **caller** — the credential
+    // that authed *this* POST /v1/invoke request. The result-post on the
+    // other side reuses this row (UPDATE only), so this is the only
+    // place per invocation where the caller's credential is recorded.
+    // NULL on the JWT path (web session / OAuth / device flow).
     let id = Uuid::now_v7();
     sqlx::query!(
         r#"
         INSERT INTO relay_invocations
             (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
-             capability_name, invoked_by_user_id, status, input_preview)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8)
+             capability_name, invoked_by_user_id, status, input_preview,
+             api_key_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9)
         "#,
         id,
         row.grant_id,
@@ -365,6 +377,7 @@ pub async fn invoke(
         row.capability_name,
         user.user_id,
         input_preview,
+        user.api_key_id,
     )
     .execute(&state.db)
     .await?;
@@ -1155,6 +1168,115 @@ mod legacy_v01_contract_tests {
             f.capability_id,
             f.grantee_agent_id,
             invocation_id,
+        );
+    }
+
+    /// API-key usage attribution: when the caller invokes through
+    /// `POST /v1/invoke` with a `ck_` Bearer, the resulting
+    /// `relay_invocations` row's `api_key_id` matches that key's row in
+    /// `api_keys`. This is what the per-key dashboard at
+    /// `/v1/api-keys/{id}/usage` joins on; if it ever drifts to NULL
+    /// the charts go to zero (the bug this regression test guards).
+    #[sqlx::test(migrations = "../migrations")]
+    async fn invoke_records_api_key_id(pool: PgPool) {
+        let f = seed_demo(&pool).await;
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+
+        // The api_keys.id corresponding to the ck_ token from seed_demo.
+        let mut h = Sha256::new();
+        h.update(f.caller_token.as_bytes());
+        let kh = hex::encode(h.finalize());
+        let expected_key_id: Uuid =
+            sqlx::query_scalar!(r#"SELECT id FROM api_keys WHERE key_hash = $1"#, kh)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/invoke")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, format!("Bearer {}", f.caller_token))
+                    .body(Body::from(
+                        serde_json::to_vec(&serde_json::json!({
+                            "grant_id": f.grant_id,
+                            "grantee_agent_id": f.grantee_agent_id,
+                            "input": {"k": "v"}
+                        }))
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::ACCEPTED);
+        let body: serde_json::Value =
+            serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        let invocation_id: Uuid = body["invocation_id"]
+            .as_str()
+            .and_then(|s| s.parse().ok())
+            .unwrap();
+
+        let row_key_id: Option<Uuid> = sqlx::query_scalar!(
+            r#"SELECT api_key_id FROM relay_invocations WHERE id = $1"#,
+            invocation_id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            row_key_id,
+            Some(expected_key_id),
+            "ck_ caller should leave api_key_id on the invocation row",
+        );
+    }
+
+    /// Negative case: when the caller is NOT on a ck_ token (i.e. the
+    /// JWT path through `AuthUser`), `record_terminal` is invoked with
+    /// `api_key_id = None` and the row's column stays NULL. The
+    /// per-key dashboard filters by api_key_id, so JWT traffic stays
+    /// out of those totals.
+    ///
+    /// We exercise `record_terminal` directly instead of going through
+    /// `/v1/invoke` because the relay test suite's JWT path is blocked
+    /// on a pre-existing test infra bug (jsonwebtoken 10.x picked up in
+    /// PR #36 panics at decode time inside the test runner unless a
+    /// rustls CryptoProvider is installed — see the same panic across
+    /// all `handlers::agents::*` tests on main). The column-write logic
+    /// is the same, and a future test infra fix can replace this with
+    /// an end-to-end JWT call.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn record_terminal_leaves_api_key_id_null_for_jwt_callers(pool: PgPool) {
+        let f = seed_demo(&pool).await;
+        let id = super::record_terminal(
+            &pool,
+            Some(f.grant_id),
+            Some(f.granter_agent_id),
+            Some(f.grantee_agent_id),
+            Some(f.capability_id),
+            "propose_slots",
+            f.caller_user_id,
+            "rejected",
+            0,
+            Some("simulated JWT-path rejection"),
+            Some(&serde_json::json!({"k": "v"})),
+            None, // ← the JWT path: api_key_id is None
+        )
+        .await
+        .unwrap();
+
+        let row_key_id: Option<Uuid> = sqlx::query_scalar!(
+            r#"SELECT api_key_id FROM relay_invocations WHERE id = $1"#,
+            id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(
+            row_key_id.is_none(),
+            "JWT-authed callers must leave api_key_id NULL; got {row_key_id:?}",
         );
     }
 }

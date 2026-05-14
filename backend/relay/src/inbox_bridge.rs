@@ -114,12 +114,18 @@ pub async fn park(
         .unwrap_or(serde_json::Value::Null);
 
     let task_id = Uuid::now_v7();
+    // `api_key_id` attributes the invocation to the **caller** (grantee
+    // side) — the credential the policy gate just validated. NULL when
+    // the caller authenticated with a user JWT instead of a ck_ key.
+    // Granter-side updates (e.g. result posts) don't insert new rows,
+    // so no question of recording the responder's key here.
     sqlx::query!(
         r#"
         INSERT INTO relay_invocations
             (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
-             capability_name, invoked_by_user_id, status, elapsed_ms, input_preview)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', 0, $8)
+             capability_name, invoked_by_user_id, status, elapsed_ms,
+             input_preview, api_key_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', 0, $8, $9)
         "#,
         task_id,
         authz.grant_id,
@@ -129,6 +135,7 @@ pub async fn park(
         capability_name,
         authz.caller_user_id,
         params,
+        authz.api_key_id,
     )
     .execute(db)
     .await?;
@@ -232,6 +239,7 @@ mod tests {
             capability_id: capability,
             grant_id: grant,
             target_is_push: false,
+            api_key_id: None,
         }
     }
 
@@ -410,5 +418,44 @@ mod tests {
         let body = Bytes::from_static(br#"{"jsonrpc":"2.0","method":"SendMessage","params":{}}"#);
         let parked = park(&pool, &authz, "do", body).await.unwrap();
         assert_eq!(parked.jsonrpc_id, serde_json::Value::Null);
+    }
+
+    /// When the policy gate resolved the caller's bearer to a `ck_`
+    /// key, `Authorized.api_key_id` is `Some(...)` and `park` writes it
+    /// to the new `relay_invocations.api_key_id` column so the per-key
+    /// usage dashboard at `/v1/api-keys/{id}/usage` can attribute the
+    /// pull-mode A2A call.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn park_records_api_key_id_when_authz_has_one(pool: PgPool) {
+        let (u, ca, cg, ta, tg, c, g) = seed_for_park(&pool).await;
+
+        // Seed an api_keys row for the caller user.
+        let key_id = Uuid::now_v7();
+        sqlx::query!(
+            r#"INSERT INTO api_keys (id, user_id, key_hash, name, key_prefix)
+               VALUES ($1, $2, $3, 'test', 'ck_')"#,
+            key_id,
+            u,
+            format!("hash-{key_id}"),
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let mut authz = sample_authz_for(u, ca, cg, ta, tg, c, g);
+        authz.api_key_id = Some(key_id);
+
+        let body =
+            Bytes::from_static(br#"{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{}}"#);
+        let parked = park(&pool, &authz, "do", body).await.unwrap();
+
+        let row_key_id: Option<Uuid> = sqlx::query_scalar!(
+            r#"SELECT api_key_id FROM relay_invocations WHERE id = $1"#,
+            parked.task_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row_key_id, Some(key_id));
     }
 }

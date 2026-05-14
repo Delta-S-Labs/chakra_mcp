@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT k.id, k.user_id\n              FROM api_keys k\n             WHERE k.key_hash = $1\n               AND k.revoked_at IS NULL\n               AND (k.expires_at IS NULL OR k.expires_at > now())\n             LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "6dd945344f8b0ff434cfda1129fe3889d5c6b049deccbdee3c5cb927901367e8"
+}
