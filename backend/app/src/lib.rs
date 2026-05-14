@@ -11,6 +11,9 @@ pub mod auth;
 pub mod handlers;
 pub mod state;
 
+#[cfg(test)]
+pub(crate) mod tests_support;
+
 pub use state::AppState;
 
 /// Mount every public + authenticated route on a fresh router. The
@@ -68,7 +71,10 @@ pub fn router(state: AppState) -> Router {
             "/v1/orgs",
             get(handlers::orgs::list).post(handlers::orgs::create),
         )
-        .route("/v1/orgs/{slug}", get(handlers::orgs::get_one))
+        .route(
+            "/v1/orgs/{slug}",
+            get(handlers::orgs::get_one).delete(handlers::orgs::delete_org),
+        )
         .route("/v1/orgs/{slug}/members", get(handlers::orgs::list_members))
         .route(
             "/v1/orgs/{slug}/invites",
@@ -84,6 +90,19 @@ pub fn router(state: AppState) -> Router {
             get(handlers::api_keys::list).post(handlers::api_keys::create),
         )
         .route("/v1/api-keys/{id}", delete(handlers::api_keys::revoke))
+        .route("/v1/api-keys/{id}/rotate", post(handlers::api_keys::rotate))
+        .route("/v1/api-keys/{id}/usage", get(handlers::api_keys::usage))
+        // ─── Agent re-parenting ────────────────────────
+        .route(
+            "/v1/agents/{id}/move-to-personal",
+            post(handlers::agents::move_to_personal),
+        )
+        // ─── Unified paired-sessions view ──────────────
+        .route("/v1/pairings", get(handlers::pairings::list))
+        .route(
+            "/v1/pairings/{kind}/{id}/revoke",
+            post(handlers::pairings::revoke),
+        )
         // ─── Admin ─────────────────────────────────────
         .route("/v1/admin/users", get(handlers::admin::list_users))
         .route("/v1/admin/orgs", get(handlers::admin::list_orgs))

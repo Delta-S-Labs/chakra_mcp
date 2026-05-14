@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            d.id,\n            d.approved_at,\n            d.consumed_at,\n            d.revoked_at,\n            d.approved_agent_id,\n            a.slug AS \"agent_slug?\",\n            a.display_name AS \"agent_display_name?\"\n        FROM oauth_device_codes d\n        LEFT JOIN agents a ON a.id = d.approved_agent_id\n        WHERE d.approved_user_id = $1\n          AND d.approved_at IS NOT NULL\n        ORDER BY d.approved_at DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "approved_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "consumed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "revoked_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "approved_agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "agent_slug?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "agent_display_name?",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "790dd896ffacb641648d5e9f90e883f587410d4ee7dfbdda93e689b7314855d6"
+}

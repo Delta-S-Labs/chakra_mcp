@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE oauth_authorizations SET used_at = now() WHERE id = $1",
+  "query": "UPDATE oauth_authorizations SET revoked_at = now() WHERE id = $1",
   "describe": {
     "columns": [],
     "parameters": {
@@ -10,5 +10,5 @@
     },
     "nullable": []
   },
-  "hash": "3635876b237e00a20459827c85785efd8cd66d2cbec8a570de8f0c1c1b79204c"
+  "hash": "d7b81b6a6d3bd404aa8215a819d88cf0cc28192976ce4571e3962d79edff46d5"
 }

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE oauth_device_codes\n        SET consumed_at = now(), minted_jti = $2\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "51cbfb23e242d1682fe72f766bc5504abf12bbdf2853c96275d9b4a6101aefac"
+}

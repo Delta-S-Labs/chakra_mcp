@@ -1,4 +1,5 @@
 use axum::extract::{Path, State};
+use axum::http::StatusCode;
 use axum::Json;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
@@ -8,6 +9,7 @@ use uuid::Uuid;
 use chakramcp_shared::error::{ApiError, ApiResult};
 
 use crate::auth::AuthUser;
+use crate::handlers::agents::allocate_free_slug;
 use crate::state::AppState;
 
 #[derive(Debug, Serialize)]
@@ -448,4 +450,113 @@ fn sha256_hex(bytes: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(bytes);
     hex::encode(h.finalize())
+}
+
+// ─────────────────────────────────────────────────────────
+// DELETE /v1/orgs/:slug — cascading delete
+//
+// Only the org's owner can delete it. We re-parent every agent under
+// the org to the owner's personal account (slug-suffix on collisions),
+// remove the membership rows, then drop the account row itself. The
+// agents table has ON DELETE CASCADE on account_id, but we deliberately
+// move agents instead of letting them get cascade-killed — friendships
+// + grants + invocation history live on the agent_id PK and need to
+// survive the rename.
+// ─────────────────────────────────────────────────────────
+pub async fn delete_org(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(slug): Path<String>,
+) -> ApiResult<StatusCode> {
+    let mut tx = state.db.begin().await?;
+
+    // Lock the account row; reject if it's individual-type or missing.
+    let org = sqlx::query!(
+        r#"
+        SELECT id, slug, account_type, owner_user_id
+        FROM accounts
+        WHERE slug = $1 AND tombstoned_at IS NULL
+        FOR UPDATE
+        "#,
+        slug,
+    )
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(ApiError::NotFound)?;
+
+    if org.account_type != "organization" {
+        // Personal accounts can't be deleted through this path.
+        return Err(ApiError::NotFound);
+    }
+
+    // Only the owner can delete. accounts.owner_user_id is the source
+    // of truth — membership roles aren't enough.
+    let owner_id = org.owner_user_id.ok_or(ApiError::Forbidden)?;
+    if owner_id != user.user_id {
+        return Err(ApiError::Forbidden);
+    }
+
+    // Resolve owner's personal account up-front.
+    let personal = sqlx::query!(
+        r#"
+        SELECT id FROM accounts
+        WHERE owner_user_id = $1
+          AND account_type = 'individual'
+          AND tombstoned_at IS NULL
+        ORDER BY created_at ASC
+        LIMIT 1
+        "#,
+        owner_id,
+    )
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| {
+        ApiError::Conflict("owner has no personal account to absorb the org's agents".into())
+    })?;
+
+    // Walk every live agent under the org and re-parent it. Loading
+    // them all into memory first is fine — orgs aren't large at our
+    // scale, and we need the per-row slug to compute collisions.
+    let agents = sqlx::query!(
+        r#"
+        SELECT id, slug FROM agents
+        WHERE account_id = $1 AND tombstoned_at IS NULL
+        FOR UPDATE
+        "#,
+        org.id,
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+
+    for agent in agents {
+        let new_slug = allocate_free_slug(&mut tx, personal.id, &agent.slug).await?;
+        sqlx::query!(
+            r#"
+            UPDATE agents
+            SET account_id = $2, slug = $3
+            WHERE id = $1
+            "#,
+            agent.id,
+            personal.id,
+            new_slug,
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    // Drop memberships, then the account itself.
+    sqlx::query!(
+        r#"DELETE FROM account_memberships WHERE account_id = $1"#,
+        org.id,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query!(r#"DELETE FROM accounts WHERE id = $1"#, org.id)
+        .execute(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
+
+    Ok(StatusCode::NO_CONTENT)
 }

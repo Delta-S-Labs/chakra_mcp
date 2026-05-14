@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            o.id,\n            o.used_at AS \"used_at!\",\n            o.revoked_at,\n            c.client_name\n        FROM oauth_authorizations o\n        JOIN oauth_clients c ON c.client_id = o.client_id\n        WHERE o.user_id = $1\n          AND o.used_at IS NOT NULL\n        ORDER BY o.used_at DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "used_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "revoked_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "client_name",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "1050f2bc48ae915a4a150c6c009e3d14941e7ea35f6b6d0fa4e27e446c4982a4"
+}

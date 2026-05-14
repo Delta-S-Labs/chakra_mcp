@@ -373,7 +373,7 @@ async fn token_authorization_code(
     let row = sqlx::query!(
         r#"
         SELECT id, client_id, user_id, code_challenge, redirect_uri, scope,
-               expires_at, used_at
+               expires_at, used_at, revoked_at
         FROM oauth_authorizations
         WHERE code_hash = $1
         FOR UPDATE
@@ -386,6 +386,10 @@ async fn token_authorization_code(
 
     if row.used_at.is_some() {
         return Err(ApiError::InvalidRequest("code already used".into()));
+    }
+    if row.revoked_at.is_some() {
+        // /v1/pairings revoke set this — refuse to mint.
+        return Err(ApiError::InvalidRequest("code revoked".into()));
     }
     if row.expires_at <= Utc::now() {
         return Err(ApiError::InvalidRequest("code expired".into()));
@@ -408,21 +412,15 @@ async fn token_authorization_code(
         return Err(ApiError::InvalidRequest("PKCE verifier mismatch".into()));
     }
 
-    sqlx::query!(
-        r#"UPDATE oauth_authorizations SET used_at = now() WHERE id = $1"#,
-        row.id,
-    )
-    .execute(&mut *tx)
-    .await?;
-    tx.commit().await?;
-
     // Mint an access token. Same JWT shape as the rest of the system —
-    // the relay validates it via the existing Bearer path.
+    // the relay validates it via the existing Bearer path. We build
+    // claims *before* the consume UPDATE so its jti can be persisted
+    // alongside `used_at` for the /v1/pairings revoke flow.
     let user = sqlx::query!(
         r#"SELECT email, is_admin FROM users WHERE id = $1"#,
         row.user_id,
     )
-    .fetch_one(&state.db)
+    .fetch_one(&mut *tx)
     .await?;
 
     let claims = jwt::UserClaims::new(
@@ -431,6 +429,20 @@ async fn token_authorization_code(
         user.is_admin,
         ACCESS_TOKEN_TTL_HOURS,
     );
+
+    sqlx::query!(
+        r#"
+        UPDATE oauth_authorizations
+        SET used_at = now(), minted_jti = $2
+        WHERE id = $1
+        "#,
+        row.id,
+        claims.jti,
+    )
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+
     let access_token = jwt::encode_jwt(&claims, &state.config.jwt_secret)?;
 
     Ok(TokenResponse {
@@ -462,7 +474,7 @@ async fn token_device_code(state: &AppState, req: &TokenRequest) -> axum::respon
         r#"
         SELECT id, scope, approved_user_id, approved_agent_id, approved_at,
                denied_at, expires_at, poll_interval_seconds, last_polled_at,
-               consumed_at
+               consumed_at, revoked_at
         FROM oauth_device_codes
         WHERE device_code_hash = $1
         FOR UPDATE
@@ -480,6 +492,12 @@ async fn token_device_code(state: &AppState, req: &TokenRequest) -> axum::respon
     let now = Utc::now();
 
     if row.denied_at.is_some() {
+        return oauth_error("access_denied");
+    }
+    if row.revoked_at.is_some() {
+        // Operator (or the user from /v1/pairings) revoked the session
+        // after approval but before — or after — a token was minted.
+        // Either way, refuse to mint another.
         return oauth_error("access_denied");
     }
     if row.expires_at <= now {
@@ -566,9 +584,25 @@ async fn token_device_code(state: &AppState, req: &TokenRequest) -> axum::respon
         None
     };
 
+    // Build the JWT claims *before* the consume UPDATE so we can store
+    // its jti alongside `consumed_at`. The /v1/pairings revoke path
+    // uses `minted_jti` to insert into `revoked_tokens`, killing the
+    // token before its natural 24h expiry.
+    let claims = jwt::UserClaims::new(
+        approved_user_id,
+        user.email,
+        user.is_admin,
+        ACCESS_TOKEN_TTL_HOURS,
+    );
+
     if let Err(e) = sqlx::query!(
-        r#"UPDATE oauth_device_codes SET consumed_at = now() WHERE id = $1"#,
+        r#"
+        UPDATE oauth_device_codes
+        SET consumed_at = now(), minted_jti = $2
+        WHERE id = $1
+        "#,
         row.id,
+        claims.jti,
     )
     .execute(&mut *tx)
     .await
@@ -579,12 +613,6 @@ async fn token_device_code(state: &AppState, req: &TokenRequest) -> axum::respon
         return ApiError::Database(e).into_response();
     }
 
-    let claims = jwt::UserClaims::new(
-        approved_user_id,
-        user.email,
-        user.is_admin,
-        ACCESS_TOKEN_TTL_HOURS,
-    );
     let access_token = match jwt::encode_jwt(&claims, &state.config.jwt_secret) {
         Ok(t) => t,
         Err(e) => return ApiError::Auth(e).into_response(),

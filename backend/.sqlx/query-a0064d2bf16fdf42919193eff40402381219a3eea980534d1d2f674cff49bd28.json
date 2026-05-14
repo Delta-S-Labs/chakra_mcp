@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE oauth_device_codes SET consumed_at = now() WHERE id = $1",
+  "query": "DELETE FROM accounts WHERE id = $1",
   "describe": {
     "columns": [],
     "parameters": {
@@ -10,5 +10,5 @@
     },
     "nullable": []
   },
-  "hash": "2d6cca681fca55a34d6f4dfc88d1e2e8abe3e70d540ef87f8dc68c036b96cdd2"
+  "hash": "a0064d2bf16fdf42919193eff40402381219a3eea980534d1d2f674cff49bd28"
 }
