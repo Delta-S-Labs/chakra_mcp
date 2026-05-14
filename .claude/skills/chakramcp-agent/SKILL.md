@@ -249,14 +249,17 @@ curl -s https://chakramcp.com/oauth/device_authorization \
 #   "user_code":"ABCD-1234",
 #   "verification_uri":"https://chakramcp.com/app/pair",
 #   "verification_uri_complete":"https://chakramcp.com/app/pair?session=ABCD-1234",
+#   "verification_uri_qr":"https://chakramcp.com/qr?data=<url-encoded ^>",
 #   "expires_in":600, "interval":5 }
 
-# 2. SHOW THE HUMAN the URL (and the code, in case they want to type).
-#    If you're in a terminal: print it + render as ASCII QR via
-#    qrencode -t UTF8 "<verification_uri_complete>" (qrencode is in
-#    most package managers — no chakramcp dep). The verification URL
-#    requires a signed-in human session; if they aren't logged in,
-#    /login bounces them back to /app/pair after auth.
+# 2. SHOW THE HUMAN the URL. Three equivalent ways, pick what fits:
+#    * verification_uri_complete — they click it on this device.
+#    * verification_uri_qr       — they open it on a desktop, scan the
+#                                  QR with their phone, sign in there.
+#                                  No qrencode install on the agent side.
+#    * verification_uri + user_code — they type the code at /app/pair.
+#    All three lead to the same authed consent page. /login bounces
+#    unsigned-in users back to /app/pair after auth.
 
 # 3. Poll for completion every <interval> seconds.
 while :; do

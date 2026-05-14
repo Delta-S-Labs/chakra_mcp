@@ -1,0 +1,104 @@
+.shell {
+  max-width: 560px;
+  margin: 3.5rem auto;
+  padding: 0 1.25rem;
+  display: grid;
+  gap: 1rem;
+  text-align: center;
+}
+
+.eyebrow {
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-coral);
+  margin: 0;
+}
+
+.title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(1.8rem, 4vw, 2.4rem);
+  letter-spacing: -0.03em;
+  margin: 0;
+  color: var(--ink);
+  line-height: 1.05;
+}
+
+.lede {
+  font-family: var(--font-body);
+  font-size: 1.0rem;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  margin: 0;
+  max-width: 56ch;
+  margin-inline: auto;
+}
+
+.link {
+  color: var(--accent-coral);
+  text-decoration: none;
+  border-bottom: 1px dashed currentColor;
+}
+
+.qr {
+  width: min(420px, 80vw);
+  aspect-ratio: 1 / 1;
+  margin: 1rem auto;
+  background: var(--paper-soft);
+  padding: 1rem;
+  border-radius: 1rem;
+  border: 1px solid var(--line);
+  box-shadow: 0 30px 60px -30px rgba(0, 0, 0, 0.18);
+  display: grid;
+  place-items: center;
+}
+
+/* The inline SVG fills the wrapper; keep its viewBox-driven sizing. */
+.qr > svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.encodedHead {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin: 0.5rem 0 0;
+}
+
+.encoded {
+  font-family: var(--font-body);
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: var(--ink);
+  margin: 0;
+  word-break: break-all;
+  max-width: 56ch;
+  margin-inline: auto;
+}
+
+.encoded code {
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: 0.88rem;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  padding: 0.25rem 0.5rem;
+  display: inline-block;
+}
+
+.foot {
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  margin: 1rem 0 0;
+  max-width: 56ch;
+  margin-inline: auto;
+}

@@ -658,6 +658,10 @@ pub struct DeviceAuthResponse {
     pub user_code: String,
     pub verification_uri: String,
     pub verification_uri_complete: String,
+    /// Public URL that renders a scannable QR for `verification_uri_complete`.
+    /// Agents print this so their human can scan it from another device —
+    /// no `qrencode` install or terminal-rendered ASCII art required.
+    pub verification_uri_qr: String,
     pub expires_in: i64,
     pub interval: i32,
 }
@@ -737,12 +741,19 @@ pub async fn device_authorization(
     let frontend = state.config.frontend_base_url.trim_end_matches('/');
     let verification_uri = format!("{frontend}/app/pair");
     let verification_uri_complete = format!("{frontend}/app/pair?session={inserted}");
+    // Public QR-render endpoint (no auth, cacheable). The url-encoded
+    // `data` query is the verification_uri_complete the human will scan.
+    let verification_uri_qr = format!(
+        "{frontend}/qr?data={}",
+        urlencoding::encode(&verification_uri_complete),
+    );
 
     Ok(Json(DeviceAuthResponse {
         device_code,
         user_code: inserted,
         verification_uri,
         verification_uri_complete,
+        verification_uri_qr,
         expires_in: DEVICE_CODE_TTL_MINUTES * 60,
         interval: 5,
     }))
