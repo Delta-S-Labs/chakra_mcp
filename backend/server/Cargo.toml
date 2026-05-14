@@ -24,7 +24,7 @@ hex = { workspace = true }
 
 clap = { version = "4", features = ["derive", "env"] }
 toml = "1.1"
-directories = "5"
+directories = "6"
 
 anyhow = { workspace = true }
 tracing = { workspace = true }
