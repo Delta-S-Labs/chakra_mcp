@@ -54,8 +54,14 @@ jobs:
             runner: macos-14
             ext: ""
             archive: tar.gz
+          # macos-13 hosted runners have been phased out / depth=infinite
+          # (cli-v0.1.0 sat queued >25min with no runner assignment).
+          # Cross-compile x86_64-apple-darwin from a macos-14 (arm64)
+          # runner instead — the Rust toolchain action already adds the
+          # x86_64-apple-darwin target via `targets: ${{ matrix.target }}`,
+          # and both Mac targets share the same Mac SDK.
           - target: x86_64-apple-darwin
-            runner: macos-13
+            runner: macos-14
             ext: ""
             archive: tar.gz
           - target: x86_64-unknown-linux-gnu
