@@ -1,8 +1,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { revalidatePath } from "next/cache";
-import { auth, signOut } from "@/auth";
+import { auth } from "@/auth";
+import { signOutAndRedirect } from "@/lib/auth-actions";
 import { AppNav } from "./AppNav";
 import styles from "./shell.module.css";
 
@@ -14,6 +13,10 @@ import styles from "./shell.module.css";
  *
  * Middleware ensures we never reach here without a session, but we
  * still defensively check.
+ *
+ * The sign-out form delegates to `signOutAndRedirect` (see
+ * `src/lib/auth-actions.ts`) which does the belt-and-braces cookie
+ * purge needed under NextAuth v5 beta + Next.js 16.
  */
 export default async function AppShellLayout({ children }: { children: ReactNode }) {
   const session = await auth();
@@ -49,20 +52,7 @@ export default async function AppShellLayout({ children }: { children: ReactNode
               <div className={styles.userName}>{name ?? "Signed in"}</div>
               {email && <div className={styles.userEmail}>{email}</div>}
             </div>
-            <form
-              action={async () => {
-                "use server";
-                // Two-step: signOut clears cookies synchronously,
-                // then we redirect. The single-call form
-                // `signOut({ redirectTo })` races the NEXT_REDIRECT
-                // throw against the Set-Cookie writes in NextAuth v5
-                // beta and sometimes leaves the cookie alive — see
-                // AlreadySignedIn.tsx for the full note.
-                await signOut({ redirect: false });
-                revalidatePath("/", "layout");
-                redirect("/login");
-              }}
-            >
+            <form action={signOutAndRedirect}>
               <button type="submit" className={styles.signOut}>
                 Sign out
               </button>
