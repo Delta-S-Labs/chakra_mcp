@@ -28,8 +28,17 @@ import styles from "./qr.module.css";
  * this surface tells them what they're about to open.
  */
 
-export const dynamic = "force-static";
-export const revalidate = false; // Cache forever once rendered.
+// NB: this route reads `?data=…` via `searchParams`, so it MUST be
+// dynamic. Earlier we set `dynamic = "force-static"` hoping to cache
+// the rendered SVG forever — turns out per Next 16's route-segment
+// docs that flag *forces `useSearchParams()` and friends to return
+// empty values*, which made every request render the no-data
+// fallback regardless of the query string. The QR URL printed by
+// `chakramcp pair` (and the hosted `/oauth/device_authorization`
+// response's `verification_uri_qr`) all looked broken in production
+// as a result. Dropping the override lets Next.js auto-detect:
+// because we touch `searchParams`, the page becomes dynamic. Netlify
+// caches per-URL at the edge via the default cache-control header.
 
 export const metadata: Metadata = {
   title: "QR code · ChakraMCP",
