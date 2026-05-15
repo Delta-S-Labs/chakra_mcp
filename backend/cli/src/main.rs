@@ -11,7 +11,7 @@
 //! or your agent code. Human messages go to stderr.
 
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 mod auth;
 mod client;
@@ -41,13 +41,43 @@ struct Cli {
     cmd: Cmd,
 }
 
+/// How `chakramcp login` should authenticate. Without `--method` and
+/// on an interactive terminal, the CLI runs the picker. Specifying
+/// `--method` skips the picker — required when running in an agent /
+/// CI environment where stdin is not a TTY.
+#[derive(ValueEnum, Clone, Debug)]
+pub enum LoginMethod {
+    /// OAuth 2.1 + PKCE in the local browser (same device). Falls
+    /// back to printing the URL if the browser can't be opened.
+    Browser,
+    /// Paste / supply an `ck_…` API key. Combine with `--api-key`
+    /// or the `CHAKRAMCP_API_KEY` env var to skip the prompt.
+    ApiKey,
+    /// Device-flow (RFC 8628) — agent and user on different devices.
+    /// Equivalent to `chakramcp pair`. Useful when this terminal has
+    /// no browser of its own.
+    Device,
+}
+
 #[derive(Subcommand, Debug)]
 enum Cmd {
-    /// Sign in via OAuth in the browser.
+    /// Sign in. Interactive picker by default; pass `--method` to skip
+    /// the picker in headless / agent environments.
     Login {
         /// Sign in to a specific network (defaults to the active one or runs the wizard).
         #[arg(long)]
         network: Option<String>,
+
+        /// Skip the picker and use a specific auth method. Required
+        /// when stdin isn't a TTY (CI, agent runtimes, `sh -c …`).
+        #[arg(long, value_enum)]
+        method: Option<LoginMethod>,
+
+        /// API key to use when `--method api-key` is selected. Also
+        /// readable from `CHAKRAMCP_API_KEY`. Required for fully
+        /// non-interactive api-key login.
+        #[arg(long, env = "CHAKRAMCP_API_KEY")]
+        api_key: Option<String>,
     },
     /// Device-flow pair (RFC 8628). Use when this agent and the user
     /// are on different devices — prints a QR URL, a clickable URL,
@@ -127,8 +157,33 @@ async fn run() -> Result<()> {
     }
 
     match cli.cmd {
-        Cmd::Login { network } => {
-            let outcome = onboarding::run_login(&mut cfg, network).await?;
+        Cmd::Login {
+            network,
+            method,
+            api_key,
+        } => {
+            // `--method device` is a thin alias for `chakramcp pair` so
+            // headless users discover one entry point. We dispatch to
+            // pair directly rather than duplicating the polling loop.
+            if matches!(method, Some(LoginMethod::Device)) {
+                if let Some(name) = network {
+                    if cfg.network(&name).is_none() {
+                        anyhow::bail!("no network named '{name}'");
+                    }
+                    cfg.active = Some(name);
+                }
+                commands::pair::run(commands::pair::Args::default(), &mut cfg).await?;
+                return Ok(());
+            }
+            let outcome = onboarding::run_login(
+                &mut cfg,
+                onboarding::LoginOptions {
+                    network,
+                    method: method.map(onboarding::Mode::from),
+                    api_key,
+                },
+            )
+            .await?;
             if let Some(email) = outcome.display_account {
                 ui::closing(&outcome.network, &email);
             }

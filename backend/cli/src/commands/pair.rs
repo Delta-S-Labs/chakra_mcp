@@ -24,7 +24,7 @@ use tokio::time::sleep;
 use crate::config::CliConfig;
 use crate::ui;
 
-#[derive(ClapArgs, Debug)]
+#[derive(ClapArgs, Debug, Default)]
 pub struct Args {
     /// Suggest a persona to the relay (cosmetic, hints the consent UI).
     /// Common: `hermes`, `openclaw`. Free text.
@@ -48,6 +48,21 @@ pub struct Args {
     /// headless boxes — the URLs still get printed for hand-paste.
     #[arg(long)]
     pub no_open: bool,
+
+    /// Emit machine-readable JSON on stdout instead of the framed
+    /// human messages. Two events come out, separated by a newline:
+    ///
+    ///   1. The `device_authorization` payload up front (user_code,
+    ///      verification_uri, verification_uri_complete,
+    ///      verification_uri_qr, expires_in, interval).
+    ///   2. The `paired` event once the user approves — includes the
+    ///      account_slug / agent_slug + token-expiry epoch.
+    ///
+    /// Human stderr output is suppressed; spinners are skipped.
+    /// Designed for agent runtimes that need to hand the URL to a
+    /// user out-of-band and then poll for completion.
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -130,24 +145,42 @@ pub async fn run(args: Args, cfg: &mut CliConfig) -> Result<()> {
         .await
         .context("decoding device_authorization response")?;
 
-    // ─── Step 2: tell the human what to do ────────────────────────
-    eprintln!();
-    eprintln!("    Pair this agent — three equivalent ways:");
-    eprintln!();
-    eprintln!("    1. Scan from your phone (QR rendered server-side, no install):");
-    eprintln!("       {}", auth.verification_uri_qr);
-    eprintln!();
-    eprintln!("    2. Click on this device:");
-    eprintln!("       {}", auth.verification_uri_complete);
-    eprintln!();
-    eprintln!("    3. Or type code at {}:", auth.verification_uri);
-    eprintln!("       {}", auth.user_code);
-    eprintln!();
+    // ─── Step 2: tell the caller what to do ───────────────────────
+    if args.json {
+        // Mirror the RFC 8628 §3.2 response shape on stdout so
+        // orchestrators can parse it directly. One JSON object per
+        // line — easy to consume with `jq -c`.
+        let evt = serde_json::json!({
+            "event": "device_authorization",
+            "user_code": auth.user_code,
+            "verification_uri": auth.verification_uri,
+            "verification_uri_complete": auth.verification_uri_complete,
+            "verification_uri_qr": auth.verification_uri_qr,
+            "expires_in": auth.expires_in,
+            "interval": auth.interval,
+        });
+        println!("{}", serde_json::to_string(&evt)?);
+    } else {
+        eprintln!();
+        eprintln!("    Pair this agent — three equivalent ways:");
+        eprintln!();
+        eprintln!("    1. Scan from your phone (QR rendered server-side, no install):");
+        eprintln!("       {}", auth.verification_uri_qr);
+        eprintln!();
+        eprintln!("    2. Click on this device:");
+        eprintln!("       {}", auth.verification_uri_complete);
+        eprintln!();
+        eprintln!("    3. Or type code at {}:", auth.verification_uri);
+        eprintln!("       {}", auth.user_code);
+        eprintln!();
+    }
 
     // Try to auto-open the QR URL — best UX is "QR on this screen,
     // user scans from phone, signs in once on the phone, approves."
     // The URL pages includes the underlying URL as text fallback.
-    if !args.no_open {
+    // Suppressed for --json: machine consumers don't want a browser
+    // window flickering open on the orchestrator host.
+    if !args.no_open && !args.json {
         let _ = webbrowser::open(&auth.verification_uri_qr);
     }
 
@@ -155,7 +188,13 @@ pub async fn run(args: Args, cfg: &mut CliConfig) -> Result<()> {
     let token_url = format!("{app_url}/oauth/token");
     let mut interval = Duration::from_secs(auth.interval.max(1) as u64);
 
-    let pb = ui::spinner("waiting for approval…");
+    // Skip the spinner under --json so the orchestrator's stderr
+    // stays clean. The polling loop is otherwise identical.
+    let pb = if args.json {
+        None
+    } else {
+        Some(ui::spinner("waiting for approval…"))
+    };
     let token = loop {
         sleep(interval).await;
 
@@ -190,20 +229,28 @@ pub async fn run(args: Args, cfg: &mut CliConfig) -> Result<()> {
                 interval += Duration::from_secs(5);
             }
             "access_denied" => {
-                pb.finish_and_clear();
+                if let Some(pb) = pb.as_ref() {
+                    pb.finish_and_clear();
+                }
                 bail!("the user denied the pairing request");
             }
             "expired_token" => {
-                pb.finish_and_clear();
+                if let Some(pb) = pb.as_ref() {
+                    pb.finish_and_clear();
+                }
                 bail!("the pairing code expired before approval (rerun `chakramcp pair`)");
             }
             other => {
-                pb.finish_and_clear();
+                if let Some(pb) = pb.as_ref() {
+                    pb.finish_and_clear();
+                }
                 bail!("pairing failed: {other}");
             }
         }
     };
-    pb.finish_and_clear();
+    if let Some(pb) = pb.as_ref() {
+        pb.finish_and_clear();
+    }
 
     // ─── Step 4: persist the token ────────────────────────────────
     let now = SystemTime::now()
@@ -219,17 +266,29 @@ pub async fn run(args: Args, cfg: &mut CliConfig) -> Result<()> {
     net.auth.api_key = None;
     cfg.save()?;
 
-    let pretty = match (token.account_slug.as_deref(), token.agent_slug.as_deref()) {
-        (Some(acct), Some(agent)) => format!("paired as {acct}/{agent}"),
-        (Some(acct), None) => format!("paired under {acct}"),
-        _ => "paired".to_string(),
-    };
-    ui::ok(&pretty);
-    eprintln!(
-        "    The token is saved in {} under network '{network_name}'.",
-        crate::config::config_path()?.display()
-    );
-    eprintln!("    Run `chakramcp whoami` to verify.");
+    if args.json {
+        let evt = serde_json::json!({
+            "event": "paired",
+            "network": network_name,
+            "account_slug": token.account_slug,
+            "agent_slug": token.agent_slug,
+            "expires_at": now + token.expires_in,
+            "config_path": crate::config::config_path()?.to_string_lossy(),
+        });
+        println!("{}", serde_json::to_string(&evt)?);
+    } else {
+        let pretty = match (token.account_slug.as_deref(), token.agent_slug.as_deref()) {
+            (Some(acct), Some(agent)) => format!("paired as {acct}/{agent}"),
+            (Some(acct), None) => format!("paired under {acct}"),
+            _ => "paired".to_string(),
+        };
+        ui::ok(&pretty);
+        eprintln!(
+            "    The token is saved in {} under network '{network_name}'.",
+            crate::config::config_path()?.display()
+        );
+        eprintln!("    Run `chakramcp whoami` to verify.");
+    }
 
     Ok(())
 }
