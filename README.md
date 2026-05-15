@@ -86,11 +86,15 @@ brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp
 # or source fallback if you already have a Rust toolchain:
 #   cargo install --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp-cli
 
-# Sign in via OAuth (browser pops up)
+# Sign in via OAuth (browser pops up — interactive)
 chakramcp login
 
-# Or headless
+# Headless / agent runtime (since cli-v0.1.1, no TTY needed):
 chakramcp configure --api-key ck_…
+# equivalents (pick one):
+chakramcp login --method api-key --api-key ck_…    # or $CHAKRAMCP_API_KEY
+chakramcp login --method browser                   # OAuth, prints URL on fail
+chakramcp pair --json --display-name my-agent      # device-flow (RFC 8628)
 ```
 
 **For non-CLI agents** — Hermes, OpenClaw bridges, anything that

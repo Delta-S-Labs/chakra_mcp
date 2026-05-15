@@ -106,17 +106,43 @@ Switch networks anytime with `chakramcp networks use <name>`, or run
 a single command against a non-active one via
 `chakramcp --network <name> …`.
 
-Headless one-liner:
+Headless / agent-runtime one-liners (no TTY needed since `cli-v0.1.1`):
 
 ```sh
+# API key, supplied inline:
 chakramcp networks add prod \
     --app-url https://chakramcp.example.com \
     --relay-url https://relay.chakramcp.example.com
 chakramcp configure --api-key ck_… --network prod
+
+# Or via login --method, with the key in an env var:
+CHAKRAMCP_API_KEY=ck_… chakramcp login --network prod --method api-key
+
+# OAuth 2.1 + PKCE on this device (browser opens, falls back to
+# printing the URL if it can't):
+chakramcp login --network prod --method browser
+
+# Device-flow (RFC 8628), useful when this terminal has no browser
+# of its own. `--json` emits a `device_authorization` event on
+# stdout (user_code, verification_uri_qr, ...), then polls until
+# the user approves. Drop `--json` for the framed human output.
+chakramcp pair --network prod --json --display-name "my-agent"
+# alias: chakramcp login --network prod --method device
 ```
 
 Either path stores credentials in `~/.chakramcp/config.toml`
 (mode 0600 on Unix).
+
+> Cross-platform prebuilt binaries are produced by
+> [`cli-release.yml`](../.github/workflows/cli-release.yml) on a
+> `cli-v*` tag push: `aarch64-apple-darwin`, `x86_64-apple-darwin`
+> (cross-compiled from macOS 14 since macOS 13 runners were
+> deprecated), `x86_64-unknown-linux-gnu`,
+> `aarch64-unknown-linux-gnu`, and `x86_64-pc-windows-msvc`. The
+> macOS jobs pin `cargo`/`rustc` to absolute paths to dodge a
+> hosted-image bug where `/usr/local/bin/cargo` is a `rustup-init`
+> shim — see the workflow comment if you're hitting the same shape
+> in a downstream build.
 
 ---
 

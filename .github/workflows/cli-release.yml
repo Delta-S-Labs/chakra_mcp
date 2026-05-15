@@ -85,30 +85,52 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      # Workaround for the macos-14 hosted-image bug that has bitten
-      # this repo on PRs #23, #31, #33, #40, #41, #42, #43, #44 in the
-      # last 24h: some image revs route `/usr/local/bin/cargo` to
-      # `rustup-init` instead of the toolchain's real cargo binary,
-      # so the next step fails with "rustup-init: unexpected argument
-      # 'build' found". Force cargo's true home onto PATH and rerun
-      # `rustup default stable` to break the shim.
+      # macos-14 hosted-image workaround. Some image revs ship a
+      # `/usr/local/bin/cargo` that is actually `rustup-init`, so
+      # plain `cargo build` errors out with "unexpected argument
+      # 'build'". Two earlier approaches both proved flaky across
+      # reruns:
       #
-      # Safe on all platforms — on a healthy image this is a no-op
-      # (PATH already prefers ~/.cargo/bin, rustup default is a noop).
-      # On a broken image it deterministically recovers without
-      # waiting for the next GitHub-hosted image refresh.
-      - name: Ensure cargo on PATH (macos-14 rustup-init shim workaround)
+      #   1. (PR #45) prepend `$HOME/.cargo/bin` to PATH via
+      #      `$GITHUB_PATH`. Sometimes another step's shell-rc
+      #      reordering displaced it.
+      #   2. (PR #57) actively `rm` the shim. The detection inside
+      #      the workaround step itself returned the right binary,
+      #      so the rm branch never fired — but the NEXT step still
+      #      hit the shim.
+      #
+      # Final approach (#58, mirrored here): bypass PATH entirely.
+      # Export `CARGO` and `RUSTC` as absolute paths into
+      # `$GITHUB_ENV` and have every cargo invocation below use
+      # `$CARGO` / `$RUSTC`. The binary that runs is fully decided
+      # by us, not by whatever the shell's PATH happens to be at
+      # step time. Identical to the cli-ci.yml workaround — keep
+      # them in sync.
+      - name: Pin cargo/rustc to absolute paths (macos-14 shim bypass)
         shell: bash
         run: |
           set -e
+          CARGO_BIN="$HOME/.cargo/bin/cargo"
+          RUSTC_BIN="$HOME/.cargo/bin/rustc"
+          if [ ! -x "$CARGO_BIN" ]; then
+            # Fall back to whatever the system has (Windows path,
+            # custom installs). PATH-resolved, but on platforms
+            # that don't have the macos-14 shim problem.
+            CARGO_BIN="$(command -v cargo)"
+            RUSTC_BIN="$(command -v rustc)"
+          fi
+          echo "CARGO=$CARGO_BIN" >> "$GITHUB_ENV"
+          echo "RUSTC=$RUSTC_BIN" >> "$GITHUB_ENV"
+          # Also prepend ~/.cargo/bin to PATH so any tooling that
+          # spawns `cargo` itself (Swatinem/rust-cache, ...) finds
+          # the right binary.
           if [ -d "$HOME/.cargo/bin" ]; then
             echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-            export PATH="$HOME/.cargo/bin:$PATH"
           fi
           rustup default stable 2>/dev/null || true
           rustup target add "${{ matrix.target }}" 2>/dev/null || true
-          cargo --version
-          rustc --version
+          "$CARGO_BIN" --version
+          "$RUSTC_BIN" --version
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -117,19 +139,21 @@ jobs:
 
       - name: Build CLI (release)
         working-directory: backend
-        run: cargo build -p chakramcp-cli --release --target ${{ matrix.target }}
+        shell: bash
+        run: $CARGO build -p chakramcp-cli --release --target ${{ matrix.target }}
 
       # Server binary is unix-only (depends on postgresql via brew on
       # mac/linux; no equivalent brew-services story on Windows).
       - name: Build server (unix only)
         if: matrix.archive == 'tar.gz'
         working-directory: backend
+        shell: bash
         env:
           # The server binary's compile uses sqlx::query! macros via
           # chakramcp-app — those are checked at compile time against
           # a live DATABASE_URL OR an offline cache. We use offline.
           SQLX_OFFLINE: "true"
-        run: cargo build -p chakramcp-server --release --target ${{ matrix.target }}
+        run: $CARGO build -p chakramcp-server --release --target ${{ matrix.target }}
 
       - name: Package (unix tarballs — CLI + server)
         if: matrix.archive == 'tar.gz'
