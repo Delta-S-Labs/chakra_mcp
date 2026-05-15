@@ -50,41 +50,48 @@ jobs:
 
       # macos-14 hosted-image workaround. Some image revs ship a
       # `/usr/local/bin/cargo` that is actually `rustup-init`, so
-      # `cargo build` errors out with "unexpected argument 'build'".
-      # PATH prepending alone has proven flaky between steps (the
-      # rerun on PR #57 hit the shim even after the prepend), so we
-      # also *delete* the stale shim. After this step the only
-      # `cargo` on PATH is `~/.cargo/bin/cargo` from the toolchain
-      # the previous step installed. No-op on healthy images / on
-      # platforms that don't have the shim.
-      - name: Ensure cargo on PATH (macos-14 rustup-init shim workaround)
+      # plain `cargo build` errors out with "unexpected argument
+      # 'build'". We've tried two approaches that both proved flaky
+      # across reruns:
+      #
+      #   1. (PR #45) prepend `$HOME/.cargo/bin` to PATH via
+      #      `$GITHUB_PATH`. Sometimes another step's shell-rc
+      #      reordering displaced it.
+      #   2. (PR #57) actively delete the shim with `rm`. Didn't
+      #      fire here because `command -v cargo` inside the
+      #      workaround step returned the right binary, but the
+      #      NEXT step's PATH resolution still hit the shim.
+      #
+      # Final approach (#58): bypass PATH entirely. Export `CARGO`
+      # and `RUSTC` as absolute paths into `$GITHUB_ENV` and have
+      # every cargo invocation below use `$CARGO` / `$RUSTC`. The
+      # binary that runs is fully decided by us, not by whatever
+      # the shell's PATH happens to be at step time.
+      - name: Pin cargo/rustc to absolute paths (macos-14 shim bypass)
         shell: bash
         run: |
           set -e
+          CARGO_BIN="$HOME/.cargo/bin/cargo"
+          RUSTC_BIN="$HOME/.cargo/bin/rustc"
+          if [ ! -x "$CARGO_BIN" ]; then
+            # Fall back to whatever the system has (Windows path,
+            # custom installs). PATH-resolved, but on platforms
+            # that don't have the macos-14 shim problem.
+            CARGO_BIN="$(command -v cargo)"
+            RUSTC_BIN="$(command -v rustc)"
+          fi
+          echo "CARGO=$CARGO_BIN" >> "$GITHUB_ENV"
+          echo "RUSTC=$RUSTC_BIN" >> "$GITHUB_ENV"
+          # Also prepend ~/.cargo/bin to PATH so any tooling that
+          # spawns `cargo` itself (Swatinem/rust-cache, ...) finds
+          # the right binary.
           if [ -d "$HOME/.cargo/bin" ]; then
             echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-            export PATH="$HOME/.cargo/bin:$PATH"
-          fi
-          # Nuke the shim. `command -v cargo` returns the first match
-          # on PATH; if that's not ~/.cargo/bin/cargo, it's the shim.
-          if [ "$(command -v cargo)" != "$HOME/.cargo/bin/cargo" ]; then
-            shim="$(command -v cargo || true)"
-            if [ -n "$shim" ] && [ "$shim" != "$HOME/.cargo/bin/cargo" ]; then
-              echo "Removing stale cargo shim at $shim"
-              sudo rm -f "$shim" || rm -f "$shim" || true
-            fi
-            shim_rustc="$(command -v rustc || true)"
-            if [ -n "$shim_rustc" ] && [ "$shim_rustc" != "$HOME/.cargo/bin/rustc" ]; then
-              echo "Removing stale rustc shim at $shim_rustc"
-              sudo rm -f "$shim_rustc" || rm -f "$shim_rustc" || true
-            fi
           fi
           rustup default stable 2>/dev/null || true
           rustup target add "${{ matrix.target }}" 2>/dev/null || true
-          # Use the absolute path so this verification can't be fooled
-          # by PATH not propagating to the next step.
-          "$HOME/.cargo/bin/cargo" --version
-          "$HOME/.cargo/bin/rustc" --version
+          "$CARGO_BIN" --version
+          "$RUSTC_BIN" --version
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -94,11 +101,14 @@ jobs:
       # CLI doesn't pull in chakramcp-shared / sqlx, so the build needs no
       # DATABASE_URL even though the rest of the workspace does.
       - name: Build CLI
-        run: cargo build -p chakramcp-cli --target ${{ matrix.target }}
+        run: $CARGO build -p chakramcp-cli --target ${{ matrix.target }}
+        shell: bash
 
       - name: Clippy (CLI)
-        run: cargo clippy -p chakramcp-cli --target ${{ matrix.target }} -- -D warnings
+        run: $CARGO clippy -p chakramcp-cli --target ${{ matrix.target }} -- -D warnings
+        shell: bash
 
       - name: Format
         if: matrix.os == 'ubuntu-22.04'
-        run: cargo fmt -p chakramcp-cli --check
+        run: $CARGO fmt -p chakramcp-cli --check
+        shell: bash
