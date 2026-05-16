@@ -309,6 +309,7 @@ version = "0.1.1"
 dependencies = [
  "anyhow",
  "base64",
+ "chrono",
  "clap",
  "dialoguer",
  "directories",
@@ -320,9 +321,11 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "thiserror",
  "tokio",
  "toml",
  "url",
+ "uuid",
  "webbrowser",
 ]
 

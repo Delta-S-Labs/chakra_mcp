@@ -19,6 +19,9 @@ sha2 = { workspace = true }
 hex = { workspace = true }
 base64 = { workspace = true }
 rand = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
 
 clap = { version = "4", features = ["derive", "env"] }
 toml = "1.1"
@@ -28,3 +31,10 @@ webbrowser = "1"
 owo-colors = "4"
 dialoguer = { version = "0.12", default-features = false, features = ["password"] }
 indicatif = "0.18"
+
+[dev-dependencies]
+# `start_paused` + virtual time live behind the `test-util` feature,
+# which the workspace's `full` feature set does not include. Required
+# by waiters.rs poll-loop tests so they don't block on wall-clock
+# sleeps.
+tokio = { version = "1", features = ["full", "test-util"] }

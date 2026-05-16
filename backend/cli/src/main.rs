@@ -20,6 +20,7 @@ mod config;
 mod onboarding;
 mod templates;
 mod ui;
+mod waiters;
 
 use crate::client::ApiClient;
 use crate::config::{AuthConfig, CliConfig};
@@ -141,7 +142,15 @@ enum Cmd {
 async fn main() {
     if let Err(err) = run().await {
         ui::err(&format!("{err:#}"));
-        std::process::exit(1);
+        // PRD §"Deterministic exit codes": wait/ensure commands return
+        // a WaitError wrapped in anyhow. Downcast so callers can branch
+        // on `$?` instead of grepping stderr. Anything else keeps the
+        // pre-existing "any error = 1" behaviour.
+        let code = err
+            .downcast_ref::<crate::waiters::WaitError>()
+            .map(|w| w.exit_code())
+            .unwrap_or(1);
+        std::process::exit(code);
     }
 }
 
