@@ -803,13 +803,16 @@ async fn propose_friendship(db: &PgPool, user: &AuthUser, args: Value) -> Result
     let id = Uuid::now_v7();
     sqlx::query!(
         r#"
-        INSERT INTO friendships (id, proposer_agent_id, target_agent_id, status, proposer_message)
-        VALUES ($1, $2, $3, 'proposed', $4)
+        INSERT INTO friendships
+            (id, proposer_agent_id, target_agent_id, status, proposer_message,
+             proposer_user_id)
+        VALUES ($1, $2, $3, 'proposed', $4, $5)
         "#,
         id,
         a.proposer_agent_id,
         a.target_agent_id,
         a.proposer_message,
+        user.user_id,
     )
     .execute(db)
     .await
