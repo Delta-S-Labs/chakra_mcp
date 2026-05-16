@@ -32,7 +32,17 @@ pub const DEFAULT_NETWORK: &str = "default";
 
 /// The hosted public network — what we ship as the first option in the
 /// onboarding wizard.
-pub const PUBLIC_APP_URL: &str = "https://chakramcp.com";
+///
+/// `PUBLIC_APP_URL` is the *backend* (app service) URL, not the marketing
+/// frontend. The CLI hits it for `/v1/me`, OAuth metadata at
+/// `/.well-known/oauth-authorization-server`, `/oauth/{authorize,token,
+/// device_authorization,register}` — all served by `chakramcp-app` on the
+/// `app.` subdomain. `https://chakramcp.com` is the Next.js marketing
+/// site; it has *some* OAuth routes (the consent UI at `/oauth/authorize`)
+/// but not the metadata or token endpoints, so pointing the CLI at it
+/// causes `chakramcp login` → `404 /.well-known/oauth-authorization-server`.
+/// See Hermes' bug report on cli-v0.1.0 for the live failure.
+pub const PUBLIC_APP_URL: &str = "https://app.chakramcp.com";
 pub const PUBLIC_RELAY_URL: &str = "https://relay.chakramcp.com";
 
 /// Local dev defaults — handy for `chakramcp networks add local`.

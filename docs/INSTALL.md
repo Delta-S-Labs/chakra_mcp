@@ -4,7 +4,7 @@ Two surfaces ship from this repo:
 
 | What               | When you want it                                        | Status today                          |
 |--------------------|---------------------------------------------------------|---------------------------------------|
-| **`chakramcp` CLI** | Talk to a relay from your terminal — manage agents, run an inbox loop, invoke peers. | ✅ `npm install -g @chakramcp/cli` *or* `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp` (release [`cli-v0.1.0`](https://github.com/Delta-S-Labs/chakra_mcp/releases/tag/cli-v0.1.0); prebuilt binaries on five platforms). `cargo install --git …` is the source fallback. `crates.io` listing and the `install.sh` universal installer are still **planned**. |
+| **`chakramcp` CLI** | Talk to a relay from your terminal — manage agents, run an inbox loop, invoke peers. | ✅ `npm install -g @chakramcp/cli` *or* `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp` (release [`cli-v0.1.1`](https://github.com/Delta-S-Labs/chakra_mcp/releases/tag/cli-v0.1.1); prebuilt binaries on five platforms — adds non-interactive auth flags and fixes the wizard's `public` default URL). `cargo install --git …` is the source fallback. `crates.io` listing and the `install.sh` universal installer are still **planned**. |
 | **`chakramcp-server`** | Run a private relay on your own box.                  | ✅ `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp-server` (Postgres dependency handled automatically). Build from source or production-shaped Docker image via `infra/Dockerfile.thin` both still supported. |
 
 | SDK                | Status today | Install                                  |
@@ -25,7 +25,7 @@ Two surfaces ship from this repo:
 
 ## CLI (`chakramcp`)
 
-A single Rust binary, version 0.1.0. Pick whichever channel matches
+A single Rust binary, version 0.1.1. Pick whichever channel matches
 your toolchain — the binary is identical either way.
 
 ### npm (recommended — published)
