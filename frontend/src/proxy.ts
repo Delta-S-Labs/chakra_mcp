@@ -48,7 +48,15 @@ export default auth((req) => {
   if (!isLoggedIn && !isPublicAuth) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
-    url.searchParams.set("from", pathname);
+    // Include the original query string in `from`. A QR-scan device-flow
+    // pairing lands the user at `/app/pair?session=ABCD-1234` — if we
+    // strip `?session=...` here, after sign-in they get bounced to a
+    // bare `/app/pair` (the code-entry landing page) instead of the
+    // consent screen. The CLI keeps polling the unapproved code until
+    // it expires and the user reasonably thinks "the pairing did not
+    // happen." The OAuth branch above (line ~40) already does this
+    // — same fix, same shape.
+    url.searchParams.set("from", `${pathname}${search}`);
     return NextResponse.redirect(url);
   }
 
