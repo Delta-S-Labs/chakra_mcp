@@ -71,35 +71,34 @@ This migration alone changes no queries; merging it does not require any sqlx ca
 
 Two crates touch the tables. The split matters: agent CRUD has a second writer outside the relay (the OAuth device-flow sign-in path auto-creates an agent), so the column write needs to land in both.
 
-**Map of every non-test INSERT site for the targeted tables** (verified by `grep`):
+**Map of every production INSERT/UPDATE site** (verified by `grep -nE '#\[cfg\(test\)\]' …` against the relay and app crates — earlier revisions of this spec over-counted by including test fixtures, which sit inside `#[cfg(test)] mod tests { … }` blocks and don't affect production attribution).
 
-| Table | Site | User-attributable? | Action |
-|---|---|---|---|
-| `agents` | `backend/relay/src/handlers/agents.rs:357` | Yes — handler takes `AuthUser` | Set `created_by_user_id = user.user_id` |
-| `agents` | `backend/app/src/handlers/oauth.rs:958` | Yes — device-flow approve owns the JWT subject | Set `created_by_user_id = subject_user_id` |
-| `friendships` | `backend/relay/src/handlers/friendships.rs:288` (propose) | Yes | `proposer_user_id = user.user_id` |
-| `friendships` | `backend/relay/src/handlers/friendships.rs:491` (counter) | Yes | `proposer_user_id = user.user_id` |
-| `friendships` | `backend/relay/src/handlers/mcp.rs:806` (MCP-driven shadow) | **No** | Leave both columns NULL; comment "MCP shadow" |
-| `friendships` | `backend/relay/src/handlers/invoke.rs:986` (auto-friend on first invoke) | Mixed — `AuthUser` exists; user IS technically present | Set `proposer_user_id = user.user_id` |
-| `friendships` | `backend/relay/src/handlers/a2a.rs:601` (A2A peer push shadow) | **No** | NULL; comment "A2A peer-push shadow" |
-| `friendships` | `backend/relay/src/forwarder.rs:496` (background forwarder reflection) | **No** | NULL; comment "background forwarder" |
-| `grants` | `backend/relay/src/handlers/grants.rs:323` (create) | Yes | `granter_user_id = user.user_id` |
-| `grants` | `backend/relay/src/handlers/invoke.rs:998` (auto-grant on friend-invoke) | Mixed | Set `granter_user_id = user.user_id` |
-| `grants` | `backend/relay/src/handlers/a2a.rs:612` (A2A peer-push shadow) | **No** | NULL |
-| `grants` | `backend/relay/src/forwarder.rs:509` (forwarder shadow) | **No** | NULL |
-| `grants` | `backend/relay/src/inbox_bridge.rs:321` (inbox-bridge auto-grant) | **No** | NULL |
-| `agent_capabilities` | `backend/relay/src/handlers/capabilities.rs:158` (create) | Yes | `created_by_user_id = user.user_id` |
-| `agent_capabilities` | `backend/relay/src/handlers/published_cards.rs:420` (card refresh) | **No** | NULL — background job |
-| `agent_capabilities` | `backend/relay/src/handlers/discovery.rs:488` (peer card import) | **No** | NULL |
-| `agent_capabilities` | `backend/relay/src/handlers/invoke.rs:971` (auto-cap on first invoke) | Mixed | Set `created_by_user_id = user.user_id` |
-| `agent_capabilities` | `backend/relay/src/handlers/a2a.rs:589` (A2A shadow) | **No** | NULL |
-| `agent_capabilities` | `backend/relay/src/inbox_bridge.rs:310` (bridge shadow) | **No** | NULL |
-| `agent_capabilities` | `backend/relay/src/forwarder.rs:484` (forwarder shadow) | **No** | NULL |
-| `friendships` (status changes, not INSERT) | `backend/relay/src/handlers/friendships.rs::accept/reject/cancel` | Yes | `UPDATE … SET decided_by_user_id = user.user_id, status = 'accepted', accepted_at = now()` |
+**INSERT sites — all user-attributable, all carry `AuthUser`:**
 
-**Policy in one sentence:** user-attribution columns are populated only when an authenticated `AuthUser` directly initiated the row's creation/transition; shadow/peer/background paths leave them NULL by design.
+| Table | Site | Bind |
+|---|---|---|
+| `agents` | `backend/relay/src/handlers/agents.rs:357` (in `pub async fn create`) | `created_by_user_id = user.user_id` |
+| `agents` | `backend/app/src/handlers/oauth.rs:958` (device-flow approve auto-creates the paired agent) | `created_by_user_id = subject_user_id` (the user approving the pair) |
+| `friendships` | `backend/relay/src/handlers/friendships.rs:288` (in `pub async fn propose`) | `proposer_user_id = user.user_id` |
+| `friendships` | `backend/relay/src/handlers/friendships.rs:491` (in `pub async fn counter`) | `proposer_user_id = user.user_id` |
+| `friendships` | `backend/relay/src/handlers/mcp.rs:806` (in `pub async fn handle`, MCP tool can propose a friendship as a side-effect; MCP requests are bearer-authed and carry `AuthUser`) | `proposer_user_id = user.user_id` |
+| `grants` | `backend/relay/src/handlers/grants.rs:323` (in `pub async fn create`) | `granter_user_id = user.user_id` |
+| `agent_capabilities` | `backend/relay/src/handlers/capabilities.rs:158` (in `pub async fn create`) | `created_by_user_id = user.user_id` |
 
-`sqlx prepare` cache regenerated for each touched query; pre-commit hook gate this. PR 2's binary deploys only AFTER PR 1's migration applies (existing CD ordering: `task migrate` runs before image swap).
+**UPDATE sites — status transitions on existing rows:**
+
+| Table | Site | Bind |
+|---|---|---|
+| `friendships` | `backend/relay/src/handlers/friendships.rs:313` (`pub async fn cancel`) | `decided_by_user_id = user.user_id` alongside `status = 'cancelled'` |
+| `friendships` | `backend/relay/src/handlers/friendships.rs:353` (`pub async fn accept`) | `decided_by_user_id = user.user_id` alongside `status = 'accepted'` |
+| `friendships` | `backend/relay/src/handlers/friendships.rs:397` (`pub async fn reject`) | `decided_by_user_id = user.user_id` alongside `status = 'rejected'` |
+| `grants` | `backend/relay/src/handlers/grants.rs:386` (`pub async fn revoke`, UPDATE setting `revoked_at`) | `revoked_by_user_id = user.user_id` |
+
+**Note on shadow paths.** The relay codebase does not currently have production-side automatic creation of `friendships` / `grants` / `agent_capabilities` rows from non-user contexts. All the apparently-shadow INSERTs I initially flagged (`forwarder.rs:496/509`, `a2a.rs:589/601/612`, `inbox_bridge.rs:310/321`, `invoke.rs:971/986/998`, `published_cards.rs:420`, `discovery.rs:488`) live inside `#[cfg(test)] mod tests` blocks and are test fixtures only. So every production write touches a user — every bind site above is straightforward.
+
+**Test fixtures.** Test code that constructs these rows continues to work without changes: the new `*_user_id` columns are nullable, so test INSERTs that don't bind them get NULL — same as production rows older than the migration. The new sqlx::test cases in PR 3 for the by_action scope queries will need to bind the user columns explicitly (they're exercising the new logic).
+
+`sqlx prepare` cache regenerated for each touched query; pre-commit hook (`sqlx-prepare-check`) gates this. PR 2's binary deploys only AFTER PR 1's migration applies — existing CD ordering runs `task migrate` before the image swap.
 
 ### PR 3 — UI: new sections + summary endpoint extension
 
@@ -189,6 +188,8 @@ Two new sections on `frontend/src/app/(app)/app/usage/UsageView.tsx`. Reuse the 
 ```
 
 The `By platform action` section is new visual chrome (a small `<select>` toggle in the header) so it doesn't reuse `Section`; it gets its own `ActionSection` component rendering a fixed nine-row table. The toggle uses `router.replace(...)` to flip `?scope=`. The existing range-picker `useEffect` at `UsageView.tsx:44-49` builds the URL from `window.location.href` and only `set`s/`delete`s `range`, so it preserves an existing `?scope=` — no collision (verified).
+
+`ActionSection` is also responsible for the Decision-4 footnote: when `scope === "personal"`, render a one-liner under the table — *"Personal-attribution data populated from {migration apply date} onward. Older activity shows only in Org view."* Render nothing under `Org`. Tooltip on the toggle's header carries the Security note (*"Org view counts every member's activity, not just yours."*).
 
 ```
 By platform action          [ Org ▼ ]   ← toggle
