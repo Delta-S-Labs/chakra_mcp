@@ -41,29 +41,22 @@ Three PRs in sequence — splitting the schema into its own micro-PR keeps the r
 `backend/migrations/0019_action_attribution.sql`:
 
 ```sql
--- Attribute platform actions to the user who performed them, so the
--- /app/usage "Personal" scope can distinguish my activity from my
--- teammates'. Pre-existing rows stay NULL — same shape as the
--- api_key_id (#54, migration 0016) and minted_jti (#64, migration
--- 0018) attribution columns. Personal-scope queries treat NULL as
--- "not attributable" and exclude. Org-scope queries ignore the
--- column entirely and stay membership-scoped.
---
--- All five columns are nullable on purpose. Many INSERT call sites
--- in the relay are *shadow row creation* — when the relay encounters
--- a friendship/grant/capability that came in via an A2A peer push,
--- the forwarder, or the inbox bridge, it creates a local
--- representation with no authenticated human in the request. Those
--- sites continue to write NULL (documented per-site in PR 2).
-ALTER TABLE friendships        ADD COLUMN IF NOT EXISTS proposer_user_id    UUID REFERENCES users(id);
-ALTER TABLE friendships        ADD COLUMN IF NOT EXISTS decided_by_user_id  UUID REFERENCES users(id);
-ALTER TABLE grants             ADD COLUMN IF NOT EXISTS granter_user_id     UUID REFERENCES users(id);
-ALTER TABLE grants             ADD COLUMN IF NOT EXISTS revoked_by_user_id  UUID REFERENCES users(id);
-ALTER TABLE agents             ADD COLUMN IF NOT EXISTS created_by_user_id  UUID REFERENCES users(id);
-ALTER TABLE agent_capabilities ADD COLUMN IF NOT EXISTS created_by_user_id  UUID REFERENCES users(id);
+ALTER TABLE friendships        ADD COLUMN IF NOT EXISTS proposer_user_id   UUID REFERENCES users(id);
+ALTER TABLE friendships        ADD COLUMN IF NOT EXISTS decided_by_user_id UUID REFERENCES users(id);
+ALTER TABLE agent_capabilities ADD COLUMN IF NOT EXISTS created_by_user_id UUID REFERENCES users(id);
 ```
 
-The `decided_by_user_id` on `friendships` resolves [Decision 1](#decision-1-friendship-acceptance-attribution): it captures who clicked accept/reject/cancel and is written by the relay's `accept|reject|cancel` handlers in PR 2.
+**Trimmed during implementation.** An earlier draft of this spec listed six columns. While wiring PR 2 we discovered three of them are already present from earlier migrations (and already wired by their owning handlers — the gap had been on the `/v1/usage/summary` query side, not on the write side):
+
+| Originally spec'd | Actual location in schema | Already-bound handler |
+|---|---|---|
+| `agents.created_by_user_id` | migration 0003 | `backend/relay/src/handlers/agents.rs:357` + `backend/app/src/handlers/oauth.rs:958` |
+| `grants.granted_by_user_id` (was first drafted as `granter_user_id`) | migration 0005 | `backend/relay/src/handlers/grants.rs:323` |
+| `grants.revoked_by_user_id` | migration 0005 | `backend/relay/src/handlers/grants.rs:386` |
+
+So migration 0019 ships with only the three genuinely-new columns. The `decided_by_user_id` on `friendships` resolves [Decision 1](#decision-1-friendship-acceptance-attribution): it captures who clicked accept/reject/cancel and is written by the relay's `accept|reject|cancel` handlers in PR 2. The new `agent_capabilities.created_by_user_id` lets PR 3's `capabilities_published` by-action count attribute to a user under Personal scope.
+
+PR 3's by-action queries against `grants` and `agents` will read the existing `granted_by_user_id` / `revoked_by_user_id` / `created_by_user_id` columns directly — no rename to a `granter_user_id`-style alias.
 
 This migration alone changes no queries; merging it does not require any sqlx cache update. CD applies it before PR 2's binary deploy.
 
@@ -73,26 +66,31 @@ Two crates touch the tables. The split matters: agent CRUD has a second writer o
 
 **Map of every production INSERT/UPDATE site** (verified by `grep -nE '#\[cfg\(test\)\]' …` against the relay and app crates — earlier revisions of this spec over-counted by including test fixtures, which sit inside `#[cfg(test)] mod tests { … }` blocks and don't affect production attribution).
 
-**INSERT sites — all user-attributable, all carry `AuthUser`:**
+**INSERT sites that need a new bind in PR 2** (the three columns this migration actually adds):
 
 | Table | Site | Bind |
 |---|---|---|
-| `agents` | `backend/relay/src/handlers/agents.rs:357` (in `pub async fn create`) | `created_by_user_id = user.user_id` |
-| `agents` | `backend/app/src/handlers/oauth.rs:958` (device-flow approve auto-creates the paired agent) | `created_by_user_id = subject_user_id` (the user approving the pair) |
-| `friendships` | `backend/relay/src/handlers/friendships.rs:288` (in `pub async fn propose`) | `proposer_user_id = user.user_id` |
-| `friendships` | `backend/relay/src/handlers/friendships.rs:491` (in `pub async fn counter`) | `proposer_user_id = user.user_id` |
-| `friendships` | `backend/relay/src/handlers/mcp.rs:806` (in `pub async fn handle`, MCP tool can propose a friendship as a side-effect; MCP requests are bearer-authed and carry `AuthUser`) | `proposer_user_id = user.user_id` |
-| `grants` | `backend/relay/src/handlers/grants.rs:323` (in `pub async fn create`) | `granter_user_id = user.user_id` |
-| `agent_capabilities` | `backend/relay/src/handlers/capabilities.rs:158` (in `pub async fn create`) | `created_by_user_id = user.user_id` |
+| `friendships` | `backend/relay/src/handlers/friendships.rs:288` (`pub async fn propose`) | `proposer_user_id = user.user_id` |
+| `friendships` | `backend/relay/src/handlers/friendships.rs:491` (`pub async fn counter`) | `proposer_user_id = user.user_id` |
+| `friendships` | `backend/relay/src/handlers/mcp.rs:806` (`pub async fn handle`, MCP tool can propose a friendship as a side-effect; MCP requests are bearer-authed and carry `AuthUser`) | `proposer_user_id = user.user_id` |
+| `agent_capabilities` | `backend/relay/src/handlers/capabilities.rs:158` (`pub async fn create`) | `created_by_user_id = user.user_id` |
 
-**UPDATE sites — status transitions on existing rows:**
+**UPDATE sites that need a new bind in PR 2:**
 
 | Table | Site | Bind |
 |---|---|---|
 | `friendships` | `backend/relay/src/handlers/friendships.rs:313` (`pub async fn cancel`) | `decided_by_user_id = user.user_id` alongside `status = 'cancelled'` |
 | `friendships` | `backend/relay/src/handlers/friendships.rs:353` (`pub async fn accept`) | `decided_by_user_id = user.user_id` alongside `status = 'accepted'` |
 | `friendships` | `backend/relay/src/handlers/friendships.rs:397` (`pub async fn reject`) | `decided_by_user_id = user.user_id` alongside `status = 'rejected'` |
-| `grants` | `backend/relay/src/handlers/grants.rs:386` (`pub async fn revoke`, UPDATE setting `revoked_at`) | `revoked_by_user_id = user.user_id` |
+
+**Sites that already bind their attribution column** (no diff in PR 2):
+
+| Table | Site | Already binds |
+|---|---|---|
+| `agents` | `backend/relay/src/handlers/agents.rs:357` (`pub async fn create`) | `created_by_user_id` |
+| `agents` | `backend/app/src/handlers/oauth.rs:958` (device-flow approve) | `created_by_user_id` |
+| `grants` | `backend/relay/src/handlers/grants.rs:323` (`pub async fn create`) | `granted_by_user_id` |
+| `grants` | `backend/relay/src/handlers/grants.rs:386` (`pub async fn revoke`) | `revoked_by_user_id` |
 
 **Note on shadow paths.** The relay codebase does not currently have production-side automatic creation of `friendships` / `grants` / `agent_capabilities` rows from non-user contexts. All the apparently-shadow INSERTs I initially flagged (`forwarder.rs:496/509`, `a2a.rs:589/601/612`, `inbox_bridge.rs:310/321`, `invoke.rs:971/986/998`, `published_cards.rs:420`, `discovery.rs:488`) live inside `#[cfg(test)] mod tests` blocks and are test fixtures only. So every production write touches a user — every bind site above is straightforward.
 
