@@ -123,6 +123,17 @@
   border-color: var(--accent-coral);
 }
 
+/* Live preview/hint shown below the code input. Either echoes the
+   canonical code we'd submit ("Will submit as ABCD-1234") or reassures
+   the user that hyphen/case/spaces don't matter. */
+.codeHint {
+  margin-top: 0.45rem;
+  font-family: var(--font-body);
+  font-size: 0.84rem;
+  color: var(--ink-muted);
+  text-align: center;
+}
+
 .facts {
   display: grid;
   grid-template-columns: max-content 1fr;
