@@ -7,4 +7,5 @@ pub mod oauth;
 pub mod orgs;
 pub mod pairings;
 pub mod surveys;
+pub mod usage;
 pub mod users;

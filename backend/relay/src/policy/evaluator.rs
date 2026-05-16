@@ -243,6 +243,7 @@ pub async fn evaluate(
         grant_id,
         target_is_push,
         api_key_id: caller.api_key_id,
+        minted_jti: caller.minted_jti,
     })
 }
 
@@ -253,6 +254,11 @@ struct CallerIdentity {
     /// (JWT path). Propagated into `Authorized` so the per-key usage
     /// dashboard can attribute proxied A2A traffic.
     api_key_id: Option<Uuid>,
+    /// JWT id if the bearer was a user JWT, else `None`. Propagated
+    /// into `Authorized` so the per-pair usage dashboard can attribute
+    /// proxied A2A traffic to the device-flow / oauth-code row that
+    /// minted the token.
+    minted_jti: Option<Uuid>,
 }
 
 /// Resolve `(caller_agent_id)` for a GetTask call. Reuses the same
@@ -336,6 +342,10 @@ async fn resolve_bearer(
             // belong to an api_keys row — leave NULL so the per-key
             // dashboard counts only actual ck_ traffic.
             api_key_id: None,
+            // Capture the jti so per-pair usage can join back to the
+            // device-flow / oauth-code row that minted this token
+            // (migration 0017 stamped minted_jti on those rows).
+            minted_jti: Some(claims.jti),
         }));
     }
     // Then API key.
@@ -360,6 +370,8 @@ async fn resolve_bearer(
             return Ok(Some(CallerIdentity {
                 user_id: row.user_id,
                 api_key_id: Some(row.id),
+                // API-key path — no JWT, no jti.
+                minted_jti: None,
             }));
         }
     }

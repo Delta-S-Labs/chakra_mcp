@@ -30,6 +30,12 @@ pub struct Authorized {
     /// `relay_invocations` row so the per-key usage dashboard at
     /// `/v1/api-keys/{id}/usage` can attribute traffic.
     pub api_key_id: Option<Uuid>,
+    /// The JWT id of the bearer that authorised this call, if the
+    /// caller used a user JWT. `None` on the API-key path. Recorded
+    /// on the `relay_invocations` row so the per-pair usage dashboard
+    /// at `/v1/pairings/{kind}/{id}/usage` can join back to the
+    /// device-flow / oauth-code row that minted the token.
+    pub minted_jti: Option<Uuid>,
 }
 
 /// One of the structured failure modes. Each maps to a JSON-RPC error

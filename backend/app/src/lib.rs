@@ -103,6 +103,12 @@ pub fn router(state: AppState) -> Router {
             "/v1/pairings/{kind}/{id}/revoke",
             post(handlers::pairings::revoke),
         )
+        .route(
+            "/v1/pairings/{kind}/{id}/usage",
+            get(handlers::usage::pairing_usage),
+        )
+        // ─── Usage roll-ups ────────────────────────────
+        .route("/v1/usage/summary", get(handlers::usage::summary))
         // ─── Admin ─────────────────────────────────────
         .route("/v1/admin/users", get(handlers::admin::list_users))
         .route("/v1/admin/orgs", get(handlers::admin::list_orgs))

@@ -3,8 +3,10 @@ import { auth } from "@/auth";
 import {
   ApiClientError,
   getDeviceSession,
+  getUsageSummary,
   listPairings,
   type Pairing,
+  type UsagePairRollup,
 } from "@/lib/api";
 import { CodeEntryForm } from "./CodeEntryForm";
 import { ConsentForm } from "./ConsentForm";
@@ -51,10 +53,28 @@ export default async function PairPage({
   // agents list.
   if (!session) {
     let pairings: Pairing[] = [];
+    let pairUsage: UsagePairRollup[] = [];
     let pairingsError: string | null = null;
     if (token) {
       try {
-        pairings = await listPairings(token);
+        // Fetch both in parallel. Usage is a soft dependency — if it
+        // fails we still render the list, just without the per-row
+        // request counts.
+        const [pairingsResult, usageResult] = await Promise.allSettled([
+          listPairings(token),
+          getUsageSummary(token),
+        ]);
+        if (pairingsResult.status === "fulfilled") {
+          pairings = pairingsResult.value;
+        } else {
+          pairingsError =
+            pairingsResult.reason instanceof Error
+              ? pairingsResult.reason.message
+              : "Couldn't load paired agents.";
+        }
+        if (usageResult.status === "fulfilled") {
+          pairUsage = usageResult.value.by_pair;
+        }
       } catch (err) {
         pairingsError =
           err instanceof Error ? err.message : "Couldn't load paired agents.";
@@ -63,6 +83,7 @@ export default async function PairPage({
     return (
       <Landing
         pairings={pairings}
+        pairUsage={pairUsage}
         pairingsError={pairingsError}
         token={token ?? null}
       />
@@ -169,11 +190,13 @@ export default async function PairPage({
 function Landing({
   badCode = false,
   pairings = [],
+  pairUsage = [],
   pairingsError = null,
   token = null,
 }: {
   badCode?: boolean;
   pairings?: Pairing[];
+  pairUsage?: UsagePairRollup[];
   pairingsError?: string | null;
   token?: string | null;
 }) {
@@ -223,7 +246,11 @@ function Landing({
         {pairingsError && <p className={styles.error}>{pairingsError}</p>}
 
         {!pairingsError && token && (
-          <PairingsList initial={pairings} token={token} />
+          <PairingsList
+            initial={pairings}
+            pairUsage={pairUsage}
+            token={token}
+          />
         )}
       </section>
     </div>

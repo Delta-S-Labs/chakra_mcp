@@ -28,6 +28,13 @@ pub struct AuthUser {
     /// row this user creates so `/v1/api-keys/{id}/usage` can attribute
     /// traffic per-key.
     pub api_key_id: Option<Uuid>,
+    /// JWT id of the bearer that authorised this request, if the
+    /// caller used a user JWT. `None` for API-key callers. Recorded
+    /// on every `relay_invocations` row so the per-pair usage
+    /// dashboard at `/v1/pairings/{kind}/{id}/usage` can attribute
+    /// traffic — joins against `oauth_device_codes.minted_jti` and
+    /// `oauth_authorizations.minted_jti` (migration 0017).
+    pub minted_jti: Option<Uuid>,
 }
 
 impl FromRequestParts<RelayState> for AuthUser {
@@ -63,6 +70,10 @@ impl FromRequestParts<RelayState> for AuthUser {
                 is_admin: claims.is_admin,
                 // JWT path — no api_keys row backs this credential.
                 api_key_id: None,
+                // The jti of *this* bearer, recorded so we can join
+                // back to the device-flow / oauth-code row that minted
+                // it (migration 0017 stamped minted_jti on those rows).
+                minted_jti: Some(claims.jti),
             });
         }
 
@@ -120,6 +131,8 @@ async fn api_key_lookup(db: &PgPool, token: &str) -> Result<Option<AuthUser>, Ap
             email: r.email,
             is_admin: r.is_admin,
             api_key_id: Some(r.key_id),
+            // API-key path — no JWT involved, so no jti to record.
+            minted_jti: None,
         }))
     } else {
         Ok(None)

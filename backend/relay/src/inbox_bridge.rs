@@ -119,13 +119,17 @@ pub async fn park(
     // the caller authenticated with a user JWT instead of a ck_ key.
     // Granter-side updates (e.g. result posts) don't insert new rows,
     // so no question of recording the responder's key here.
+    //
+    // `minted_jti` is the dual: NULL on the ck_ path, set on the JWT
+    // path so the per-pair dashboard can attribute this row to the
+    // device-flow / oauth-code pair that minted the token.
     sqlx::query!(
         r#"
         INSERT INTO relay_invocations
             (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
              capability_name, invoked_by_user_id, status, elapsed_ms,
-             input_preview, api_key_id)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', 0, $8, $9)
+             input_preview, api_key_id, minted_jti)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', 0, $8, $9, $10)
         "#,
         task_id,
         authz.grant_id,
@@ -136,6 +140,7 @@ pub async fn park(
         authz.caller_user_id,
         params,
         authz.api_key_id,
+        authz.minted_jti,
     )
     .execute(db)
     .await?;
@@ -240,6 +245,7 @@ mod tests {
             grant_id: grant,
             target_is_push: false,
             api_key_id: None,
+            minted_jti: None,
         }
     }
 

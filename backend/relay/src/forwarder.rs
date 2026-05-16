@@ -216,14 +216,19 @@ async fn persist_invocation(
     // NULL on the JWT path (web session / OAuth / device flow); set on
     // the ck_ path so the per-key dashboard at /v1/api-keys/{id}/usage
     // can render this row.
+    //
+    // `minted_jti` is the dual: NULL on the ck_ path, set on the JWT
+    // path so the per-pair dashboard at /v1/pairings/{kind}/{id}/usage
+    // can join back to the device-flow / oauth-code row that minted
+    // the token.
     sqlx::query!(
         r#"
         INSERT INTO relay_invocations
             (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
              capability_name, invoked_by_user_id, status, http_status,
              elapsed_ms, error_message, input_preview, output_preview,
-             api_key_id)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+             api_key_id, minted_jti)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
         "#,
         id,
         authz.grant_id,
@@ -239,6 +244,7 @@ async fn persist_invocation(
         input_preview,
         output_preview,
         authz.api_key_id,
+        authz.minted_jti,
     )
     .execute(db)
     .await?;
@@ -522,6 +528,7 @@ mod tests {
             grant_id: grant,
             target_is_push: true,
             api_key_id: None,
+            minted_jti: None,
         }
     }
 
