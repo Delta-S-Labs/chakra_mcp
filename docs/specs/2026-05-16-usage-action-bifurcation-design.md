@@ -164,7 +164,7 @@ The `by_action` query branches on `scope`:
 - **`Org`**: every count joins through `account_memberships` to scope to the caller's accounts. Ignores the new `*_user_id` columns entirely. Works on all rows including pre-migration history.
 - **`Personal`**: every count adds `AND <table>.<actor>_user_id = $caller` on top of the org scope. Post-migration rows attributed to the caller only.
 
-The 9 counts are six issuing-side `count(*)` queries (one per friendship status, one for grants_issued, agents_registered, capabilities_published) and three transition-side counts (grants_revoked via `revoked_at IS NOT NULL AND revoked_by_user_id = $caller`, and the friendship accept/reject/cancel counts via `decided_by_user_id`). All bounded by the existing `from`/`to` window.
+The 9 counts split into five issuing-side `count(*)` queries (`inbox_invocations` over `relay_invocations`, `friendships_proposed` over `friendships`, `grants_issued` over `grants`, `agents_registered` over `agents`, `capabilities_published` over `agent_capabilities`) and four transition-side queries (`friendships_{accepted,rejected,cancelled}` filtered by `status = '…' AND decided_by_user_id = $caller` under Personal scope or membership-scoped under Org, plus `grants_revoked` filtered by `revoked_at IS NOT NULL AND revoked_by_user_id = $caller` (Personal) or just `revoked_at IS NOT NULL` membership-scoped (Org)). All bounded by the existing `from`/`to` window.
 
 `by_capability` is a single `SELECT capability_name, COUNT(*) FROM relay_invocations WHERE … GROUP BY capability_name ORDER BY count DESC LIMIT 20` matching the top-20 convention used by `by_agent` and `by_api_key` in the existing handler.
 
