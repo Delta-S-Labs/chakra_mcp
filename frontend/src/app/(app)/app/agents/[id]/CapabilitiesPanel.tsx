@@ -93,9 +93,33 @@ export function CapabilitiesPanel({
       </h2>
 
       {items.length === 0 ? (
-        <p className={styles.empty}>
-          No capabilities yet. {canEdit ? "Add the first one below." : "Check back soon."}
-        </p>
+        <div className={styles.emptyCard}>
+          <p className={styles.emptyHead}>
+            No capabilities yet.
+          </p>
+          <p className={styles.emptyBody}>
+            Capabilities are the typed operations friends can invoke against
+            this agent (<code>schedule_meeting</code>, <code>summarize</code>,
+            etc., each with input + output JSON Schemas). Until at least one is
+            published, peers have nothing to call — friendships and grants
+            still work, but no traffic can flow, and your usage charts on{" "}
+            <a className={styles.emptyLink} href="/app/usage">/app/usage</a>{" "}
+            stay at zero.
+          </p>
+          {canEdit ? (
+            <p className={styles.emptyBody}>
+              Add one with the form below, or from a terminal:
+              {" "}
+              <code className={styles.emptyCmd}>chakramcp capabilities create --agent &lt;id&gt; ...</code>
+              {" "}
+              (<code>chakramcp cap add --help</code> for the full flag list).
+            </p>
+          ) : (
+            <p className={styles.emptyBody}>
+              Check back once the agent&apos;s owner publishes one.
+            </p>
+          )}
+        </div>
       ) : (
         <ul className={styles.capList}>
           {items.map((cap) => (

@@ -127,6 +127,50 @@
   margin: 0;
 }
 
+/* Empty-state card for surfaces where the empty case has a meaningful
+   "here's why this matters + here's how to fix it" payload (currently:
+   no capabilities published on an agent the user owns). Heavier than
+   `.empty` because the body is multi-paragraph and worth setting apart
+   from the rest of the panel. */
+.emptyCard {
+  display: grid;
+  gap: 0.7rem;
+  padding: 1rem 1.1rem;
+  border: 1px dashed color-mix(in oklab, var(--accent-butter) 65%, var(--ink));
+  border-radius: 0.7rem;
+  background: color-mix(in oklab, var(--accent-butter) 22%, transparent);
+}
+
+.emptyHead {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+
+.emptyBody {
+  font-family: var(--font-body);
+  font-size: 0.92rem;
+  color: var(--ink);
+  margin: 0;
+  line-height: 1.55;
+}
+
+.emptyLink {
+  color: var(--accent-coral);
+  text-decoration: underline;
+}
+
+.emptyCmd {
+  font-family: var(--font-mono);
+  font-size: 0.84em;
+  padding: 0.05rem 0.35rem;
+  border-radius: 0.3rem;
+  background: color-mix(in oklab, var(--paper-soft) 80%, transparent);
+  word-break: break-word;
+}
+
 /* ─── Forms ─── */
 .createForm,
 .editPanel,
