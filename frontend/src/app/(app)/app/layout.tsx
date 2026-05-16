@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { AppNav } from "./AppNav";
 import { UserMenu } from "./UserMenu";
@@ -12,8 +13,13 @@ import styles from "./shell.module.css";
  * profile dropdown (UserMenu) that holds API keys / Pair agent /
  * Audit / Admin plus sign out. Children render in <main>.
  *
- * Middleware ensures we never reach here without a session, but we
- * still defensively check.
+ * The `src/proxy.ts` middleware also gates this route group, but we
+ * defensively re-check in case (a) middleware misses an edge case
+ * (e.g. RSC sub-fetches that don't pass through the proxy) or (b)
+ * the NextAuth cookie survives signOut() in one of the Netlify-edge
+ * + NextAuth v5 beta failure modes documented in auth-actions.ts.
+ * If we land here without a real session, redirect — never render a
+ * stub that looks like a half-broken app shell.
  *
  * Sign-out lives inside UserMenu and delegates to
  * `signOutAndRedirect` (see `src/lib/auth-actions.ts`) — that helper
@@ -24,13 +30,7 @@ import styles from "./shell.module.css";
 export default async function AppShellLayout({ children }: { children: ReactNode }) {
   const session = await auth();
   if (!session?.user) {
-    return (
-      <main className={styles.page}>
-        <div className={styles.shell}>
-          <p>Not signed in.</p>
-        </div>
-      </main>
-    );
+    redirect("/login?from=%2Fapp");
   }
 
   const { name, email, image, is_admin } = session.user;

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { getMe } from "@/lib/api";
+import { ApiClientError, apiBaseUrl, getMe } from "@/lib/api";
 import {
   listFriendships,
   listGrants,
@@ -11,6 +11,37 @@ import {
   type InvocationStatus,
 } from "@/lib/relay";
 import styles from "./dashboard.module.css";
+
+/**
+ * True when the configured backend URL points at a developer's local
+ * box. We use this to gate dev-mode error copy ("run `task db:up`")
+ * so it never shows in production. The check is deliberately permissive
+ * (localhost / 127.0.0.1 / 0.0.0.0 / .local) — false positives just
+ * show extra help text; false negatives leave a dev squinting at a
+ * production-flavoured error.
+ */
+function isLocalBackend(): boolean {
+  try {
+    const u = new URL(apiBaseUrl);
+    return (
+      u.hostname === "localhost" ||
+      u.hostname === "127.0.0.1" ||
+      u.hostname === "0.0.0.0" ||
+      u.hostname.endsWith(".local")
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Sniff a 401-shaped failure regardless of how it bubbled up. */
+function isUnauthorized(err: unknown): boolean {
+  if (err instanceof ApiClientError) return err.status === 401;
+  if (err instanceof Error) {
+    return /\b401\b|unauthorized/i.test(err.message);
+  }
+  return false;
+}
 
 /**
  * /app - relay app dashboard.
@@ -38,32 +69,51 @@ export default async function AppDashboard() {
   let invocations: Awaited<ReturnType<typeof listInvocations>> = [];
   let relayError: string | null = null;
 
-  if (token) {
-    try {
-      const me = await getMe(token);
-      surveyRequired = me.survey_required;
-      memberships = me.memberships;
-    } catch (err) {
-      backendError = err instanceof Error ? err.message : "Backend unavailable.";
-    }
+  // No backend token in the session means the NextAuth cookie is alive
+  // but doesn't carry the Bearer we issued — typically because the user
+  // signed in before backendToken was added to the session, or because
+  // their session was crafted by a stale cookie. Either way, kick them
+  // back to sign in afresh rather than rendering a half-broken shell.
+  if (!token) {
+    redirect("/login?reason=session_expired&from=%2Fapp");
+  }
 
-    try {
-      [agents, friendships, grants, invocations] = await Promise.all([
-        listMyAgents(token),
-        listFriendships(token, { direction: "all" }),
-        listGrants(token, { direction: "all" }),
-        listInvocations(token, { direction: "all" }),
-      ]);
-    } catch (err) {
-      relayError = err instanceof Error ? err.message : "Relay unavailable.";
+  try {
+    const me = await getMe(token);
+    surveyRequired = me.survey_required;
+    memberships = me.memberships;
+  } catch (err) {
+    if (isUnauthorized(err)) {
+      // The backend revoked or expired the token. Most commonly this
+      // is the post-logout flow where the NextAuth cookie outlived the
+      // server-side `revoked_tokens` entry — see auth-actions.ts for
+      // the known Netlify + NextAuth v5 beta cookie-clearing edge
+      // cases. Redirect to sign-in so the user can re-auth cleanly;
+      // /login shows a banner when `reason=session_expired`.
+      redirect("/login?reason=session_expired&from=%2Fapp");
     }
-  } else {
-    backendError = "No backend token in session - sign in again.";
+    backendError = err instanceof Error ? err.message : "Backend unavailable.";
+  }
+
+  try {
+    [agents, friendships, grants, invocations] = await Promise.all([
+      listMyAgents(token),
+      listFriendships(token, { direction: "all" }),
+      listGrants(token, { direction: "all" }),
+      listInvocations(token, { direction: "all" }),
+    ]);
+  } catch (err) {
+    if (isUnauthorized(err)) {
+      redirect("/login?reason=session_expired&from=%2Fapp");
+    }
+    relayError = err instanceof Error ? err.message : "Relay unavailable.";
   }
 
   if (surveyRequired) {
     redirect("/app/welcome");
   }
+
+  const showDevHint = isLocalBackend();
 
   // Memberships are still loaded above because the `/v1/me` call
   // doubles as the survey-required check. We no longer surface the
@@ -101,10 +151,17 @@ export default async function AppDashboard() {
         <section className={styles.notice}>
           <strong>Backend says:</strong> {backendError}
           <p>
-            Make sure <code>chakramcp-app</code> is running locally
-            (<code>task db:up &amp;&amp; task dev:backend</code>) and
-            <code> NEXT_PUBLIC_APP_API_URL</code> matches.
+            Service is temporarily unavailable. Try again in a moment —
+            your stats below may be incomplete until it&apos;s back.
           </p>
+          {showDevHint && (
+            <p>
+              <em>Dev hint:</em> make sure <code>chakramcp-app</code> is
+              running locally (
+              <code>task db:up &amp;&amp; task dev:backend</code>) and{" "}
+              <code>NEXT_PUBLIC_APP_API_URL</code> matches.
+            </p>
+          )}
         </section>
       )}
 
@@ -112,6 +169,13 @@ export default async function AppDashboard() {
         <section className={styles.notice}>
           <strong>Relay says:</strong> {relayError}
           <p>Stats below may be incomplete until the relay is back.</p>
+          {showDevHint && (
+            <p>
+              <em>Dev hint:</em> the relay runs alongside the app via{" "}
+              <code>task dev:backend</code>; check{" "}
+              <code>NEXT_PUBLIC_RELAY_API_URL</code>.
+            </p>
+          )}
         </section>
       )}
 
