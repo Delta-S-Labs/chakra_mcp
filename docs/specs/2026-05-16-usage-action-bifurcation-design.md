@@ -1,6 +1,6 @@
 # Usage page: bifurcate by capability + by platform action
 
-**Status:** design (drafted 2026-05-16, awaiting review)
+**Status:** design (drafted 2026-05-16, revised after spec-review iteration 1)
 **Issue:** [#70](https://github.com/Delta-S-Labs/chakra_mcp/issues/70)
 **Brainstormed via:** `/brainstorming` + `/systematic-debugging`
 
@@ -13,80 +13,141 @@
 Clarified live: the user wants the page to **also** decompose by
 
 1. **Which capability** was called inside those invocations (`message_owner`, `schedule_meeting`, …), and
-2. **What kind of platform action** the user performed across the whole network — including non-invocation actions like friendship proposals, grants, agent registrations, capability publishes.
+2. **What kind of platform action** the user (or their org-mates) performed across the whole network — including non-invocation actions like friendship proposals, grants, agent registrations, capability publishes.
 
-Today the page silently treats "request" as synonymous with "relay invocation." Anything not in `relay_invocations` (friendship lifecycle, grant issuance, capability publish, agent registration) is invisible.
+Today the page treats "request" as synonymous with "relay invocation." Anything not in `relay_invocations` (friendship lifecycle, grant issuance, capability publish, agent registration) is invisible.
 
 ## Goals
 
-- **`By capability`** section on `/app/usage`: per-capability count within the date window.
-- **`By platform action`** section: nine rows covering the user's actions across the network — `Inbox invocations`, `Friendships proposed/accepted/rejected/cancelled`, `Grants issued/revoked`, `Agents registered`, `Capabilities published`.
-- **Personal ↔ Org scope toggle** on the `By platform action` section header, defaulting to `Personal` (only actions the signed-in user performed) with `Org` showing every member of the user's accounts. URL-state via `?scope=personal|org`.
-- All counts respect the existing 7d / 30d / 90d range picker.
+- **`By capability`** section on `/app/usage`: per-capability count within the date window. Top 20 capabilities, mirroring the convention used by other rollup sections.
+- **`By platform action`** section: nine rows covering activity across the network — `Inbox invocations`, `Friendships proposed/accepted/rejected/cancelled`, `Grants issued/revoked`, `Agents registered`, `Capabilities published`.
+- **Org ↔ Personal scope toggle** on the `By platform action` section header. URL state via `?scope=personal|org`. Default `org` (see [Decision 3](#decision-3-default-scope) for why this flipped from `personal`).
+- All counts respect the existing 7d / 30d / 90d range picker (and survive its URL-state effect — verified safe in current code).
 
 ## Non-goals
 
 - **HTTP request log.** Reads (listing friendships, opening pages, the dashboard refreshing) are out of scope. Only deliberate writes count.
-- **OAuth-grant and discovery-search counts.** No existing table tracks these; deferred to a future `platform_events` table if demand surfaces.
+- **OAuth-grant and discovery-search counts.** No existing table tracks these uniformly; deferred to a future `platform_events` table if demand surfaces.
 - **Per-capability sparklines.** Table-only for v1.
 - **Cross-org rollups.** Page stays scoped to the signed-in user's account memberships.
 - **Mutating the existing four sections.** Their queries and copy are unchanged.
 
 ## Approach
 
-Two PRs in sequence.
+Three PRs in sequence — splitting the schema into its own micro-PR keeps the rollout safe against partial deploys (the original two-PR plan let PR B's `sqlx::query!` macros compile-time-check against an unmigrated DB).
 
-### PR A — schema: attribute platform actions to a user
+### PR 1 — migration only
 
-The existing tables for friendships / grants / agents / capabilities carry the *agent* that performed the action but not the *user*. Without user attribution, the `Personal` scope can't be computed — the toggle would collapse into a "this section only" gimmick.
-
-Add nullable `*_user_id` columns to four tables:
+`backend/migrations/0019_action_attribution.sql`:
 
 ```sql
--- Migration 0019_action_attribution.sql
-ALTER TABLE friendships          ADD COLUMN IF NOT EXISTS proposer_user_id  UUID REFERENCES users(id);
-ALTER TABLE grants               ADD COLUMN IF NOT EXISTS granter_user_id   UUID REFERENCES users(id);
-ALTER TABLE grants               ADD COLUMN IF NOT EXISTS revoked_by_user_id UUID REFERENCES users(id);
-ALTER TABLE agents               ADD COLUMN IF NOT EXISTS created_by_user_id UUID REFERENCES users(id);
-ALTER TABLE agent_capabilities   ADD COLUMN IF NOT EXISTS created_by_user_id UUID REFERENCES users(id);
+-- Attribute platform actions to the user who performed them, so the
+-- /app/usage "Personal" scope can distinguish my activity from my
+-- teammates'. Pre-existing rows stay NULL — same shape as the
+-- api_key_id (#54, migration 0016) and minted_jti (#64, migration
+-- 0018) attribution columns. Personal-scope queries treat NULL as
+-- "not attributable" and exclude. Org-scope queries ignore the
+-- column entirely and stay membership-scoped.
+--
+-- All five columns are nullable on purpose. Many INSERT call sites
+-- in the relay are *shadow row creation* — when the relay encounters
+-- a friendship/grant/capability that came in via an A2A peer push,
+-- the forwarder, or the inbox bridge, it creates a local
+-- representation with no authenticated human in the request. Those
+-- sites continue to write NULL (documented per-site in PR 2).
+ALTER TABLE friendships        ADD COLUMN IF NOT EXISTS proposer_user_id    UUID REFERENCES users(id);
+ALTER TABLE friendships        ADD COLUMN IF NOT EXISTS decided_by_user_id  UUID REFERENCES users(id);
+ALTER TABLE grants             ADD COLUMN IF NOT EXISTS granter_user_id     UUID REFERENCES users(id);
+ALTER TABLE grants             ADD COLUMN IF NOT EXISTS revoked_by_user_id  UUID REFERENCES users(id);
+ALTER TABLE agents             ADD COLUMN IF NOT EXISTS created_by_user_id  UUID REFERENCES users(id);
+ALTER TABLE agent_capabilities ADD COLUMN IF NOT EXISTS created_by_user_id  UUID REFERENCES users(id);
 ```
 
-Pre-migration rows stay `NULL` — same shape as the `api_key_id` and `minted_jti` migrations (0016, 0018) before them. The `Personal` view counts only rows where the column equals the caller's user id; `Org` view ignores the column and falls back to membership-scoping. So old rows degrade gracefully:
+The `decided_by_user_id` on `friendships` resolves [Decision 1](#decision-1-friendship-acceptance-attribution): it captures who clicked accept/reject/cancel and is written by the relay's `accept|reject|cancel` handlers in PR 2.
 
-- `Org` view: full historical accuracy
-- `Personal` view: counts only the post-migration window of activity the user did themselves
+This migration alone changes no queries; merging it does not require any sqlx cache update. CD applies it before PR 2's binary deploy.
 
-Backend handlers writing each of those tables get one extra bind. Sites to touch (verified during research):
+### PR 2 — handler attribution writes
 
-- `backend/app/src/handlers/friendships.rs::propose` → set `proposer_user_id = caller`
-- `backend/app/src/handlers/friendships.rs::accept|reject|cancel` → write to a new `decided_by_user_id` column? **Decision:** no — the four states are already in the row's `status` field plus their `*_at` timestamps. The proposer_user_id column alone is enough to attribute every friendship-lifecycle row to a personal actor for the four `By platform action` rows: a row counts as "I proposed it" when `proposer_user_id = me`, and counts as "I accepted/rejected/cancelled it" when the matching agent on my side issued the status change. *(This needs a second look during PR A — see Open question 1 below.)*
-- `backend/app/src/handlers/grants.rs::create` → `granter_user_id = caller`
-- `backend/app/src/handlers/grants.rs::revoke` → `revoked_by_user_id = caller`
-- `backend/app/src/handlers/agents.rs::create` → `created_by_user_id = caller`
-- `backend/app/src/handlers/capabilities.rs::create` → `created_by_user_id = caller`
+Two crates touch the tables. The split matters: agent CRUD has a second writer outside the relay (the OAuth device-flow sign-in path auto-creates an agent), so the column write needs to land in both.
 
-`sqlx prepare` updated for each touched query. No relay-side changes (the relay only writes `relay_invocations`, which already has `invoked_by_user_id`).
+**Map of every non-test INSERT site for the targeted tables** (verified by `grep`):
 
-### PR B — UI: new sections + summary endpoint extension
+| Table | Site | User-attributable? | Action |
+|---|---|---|---|
+| `agents` | `backend/relay/src/handlers/agents.rs:357` | Yes — handler takes `AuthUser` | Set `created_by_user_id = user.user_id` |
+| `agents` | `backend/app/src/handlers/oauth.rs:958` | Yes — device-flow approve owns the JWT subject | Set `created_by_user_id = subject_user_id` |
+| `friendships` | `backend/relay/src/handlers/friendships.rs:288` (propose) | Yes | `proposer_user_id = user.user_id` |
+| `friendships` | `backend/relay/src/handlers/friendships.rs:491` (counter) | Yes | `proposer_user_id = user.user_id` |
+| `friendships` | `backend/relay/src/handlers/mcp.rs:806` (MCP-driven shadow) | **No** | Leave both columns NULL; comment "MCP shadow" |
+| `friendships` | `backend/relay/src/handlers/invoke.rs:986` (auto-friend on first invoke) | Mixed — `AuthUser` exists; user IS technically present | Set `proposer_user_id = user.user_id` |
+| `friendships` | `backend/relay/src/handlers/a2a.rs:601` (A2A peer push shadow) | **No** | NULL; comment "A2A peer-push shadow" |
+| `friendships` | `backend/relay/src/forwarder.rs:496` (background forwarder reflection) | **No** | NULL; comment "background forwarder" |
+| `grants` | `backend/relay/src/handlers/grants.rs:323` (create) | Yes | `granter_user_id = user.user_id` |
+| `grants` | `backend/relay/src/handlers/invoke.rs:998` (auto-grant on friend-invoke) | Mixed | Set `granter_user_id = user.user_id` |
+| `grants` | `backend/relay/src/handlers/a2a.rs:612` (A2A peer-push shadow) | **No** | NULL |
+| `grants` | `backend/relay/src/forwarder.rs:509` (forwarder shadow) | **No** | NULL |
+| `grants` | `backend/relay/src/inbox_bridge.rs:321` (inbox-bridge auto-grant) | **No** | NULL |
+| `agent_capabilities` | `backend/relay/src/handlers/capabilities.rs:158` (create) | Yes | `created_by_user_id = user.user_id` |
+| `agent_capabilities` | `backend/relay/src/handlers/published_cards.rs:420` (card refresh) | **No** | NULL — background job |
+| `agent_capabilities` | `backend/relay/src/handlers/discovery.rs:488` (peer card import) | **No** | NULL |
+| `agent_capabilities` | `backend/relay/src/handlers/invoke.rs:971` (auto-cap on first invoke) | Mixed | Set `created_by_user_id = user.user_id` |
+| `agent_capabilities` | `backend/relay/src/handlers/a2a.rs:589` (A2A shadow) | **No** | NULL |
+| `agent_capabilities` | `backend/relay/src/inbox_bridge.rs:310` (bridge shadow) | **No** | NULL |
+| `agent_capabilities` | `backend/relay/src/forwarder.rs:484` (forwarder shadow) | **No** | NULL |
+| `friendships` (status changes, not INSERT) | `backend/relay/src/handlers/friendships.rs::accept/reject/cancel` | Yes | `UPDATE … SET decided_by_user_id = user.user_id, status = 'accepted', accepted_at = now()` |
+
+**Policy in one sentence:** user-attribution columns are populated only when an authenticated `AuthUser` directly initiated the row's creation/transition; shadow/peer/background paths leave them NULL by design.
+
+`sqlx prepare` cache regenerated for each touched query; pre-commit hook gate this. PR 2's binary deploys only AFTER PR 1's migration applies (existing CD ordering: `task migrate` runs before image swap).
+
+### PR 3 — UI: new sections + summary endpoint extension
 
 #### Backend
 
-Extend `GET /v1/usage/summary` (in `backend/app/src/handlers/usage.rs`) to return two new fields:
+Extend `backend/app/src/handlers/usage.rs`. The existing struct is **`SummaryResponse`** (not `UsageSummary` as my first draft said), and the existing query-param struct is **`RangeQuery`**. Both get extended; the new `scope` field defaults to `Org`:
 
 ```rust
-struct UsageSummary {
-    // ... existing fields ...
-    pub by_capability: Vec<CapabilityRollup>,
-    pub by_action: ActionBreakdown,
+#[derive(Deserialize)]
+pub struct RangeQuery {
+    pub from: Option<DateTime<Utc>>,
+    pub to:   Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub scope: ActionScope,   // NEW
 }
 
-struct CapabilityRollup {
+#[derive(Deserialize, Default, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum ActionScope {
+    #[default]
+    Org,         // serialised as "org"
+    Personal,    // serialised as "personal"
+}
+
+#[derive(Serialize)]
+pub struct SummaryResponse {
+    pub from: DateTime<Utc>,
+    pub to:   DateTime<Utc>,
+    pub total:     TotalRollup,
+    pub by_org:    Vec<OrgRollup>,
+    pub by_agent:  Vec<AgentRollup>,
+    pub by_api_key: Vec<ApiKeyRollup>,
+    pub by_pair:   Vec<PairRollup>,
+    pub daily:     Vec<DailyBucket>,
+    pub by_capability: Vec<CapabilityRollup>,   // NEW
+    pub by_action:     ActionBreakdown,         // NEW
+}
+
+#[derive(Serialize)]
+pub struct CapabilityRollup {
     pub name: String,
     pub requests: i64,
 }
 
-struct ActionBreakdown {
-    pub scope: ActionScope,              // "personal" | "org"
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ActionBreakdown {
+    pub scope: ActionScope,    // echoes the query param so the UI can confirm what it got
     pub inbox_invocations: i64,
     pub friendships_proposed: i64,
     pub friendships_accepted: i64,
@@ -99,35 +160,38 @@ struct ActionBreakdown {
 }
 ```
 
-`scope` is read from a new optional query param `?scope=personal|org` (default `personal`). The handler dispatches to one of two helpers depending on scope; both helpers issue six `count(*)` queries against the relevant tables.
+The `by_action` query branches on `scope`:
 
-`by_capability` is a single `GROUP BY capability_name ORDER BY count DESC LIMIT 5` query against `relay_invocations`, with the existing date filter. Top-5 truncation matches the per-key chart's pattern.
+- **`Org`**: every count joins through `account_memberships` to scope to the caller's accounts. Ignores the new `*_user_id` columns entirely. Works on all rows including pre-migration history.
+- **`Personal`**: every count adds `AND <table>.<actor>_user_id = $caller` on top of the org scope. Post-migration rows attributed to the caller only.
+
+The 9 counts are six issuing-side `count(*)` queries (one per friendship status, one for grants_issued, agents_registered, capabilities_published) and three transition-side counts (grants_revoked via `revoked_at IS NOT NULL AND revoked_by_user_id = $caller`, and the friendship accept/reject/cancel counts via `decided_by_user_id`). All bounded by the existing `from`/`to` window.
+
+`by_capability` is a single `SELECT capability_name, COUNT(*) FROM relay_invocations WHERE … GROUP BY capability_name ORDER BY count DESC LIMIT 20` matching the top-20 convention used by `by_agent` and `by_api_key` in the existing handler.
 
 #### Frontend
 
-Extend `frontend/src/app/(app)/app/usage/UsageView.tsx` and `frontend/src/lib/api.ts`:
+Two new sections on `frontend/src/app/(app)/app/usage/UsageView.tsx`. Reuse the existing `Section<T>` component (real signature: `{ title, empty, rows, renderRow, headers }`):
 
 ```tsx
-// New section, after "By API key":
 <Section
   title="By capability"
   empty="No invocations in this window."
+  headers={["Capability", "Requests"]}
   rows={summary.by_capability}
-  render={(r) => <td><code>{r.name}</code></td>}
-  count={(r) => r.requests}
-/>
-
-// New section, at the bottom:
-<ActionSection
-  scope={summary.by_action.scope}   // controlled by URL state
-  counts={summary.by_action}
+  renderRow={(r) => (
+    <>
+      <td><code>{r.name}</code></td>
+      <td className={styles.numericCol}>{r.requests.toLocaleString()}</td>
+    </>
+  )}
 />
 ```
 
-`ActionSection` is a new component that renders the nine-row table plus a `<select>` toggle at the header:
+The `By platform action` section is new visual chrome (a small `<select>` toggle in the header) so it doesn't reuse `Section`; it gets its own `ActionSection` component rendering a fixed nine-row table. The toggle uses `router.replace(...)` to flip `?scope=`. The existing range-picker `useEffect` at `UsageView.tsx:44-49` builds the URL from `window.location.href` and only `set`s/`delete`s `range`, so it preserves an existing `?scope=` — no collision (verified).
 
 ```
-By platform action          [ Personal ▼ ]
+By platform action          [ Org ▼ ]   ← toggle
 ─────────────────────────────────────────
 Inbox invocations                      3
 Friendships proposed                   2
@@ -140,14 +204,14 @@ Agents registered                      1
 Capabilities published                 4
 ```
 
-Toggling the `<select>` updates the URL via `router.push("?scope=…")`. The page re-renders server-side, re-fetching `/v1/usage/summary?scope=…`.
+Zero-count rows are deliberately shown — see [Decision 2](#decision-2-zero-rows).
 
-Zero-count rows render at row-level 0, not hidden — the schedule of categories itself is information.
+A `getUsageSummary` helper in `frontend/src/lib/api.ts` learns the optional `scope` param and the two new fields on the response type.
 
 #### Wire shape
 
 ```jsonc
-GET /v1/usage/summary?range=30d&scope=personal
+GET /v1/usage/summary?range=30d&scope=org
 {
   "from": "2026-04-16T00:00:00Z",
   "to":   "2026-05-16T00:00:00Z",
@@ -161,7 +225,7 @@ GET /v1/usage/summary?range=30d&scope=personal
     { "name": "schedule_meeting", "requests": 1 }
   ],
   "by_action": {
-    "scope": "personal",
+    "scope": "org",
     "inbox_invocations":       3,
     "friendships_proposed":    2,
     "friendships_accepted":    1,
@@ -176,43 +240,80 @@ GET /v1/usage/summary?range=30d&scope=personal
 }
 ```
 
+## Decisions
+
+(Three open questions from the previous draft, resolved.)
+
+### Decision 1 — friendship-acceptance attribution
+
+The original spec proposed `proposer_user_id` only. Reviewer correctly pointed out this misses the accept/reject/cancel attribution, plus several non-user pathways (A2A peer push, MCP, background forwarder, inbox bridge).
+
+**Decision:** add **two** columns on `friendships`: `proposer_user_id` (set on INSERT) and `decided_by_user_id` (set on the status-change UPDATE in accept/reject/cancel handlers). Both stay NULL on shadow-creation paths per the policy table above. For attribution purposes:
+
+- "Friendships proposed by me" counts rows where `proposer_user_id = me`.
+- "Friendships accepted by me" counts rows where `decided_by_user_id = me AND status = 'accepted'`. Same for rejected/cancelled.
+
+**Multi-actor pathways spelled out:**
+- Accept via web UI (JWT): `decided_by_user_id = JWT subject`.
+- Accept via API key (`ck_…`): the key's `user_id` column maps cleanly; set `decided_by_user_id = key.user_id`.
+- Accept via background bridge/forwarder/A2A push: no user; leave NULL. Counts toward Org scope only.
+- Accept via peer-pushed A2A SendMessage that auto-accepts a pending request: NULL; same reasoning.
+
+### Decision 2 — zero rows
+
+The 9 rows in `By platform action` render even when count is 0. Rationale: the *menu of categories* is the information — telling the user "here are the things the platform tracks" matters as much as the numbers. The page already does this for the daily chart's zero-bar days.
+
+(The reviewer flagged that a brand-new user with all-zero Personal sees nine zeros. Default scope is now `Org`, which mitigates — see Decision 3.)
+
+### Decision 3 — default scope
+
+**Flipped from `Personal` to `Org`.** Reasons:
+
+1. A new user landing on the page with no Personal-attributed activity (pre-migration history doesn't carry attribution) sees all-zero Personal rows. Confusing.
+2. `Org` view is consistent with the existing four sections' membership scoping. Less cognitive load.
+3. Most users are in a single personal account where Org and Personal are identical. The toggle only meaningfully diverges in multi-member orgs, where the *teammate's* activity is the surprising-then-illuminating thing.
+
+`Personal` remains a one-click toggle and the URL param ships in deep-links.
+
+### Decision 4 — backfill
+
+No backfill of pre-migration rows. Same precedent as `api_key_id` (#54) and `minted_jti` (#64). The Org scope handles the historical case correctly; Personal scope is honest-low for older accounts. Add a one-line footnote below the section in `Personal` mode only: *"Personal-attribution data populated from {migration apply date} onward."*
+
+### Decision 5 — top-N truncation on By capability
+
+LIMIT 20, matching the existing `by_agent` and `by_api_key` conventions in the same handler. The wire example shows 2 rows because that's the realistic count for a fresh account; no overflow affordance needed at 2 rows. If the user hits 21+ capabilities we can add a "+ N more" link later.
+
+## Security note
+
+`Org` scope intentionally surfaces every member's activity to every other member of the same account. This is information disclosure within an org and is intentional — billing-level accounts already share visibility today (agents, grants, audit log). A contractor added to an account will see how many friendships their teammates proposed in the window. Worth flagging in the section header tooltip: *"Org view counts every member's activity, not just yours."*
+
 ## Testing
 
 Backend (`backend/app/src/handlers/usage.rs`):
 
 - New `sqlx::test` for `by_capability` aggregation with three invocations across two capabilities.
-- New `sqlx::test` for `by_action` in `personal` scope (caller's actions only) on a seeded mixed-actor account.
-- New `sqlx::test` for `by_action` in `org` scope (every member's actions visible) on the same fixture.
-- Regression: existing tests for the four current dimensions still green.
+- New `sqlx::test` for `by_action` in `Personal` scope — seeded mixed-actor account, verify caller's actions only.
+- New `sqlx::test` for `by_action` in `Org` scope — same fixture, verify all members' actions visible.
+- New `sqlx::test` for the friendship `decided_by_user_id` UPDATE path — accept changes the value, reject changes it differently, cancel works.
+- Regression: existing tests for the four current dimensions still green; existing `by_pair` / `by_org` / `by_api_key` / `by_agent` queries unchanged.
 
-Frontend: TypeScript compile + ESLint + Next build.
+Frontend: TypeScript compile + ESLint + Next build. Manual deploy-preview smoke: visit `/app/usage?scope=org&range=30d`, toggle to `personal`, confirm `?scope=personal&range=30d` and the numbers change.
 
-## Open questions
+## Rollout
 
-1. **Friendship acceptance attribution.** The `proposer_user_id` column attributes the *proposal* row to a user. But "Friendships accepted" needs a different attribution: who accepted? The schema doesn't track this. Three options:
-   - Add `decided_by_user_id` on `friendships` (one more column on migration 0019). Cleanest.
-   - Infer from `target_agent_id`'s owning user via `account_memberships`. Loses precision in multi-member accounts (anyone in the account could have clicked accept).
-   - Show `accepted/rejected/cancelled` rows in `Org` scope only; hide them in `Personal`. Punts the question.
-
-   **Proposed:** add `decided_by_user_id` to keep the attribution clean and symmetric. Tiny addition.
-
-2. **Backfill?** Pre-migration rows have `NULL` for the new columns, so `Personal` view shows zero for anything older than the migration. Same precedent as `relay_invocations.api_key_id` (#54) and `minted_jti` (#64): no backfill. Worth a one-line copy callout under the section header — *"Personal-attribution data populated from {migration date} onward; older activity shows only in Org view."*
-
-3. **What about deleted rows?** Tombstoned agents and revoked grants still contributed activity in their lifetime — they should still count. Default: include them, query on `created_at` not on current liveness.
+1. **PR 1** lands. Migration 0019 applies in CD via `task migrate` before the image swap. Verify with `psql -c '\\d friendships'` that the new columns exist.
+2. **PR 2** lands. New `sqlx prepare` cache (covering the modified INSERT/UPDATE bindings) is committed in the same PR. CI catches drift via the existing `Verify .sqlx cache is up to date` job.
+3. **PR 3** lands. Netlify deploys the new sections; backend deploys the extended endpoint.
+4. Smoke: `curl https://app.chakramcp.com/v1/usage/summary?scope=org` (with a valid token) returns 200 + the new fields populated; `/app/usage` renders both new sections + a working toggle.
+5. Close [#70](https://github.com/Delta-S-Labs/chakra_mcp/issues/70) with a comment linking to the page.
 
 ## Out of scope (logged as backlog)
 
 - **Sparklines per category** — defer until v2 if anyone asks.
 - **Drill-down from a row to a filtered audit-log view** — useful but is a separate "Audit" feature.
 - **OAuth-grant / discovery-search tracking** — add a `platform_events` table later only if needed.
-
-## Rollout
-
-1. Merge PR A (schema). Wait for CD to apply migration 0019.
-2. Merge PR B (UI). Netlify deploys the new sections.
-3. Verify on prod: `/v1/usage/summary?scope=personal` returns the new fields; `/app/usage` renders both new sections; toggle changes the by_action numbers.
-4. Close issue #70 with a comment linking to the page section.
+- **Per-action sub-attribution for shadow rows** — the policy says "NULL on shadow paths." If we later want to attribute peer-push shadow rows to the *originating* peer agent, that's a separate spec (and a separate column on the row).
 
 ## Why this matters
 
-Three invocations in a 30-day window is a small number, but the reporter's frustration is real: the page promised to surface activity and didn't surface what the user did *with* the platform — only what the platform did *to* their agents. After this lands, the page tells a complete story: *here's what kind of work happened, here's what you did to make it happen, here's how it splits between you and your teammates.*
+Three invocations in a 30-day window is a small number, but the reporter's frustration is real: the page promised to surface activity and didn't surface what the user did *with* the platform — only what the platform did *to* their agents. After this lands, the page tells a complete story: *here's what kind of work happened, here's what platform actions made it possible, and (in multi-member orgs) here's how it splits between you and your teammates.*
