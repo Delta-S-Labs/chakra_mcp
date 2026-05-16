@@ -285,14 +285,17 @@ pub async fn propose(
     let id = Uuid::now_v7();
     let inserted = sqlx::query!(
         r#"
-        INSERT INTO friendships (id, proposer_agent_id, target_agent_id, status, proposer_message)
-        VALUES ($1, $2, $3, 'proposed', $4)
+        INSERT INTO friendships
+            (id, proposer_agent_id, target_agent_id, status, proposer_message,
+             proposer_user_id)
+        VALUES ($1, $2, $3, 'proposed', $4, $5)
         RETURNING id
         "#,
         id,
         req.proposer_agent_id,
         req.target_agent_id,
         req.proposer_message,
+        user.user_id,
     )
     .fetch_optional(&state.db)
     .await
@@ -338,10 +341,13 @@ pub async fn cancel(
     sqlx::query!(
         r#"
         UPDATE friendships
-        SET status = 'cancelled', decided_at = now()
+        SET status = 'cancelled',
+            decided_at = now(),
+            decided_by_user_id = $2
         WHERE id = $1 AND status = 'proposed'
         "#,
-        id
+        id,
+        user.user_id,
     )
     .execute(&state.db)
     .await?;
@@ -381,11 +387,13 @@ pub async fn accept(
         UPDATE friendships
         SET status = 'accepted',
             response_message = COALESCE($2, response_message),
-            decided_at = now()
+            decided_at = now(),
+            decided_by_user_id = $3
         WHERE id = $1 AND status = 'proposed'
         "#,
         id,
         req.response_message,
+        user.user_id,
     )
     .execute(&state.db)
     .await?;
@@ -425,11 +433,13 @@ pub async fn reject(
         UPDATE friendships
         SET status = 'rejected',
             response_message = COALESCE($2, response_message),
-            decided_at = now()
+            decided_at = now(),
+            decided_by_user_id = $3
         WHERE id = $1 AND status = 'proposed'
         "#,
         id,
         req.response_message,
+        user.user_id,
     )
     .execute(&state.db)
     .await?;
@@ -489,14 +499,16 @@ pub async fn counter(
     sqlx::query!(
         r#"
         INSERT INTO friendships
-            (id, proposer_agent_id, target_agent_id, status, proposer_message, counter_of_id)
-        VALUES ($1, $2, $3, 'proposed', $4, $5)
+            (id, proposer_agent_id, target_agent_id, status, proposer_message,
+             counter_of_id, proposer_user_id)
+        VALUES ($1, $2, $3, 'proposed', $4, $5, $6)
         "#,
         new_id,
         row.target_agent_id, // counter swaps direction
         row.proposer_agent_id,
         req.proposer_message,
         id,
+        user.user_id,
     )
     .execute(&mut *tx)
     .await

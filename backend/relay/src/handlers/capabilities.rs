@@ -156,8 +156,9 @@ pub async fn create(
     let inserted = sqlx::query!(
         r#"
         INSERT INTO agent_capabilities
-            (id, agent_id, name, description, input_schema, output_schema, visibility)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+            (id, agent_id, name, description, input_schema, output_schema,
+             visibility, created_by_user_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         ON CONFLICT (agent_id, name) DO NOTHING
         RETURNING id, agent_id, name, description, input_schema, output_schema,
                   visibility, created_at, updated_at
@@ -169,6 +170,7 @@ pub async fn create(
         req.input_schema,
         req.output_schema,
         visibility,
+        user.user_id,
     )
     .fetch_optional(&state.db)
     .await?

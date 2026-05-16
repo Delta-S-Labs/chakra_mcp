@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE friendships\n        SET status = 'cancelled',\n            decided_at = now(),\n            decided_by_user_id = $2\n        WHERE id = $1 AND status = 'proposed'\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c4bdc5bf92d4e14c41fcb0d14afd0abf1cdee91d1c6c7c323e10f5fc8bb22a23"
+}
