@@ -264,3 +264,70 @@
   font-weight: 600;
   color: var(--ink);
 }
+
+/* ─── By platform action ─── */
+
+.actionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+/* Mirror the existing notice border so the toggle reads as part of
+ * the same family as the rangeBar above (rounded, soft border, paper
+ * fill). */
+.scopeToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.5rem 0.2rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  cursor: pointer;
+}
+
+.scopeLabel {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.scopeSelect {
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  background: transparent;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  cursor: pointer;
+  padding: 0.2rem 1rem 0.2rem 0.2rem;
+  /* Inline caret so the trigger reads as a select without relying on
+   * the OS chevron, which varies wildly. */
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 8px) 50%, calc(100% - 4px) 50%;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+}
+
+.scopeSelect:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.actionFootnote {
+  margin: 0.35rem 0 0 0;
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--ink-muted);
+}

@@ -28,3 +28,18 @@ export function readRangeParam(
   if (raw === "7d" || raw === "30d" || raw === "90d") return raw;
   return "30d";
 }
+
+/**
+ * Personal vs org scope for the `By platform action` section. Default
+ * "org" matches the backend default — see Decision 3 in the
+ * 2026-05-16 design doc.
+ */
+export type ScopeKey = "org" | "personal";
+
+export function readScopeParam(
+  params: Record<string, string | string[] | undefined>,
+): ScopeKey {
+  const v = params.scope;
+  const raw = Array.isArray(v) ? v[0] : v;
+  return raw === "personal" ? "personal" : "org";
+}

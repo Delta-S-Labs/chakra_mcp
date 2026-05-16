@@ -466,6 +466,32 @@ export interface UsagePairRollup {
   requests: number;
 }
 
+export interface UsageCapabilityRollup {
+  /** Capability-name snapshot from `relay_invocations.capability_name`.
+   *  Could differ from the live `agent_capabilities.name` after a rename;
+   *  the audit log keeps the historical name on purpose. */
+  name: string;
+  requests: number;
+}
+
+/** Org-wide (every member's activity) or personal (the caller only).
+ *  Defaults to `org` server-side; the `by_action` breakdown echoes the
+ *  applied scope on the response so the UI can confirm what it got. */
+export type ActionScope = "org" | "personal";
+
+export interface UsageActionBreakdown {
+  scope: ActionScope;
+  inbox_invocations: number;
+  friendships_proposed: number;
+  friendships_accepted: number;
+  friendships_rejected: number;
+  friendships_cancelled: number;
+  grants_issued: number;
+  grants_revoked: number;
+  agents_registered: number;
+  capabilities_published: number;
+}
+
 export interface UsageSummary {
   from: string;
   to: string;
@@ -474,16 +500,19 @@ export interface UsageSummary {
   by_agent: UsageAgentRollup[];
   by_api_key: UsageApiKeyRollup[];
   by_pair: UsagePairRollup[];
+  by_capability: UsageCapabilityRollup[];
+  by_action: UsageActionBreakdown;
   daily: UsageDaily[];
 }
 
 export function getUsageSummary(
   token: string,
-  range: { from?: string; to?: string } = {},
+  range: { from?: string; to?: string; scope?: ActionScope } = {},
 ) {
   const qs = new URLSearchParams();
   if (range.from) qs.set("from", range.from);
   if (range.to) qs.set("to", range.to);
+  if (range.scope) qs.set("scope", range.scope);
   const tail = qs.toString();
   return request<UsageSummary>(
     `/v1/usage/summary${tail ? `?${tail}` : ""}`,

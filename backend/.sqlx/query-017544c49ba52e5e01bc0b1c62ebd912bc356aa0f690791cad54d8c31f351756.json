@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COUNT(*) AS \"c!\"\n        FROM relay_invocations i\n        LEFT JOIN agents ga ON ga.id = i.granter_agent_id\n        LEFT JOIN agents ea ON ea.id = i.grantee_agent_id\n        WHERE i.created_at >= $2\n          AND i.created_at <  $3\n          AND (\n              i.invoked_by_user_id = $1\n           OR ea.account_id IN (\n                  SELECT account_id FROM account_memberships WHERE user_id = $1\n              )\n           OR ga.account_id IN (\n                  SELECT account_id FROM account_memberships WHERE user_id = $1\n              )\n          )\n          AND ( NOT $4::bool OR i.invoked_by_user_id = $1 )\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "c!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Timestamptz",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "017544c49ba52e5e01bc0b1c62ebd912bc356aa0f690791cad54d8c31f351756"
+}

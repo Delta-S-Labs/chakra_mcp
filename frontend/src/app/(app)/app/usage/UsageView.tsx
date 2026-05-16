@@ -12,7 +12,8 @@ import {
   YAxis,
 } from "recharts";
 import { getUsageSummary, type UsageSummary } from "@/lib/api";
-import { computeRange, type RangeKey } from "./range";
+import { ActionSection } from "./ActionSection";
+import { computeRange, type RangeKey, type ScopeKey } from "./range";
 import styles from "./usage.module.css";
 
 /**
@@ -28,19 +29,25 @@ import styles from "./usage.module.css";
 export function UsageView({
   initial,
   initialRange,
+  initialScope,
   token,
 }: {
   initial: UsageSummary;
   initialRange: RangeKey;
+  initialScope: ScopeKey;
   token: string;
 }) {
   const router = useRouter();
   const [range, setRange] = useState<RangeKey>(initialRange);
+  const [scope, setScope] = useState<ScopeKey>(initialScope);
   const [summary, setSummary] = useState<UsageSummary>(initial);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  // Sync ?range=… in the URL so deep-links remember the window.
+  // Sync ?range=… in the URL so deep-links remember the window. The
+  // existing URL parser preserves any unrelated params (notably
+  // `?scope=`, which ActionSection writes), so we only ever touch
+  // `range` here.
   useEffect(() => {
     const url = new URL(window.location.href);
     if (range === "30d") url.searchParams.delete("range");
@@ -48,18 +55,33 @@ export function UsageView({
     router.replace(`${url.pathname}${url.search}`, { scroll: false });
   }, [range, router]);
 
-  function pick(next: RangeKey) {
-    if (next === range) return;
-    setRange(next);
+  function refetch(nextRange: RangeKey, nextScope: ScopeKey) {
     setError(null);
     startTransition(async () => {
       try {
-        const fresh = await getUsageSummary(token, computeRange(next));
+        const fresh = await getUsageSummary(token, {
+          ...computeRange(nextRange),
+          scope: nextScope,
+        });
         setSummary(fresh);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Couldn't refresh usage.");
       }
     });
+  }
+
+  function pick(next: RangeKey) {
+    if (next === range) return;
+    setRange(next);
+    // Hold the current scope across a range change so the by_action
+    // numbers stay consistent with the toggle.
+    refetch(next, scope);
+  }
+
+  function flipScope(next: ScopeKey) {
+    if (next === scope) return;
+    setScope(next);
+    refetch(range, next);
   }
 
   const hasOrgs = summary.by_org.length > 1;
@@ -158,6 +180,23 @@ export function UsageView({
       />
 
       <Section
+        title="By capability"
+        empty="No invocations in this window."
+        rows={summary.by_capability}
+        renderRow={(row) => (
+          <tr key={`cap:${row.name}`}>
+            <td>
+              <code>{row.name}</code>
+            </td>
+            <td className={styles.numericCol}>
+              {row.requests.toLocaleString()}
+            </td>
+          </tr>
+        )}
+        headers={["Capability", "Requests"]}
+      />
+
+      <Section
         title="By agent"
         empty="No per-agent traffic in this window."
         rows={summary.by_agent}
@@ -224,6 +263,13 @@ export function UsageView({
           headers={["Org", "Requests"]}
         />
       )}
+
+      <ActionSection
+        scope={summary.by_action.scope}
+        counts={summary.by_action}
+        pending={pending}
+        onChangeScope={flipScope}
+      />
     </>
   );
 }
