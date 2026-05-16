@@ -27,6 +27,27 @@ const nextConfig: NextConfig = {
         destination: "/app/pair",
         permanent: true,
       },
+      // Discovery breadcrumb: an earlier revision of
+      // /.well-known/chakramcp.json (and Hermes' tooling) pointed at
+      // these URLs on the marketing host even though the backend lives
+      // on `app.chakramcp.com`. Both 404'd. The descriptor is now
+      // correct, but redirect here for anyone with the old URL
+      // hardcoded in their config (which Hermes hit on cli-v0.1.0).
+      // 308 preserves the GET — clients can transparently follow.
+      {
+        source: "/.well-known/oauth-authorization-server",
+        destination:
+          "https://app.chakramcp.com/.well-known/oauth-authorization-server",
+        permanent: true,
+        basePath: false,
+      },
+      {
+        source: "/.well-known/oauth-protected-resource",
+        destination:
+          "https://relay.chakramcp.com/.well-known/oauth-protected-resource",
+        permanent: true,
+        basePath: false,
+      },
     ];
   },
 };

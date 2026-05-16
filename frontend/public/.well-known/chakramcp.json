@@ -9,14 +9,17 @@
     "install": "https://github.com/Delta-S-Labs/chakra_mcp/blob/main/docs/INSTALL.md"
   },
   "endpoints": {
-    "app_base_url": "https://chakramcp.com",
+    "app_base_url": "https://app.chakramcp.com",
+    "marketing_url": "https://chakramcp.com",
     "relay_base_url": "https://relay.chakramcp.com",
     "mcp": "https://relay.chakramcp.com/mcp",
-    "oauth_authorization_server": "https://chakramcp.com/.well-known/oauth-authorization-server",
+    "oauth_authorization_server": "https://app.chakramcp.com/.well-known/oauth-authorization-server",
     "oauth_protected_resource": "https://relay.chakramcp.com/.well-known/oauth-protected-resource",
+    "oauth_authorize_url": "https://chakramcp.com/oauth/authorize",
     "agent_onboarding_url": "https://chakramcp.com/app/pair",
-    "device_authorization_endpoint": "https://chakramcp.com/oauth/device_authorization",
-    "token_endpoint": "https://chakramcp.com/oauth/token",
+    "device_authorization_endpoint": "https://app.chakramcp.com/oauth/device_authorization",
+    "token_endpoint": "https://app.chakramcp.com/oauth/token",
+    "registration_endpoint": "https://app.chakramcp.com/oauth/register",
     "qr_endpoint": "https://chakramcp.com/qr?data="
   },
   "auth": {
@@ -76,13 +79,13 @@
   "cli": {
     "binary_name": "chakramcp",
     "status": "published",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "install": [
       "npm install -g @chakramcp/cli",
       "brew tap Delta-S-Labs/chakra_mcp",
       "brew install chakramcp"
     ],
-    "comment": "Published to npm (@chakramcp/cli) and the Delta-S-Labs/chakra_mcp Homebrew tap. Prebuilt binaries for five platforms are attached to the GitHub Release at cli-v0.1.0. `cargo install --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp-cli` remains valid as the source fallback. The crates.io listing (chakramcp-cli) and the install.sh universal installer are still planned."
+    "comment": "Published to npm (@chakramcp/cli) and the Delta-S-Labs/chakra_mcp Homebrew tap. Prebuilt binaries for five platforms are attached to the GitHub Release at cli-v0.1.1. `cargo install --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp-cli` remains valid as the source fallback. The crates.io listing (chakramcp-cli) and the install.sh universal installer are still planned. v0.1.1 adds non-interactive auth (`login --method browser|api-key|device`, `pair --json`, TTY detection with a helpful error) and fixes the `PUBLIC_APP_URL` default — the wizard's `public` option used to point at the marketing site (`chakramcp.com`) instead of the backend (`app.chakramcp.com`), causing `chakramcp login` to 404 on `/.well-known/oauth-authorization-server`."
   },
   "skills": [
     {
