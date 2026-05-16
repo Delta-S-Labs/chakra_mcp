@@ -17,11 +17,18 @@ import styles from "./login.module.css";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string }>;
+  searchParams: Promise<{ from?: string; reason?: string }>;
 }) {
-  const { from } = await searchParams;
+  const { from, reason } = await searchParams;
   const captchaEnabled = process.env.CAPTCHA_ENABLED !== "false";
   const captchaSiteKey = process.env.RECAPTCHA_SITE_KEY ?? "";
+
+  // The /app routes redirect here with `?reason=session_expired` when
+  // the backend rejects our Bearer (token revoked, expired, or never
+  // present). Show a short banner so the user understands why they
+  // landed on /login instead of /app, rather than wondering if they
+  // typed the URL wrong.
+  const sessionExpired = reason === "session_expired";
 
   return (
     <main className={styles.page}>
@@ -36,6 +43,13 @@ export default async function LoginPage({
 
         <div className={styles.card}>
           <AlreadySignedIn />
+
+          {sessionExpired && (
+            <div className={styles.notice} role="status">
+              <strong>Your session ended.</strong> Sign back in to pick up
+              where you left off.
+            </div>
+          )}
 
           <div className={styles.eyebrow}>Sign in</div>
           <h1 className={styles.title}>Welcome to the relay.</h1>
