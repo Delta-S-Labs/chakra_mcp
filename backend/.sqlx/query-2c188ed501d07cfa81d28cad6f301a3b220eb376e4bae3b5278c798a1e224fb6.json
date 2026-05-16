@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COUNT(*) AS \"c!\"\n        FROM friendships f\n        JOIN agents pa ON pa.id = f.proposer_agent_id\n        JOIN agents ta ON ta.id = f.target_agent_id\n        WHERE f.decided_at IS NOT NULL\n          AND f.decided_at >= $2\n          AND f.decided_at <  $3\n          AND f.status = $5\n          AND (\n              pa.account_id IN (\n                  SELECT account_id FROM account_memberships WHERE user_id = $1\n              )\n           OR ta.account_id IN (\n                  SELECT account_id FROM account_memberships WHERE user_id = $1\n              )\n          )\n          AND ( NOT $4::bool OR f.decided_by_user_id = $1 )\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "c!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Timestamptz",
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "2c188ed501d07cfa81d28cad6f301a3b220eb376e4bae3b5278c798a1e224fb6"
+}

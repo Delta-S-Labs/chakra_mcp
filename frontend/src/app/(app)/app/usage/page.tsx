@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { auth } from "@/auth";
 import { getUsageSummary, type UsageSummary } from "@/lib/api";
-import { computeRange, readRangeParam } from "./range";
+import { computeRange, readRangeParam, readScopeParam } from "./range";
 import { UsageView } from "./UsageView";
 import styles from "./usage.module.css";
 
@@ -29,6 +29,7 @@ export default async function UsagePage({
 }) {
   const params = await searchParams;
   const rangeKey = readRangeParam(params);
+  const scopeKey = readScopeParam(params);
   const session = await auth();
   const token = session?.backendToken;
 
@@ -37,7 +38,10 @@ export default async function UsagePage({
 
   if (token) {
     try {
-      initial = await getUsageSummary(token, computeRange(rangeKey));
+      initial = await getUsageSummary(token, {
+        ...computeRange(rangeKey),
+        scope: scopeKey,
+      });
     } catch (err) {
       backendError =
         err instanceof Error ? err.message : "Couldn't load usage data.";
@@ -59,7 +63,12 @@ export default async function UsagePage({
       {backendError && <div className={styles.error}>{backendError}</div>}
 
       {token && initial && (
-        <UsageView initial={initial} initialRange={rangeKey} token={token} />
+        <UsageView
+          initial={initial}
+          initialRange={rangeKey}
+          initialScope={scopeKey}
+          token={token}
+        />
       )}
 
       {!token && (
