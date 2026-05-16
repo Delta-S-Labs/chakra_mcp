@@ -205,6 +205,7 @@ async fn record_terminal(
     error_message: Option<&str>,
     input_preview: Option<&Value>,
     api_key_id: Option<Uuid>,
+    minted_jti: Option<Uuid>,
 ) -> Result<Uuid, ApiError> {
     let id = Uuid::now_v7();
     sqlx::query!(
@@ -212,8 +213,8 @@ async fn record_terminal(
         INSERT INTO relay_invocations
             (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
              capability_name, invoked_by_user_id, status, elapsed_ms,
-             error_message, input_preview, api_key_id)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+             error_message, input_preview, api_key_id, minted_jti)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         "#,
         id,
         grant_id,
@@ -227,6 +228,7 @@ async fn record_terminal(
         error_message,
         input_preview.cloned().unwrap_or(Value::Null),
         api_key_id,
+        minted_jti,
     )
     .execute(db)
     .await?;
@@ -277,6 +279,7 @@ pub async fn invoke(
             Some("grantee_agent_id does not match the grant"),
             Some(&input_preview),
             user.api_key_id,
+            user.minted_jti,
         )
         .await?;
         return Ok((
@@ -313,6 +316,7 @@ pub async fn invoke(
             Some(&msg),
             Some(&input_preview),
             user.api_key_id,
+            user.minted_jti,
         )
         .await?;
         return Ok((
@@ -340,6 +344,7 @@ pub async fn invoke(
                 Some(&msg),
                 Some(&input_preview),
                 user.api_key_id,
+                user.minted_jti,
             )
             .await?;
             return Ok((
@@ -360,14 +365,18 @@ pub async fn invoke(
     // other side reuses this row (UPDATE only), so this is the only
     // place per invocation where the caller's credential is recorded.
     // NULL on the JWT path (web session / OAuth / device flow).
+    //
+    // `minted_jti` is the dual: NULL on the ck_ path, set on the JWT
+    // path so the per-pair dashboard can attribute the call back to
+    // the device-flow / oauth-code row that minted this token.
     let id = Uuid::now_v7();
     sqlx::query!(
         r#"
         INSERT INTO relay_invocations
             (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
              capability_name, invoked_by_user_id, status, input_preview,
-             api_key_id)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9)
+             api_key_id, minted_jti)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9, $10)
         "#,
         id,
         row.grant_id,
@@ -378,6 +387,7 @@ pub async fn invoke(
         user.user_id,
         input_preview,
         user.api_key_id,
+        user.minted_jti,
     )
     .execute(&state.db)
     .await?;
@@ -1263,6 +1273,7 @@ mod legacy_v01_contract_tests {
             Some("simulated JWT-path rejection"),
             Some(&serde_json::json!({"k": "v"})),
             None, // ← the JWT path: api_key_id is None
+            None, // minted_jti — also None for this synthetic call
         )
         .await
         .unwrap();

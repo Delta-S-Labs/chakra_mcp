@@ -71,6 +71,9 @@ export function UserMenu({
           <Link className={styles.userDropdownItem} href="/app/pair">
             Pair agent
           </Link>
+          <Link className={styles.userDropdownItem} href="/app/usage">
+            Usage
+          </Link>
           <Link className={styles.userDropdownItem} href="/app/audit">
             Audit
           </Link>

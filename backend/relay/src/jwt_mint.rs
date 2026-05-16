@@ -271,6 +271,7 @@ mod tests {
             grant_id: Uuid::now_v7(),
             target_is_push: true,
             api_key_id: None,
+            minted_jti: None,
         }
     }
 

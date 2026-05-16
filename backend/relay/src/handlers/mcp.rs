@@ -551,14 +551,17 @@ async fn invoke(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiE
     // POST /v1/invoke (see handlers/invoke.rs): the credential that
     // authed this MCP `invoke` tool call. NULL when the caller used
     // a user JWT.
+    //
+    // `minted_jti` is the dual: NULL on the ck_ path, set on the JWT
+    // path so the per-pair dashboard can attribute the call.
     let id = Uuid::now_v7();
     sqlx::query!(
         r#"
         INSERT INTO relay_invocations
             (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
              capability_name, invoked_by_user_id, status, input_preview,
-             api_key_id)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9)
+             api_key_id, minted_jti)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9, $10)
         "#,
         id,
         row.grant_id,
@@ -569,6 +572,7 @@ async fn invoke(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiE
         user.user_id,
         a.input,
         user.api_key_id,
+        user.minted_jti,
     )
     .execute(db)
     .await?;

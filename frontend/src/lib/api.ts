@@ -416,6 +416,109 @@ export function revokePairing(token: string, kind: PairingKind, id: string) {
   );
 }
 
+// ─── Usage roll-ups ──────────────────────────────────────
+//
+// Backend at `backend/app/src/handlers/usage.rs`. Two endpoints:
+//   * /v1/usage/summary — one-shot across-account roll-up (total +
+//     by_org / by_agent / by_api_key / by_pair). The /app/usage page
+//     hits this exactly once and slices the result locally.
+//   * /v1/pairings/{kind}/{id}/usage — per-pair traffic, same shape
+//     as the existing /v1/api-keys/{id}/usage helper above.
+
+export interface UsageTotal {
+  requests: number;
+  succeeded: number;
+  failed: number;
+}
+
+export interface UsageDaily {
+  /** YYYY-MM-DD (naive date from server). */
+  date: string;
+  requests: number;
+}
+
+export interface UsageOrgRollup {
+  id: string;
+  slug: string;
+  display_name: string;
+  requests: number;
+}
+
+export interface UsageAgentRollup {
+  id: string;
+  slug: string;
+  name: string;
+  requests: number;
+}
+
+export interface UsageApiKeyRollup {
+  id: string;
+  name: string;
+  requests: number;
+}
+
+export interface UsagePairRollup {
+  /** "device_flow" | "oauth" — there's no "api_key" entry, those
+   *  show up under by_api_key instead. */
+  kind: "device_flow" | "oauth";
+  id: string;
+  label: string;
+  requests: number;
+}
+
+export interface UsageSummary {
+  from: string;
+  to: string;
+  total: UsageTotal;
+  by_org: UsageOrgRollup[];
+  by_agent: UsageAgentRollup[];
+  by_api_key: UsageApiKeyRollup[];
+  by_pair: UsagePairRollup[];
+  daily: UsageDaily[];
+}
+
+export function getUsageSummary(
+  token: string,
+  range: { from?: string; to?: string } = {},
+) {
+  const qs = new URLSearchParams();
+  if (range.from) qs.set("from", range.from);
+  if (range.to) qs.set("to", range.to);
+  const tail = qs.toString();
+  return request<UsageSummary>(
+    `/v1/usage/summary${tail ? `?${tail}` : ""}`,
+    { token },
+  );
+}
+
+export interface PairingUsage {
+  kind: string;
+  id: string;
+  from: string;
+  to: string;
+  total_requests: number;
+  succeeded: number;
+  failed: number;
+  by_agent: UsageAgentRollup[];
+  daily: UsageDaily[];
+}
+
+export function getPairingUsage(
+  token: string,
+  kind: PairingKind,
+  id: string,
+  range: { from?: string; to?: string } = {},
+) {
+  const qs = new URLSearchParams();
+  if (range.from) qs.set("from", range.from);
+  if (range.to) qs.set("to", range.to);
+  const tail = qs.toString();
+  return request<PairingUsage>(
+    `/v1/pairings/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/usage${tail ? `?${tail}` : ""}`,
+    { token },
+  );
+}
+
 // ─── Admin ───────────────────────────────────────────────
 
 export function adminListUsers(token: string) {

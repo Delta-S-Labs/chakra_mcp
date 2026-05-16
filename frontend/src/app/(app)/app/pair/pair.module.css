@@ -359,13 +359,38 @@
 }
 
 .pairRowName {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 0.94rem;
   color: var(--ink);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+}
+
+.usagePill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--accent-butter) 38%, var(--paper));
+  border: 1px solid color-mix(in oklab, var(--accent-butter) 65%, var(--line));
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: oklch(35% 0.07 70);
+  font-variant-numeric: tabular-nums;
+}
+
+.usagePillUnit {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.58rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.7;
 }
 
 .pairRowMeta {

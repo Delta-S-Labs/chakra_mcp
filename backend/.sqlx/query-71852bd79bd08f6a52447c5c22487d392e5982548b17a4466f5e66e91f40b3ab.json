@@ -1,0 +1,36 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            k.id     AS \"id!\",\n            k.name   AS \"name!\",\n            COUNT(*) AS \"requests!\"\n        FROM relay_invocations i\n        JOIN api_keys k ON k.id = i.api_key_id\n        WHERE k.user_id = $1\n          AND i.created_at >= $2\n          AND i.created_at <  $3\n        GROUP BY k.id, k.name\n        ORDER BY COUNT(*) DESC\n        LIMIT 20\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "requests!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "71852bd79bd08f6a52447c5c22487d392e5982548b17a4466f5e66e91f40b3ab"
+}
