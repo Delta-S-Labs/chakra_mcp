@@ -33,6 +33,17 @@ MESSAGE_OWNER: Final[dict[str, Any]] = {
         "the owner sees the message and explicitly answers, acks, "
         "ignores, or defers. Always human-in-the-loop."
     ),
+    # Issue #69 PR 2: published capabilities now carry a `semantics`
+    # field, and `message_owner` is the canonical human-in-the-loop
+    # case. The relay's gate at POST /v1/invocations/{id}/result will
+    # reject worker-posted replies on HITL invocations unless they
+    # carry `confirmed_by_human: true`. The Python SDK's default reply
+    # path leaves that flag off — autonomous handlers that try to
+    # answer a `message_owner` invocation get a 409 with code
+    # `chk.policy.requires_human_confirmation` and must route the
+    # invocation to a human instead (PR 3 plumbs the `human_handler`
+    # callback through `inbox.serve()`).
+    "semantics": "human_in_loop",
     "input_schema": {
         "type": "object",
         "required": ["message"],

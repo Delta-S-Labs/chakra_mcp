@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT i.status, i.created_at, i.claimed_at,\n               ga.account_id as \"granter_account_id?\"\n        FROM relay_invocations i\n        LEFT JOIN agents ga ON ga.id = i.granter_agent_id\n        WHERE i.id = $1\n        ",
+  "query": "\n        SELECT i.status, i.created_at, i.claimed_at,\n               ga.account_id as \"granter_account_id?\",\n               c.semantics   as \"capability_semantics?\"\n        FROM relay_invocations i\n        LEFT JOIN agents              ga ON ga.id = i.granter_agent_id\n        LEFT JOIN agent_capabilities  c  ON c.id  = i.capability_id\n        WHERE i.id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -22,6 +22,11 @@
         "ordinal": 3,
         "name": "granter_account_id?",
         "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "capability_semantics?",
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -33,8 +38,9 @@
       false,
       false,
       true,
+      false,
       false
     ]
   },
-  "hash": "e80551bc94d7eb6b2cf7455fa49ff7eeb11cec675e268fa06f25df8e5e80c7f5"
+  "hash": "0b427344edb5ec1528f31dd7f29cdba6adf424d6e5590801b78a752112001da8"
 }

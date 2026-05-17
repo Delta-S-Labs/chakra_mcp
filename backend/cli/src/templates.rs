@@ -24,6 +24,14 @@ pub fn known_templates() -> Vec<&'static str> {
     vec!["message_owner"]
 }
 
+/// `message_owner` is the protocol's canonical "ask the human owner"
+/// capability. Issue #69 PR 2 flips its `semantics` field to
+/// `human_in_loop` — the relay's gate at
+/// `POST /v1/invocations/{id}/result` will reject any result for a
+/// `message_owner` invocation unless the caller sets
+/// `confirmed_by_human: true`. The CLI's `inbox respond` and
+/// `message reply` sugar set the flag automatically; SDK callers must
+/// route to a human or opt in explicitly.
 fn message_owner() -> Value {
     json!({
         "name": "message_owner",
@@ -31,6 +39,7 @@ fn message_owner() -> Value {
             "Ping the human owner of this agent. Friend agents call this; \
              the owner sees the message and explicitly answers, acks, \
              ignores, or defers. Always human-in-the-loop.",
+        "semantics": "human_in_loop",
         "input_schema": {
             "type": "object",
             "required": ["message"],

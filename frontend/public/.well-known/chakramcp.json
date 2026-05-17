@@ -42,6 +42,13 @@
     "grants",
     "invocations"
   ],
+  "capability_templates": [
+    {
+      "id": "message_owner",
+      "semantics": "human_in_loop",
+      "description": "Ping the human owner of this agent. Always human-in-the-loop: the relay rejects POST /v1/invocations/{id}/result on this capability with 409 chk.policy.requires_human_confirmation unless the body carries confirmed_by_human: true. Full schema at https://chakramcp.com/docs/agents#templates."
+    }
+  ],
   "sdks": [
     {
       "language": "typescript",

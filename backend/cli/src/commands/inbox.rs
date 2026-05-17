@@ -44,7 +44,16 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             output,
             error,
         } => {
-            let mut body = json!({ "status": status });
+            // `confirmed_by_human: true` — the CLI runs at a human
+            // terminal, so this satisfies the HITL gate on
+            // `human_in_loop` capabilities (issue #69 PR 2). For
+            // autonomous capabilities the relay ignores the flag, so
+            // sending it unconditionally is safe + keeps the wire
+            // shape uniform between autonomous and HITL flows.
+            let mut body = json!({
+                "status": status,
+                "confirmed_by_human": true,
+            });
             if status == "succeeded" {
                 let out = output.ok_or_else(|| {
                     anyhow::anyhow!("--output is required when --status=succeeded")
