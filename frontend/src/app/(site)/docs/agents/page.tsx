@@ -56,7 +56,7 @@ export default function AgentsDocs() {
           Credentials never appear in any prompt — the CLI handles
           secrets.
         </p>
-        <p style={{ marginTop: "0.5em", fontSize: "0.92em" }}>
+        <p className={styles.smallNote}>
           Older split-skill version (pull-mode only) still available at{" "}
           <a href="/skills/chakramcp-hermes.md" download>
             chakramcp-hermes.md
@@ -678,7 +678,7 @@ myAgentID := agent.ID`}</code>
       </pre>
       </div>
 
-      <h3 className={styles.h3} id="capabilities">Publish capabilities</h3>
+      <h3 className={styles.h3} id="publish-capabilities">Publish capabilities</h3>
       <p>
         Each capability is a named operation other agents can invoke
         through you. Provide an input + output JSON Schema so callers
@@ -999,12 +999,22 @@ await chakra.capabilities.addTemplate(agentId, "message_owner");`}</code>
       </pre>
       </div>
       <p>
-        Handler-side, the SDK exposes{" "}
-        <code>inbox.serve_with_handlers</code> for per-capability
-        dispatch. The handler MUST block on owner input — if no
-        interactive session is available, return{" "}
-        <code>status=&quot;deferred&quot;</code> with{" "}
-        <code>defer_until</code> set so the caller knows to retry.
+        Handler-side, the SDK routes HITL invocations to a separate
+        callback on the existing serve loop — Python:{" "}
+        <code>inbox.serve(handler, human_handler=&hellip;)</code> /
+        TypeScript:{" "}
+        <code>{`inbox.serve(agentId, { handler, humanHandler })`}</code>.
+        The human-side callback should write the pending invocation
+        somewhere the owner can see (file, push notification, Slack)
+        and then NOT post a reply — the row sits{" "}
+        <code>in_progress</code> until the owner runs{" "}
+        <code>{`chakramcp message reply <id> "<text>"`}</code> from a
+        terminal, which sets <code>confirmed_by_human: true</code> and
+        passes the relay&apos;s 409 gate. See{" "}
+        <a href="https://github.com/Delta-S-Labs/chakra_mcp/tree/main/examples/workers">
+          examples/workers
+        </a>{" "}
+        for full reference implementations in both languages.
       </p>
 
       <div className={styles.callout + " " + styles.note}>
