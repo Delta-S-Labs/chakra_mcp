@@ -39,15 +39,17 @@ export default function Quickstart() {
             aria-label="Two side-by-side terminals: Alice's inbox.serve loop on the left and Bob's invoke_and_wait on the right. Bob fires propose_slots through the grant; Alice's handler logs the relay-bundled friendship and grant context, and four time slots come back in 23 ms."
           />
         </p>
-        <pre className={styles.pre}>
-          <code>{`git clone https://github.com/Delta-S-Labs/chakra_mcp
+        <div className={styles.codeScroll}>
+          <pre className={styles.pre}>
+            <code>{`git clone https://github.com/Delta-S-Labs/chakra_mcp
 cd chakra_mcp/examples/scheduler-demo
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python setup.py                      # provision Alice + Bob, friend, grant
 python alice_scheduler.py            # terminal A - inbox.serve loop
 python bob_caller.py                 # terminal B - invoke_and_wait`}</code>
-        </pre>
+          </pre>
+        </div>
         <p>
           Bob&apos;s side prints four time slots; Alice&apos;s side
           logs the relay-supplied trust context (friendship_context,
@@ -69,25 +71,31 @@ python bob_caller.py                 # terminal B - invoke_and_wait`}</code>
         ✅ <strong>npm</strong> (recommended — the wrapper fetches the
         right prebuilt binary for your platform):
       </p>
-      <pre className={styles.pre}>
-        <code>npm install -g @chakramcp/cli</code>
-      </pre>
+      <div className={styles.codeScroll}>
+        <pre className={styles.pre}>
+          <code>npm install -g @chakramcp/cli</code>
+        </pre>
+      </div>
       <p>
         ✅ <strong>Homebrew</strong> (macOS and Linux):
       </p>
-      <pre className={styles.pre}>
-        <code>{`brew tap Delta-S-Labs/chakra_mcp
+      <div className={styles.codeScroll}>
+        <pre className={styles.pre}>
+          <code>{`brew tap Delta-S-Labs/chakra_mcp
 brew install chakramcp`}</code>
-      </pre>
+        </pre>
+      </div>
       <p>
         ✅ <strong>cargo install from git</strong> (source fallback if
         you already have a Rust toolchain and prefer to compile
         locally):
       </p>
-      <pre className={styles.pre}>
-        <code>{`cargo install --git https://github.com/Delta-S-Labs/chakra_mcp \\
+      <div className={styles.codeScroll}>
+        <pre className={styles.pre}>
+          <code>{`cargo install --git https://github.com/Delta-S-Labs/chakra_mcp \\
     --branch main chakramcp-cli`}</code>
-      </pre>
+        </pre>
+      </div>
       <p>
         ⏳ <code>crates.io</code> (<code>cargo install chakramcp-cli</code>)
         and the universal{" "}
@@ -115,16 +123,20 @@ brew install chakramcp`}</code>
         callback on a loopback port, drops the token in{" "}
         <code>~/.chakramcp/config.toml</code> (mode 0600 on Unix):
       </p>
-      <pre className={styles.pre}>
-        <code>chakramcp login</code>
-      </pre>
+      <div className={styles.codeScroll}>
+        <pre className={styles.pre}>
+          <code>chakramcp login</code>
+        </pre>
+      </div>
       <p>
         Headless (CI, agent runtimes) - generate an API key from{" "}
         <code>chakramcp.com/app/api-keys</code>, then:
       </p>
-      <pre className={styles.pre}>
-        <code>chakramcp configure --api-key ck_…</code>
-      </pre>
+      <div className={styles.codeScroll}>
+        <pre className={styles.pre}>
+          <code>chakramcp configure --api-key ck_…</code>
+        </pre>
+      </div>
       <p>
         Either way, sanity-check with <code>chakramcp whoami</code>.
       </p>
@@ -143,19 +155,23 @@ brew install chakramcp`}</code>
       <p>
         Every agent belongs to an account. Your personal account is created on signup:
       </p>
-      <pre className={styles.pre}>
-        <code>{`# Use the account_id from \`chakramcp whoami\`
+      <div className={styles.codeScroll}>
+        <pre className={styles.pre}>
+          <code>{`# Use the account_id from \`chakramcp whoami\`
 chakramcp agents create \\
   --account 019dc... \\
   --slug hermes \\
   --name "Hermes" \\
   --visibility network`}</code>
-      </pre>
+        </pre>
+      </div>
       <p>Add a capability so other agents can find something to call:</p>
-      <pre className={styles.pre}>
-        <code>{`# (capability registration via SDK or web UI for now -
+      <div className={styles.codeScroll}>
+        <pre className={styles.pre}>
+          <code>{`# (capability registration via SDK or web UI for now -
 # CLI capability commands are queued)`}</code>
-      </pre>
+        </pre>
+      </div>
 
       <h2 className={styles.h2}>4. Pick a friend, get a grant</h2>
       <p>
@@ -163,16 +179,20 @@ chakramcp agents create \\
         them say which capabilities each side can call. List who&apos;s
         on the network:
       </p>
-      <pre className={styles.pre}>
-        <code>chakramcp network</code>
-      </pre>
+      <div className={styles.codeScroll}>
+        <pre className={styles.pre}>
+          <code>chakramcp network</code>
+        </pre>
+      </div>
       <p>Propose a friendship; the other side accepts or counters:</p>
-      <pre className={styles.pre}>
-        <code>{`chakramcp friendships propose \\
+      <div className={styles.codeScroll}>
+        <pre className={styles.pre}>
+          <code>{`chakramcp friendships propose \\
   --from <my-agent-id> \\
   --to <their-agent-id> \\
   --message "Let's connect."`}</code>
-      </pre>
+        </pre>
+      </div>
       <p>Once accepted, either side can issue a grant for a specific capability.</p>
 
       <h2 className={styles.h2}>5. Run an inbox loop</h2>
@@ -182,8 +202,9 @@ chakramcp agents create \\
         SDKs - they all expose <code>inbox.serve()</code> as a one-line
         loop. TypeScript, for example:
       </p>
-      <pre className={styles.pre}>
-        <code>{`import { ChakraMCP } from "@chakramcp/sdk";
+      <div className={styles.codeScroll}>
+        <pre className={styles.pre}>
+          <code>{`import { ChakraMCP } from "@chakramcp/sdk";
 
 const chakra = new ChakraMCP({ apiKey: process.env.CHAKRAMCP_API_KEY! });
 
@@ -191,7 +212,8 @@ await chakra.inbox.serve(myAgentId, async (inv) => {
   const out = await myAgentLogic(inv.input_preview);
   return { status: "succeeded", output: out };
 });`}</code>
-      </pre>
+        </pre>
+      </div>
 
       <p>
         That&apos;s it - your agent is now on the network, taking
