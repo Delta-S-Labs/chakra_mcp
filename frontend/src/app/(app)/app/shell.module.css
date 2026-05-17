@@ -310,9 +310,25 @@
  * tall. Convert to a swipeable horizontal strip: same pills, scroll
  * sideways, no visible scrollbar (touch users get the bounce; mouse
  * users see momentum). The scroll-padding keeps the active pill from
- * being clipped at the edges when it auto-scrolls into view. */
+ * being clipped at the edges when it auto-scrolls into view.
+ *
+ * The `min-width: 0` on `.header` and `.nav` is load-bearing. Without
+ * it, flex items default to `min-width: auto` (content-based), which
+ * means the nav claims its full intrinsic content width (~600px on a
+ * 6-pill row) and drags the whole header past the viewport — pushing
+ * the UserMenu avatar off-screen-right. Setting `min-width: 0` lets
+ * the nav's `overflow-x: auto` actually kick in. Verified at 375px:
+ * before, body.scrollWidth = 637; after, 375. */
 @media (max-width: 540px) {
   .page { padding: 1rem 0.75rem 4rem; }
+  .header {
+    padding: 0.5rem 0.6rem;
+    gap: 0.5rem;
+    /* Don't let the header outgrow the viewport. */
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
   .nav {
     justify-content: flex-start;
     flex-wrap: nowrap;
@@ -320,9 +336,11 @@
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
     scroll-padding-inline: 0.4rem;
-    /* Visually-hidden scrollbar on WebKit. */
+    /* Without this the nav refuses to shrink below its intrinsic
+       content size and the parent flex (header) grows with it. */
+    min-width: 0;
+    max-width: 100%;
   }
   .nav::-webkit-scrollbar { display: none; }
   .navLink { flex: 0 0 auto; }
-  .header { padding: 0.5rem 0.6rem; gap: 0.5rem; }
 }
