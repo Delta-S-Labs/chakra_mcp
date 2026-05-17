@@ -315,18 +315,40 @@ class InboxClient:
         agent_id: str,
         handler: Callable[[Invocation], HandlerResult | dict[str, Any]],
         *,
+        human_handler: Callable[[Invocation], None] | None = None,
         poll_interval_s: float = 2.0,
         batch_size: int = 25,
         on_error: Callable[[BaseException, Invocation | None], None] | None = None,
         stop: Callable[[], bool] | None = None,
     ) -> None:
-        """Long-running pull → handler → respond loop.
+        """Long-running pull → dispatch → respond loop.
 
-        ``handler`` returns either ``{"status": "succeeded", "output": …}``
-        or ``{"status": "failed", "error": "…"}``. Exceptions raised by
+        ``handler`` is the autonomous path. It returns either
+        ``{"status": "succeeded", "output": …}`` or
+        ``{"status": "failed", "error": "…"}``. Exceptions raised by
         the handler are caught and reported as failed; the loop keeps
         going. Pass ``stop=lambda: shutdown_event.is_set()`` to bail
         cleanly between iterations.
+
+        ``human_handler`` is the human-in-the-loop path. When an
+        invocation arrives with ``semantics == "human_in_loop"``, the
+        SDK invokes ``human_handler`` (e.g. to enqueue a notification,
+        write a pending-task file, page someone) and then **moves on
+        without posting a result** — the invocation row stays
+        ``in_progress`` until a human resolves it out-of-band via
+        ``chakramcp message reply <id> "<text>"``. That terminal path
+        sets ``confirmed_by_human: true`` on the relay's result
+        endpoint, which satisfies the HITL gate.
+
+        ``human_handler`` MUST NOT call ``respond()`` itself. If you
+        forget to wire ``human_handler`` while pulling HITL traffic,
+        the SDK emits a stderr warning per invocation and leaves the
+        row in flight (still resolvable via the CLI reply path).
+
+        Capabilities without ``semantics`` set (or with
+        ``"autonomous"``) take the existing path. The field is absent
+        on relays older than PR #80 — that's treated as autonomous so
+        old workers keep working against new relays and vice versa.
         """
         while not (stop and stop()):
             try:
@@ -342,6 +364,31 @@ class InboxClient:
             for inv in batch:
                 if stop and stop():
                     return
+                # HITL routing — defer to human_handler and skip
+                # respond(). The row stays in_progress; a human
+                # resolves it later via the CLI reply path which
+                # sets `confirmed_by_human: true` on the result.
+                if inv.get("semantics") == "human_in_loop":
+                    if human_handler is not None:
+                        try:
+                            human_handler(inv)
+                        except BaseException as err:
+                            if on_error:
+                                on_error(err, inv)
+                    else:
+                        import sys
+
+                        print(
+                            f"[chakramcp] warning: pulled human_in_loop "
+                            f"invocation {inv['id']} "
+                            f"({inv.get('capability_name', '?')}) but no "
+                            f"human_handler is set. Leaving the row "
+                            f"in_progress; the human can reply via "
+                            f"`chakramcp message reply {inv['id']} "
+                            f'"<text>"`.',
+                            file=sys.stderr,
+                        )
+                    continue
                 try:
                     result = handler(inv)
                     self.respond(inv["id"], result)

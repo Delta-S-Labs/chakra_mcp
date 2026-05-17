@@ -317,12 +317,33 @@ class AsyncInboxClient:
         agent_id: str,
         handler: Callable[[Invocation], Awaitable[HandlerResult | dict[str, Any]]],
         *,
+        human_handler: Callable[[Invocation], Awaitable[None]] | None = None,
         poll_interval_s: float = 2.0,
         batch_size: int = 25,
         on_error: Callable[[BaseException, Invocation | None], None] | None = None,
         stop_event: asyncio.Event | None = None,
     ) -> None:
-        """Long-running pull → await handler → respond loop.
+        """Long-running pull → dispatch → respond loop.
+
+        ``handler`` is the autonomous path; ``human_handler`` is the
+        human-in-the-loop path. When an invocation arrives with
+        ``semantics == "human_in_loop"``, the SDK awaits
+        ``human_handler(inv)`` and then **moves on without posting a
+        result** — the invocation row stays ``in_progress`` until a
+        human resolves it out-of-band via
+        ``chakramcp message reply <id> "<text>"``. That terminal path
+        sets ``confirmed_by_human: true`` on the relay's result
+        endpoint, which satisfies the HITL gate.
+
+        ``human_handler`` MUST NOT call ``respond()`` itself. If you
+        forget to wire ``human_handler`` while pulling HITL traffic,
+        the SDK emits a stderr warning per invocation and leaves the
+        row in flight (still resolvable via the CLI reply path).
+
+        Capabilities without ``semantics`` set (or with
+        ``"autonomous"``) take the existing path. The field is absent
+        on relays older than PR #80 — that's treated as autonomous so
+        old workers keep working against new relays and vice versa.
 
         Pass ``stop_event`` (an :class:`asyncio.Event`) to stop the
         loop cleanly between batches. Handler exceptions are caught
@@ -343,14 +364,45 @@ class AsyncInboxClient:
             if not batch:
                 await asyncio.sleep(poll_interval_s)
                 continue
-            await asyncio.gather(*(self._handle_one(inv, handler, on_error) for inv in batch))
+            await asyncio.gather(
+                *(
+                    self._handle_one(inv, handler, human_handler, on_error)
+                    for inv in batch
+                )
+            )
 
     async def _handle_one(
         self,
         inv: Invocation,
         handler: Callable[[Invocation], Awaitable[HandlerResult | dict[str, Any]]],
+        human_handler: Callable[[Invocation], Awaitable[None]] | None,
         on_error: Callable[[BaseException, Invocation | None], None] | None,
     ) -> None:
+        # HITL routing — defer to human_handler and skip respond().
+        # The row stays in_progress; a human resolves it later via
+        # the CLI reply path which sets `confirmed_by_human: true`
+        # on the result.
+        if inv.get("semantics") == "human_in_loop":
+            if human_handler is not None:
+                try:
+                    await human_handler(inv)
+                except BaseException as err:
+                    if on_error:
+                        on_error(err, inv)
+            else:
+                import sys
+
+                print(
+                    f"[chakramcp] warning: pulled human_in_loop "
+                    f"invocation {inv['id']} "
+                    f"({inv.get('capability_name', '?')}) but no "
+                    f"human_handler is set. Leaving the row "
+                    f"in_progress; the human can reply via "
+                    f"`chakramcp message reply {inv['id']} "
+                    f'"<text>"`.',
+                    file=sys.stderr,
+                )
+            return
         try:
             result = await handler(inv)
             await self.respond(inv["id"], result)
