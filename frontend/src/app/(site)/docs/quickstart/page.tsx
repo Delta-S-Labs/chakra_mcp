@@ -35,7 +35,7 @@ export default function Quickstart() {
             loop
             muted
             playsInline
-            style={{ width: "100%", borderRadius: "12px", display: "block" }}
+            className={styles.demoVideo}
             aria-label="Two side-by-side terminals: Alice's inbox.serve loop on the left and Bob's invoke_and_wait on the right. Bob fires propose_slots through the grant; Alice's handler logs the relay-bundled friendship and grant context, and four time slots come back in 23 ms."
           />
         </p>
