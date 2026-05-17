@@ -303,10 +303,85 @@
 .shell { width: min(1180px, 100%); margin: 0 auto; padding: 2rem 1rem; }
 .page { min-height: 100vh; }
 
+/* Card-per-row stack used on phones instead of the wide table. Hidden by
+ * default; the 720px breakpoint below hides the table wrap and shows this
+ * list. Renders the same five fields (when · status · elapsed, capability,
+ * grantee → granter) but in a stacked layout that fits a 375px viewport
+ * without horizontal scroll. */
+.activityCards {
+  display: none;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  gap: 0.6rem;
+}
+
+.activityCard {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  background: var(--paper-soft);
+}
+
+.activityCardHead {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+
+.activityCardWhen {
+  font-variant-numeric: tabular-nums;
+}
+
+.activityCardSep {
+  color: var(--ink-muted);
+}
+
+.activityCardElapsed {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.activityCardCap {
+  /* Keep the capability code on its own line so long capability names can
+   * wrap inside the pill without bursting the card edge. */
+  display: flex;
+  min-width: 0;
+}
+.activityCardCap .capCode,
+.activityCardCap code {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 100%;
+}
+
+.activityCardParties {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  font-family: var(--font-body);
+  font-size: 0.92rem;
+  color: var(--ink);
+  /* Org/agent slugs can be long — let them wrap rather than overflow. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 @media (max-width: 720px) {
   .activityTable { font-size: 0.84rem; }
   .activityTable thead th,
   .activityTable tbody td { padding: 0.55rem 0.65rem; }
+  /* Swap the wide table for the card stack. The table wrapper hides
+   * completely so the horizontal-scroll fade stops competing for room. */
+  .activityTableWrap { display: none; }
+  .activityCards { display: grid; }
 }
 
 /* Phone — drop stat grid to 1-col and tighten the gutter so the title
