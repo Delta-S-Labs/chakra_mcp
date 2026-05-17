@@ -89,19 +89,53 @@
   border-radius: 0.32rem;
   background: color-mix(in oklab, var(--accent-butter) 38%, transparent);
   color: oklch(33% 0.06 70);
+  /* Long identifiers (verification_uri_complete, urn:ietf:params:oauth:..., file
+   * paths) must fold inside narrow containers — without this they create
+   * horizontal page-scroll on phones. `anywhere` is the strongest break;
+   * `break-word` is the safer fallback on engines that ignore it. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* `.codeScroll` wraps every <pre> on /docs/*. The <pre> itself keeps the
+ * monospaced rendering; the wrapper owns the horizontal scroll + iOS momentum
+ * + right-edge fade affordance. Extracted as a primitive so the four pages
+ * don't each copy/paste these rules. */
+.codeScroll {
+  position: relative;
+  margin: 0 0 1.5rem;
+  /* Subtle fade on the right edge — only visible when content overflows,
+   * because the wrapper sits flush against an opaque <pre>. Mask works at
+   * desktop too but is a no-op when the content fits. */
+  -webkit-mask-image: linear-gradient(
+    to right,
+    black calc(100% - 1.5rem),
+    transparent
+  );
+          mask-image: linear-gradient(
+    to right,
+    black calc(100% - 1.5rem),
+    transparent
+  );
+}
+/* When inside .codeScroll the <pre> loses its own bottom margin (the wrapper
+ * owns spacing) and picks up touch-momentum scrolling. */
+.codeScroll .pre {
+  margin: 0;
 }
 
 .pre {
   font-family: var(--font-mono);
   font-size: 0.84rem;
   line-height: 1.55;
-  padding: 1rem 1.1rem;
+  padding: 1rem 1.4rem 1rem 1.1rem;
   border: 1px solid var(--line);
   border-radius: 0.7rem;
   background: var(--paper);
   color: var(--ink);
   margin: 0 0 1.5rem;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   white-space: pre;
 }
 .pre code {
@@ -270,5 +304,49 @@
   }
   .tocList a:hover {
     color: var(--accent-coral);
+  }
+}
+
+/* ─── Narrow-width tuning (phones, ≤ 720px) ─────────────
+ * Tighten horizontal padding, scale down headings + pre font-size,
+ * and respect iOS safe-area on the bottom. All changes here are
+ * no-ops above 720px — desktop is untouched. */
+
+@media (max-width: 720px) {
+  .shell {
+    padding: 2.4rem 1rem calc(4rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .h2 {
+    font-size: 1.4rem;
+    margin: 2.4rem 0 0.7rem;
+  }
+
+  .h3 {
+    font-size: 1.05rem;
+    margin: 1.8rem 0 0.45rem;
+  }
+
+  .lede {
+    font-size: 1.02rem;
+    margin: 0 0 1.8rem;
+  }
+
+  /* Smaller font lets more shell text fit before horizontal scroll kicks
+   * in. Still legible at 14px-ish equivalent on a phone. */
+  .pre {
+    font-size: 0.78rem;
+    padding: 0.85rem 1.2rem 0.85rem 0.95rem;
+    border-radius: 0.55rem;
+  }
+
+  .callout {
+    padding: 0.75rem 0.9rem;
+    font-size: 0.92rem;
+  }
+
+  /* Card padding can tighten on phones where every horizontal pixel matters. */
+  .card {
+    padding: 1rem 1.05rem;
   }
 }

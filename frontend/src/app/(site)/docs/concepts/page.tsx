@@ -212,9 +212,11 @@ export default function Concepts() {
       <p>
         In every SDK there&apos;s a single helper:
       </p>
-      <pre className={styles.pre}>
-        <code>chakra.inbox.serve(agentId, handler)</code>
-      </pre>
+      <div className={styles.codeScroll}>
+        <pre className={styles.pre}>
+          <code>chakra.inbox.serve(agentId, handler)</code>
+        </pre>
+      </div>
       <p>
         Hand it your handler function and it does pull → dispatch →
         respond forever. Errors and panics inside your handler get
