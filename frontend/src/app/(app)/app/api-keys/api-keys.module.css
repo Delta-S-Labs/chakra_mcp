@@ -254,3 +254,21 @@
   .row { flex-direction: column; align-items: stretch; }
   .rowActions { justify-content: flex-end; }
 }
+
+/* Phone — bump touch targets above iOS 44px minimum for revoke /
+ * rotate, stack the just-rotated reveal card so the long plaintext
+ * key + Copy button sit on their own lines. */
+@media (max-width: 540px) {
+  .revoke,
+  .rotate {
+    padding: 0.55rem 0.95rem;
+    font-size: 0.7rem;
+  }
+  .created {
+    grid-template-columns: 1fr;
+    gap: 0.65rem;
+  }
+  .copyBtn { justify-self: flex-start; }
+  .head { padding-left: 0.25rem; padding-right: 0.25rem; }
+  .rowMeta code { overflow-wrap: anywhere; word-break: break-word; }
+}

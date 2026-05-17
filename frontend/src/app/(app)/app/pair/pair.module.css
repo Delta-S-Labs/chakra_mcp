@@ -513,3 +513,19 @@
   .pairRow { flex-direction: column; align-items: flex-start; }
   .pairRowRight { width: 100%; justify-content: flex-end; }
 }
+
+@media (max-width: 540px) {
+  .card { padding: 1.2rem 1rem; }
+  .codeCard { padding: 1.2rem 1rem; }
+  .codeRow { grid-template-columns: 1fr; }
+  .codeInput { font-size: 1.15rem; letter-spacing: 0.14em; padding: 0.7rem 0.6rem; }
+  .btnPrimary,
+  .btnSecondary { width: 100%; text-align: center; }
+  .actions { flex-direction: column; }
+  .facts { grid-template-columns: 1fr; gap: 0.2rem 0; }
+  .facts dt { margin-top: 0.5rem; }
+  .facts dt:first-of-type { margin-top: 0; }
+  .pairRowMeta,
+  .pairRowMeta code { overflow-wrap: anywhere; word-break: break-word; }
+  .pairRowRight { justify-content: flex-start; }
+}

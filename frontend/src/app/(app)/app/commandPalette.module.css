@@ -147,3 +147,12 @@
 @media (prefers-reduced-motion: reduce) {
   .backdrop, .panel { animation: none; }
 }
+
+/* Phone — drop top padding so the panel sits higher (more list
+ * visible above the keyboard) and trim the panel pad. */
+@media (max-width: 540px) {
+  .backdrop { padding: 4vh 0.75rem 0.75rem; }
+  .panel { max-height: 84vh; }
+  .header { padding: 0.6rem 0.85rem; }
+  .item { padding: 0.6rem 0.7rem; font-size: 0.82rem; }
+}

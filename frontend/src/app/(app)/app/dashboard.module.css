@@ -94,7 +94,9 @@
 
 .statGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  /* Floor lowered from 200px → 160px so 2-col reads comfortably down
+   * to ~360px, and the auto-fit still bumps to 3-4 cols above 720. */
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 0.85rem;
   padding: 0 0.5rem;
 }
@@ -145,9 +147,9 @@
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  border: 1px solid var(--line);
-  border-radius: 0.85rem;
-  overflow: hidden;
+  /* Border + radius now live on the .tableScroll wrapper so the
+   * horizontal-scroll affordance lines up with the visual frame.
+   * The inner table itself stays flush. */
   background: var(--paper-soft);
   font-family: var(--font-body);
   font-size: 0.9rem;
@@ -305,4 +307,17 @@
   .activityTable { font-size: 0.84rem; }
   .activityTable thead th,
   .activityTable tbody td { padding: 0.55rem 0.65rem; }
+}
+
+/* Phone — drop stat grid to 1-col and tighten the gutter so the title
+ * isn't crushed against the page edge. */
+@media (max-width: 480px) {
+  .statGrid {
+    grid-template-columns: 1fr;
+    padding: 0 0.25rem;
+  }
+  .welcome,
+  .sectionHead,
+  .sectionTitle,
+  .empty { padding-left: 0.25rem; padding-right: 0.25rem; }
 }

@@ -232,22 +232,24 @@ export default async function AppDashboard() {
             <Link href="/app/grants">Grants</Link>.
           </p>
         ) : (
-          <table className={styles.activityTable}>
-            <thead>
-              <tr>
-                <th>When</th>
-                <th>Capability</th>
-                <th>From → To</th>
-                <th>Status</th>
-                <th className={styles.numericCol}>Elapsed</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentInvocations.map((row) => (
-                <ActivityRow key={row.id} row={row} />
-              ))}
-            </tbody>
-          </table>
+          <div className="tableScroll">
+            <table className={styles.activityTable}>
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th>Capability</th>
+                  <th>From → To</th>
+                  <th>Status</th>
+                  <th className={styles.numericCol}>Elapsed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentInvocations.map((row) => (
+                  <ActivityRow key={row.id} row={row} />
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
 

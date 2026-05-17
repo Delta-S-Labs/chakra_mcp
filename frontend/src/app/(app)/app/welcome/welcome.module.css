@@ -202,3 +202,14 @@
   opacity: 0.55;
   cursor: not-allowed;
 }
+
+@media (max-width: 540px) {
+  .head { padding-left: 0.25rem; padding-right: 0.25rem; }
+  .fieldset { padding: 0.85rem 0.85rem 1rem; }
+  .option { padding: 0.55rem 0.7rem; }
+  .actions {
+    justify-content: stretch;
+    padding: 0;
+  }
+  .submit { width: 100%; padding: 0.85rem 1rem; }
+}

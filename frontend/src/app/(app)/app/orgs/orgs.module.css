@@ -448,3 +448,20 @@
   .agentRow { flex-wrap: wrap; }
   .agentMeta { justify-content: flex-start; }
 }
+
+/* Phone — let the row stack (avatar/name on top, role/actions below)
+ * and break long slugs so they don't burst horizontally. */
+@media (max-width: 540px) {
+  .row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.55rem;
+  }
+  .rowActions { justify-content: flex-start; }
+  .openLink { align-self: flex-start; }
+  .rowMeta,
+  .rowMeta code { overflow-wrap: anywhere; word-break: break-word; }
+  .agentSlug { overflow-wrap: anywhere; word-break: break-word; }
+  .head { padding-left: 0.25rem; padding-right: 0.25rem; }
+  .inviteUrl { font-size: 0.78rem; }
+}

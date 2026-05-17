@@ -228,9 +228,19 @@
   background: white;
   font-family: inherit;
   font-size: 0.92rem;
-  min-width: 16rem;
+  /* Don't insist on 16rem when the viewport is narrower than that —
+   * otherwise the picker forces horizontal scroll on the page. */
+  min-width: min(16rem, 100%);
+  max-width: 100%;
 }
 .agentPickerHint {
   font-size: 0.74rem;
   color: var(--ink-soft, #6b6258);
+}
+
+@media (max-width: 540px) {
+  .head { padding-left: 0.25rem; padding-right: 0.25rem; }
+  .agentPicker { width: 100%; }
+  .agentSelect { width: 100%; min-width: 0; }
+  .rowName { font-size: 0.9rem; }
 }

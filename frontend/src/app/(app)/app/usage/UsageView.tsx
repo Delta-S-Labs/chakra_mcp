@@ -293,15 +293,17 @@ function Section<T>({
       {rows.length === 0 ? (
         <p className={styles.empty}>{empty}</p>
       ) : (
-        <table className={styles.rollupTable}>
-          <thead>
-            <tr>
-              <th>{headers[0]}</th>
-              <th className={styles.numericCol}>{headers[1]}</th>
-            </tr>
-          </thead>
-          <tbody>{rows.map(renderRow)}</tbody>
-        </table>
+        <div className={styles.rollupScroll}>
+          <table className={styles.rollupTable}>
+            <thead>
+              <tr>
+                <th>{headers[0]}</th>
+                <th className={styles.numericCol}>{headers[1]}</th>
+              </tr>
+            </thead>
+            <tbody>{rows.map(renderRow)}</tbody>
+          </table>
+        </div>
       )}
     </section>
   );
