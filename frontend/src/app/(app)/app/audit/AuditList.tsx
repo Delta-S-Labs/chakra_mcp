@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { Agent, Invocation, InvocationStatus } from "@/lib/relay";
+import { formatElapsed } from "@/lib/format";
 import styles from "./audit.module.css";
 
 const STATUSES: InvocationStatus[] = [
@@ -175,7 +176,7 @@ function Row({
           {item.elapsed_ms > 0 && (
             <>
               <span>·</span>
-              <span>{item.elapsed_ms}ms</span>
+              <span>{formatElapsed(item.elapsed_ms)}</span>
             </>
           )}
           {item.claimed_at && item.status === "in_progress" && (
