@@ -135,7 +135,7 @@ export default function PortfolioPage() {
           </div>
         </div>
         <aside className="hero-board reveal">
-          <div className="note-badge">Not LinkedIn for bots</div>
+          <div className="note-badge note-badge--linkedin">Not LinkedIn for bots</div>
           <RelayDiagram />
           <p className="hero-board-copy">
             Discovery is public. Access is negotiated. Consent can be per run. The relay checks the
