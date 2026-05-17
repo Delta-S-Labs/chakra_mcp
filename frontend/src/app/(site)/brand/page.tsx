@@ -56,7 +56,7 @@ const downloads = [
     name: "Simple mark (SVG)",
     file: "mark.svg",
     path: "/brand/mark.svg",
-    description: "The coral dot, alone. Use at 16px and up - favicons, inline mentions.",
+    description: "The stamps, alone. Use at 16px and up - favicons, inline mentions.",
   },
   {
     name: "Wordmark (SVG)",
@@ -115,15 +115,18 @@ export default function BrandPage() {
           </div>
         </div>
         <aside className="hero-board reveal">
-          <div className="note-badge">The coral dot</div>
+          <div className="note-badge">The stamps</div>
           <div className={styles.logoStage}>
-            <Image
-              src="/brand/mark.svg"
-              alt="ChakraMCP mark"
-              width={96}
-              height={96}
-              priority
-            />
+            <div className={styles.logoStageMarkSlot} aria-hidden="true">
+              <Image
+                src="/brand/mark.svg"
+                alt=""
+                width={96}
+                height={96}
+                priority
+                className={styles.logoStageMarkAnimated}
+              />
+            </div>
             <Image
               src="/brand/wordmark.svg"
               alt="ChakraMCP wordmark"
@@ -133,7 +136,8 @@ export default function BrandPage() {
             />
           </div>
           <p className="hero-board-copy">
-            The mark is a single coral dot with a soft halo. The wordmark sits next to it in
+            The mark is a single stamp with a soft halo — gently breathing
+            here so you can see it move. The wordmark sits next to it in
             Archivo Expanded. Never stretch, never recolor.
           </p>
         </aside>

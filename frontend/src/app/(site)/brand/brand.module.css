@@ -9,6 +9,63 @@
   border: 1px solid var(--line);
 }
 
+/*
+ * Animated brandmark on the brand page. The static mark is just a
+ * coral dot with a soft halo — fine in any context, but the brand
+ * page is the one place where we want the visitor to *see* the mark
+ * as a living thing, since they're here specifically to look at it.
+ *
+ * Two layered motions:
+ *   1. .logoStageMarkSlot — a translucent ring sized to the mark,
+ *      pulsing once every 3.5s. Reads as the "soft halo" breathing.
+ *   2. .logoStageMarkAnimated — the SVG itself, gently floating +
+ *      rotating by ~3° on a 6s loop. Slow enough to feel ambient,
+ *      not distracting.
+ *
+ * Both bow out under prefers-reduced-motion — the mark falls back
+ * to a still image and the halo stops pulsing.
+ */
+.logoStageMarkSlot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 112px;
+  height: 112px;
+}
+.logoStageMarkSlot::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at center,
+    color-mix(in oklab, var(--accent-coral) 22%, transparent) 0%,
+    transparent 65%);
+  animation: brandmark-halo-pulse 3.5s ease-in-out infinite;
+}
+.logoStageMarkAnimated {
+  position: relative;
+  animation: brandmark-drift 6s ease-in-out infinite;
+  transform-origin: center;
+}
+
+@keyframes brandmark-halo-pulse {
+  0%, 100% { transform: scale(0.92); opacity: 0.55; }
+  50%      { transform: scale(1.06); opacity: 0.95; }
+}
+
+@keyframes brandmark-drift {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25%      { transform: translateY(-3px) rotate(-2deg); }
+  50%      { transform: translateY(0) rotate(0deg); }
+  75%      { transform: translateY(3px) rotate(2deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logoStageMarkAnimated,
+  .logoStageMarkSlot::before { animation: none; }
+}
+
 .compositeArt {
   margin-top: 1.5rem;
   padding: 2rem 1rem;
