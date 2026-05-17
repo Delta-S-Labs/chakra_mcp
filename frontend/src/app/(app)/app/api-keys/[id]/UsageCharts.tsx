@@ -142,28 +142,30 @@ export function UsageCharts({ usage }: { usage: ApiKeyUsage | null }) {
         {usage.by_agent.length === 0 ? (
           <p className={styles.chartEmpty}>No per-agent data.</p>
         ) : (
-          <table className={styles.byAgentTable}>
-            <thead>
-              <tr>
-                <th>Agent</th>
-                <th className={styles.numericCol}>Requests</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...usage.by_agent]
-                .sort((a, b) => b.count - a.count)
-                .map((row) => (
-                  <tr key={row.agent_id}>
-                    <td>
-                      <code className={styles.agentSlug}>{row.agent_slug}</code>
-                    </td>
-                    <td className={styles.numericCol}>
-                      {row.count.toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
+          <div className={styles.byAgentScroll}>
+            <table className={styles.byAgentTable}>
+              <thead>
+                <tr>
+                  <th>Agent</th>
+                  <th className={styles.numericCol}>Requests</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...usage.by_agent]
+                  .sort((a, b) => b.count - a.count)
+                  .map((row) => (
+                    <tr key={row.agent_id}>
+                      <td>
+                        <code className={styles.agentSlug}>{row.agent_slug}</code>
+                      </td>
+                      <td className={styles.numericCol}>
+                        {row.count.toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </section>

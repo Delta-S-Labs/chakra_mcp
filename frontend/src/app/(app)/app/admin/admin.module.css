@@ -74,12 +74,9 @@
 }
 
 /* ─── Table ─── */
-.tableWrap {
-  border: 1px solid var(--line);
-  border-radius: 0.95rem;
-  background: var(--paper-soft);
-  overflow-x: auto;
-}
+/* (Was `.tableWrap` with a static overflow-x. Now using the global
+ * `.tableScroll` primitive from shell.module.css for the fade-edge
+ * hint that the table extends — same border, same radius.) */
 
 .table {
   width: 100%;
@@ -164,4 +161,12 @@
   background: color-mix(in oklab, var(--paper-warm) 36%, var(--paper-soft));
   border: 1px solid var(--line);
   color: var(--ink-muted);
+}
+
+@media (max-width: 480px) {
+  .head,
+  .sectionHead { padding-left: 0.25rem; padding-right: 0.25rem; }
+  .table { font-size: 0.86rem; }
+  .table th,
+  .table td { padding: 0.5rem 0.6rem; }
 }

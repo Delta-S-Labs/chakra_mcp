@@ -46,7 +46,7 @@ export default async function AdminPage() {
           <h2>Users</h2>
           <span className={styles.count}>{users.length}</span>
         </header>
-        <div className={styles.tableWrap}>
+        <div className="tableScroll">
           <table className={styles.table}>
             <thead>
               <tr>
@@ -88,7 +88,7 @@ export default async function AdminPage() {
           <h2>Organizations</h2>
           <span className={styles.count}>{orgs.length}</span>
         </header>
-        <div className={styles.tableWrap}>
+        <div className="tableScroll">
           <table className={styles.table}>
             <thead>
               <tr>
@@ -134,7 +134,7 @@ export default async function AdminPage() {
           <h2>API keys</h2>
           <span className={styles.count}>{keys.length}</span>
         </header>
-        <div className={styles.tableWrap}>
+        <div className="tableScroll">
           <table className={styles.table}>
             <thead>
               <tr>

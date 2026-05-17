@@ -366,6 +366,23 @@
   .capFields { grid-template-columns: 1fr; }
 }
 
+/* Phone — collapse list rows so the "Open →" pill drops below the
+ * agent name instead of being squeezed off the right edge. Also
+ * allow long org-slug/agent-slug codes to wrap so they never burst
+ * the row. */
+@media (max-width: 540px) {
+  .row,
+  .capRow {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.55rem;
+  }
+  .openLink { align-self: flex-start; }
+  .rowMeta { overflow-wrap: anywhere; }
+  .rowMeta code { overflow-wrap: anywhere; word-break: break-word; }
+  .head { padding-left: 0.25rem; padding-right: 0.25rem; }
+}
+
 /* ─── "Just created" confirmation panel ─── */
 .created {
   display: grid;

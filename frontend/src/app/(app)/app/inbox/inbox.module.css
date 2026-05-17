@@ -259,3 +259,13 @@
   .controls { grid-template-columns: 1fr; }
   .respondTabs { grid-template-columns: 1fr; }
 }
+
+@media (max-width: 540px) {
+  .head { padding-left: 0.25rem; padding-right: 0.25rem; }
+  .row { padding: 0.85rem 0.85rem; }
+  .actions { flex-wrap: wrap; }
+  .create,
+  .dangerBtn { padding: 0.7rem 1rem; }
+  .rowMeta,
+  .rowMeta code { overflow-wrap: anywhere; word-break: break-word; }
+}

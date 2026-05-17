@@ -328,3 +328,12 @@
   .row { grid-template-columns: 1fr; }
   .rowActions { justify-content: flex-start; }
 }
+
+@media (max-width: 540px) {
+  .head { padding-left: 0.25rem; padding-right: 0.25rem; }
+  .create,
+  .secondaryBtn,
+  .dangerBtn { padding: 0.7rem 1rem; }
+  .rowMeta,
+  .rowMeta code { overflow-wrap: anywhere; word-break: break-word; }
+}

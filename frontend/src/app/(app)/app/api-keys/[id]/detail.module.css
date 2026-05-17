@@ -318,6 +318,16 @@
   gap: 0.6rem;
 }
 
+/* Inner scroll-strip around the by-agent table so a long agent slug
+ * can scroll horizontally inside the card instead of bursting it. No
+ * extra border / radius — the parent `.byAgentCard` already provides
+ * those. */
+.byAgentScroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 -0.5rem;
+}
+
 .byAgentTable {
   width: 100%;
   border-collapse: separate;
@@ -361,4 +371,15 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+@media (max-width: 540px) {
+  .created {
+    grid-template-columns: 1fr;
+    gap: 0.65rem;
+  }
+  .copyBtn { justify-self: flex-start; }
+  .head { padding-left: 0.25rem; padding-right: 0.25rem; }
+  .actionBtn,
+  .actionBtnDanger { padding: 0.6rem 1.1rem; }
 }
