@@ -15,6 +15,7 @@
 //!    states. Issue #68 M3.
 
 use anyhow::{anyhow, bail, Result};
+use chrono::Utc;
 use clap::{Parser, Subcommand};
 use serde_json::{json, Value};
 
@@ -66,6 +67,36 @@ pub enum Sub {
     /// This is a thin alias over `chakramcp invoke ensure` with the
     /// capability fixed to `message_owner`.
     Ensure(EnsureArgs),
+
+    /// Reply to a `message_owner` invocation that's sitting in your
+    /// inbox. Sugar over `inbox respond` that builds the
+    /// `message_owner`-shaped output JSON and posts the result with
+    /// `confirmed_by_human: true` set automatically — the CLI runs at
+    /// a human terminal, which is the canonical "a human is doing
+    /// this" boundary the HITL gate gates on (issue #69 PR 2).
+    ///
+    /// For statuses other than `replied`, the reply text becomes
+    /// optional and is dropped from the payload. For `deferred`, this
+    /// sugar omits `defer_until`; use `inbox respond` directly if you
+    /// need full control over the output JSON.
+    Reply(ReplyArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct ReplyArgs {
+    /// The invocation id you're answering. Find these via
+    /// `chakramcp inbox pull --agent <my-agent>`.
+    pub invocation: String,
+    /// The owner's reply text. Required when `--status=replied`
+    /// (the default); ignored when status is `acknowledged`,
+    /// `ignored`, or `deferred`.
+    #[arg(default_value = "")]
+    pub reply: String,
+    /// One of `replied` (default), `acknowledged`, `ignored`,
+    /// `deferred`. Matches the `message_owner` output_schema.
+    #[arg(long, default_value = "replied",
+        value_parser = ["replied", "acknowledged", "ignored", "deferred"])]
+    pub status: String,
 }
 
 /// Args mirror `invoke::EnsureArgs` minus the capability_name +
@@ -121,6 +152,7 @@ pub struct EnsureArgs {
 pub async fn run(args: Args, api: ApiClient) -> Result<()> {
     match args.sub {
         Some(Sub::Ensure(e)) => ensure_run(e, &api).await,
+        Some(Sub::Reply(r)) => reply_run(r, &api).await,
         None => legacy_send(args.send, &api).await,
     }
 }
@@ -234,6 +266,54 @@ async fn legacy_send(send: SendArgs, api: &ApiClient) -> Result<()> {
     print(&resp)
 }
 
+// ─── `message reply` — sugar over `inbox respond` ────────
+
+/// Build the `message_owner` output_schema-shaped JSON for a reply.
+/// Extracted so the wire shape is unit-testable without a relay.
+///
+/// Spec'd shape (from the `message_owner` template's output_schema):
+///   { status, reply?, responded_at, defer_until? }
+///
+/// `reply` is included only when `status == "replied"` (matches the
+/// template's "Present only when status='replied'" rule). `deferred`
+/// would normally also include `defer_until`, but the v1 sugar omits
+/// it — callers who need it should fall back to `inbox respond` with
+/// a hand-rolled `--output` payload.
+fn build_reply_output(status: &str, reply: &str, now_rfc3339: String) -> Value {
+    let mut out = serde_json::Map::new();
+    out.insert("status".into(), Value::String(status.to_string()));
+    if status == "replied" {
+        out.insert("reply".into(), Value::String(reply.to_string()));
+    }
+    out.insert("responded_at".into(), Value::String(now_rfc3339));
+    Value::Object(out)
+}
+
+async fn reply_run(r: ReplyArgs, api: &ApiClient) -> Result<()> {
+    if r.status == "replied" && r.reply.trim().is_empty() {
+        bail!(
+            "reply text is required when --status=replied. \
+             Pass a non-empty <reply>, or use --status=acknowledged|ignored|deferred."
+        );
+    }
+
+    let output = build_reply_output(&r.status, &r.reply, Utc::now().to_rfc3339());
+
+    // confirmed_by_human: true — the CLI runs at a human terminal, so
+    // by definition we're satisfying the HITL gate. This is the
+    // ergonomic counterpart to the relay-side check in
+    // `handlers::invoke::report_result`.
+    let body = json!({
+        "status": "succeeded",
+        "output": output,
+        "confirmed_by_human": true,
+    });
+    let resp: Value = api
+        .post_relay(&format!("/v1/invocations/{}/result", r.invocation), &body)
+        .await?;
+    print(&resp)
+}
+
 // ─── `message ensure` — thin alias over `invoke ensure` ──
 
 async fn ensure_run(e: EnsureArgs, api: &ApiClient) -> Result<()> {
@@ -265,4 +345,96 @@ async fn ensure_run(e: EnsureArgs, api: &ApiClient) -> Result<()> {
         json: e.json,
     };
     invoke::ensure_run(inner, api).await
+}
+
+// ─── Tests ────────────────────────────────────────────────
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const FIXED_TS: &str = "2026-05-17T12:00:00+00:00";
+
+    #[test]
+    fn build_reply_output_replied_includes_reply_text() {
+        let v = build_reply_output("replied", "sure, friday works", FIXED_TS.into());
+        assert_eq!(v["status"], json!("replied"));
+        assert_eq!(v["reply"], json!("sure, friday works"));
+        assert_eq!(v["responded_at"], json!(FIXED_TS));
+        assert!(v.get("defer_until").is_none(), "deferred-only field");
+    }
+
+    #[test]
+    fn build_reply_output_acknowledged_drops_reply() {
+        let v = build_reply_output("acknowledged", "ignored", FIXED_TS.into());
+        assert_eq!(v["status"], json!("acknowledged"));
+        assert!(
+            v.get("reply").is_none(),
+            "reply must not be present when status != replied; got {v}"
+        );
+        assert_eq!(v["responded_at"], json!(FIXED_TS));
+    }
+
+    #[test]
+    fn build_reply_output_ignored_drops_reply() {
+        let v = build_reply_output("ignored", "whatever", FIXED_TS.into());
+        assert_eq!(v["status"], json!("ignored"));
+        assert!(v.get("reply").is_none());
+    }
+
+    #[test]
+    fn build_reply_output_deferred_drops_reply_and_omits_defer_until() {
+        // The CLI sugar deliberately leaves `defer_until` off — for
+        // full control the caller falls back to `inbox respond`.
+        let v = build_reply_output("deferred", "later", FIXED_TS.into());
+        assert_eq!(v["status"], json!("deferred"));
+        assert!(v.get("reply").is_none());
+        assert!(v.get("defer_until").is_none());
+    }
+
+    #[test]
+    fn reply_args_parse_default_status_is_replied() {
+        use clap::Parser;
+        #[derive(Parser, Debug)]
+        struct Wrap {
+            #[command(subcommand)]
+            sub: Sub,
+        }
+        let w = Wrap::try_parse_from(["x", "reply", "00000000-0000-0000-0000-000000000000", "hi"])
+            .unwrap();
+        match w.sub {
+            Sub::Reply(r) => {
+                assert_eq!(r.status, "replied");
+                assert_eq!(r.reply, "hi");
+                assert_eq!(r.invocation, "00000000-0000-0000-0000-000000000000");
+            }
+            _ => panic!("expected Reply"),
+        }
+    }
+
+    #[test]
+    fn reply_args_parse_acknowledged_without_reply_text() {
+        // `reply` has a default_value of "", so leaving it off when
+        // --status=acknowledged is valid.
+        use clap::Parser;
+        #[derive(Parser, Debug)]
+        struct Wrap {
+            #[command(subcommand)]
+            sub: Sub,
+        }
+        let w = Wrap::try_parse_from([
+            "x",
+            "reply",
+            "00000000-0000-0000-0000-000000000000",
+            "--status",
+            "acknowledged",
+        ])
+        .unwrap();
+        match w.sub {
+            Sub::Reply(r) => {
+                assert_eq!(r.status, "acknowledged");
+                assert_eq!(r.reply, "");
+            }
+            _ => panic!("expected Reply"),
+        }
+    }
 }

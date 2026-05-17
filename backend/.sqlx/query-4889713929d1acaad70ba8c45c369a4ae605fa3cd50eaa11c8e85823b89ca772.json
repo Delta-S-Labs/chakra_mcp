@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE agent_capabilities SET semantics = 'human_in_loop' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4889713929d1acaad70ba8c45c369a4ae605fa3cd50eaa11c8e85823b89ca772"
+}

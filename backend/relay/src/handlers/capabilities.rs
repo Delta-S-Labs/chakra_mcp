@@ -34,6 +34,12 @@ pub struct CreateRequest {
     pub output_schema: serde_json::Value,
     #[serde(default)]
     pub visibility: Option<String>,
+    /// HITL gate (issue #69 PR 2). `"autonomous"` (default) or
+    /// `"human_in_loop"`. The relay's
+    /// `POST /v1/invocations/{id}/result` enforces the value — see
+    /// `handlers::invoke::report_result`.
+    #[serde(default)]
+    pub semantics: Option<String>,
 }
 
 fn default_schema() -> serde_json::Value {
@@ -151,14 +157,23 @@ pub async fn create(
             "visibility must be private|network".into(),
         ));
     }
+    // The DB CHECK constraint (migration 0020) would also reject an
+    // invalid value, but pre-validating gives a 400 with a friendly
+    // message instead of a 500 from a constraint violation.
+    let semantics = req.semantics.as_deref().unwrap_or("autonomous");
+    if !matches!(semantics, "autonomous" | "human_in_loop") {
+        return Err(ApiError::InvalidRequest(
+            "semantics must be autonomous|human_in_loop".into(),
+        ));
+    }
 
     let id = Uuid::now_v7();
     let inserted = sqlx::query!(
         r#"
         INSERT INTO agent_capabilities
             (id, agent_id, name, description, input_schema, output_schema,
-             visibility, created_by_user_id)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             visibility, semantics, created_by_user_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         ON CONFLICT (agent_id, name) DO NOTHING
         RETURNING id, agent_id, name, description, input_schema, output_schema,
                   visibility, created_at, updated_at
@@ -170,6 +185,7 @@ pub async fn create(
         req.input_schema,
         req.output_schema,
         visibility,
+        semantics,
         user.user_id,
     )
     .fetch_optional(&state.db)

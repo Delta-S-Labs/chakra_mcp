@@ -54,6 +54,7 @@
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use axum::Json;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -175,6 +176,14 @@ pub struct ResultRequest {
     pub status: String,
     pub output: Option<Value>,
     pub error: Option<String>,
+    /// HITL gate (issue #69 PR 2): when the invocation's capability has
+    /// `semantics = 'human_in_loop'`, the relay refuses the result
+    /// unless this flag is `true`. The CLI's `inbox respond` + new
+    /// `message reply` sugar set it automatically (they assume a human
+    /// at the terminal); the Python/TS SDKs default to `false`, which
+    /// catches autonomous handlers that try to answer a HITL invocation.
+    #[serde(default)]
+    pub confirmed_by_human: Option<bool>,
 }
 
 // ─── Helpers ─────────────────────────────────────────────
@@ -591,24 +600,39 @@ pub async fn inbox(
 }
 
 // ─── POST /v1/invocations/{id}/result ────────────────────
+//
+// Returns `Response` (rather than `ApiResult<Json<InvocationDto>>`) so
+// the HITL policy gate can emit a 409 with a custom error code —
+// `chk.policy.requires_human_confirmation` — that the shared
+// `ApiError::Conflict` envelope (code = `"conflict"`) can't express.
+// The success + happy-path errors still flow through `ApiError` and its
+// `IntoResponse`.
 pub async fn report_result(
     State(state): State<RelayState>,
     user: AuthUser,
     Path(id): Path<Uuid>,
     Json(req): Json<ResultRequest>,
-) -> ApiResult<Json<InvocationDto>> {
+) -> Result<Response, ApiError> {
     if !matches!(req.status.as_str(), "succeeded" | "failed") {
         return Err(ApiError::InvalidRequest(
             "status must be 'succeeded' or 'failed'".into(),
         ));
     }
 
+    // Join `agent_capabilities` to pick up the HITL `semantics` column
+    // alongside the invocation's status + granter account. The
+    // capability may be null on legacy rows that pre-date the
+    // capability_id column — in that case `semantics` comes back as
+    // None and the gate is a no-op (matches the migration's
+    // backwards-compatible default).
     let row = sqlx::query!(
         r#"
         SELECT i.status, i.created_at, i.claimed_at,
-               ga.account_id as "granter_account_id?"
+               ga.account_id as "granter_account_id?",
+               c.semantics   as "capability_semantics?"
         FROM relay_invocations i
-        LEFT JOIN agents ga ON ga.id = i.granter_agent_id
+        LEFT JOIN agents              ga ON ga.id = i.granter_agent_id
+        LEFT JOIN agent_capabilities  c  ON c.id  = i.capability_id
         WHERE i.id = $1
         "#,
         id,
@@ -630,6 +654,25 @@ pub async fn report_result(
     let granter_account = row.granter_account_id.ok_or(ApiError::Forbidden)?;
     if !user_is_member(&state.db, user.user_id, granter_account).await? {
         return Err(ApiError::Forbidden);
+    }
+
+    // HITL gate (issue #69 PR 2): if the capability is `human_in_loop`,
+    // refuse the result unless `confirmed_by_human: true`. Returning a
+    // custom 409 body keeps SDK callers' error-classification logic in
+    // sync with the documented contract on the migration:
+    //
+    //   POST /v1/invocations/{id}/result
+    //   → 409 { error: { code: "chk.policy.requires_human_confirmation", … } }
+    if row.capability_semantics.as_deref() == Some("human_in_loop")
+        && !req.confirmed_by_human.unwrap_or(false)
+    {
+        let body = serde_json::json!({
+            "error": {
+                "code": "chk.policy.requires_human_confirmation",
+                "message": "this capability requires explicit human confirmation; set `confirmed_by_human: true` if a human approved the response",
+            }
+        });
+        return Ok((StatusCode::CONFLICT, Json(body)).into_response());
     }
 
     // Wall time from enqueue to result.
@@ -657,7 +700,7 @@ pub async fn report_result(
     .await?;
 
     let r = fetch_one(&state.db, user.user_id, id).await?;
-    Ok(Json(r))
+    Ok(Json(r).into_response())
 }
 
 // ─── GET /v1/invocations ─────────────────────────────────
@@ -857,7 +900,7 @@ mod legacy_v01_contract_tests {
     use tower::ServiceExt;
     use uuid::Uuid;
 
-    fn config() -> SharedConfig {
+    pub(super) fn config() -> SharedConfig {
         SharedConfig {
             database_url: "ignored".into(),
             jwt_secret: "test-secret".into(),
@@ -877,16 +920,16 @@ mod legacy_v01_contract_tests {
     /// Seed the same shape as `examples/scheduler-demo/setup.py`:
     /// two accounts, one agent each, friendship, grant. Returns the
     /// caller's ck_ token, both agent ids, and the grant id.
-    struct DemoFixture {
-        caller_token: String,
-        caller_user_id: Uuid,
-        granter_agent_id: Uuid,
-        grantee_agent_id: Uuid,
-        grant_id: Uuid,
-        capability_id: Uuid,
+    pub(super) struct DemoFixture {
+        pub caller_token: String,
+        pub caller_user_id: Uuid,
+        pub granter_agent_id: Uuid,
+        pub grantee_agent_id: Uuid,
+        pub grant_id: Uuid,
+        pub capability_id: Uuid,
     }
 
-    async fn seed_demo(pool: &PgPool) -> DemoFixture {
+    pub(super) async fn seed_demo(pool: &PgPool) -> DemoFixture {
         let alice_user = Uuid::now_v7(); // granter / inbox.serve side
         let bob_user = Uuid::now_v7(); // grantee / invoke side
         for (uid, name) in [(alice_user, "Alice"), (bob_user, "Bob")] {
@@ -1289,5 +1332,276 @@ mod legacy_v01_contract_tests {
             row_key_id.is_none(),
             "JWT-authed callers must leave api_key_id NULL; got {row_key_id:?}",
         );
+    }
+}
+
+// ─── HITL gate tests (issue #69 PR 2) ─────────────────────
+#[cfg(test)]
+mod hitl_gate_tests {
+    //! Coverage for the new `confirmed_by_human` gate in
+    //! `report_result`. Three cases:
+    //!
+    //! 1. `human_in_loop` + flag true → 200, row goes `succeeded`.
+    //! 2. `human_in_loop` + flag missing → 409 with the documented
+    //!    `chk.policy.requires_human_confirmation` envelope; row stays
+    //!    `in_progress`.
+    //! 3. `autonomous` + no flag → 200, regression check that the
+    //!    gate is a strict no-op for non-HITL capabilities (the bulk
+    //!    of existing capabilities).
+    //!
+    //! All three reuse `seed_demo` from the legacy module and then
+    //! drive the invocation through `/v1/invoke` → claim via inbox →
+    //! report result, mirroring the v0.1.0 SDK lifecycle exercised by
+    //! `v01_pull_mode_full_lifecycle`.
+    use super::legacy_v01_contract_tests::*;
+    use axum::body::Body;
+    use axum::http::{header, Request, StatusCode};
+    use http_body_util::BodyExt;
+    use sha2::{Digest, Sha256};
+    use sqlx::PgPool;
+    use tower::ServiceExt;
+    use uuid::Uuid;
+
+    /// Drive a fresh invocation up to `in_progress` and return
+    /// `(invocation_id, alice_token)`. Optionally flips the capability
+    /// to `human_in_loop` before invoking — when `hitl` is true, the
+    /// gate in `report_result` is in scope for any subsequent
+    /// `/result` post.
+    async fn invoke_and_claim(
+        pool: &PgPool,
+        app: &axum::Router,
+        f: &DemoFixture,
+        hitl: bool,
+    ) -> (Uuid, String) {
+        if hitl {
+            sqlx::query!(
+                "UPDATE agent_capabilities SET semantics = 'human_in_loop' WHERE id = $1",
+                f.capability_id,
+            )
+            .execute(pool)
+            .await
+            .unwrap();
+        }
+
+        // Bob: POST /v1/invoke
+        let res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/invoke")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, format!("Bearer {}", f.caller_token))
+                    .body(Body::from(
+                        serde_json::to_vec(&serde_json::json!({
+                            "grant_id": f.grant_id,
+                            "grantee_agent_id": f.grantee_agent_id,
+                            "input": {"k": "v"}
+                        }))
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::ACCEPTED);
+        let body: serde_json::Value =
+            serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        let invocation_id: Uuid = body["invocation_id"]
+            .as_str()
+            .and_then(|s| s.parse().ok())
+            .unwrap();
+
+        // Mint Alice (the granter) a ck_ token + claim the row via inbox.
+        let alice_user_id = sqlx::query_scalar!(
+            "SELECT owner_user_id FROM accounts a JOIN agents g ON g.account_id=a.id WHERE g.id=$1",
+            f.granter_agent_id,
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap()
+        .unwrap();
+        let alice_ck = format!("ck_demo_alice_{alice_user_id}");
+        let mut h = Sha256::new();
+        h.update(alice_ck.as_bytes());
+        let kh = hex::encode(h.finalize());
+        sqlx::query!(
+            r#"INSERT INTO api_keys (id, user_id, key_hash, name, key_prefix)
+               VALUES ($1, $2, $3, 'demo', 'ck_demo')"#,
+            Uuid::now_v7(),
+            alice_user_id,
+            kh,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+
+        // Pull from the inbox — atomically flips the row to in_progress
+        // so `report_result` accepts it.
+        let inbox_res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/v1/inbox?agent_id={}", f.granter_agent_id))
+                    .header(header::AUTHORIZATION, format!("Bearer {alice_ck}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(inbox_res.status(), StatusCode::OK);
+
+        (invocation_id, alice_ck)
+    }
+
+    async fn post_result(
+        app: &axum::Router,
+        invocation_id: Uuid,
+        alice_ck: &str,
+        body: serde_json::Value,
+    ) -> (StatusCode, serde_json::Value) {
+        let res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/invocations/{invocation_id}/result"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, format!("Bearer {alice_ck}"))
+                    .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = res.status();
+        let bytes = res.into_body().collect().await.unwrap().to_bytes();
+        // Some success bodies parse as JSON; on 409 the body is JSON
+        // too. Default to Null when empty.
+        let v: serde_json::Value = if bytes.is_empty() {
+            serde_json::Value::Null
+        } else {
+            serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null)
+        };
+        (status, v)
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn respond_with_confirmed_by_human_true_on_hitl_succeeds(pool: PgPool) {
+        let f = seed_demo(&pool).await;
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        let (invocation_id, alice_ck) = invoke_and_claim(&pool, &app, &f, true).await;
+
+        let (status, _body) = post_result(
+            &app,
+            invocation_id,
+            &alice_ck,
+            serde_json::json!({
+                "status": "succeeded",
+                "output": { "reply": "ok" },
+                "confirmed_by_human": true,
+            }),
+        )
+        .await;
+        assert!(
+            status.is_success(),
+            "HITL + confirmed_by_human=true should succeed; got {status}"
+        );
+
+        let row_status: String = sqlx::query_scalar!(
+            "SELECT status FROM relay_invocations WHERE id = $1",
+            invocation_id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row_status, "succeeded");
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn respond_without_confirmed_by_human_on_hitl_returns_409(pool: PgPool) {
+        let f = seed_demo(&pool).await;
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        let (invocation_id, alice_ck) = invoke_and_claim(&pool, &app, &f, true).await;
+
+        // No `confirmed_by_human` field at all — most common case for
+        // an SDK that hasn't opted in.
+        let (status, body) = post_result(
+            &app,
+            invocation_id,
+            &alice_ck,
+            serde_json::json!({
+                "status": "succeeded",
+                "output": { "reply": "ok" },
+            }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(
+            body["error"]["code"],
+            "chk.policy.requires_human_confirmation",
+        );
+
+        // The row must stay in_progress so a follow-up call with the
+        // flag set can still succeed.
+        let row_status: String = sqlx::query_scalar!(
+            "SELECT status FROM relay_invocations WHERE id = $1",
+            invocation_id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row_status, "in_progress");
+
+        // Explicit false should behave identically to missing.
+        let (status2, body2) = post_result(
+            &app,
+            invocation_id,
+            &alice_ck,
+            serde_json::json!({
+                "status": "succeeded",
+                "output": { "reply": "ok" },
+                "confirmed_by_human": false,
+            }),
+        )
+        .await;
+        assert_eq!(status2, StatusCode::CONFLICT);
+        assert_eq!(
+            body2["error"]["code"],
+            "chk.policy.requires_human_confirmation",
+        );
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn respond_without_confirmed_by_human_on_autonomous_still_succeeds(pool: PgPool) {
+        // Regression: the gate must NOT fire on the default
+        // `autonomous` semantics — that's every pre-PR-1 capability
+        // and the bulk of post-PR-1 ones.
+        let f = seed_demo(&pool).await;
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        let (invocation_id, alice_ck) = invoke_and_claim(&pool, &app, &f, false).await;
+
+        let (status, _body) = post_result(
+            &app,
+            invocation_id,
+            &alice_ck,
+            serde_json::json!({
+                "status": "succeeded",
+                "output": { "reply": "ok" },
+            }),
+        )
+        .await;
+        assert!(
+            status.is_success(),
+            "autonomous capability must accept results without the flag; got {status}"
+        );
+
+        let row_status: String = sqlx::query_scalar!(
+            "SELECT status FROM relay_invocations WHERE id = $1",
+            invocation_id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row_status, "succeeded");
     }
 }

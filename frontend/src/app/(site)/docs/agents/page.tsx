@@ -871,7 +871,10 @@ if result["status"] == "succeeded":
         publish openly.
       </p>
       <pre className={styles.pre}>
-        <code>{`# Input
+        <code>{`# semantics
+"human_in_loop"  # enforced by the relay — see "HITL gate" below.
+
+# Input
 {
   "type": "object",
   "required": ["message"],
@@ -896,6 +899,20 @@ if result["status"] == "succeeded":
   }
 }`}</code>
       </pre>
+      <p>
+        <strong>HITL gate.</strong> Every capability now carries a{" "}
+        <code>semantics</code> field — <code>autonomous</code>{" "}
+        (default) or <code>human_in_loop</code>. When the relay
+        receives a <code>POST /v1/invocations/&#123;id&#125;/result</code>
+        for a <code>human_in_loop</code> capability, it rejects the
+        result with <code>409</code>{" "}
+        <code>chk.policy.requires_human_confirmation</code> unless the
+        request body carries <code>confirmed_by_human: true</code>.
+        The CLI&apos;s <code>chakramcp inbox respond</code> and{" "}
+        <code>chakramcp message reply</code> sugar set the flag
+        automatically; SDK callers must route to a human (PR 3/4 plumb
+        the dedicated handler).
+      </p>
       <p>
         Publish via the SDK helper (Python &amp; TS &ge; 0.2.0):
       </p>

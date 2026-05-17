@@ -72,6 +72,13 @@ pub enum Cmd {
         /// `network` (default) or `private`. Overrides template default.
         #[arg(long)]
         visibility: Option<String>,
+        /// HITL gate (issue #69 PR 2). `autonomous` (default) accepts
+        /// any worker-posted result; `human_in_loop` makes the relay
+        /// reject results that don't carry `confirmed_by_human: true`.
+        /// The `message_owner` template defaults to `human_in_loop`;
+        /// passing this flag overrides the template's value.
+        #[arg(long, value_parser = ["autonomous", "human_in_loop"])]
+        semantics: Option<String>,
     },
     /// List the reserved capability templates available with
     /// `add --template <id>`. Names are stable across SDK + CLI;
@@ -132,10 +139,11 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             input_schema,
             output_schema,
             visibility,
+            semantics,
         } => {
             let mut payload = if let Some(tpl_id) = template {
                 // Template path: load the canonical body, then apply
-                // optional description / visibility overrides.
+                // optional description / visibility / semantics overrides.
                 get_template(&tpl_id).ok_or_else(|| {
                     anyhow!(
                         "unknown template id: '{tpl_id}'. Known: {}. Run `chakramcp capabilities templates` to list.",
@@ -156,6 +164,11 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
                     "input_schema": input,
                     "output_schema": output,
                     "visibility": visibility.clone().unwrap_or_else(|| "network".to_string()),
+                    // Default matches the migration. The relay also
+                    // defaults at the DB layer, but sending it
+                    // explicitly keeps the wire shape obvious to
+                    // anyone tracing requests.
+                    "semantics": semantics.clone().unwrap_or_else(|| "autonomous".to_string()),
                 })
             };
             // Overrides apply in both paths.
@@ -164,6 +177,9 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             }
             if let Some(v) = visibility {
                 payload["visibility"] = Value::String(v);
+            }
+            if let Some(s) = semantics {
+                payload["semantics"] = Value::String(s);
             }
             let body: Value = api
                 .post_relay(&format!("/v1/agents/{agent}/capabilities"), &payload)

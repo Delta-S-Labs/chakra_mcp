@@ -197,6 +197,16 @@ export interface CreateCapabilityRequest {
   input_schema?: Record<string, unknown>;
   output_schema?: Record<string, unknown>;
   visibility?: Visibility;
+  /**
+   * HITL gate (issue #69 PR 2). `"autonomous"` (default) accepts any
+   * worker-posted result. `"human_in_loop"` forces the relay to reject
+   * the result with 409 `chk.policy.requires_human_confirmation`
+   * unless the response carries `confirmed_by_human: true`. PR 4 will
+   * plumb a `humanHandler` callback through `InboxClient.serve()`;
+   * until then, set this manually only on capabilities you handle
+   * out-of-band via the CLI.
+   */
+  semantics?: "autonomous" | "human_in_loop";
 }
 
 export interface ProposeFriendshipRequest {
