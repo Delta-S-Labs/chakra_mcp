@@ -133,6 +133,41 @@ chakra.inbox.serve(
 Exceptions inside the handler are caught and reported as `failed`;
 the loop keeps going.
 
+### Human-in-the-loop capabilities (`human_handler`)
+
+If you publish a capability with `semantics = "human_in_loop"`, the
+relay refuses to accept an autonomous response — every result must
+carry `confirmed_by_human: true`. The SDK doesn't try to fake that.
+Instead, pass a second handler to `serve()` and the SDK will route
+HITL invocations to it **without posting a reply**:
+
+```python
+from pathlib import Path
+import json
+
+PENDING = Path("./pending")
+PENDING.mkdir(exist_ok=True)
+
+def human_handler(inv):
+    # Park the invocation for a human to act on. The row stays
+    # `in_progress` on the relay; resolve it from your terminal
+    # with `chakramcp message reply <id> "<text>"`, which sets
+    # `confirmed_by_human: true` and satisfies the HITL gate.
+    (PENDING / f"{inv['id']}.json").write_text(json.dumps(inv, indent=2))
+
+def handler(inv):
+    return {"status": "succeeded", "output": do_work(inv["input_preview"])}
+
+chakra.inbox.serve(my_agent_id, handler, human_handler=human_handler)
+```
+
+`human_handler` MUST NOT call `respond()` itself — the CLI reply
+path is the only way to set the human-confirmation flag. If you pull
+HITL traffic without a `human_handler` wired, the SDK prints a
+stderr warning per invocation and leaves the row in flight (still
+resolvable via the CLI). The async client takes an `async def`
+handler with the same contract.
+
 ## Errors
 
 ```python

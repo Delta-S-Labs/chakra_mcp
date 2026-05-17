@@ -173,6 +173,10 @@ class Invocation(TypedDict, total=False):
     claimed_at: str | None
     i_served: bool
     i_invoked: bool
+    # Capability semantics — `"autonomous"` or `"human_in_loop"`. Absent
+    # on relays predating PR #80; absence is treated as autonomous by
+    # `inbox.serve` for forward compatibility.
+    semantics: str | None
     friendship_context: FriendshipContext  # only set on inbox responses
     grant_context: GrantContext  # only set on inbox responses
 

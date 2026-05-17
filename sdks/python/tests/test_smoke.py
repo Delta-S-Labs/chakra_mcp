@@ -202,6 +202,271 @@ async def test_async_me(app_url: str, relay_url: str) -> None:
     assert me["user"]["email"] == "bob@example.com"
 
 
+def _hitl_inv_json(inv_id: str = "inv-hitl", *, semantics: str = "human_in_loop") -> dict:
+    """Helper — minimal Invocation JSON shaped like the relay returns."""
+    return {
+        "id": inv_id,
+        "grant_id": None,
+        "granter_agent_id": None,
+        "granter_display_name": None,
+        "grantee_agent_id": None,
+        "grantee_display_name": None,
+        "capability_id": None,
+        "capability_name": "approve_refund",
+        "status": "in_progress",
+        "elapsed_ms": 0,
+        "error_message": None,
+        "input_preview": {"amount": 42},
+        "output_preview": None,
+        "created_at": "2026-01-01T00:00:00Z",
+        "claimed_at": "2026-01-01T00:00:01Z",
+        "i_served": True,
+        "i_invoked": False,
+        "semantics": semantics,
+    }
+
+
+@respx.mock
+def test_serve_routes_human_in_loop_to_human_handler(
+    app_url: str, relay_url: str
+) -> None:
+    """HITL invocation → human_handler called, autonomous handler not
+    called, NO POST to /result (row stays in_progress until CLI reply).
+    """
+    pull_count = {"n": 0}
+
+    def _pull(_req: httpx.Request) -> httpx.Response:
+        pull_count["n"] += 1
+        if pull_count["n"] > 1:
+            return httpx.Response(200, json=[])
+        return httpx.Response(200, json=[_hitl_inv_json("inv-hitl")])
+
+    respx.get(f"{relay_url}/v1/inbox").mock(side_effect=_pull)
+    # If serve() incorrectly posts a result for a HITL invocation,
+    # respx will raise on the unmocked route — which is exactly the
+    # signal we want. We deliberately do NOT register this route.
+
+    autonomous_seen: list[str] = []
+    human_seen: list[str] = []
+
+    def handler(inv: dict) -> dict:
+        autonomous_seen.append(inv["id"])
+        return {"status": "succeeded", "output": {}}
+
+    def human_handler(inv: dict) -> None:
+        human_seen.append(inv["id"])
+
+    with ChakraMCP(api_key="ck_test", app_url=app_url, relay_url=relay_url) as c:
+        c.inbox.serve(
+            "agent-id",
+            handler,
+            human_handler=human_handler,
+            poll_interval_s=0.01,
+            stop=lambda: pull_count["n"] >= 1 and bool(human_seen),
+        )
+
+    assert human_seen == ["inv-hitl"]
+    assert autonomous_seen == []
+    # Sanity: no result route was ever invoked
+    for route in respx.routes:
+        if "/result" in str(getattr(route, "pattern", "")):
+            assert not route.called
+
+
+@respx.mock
+def test_serve_warns_when_human_handler_missing_on_hitl(
+    app_url: str, relay_url: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """HITL invocation without human_handler → stderr warning, NO
+    /result POST, loop continues to next pull cleanly.
+    """
+    pull_count = {"n": 0}
+
+    def _pull(_req: httpx.Request) -> httpx.Response:
+        pull_count["n"] += 1
+        if pull_count["n"] > 1:
+            return httpx.Response(200, json=[])
+        return httpx.Response(200, json=[_hitl_inv_json("inv-hitl-noh")])
+
+    respx.get(f"{relay_url}/v1/inbox").mock(side_effect=_pull)
+    # No /result route registered — if serve() POSTs, respx errors.
+
+    autonomous_seen: list[str] = []
+
+    def handler(inv: dict) -> dict:
+        autonomous_seen.append(inv["id"])
+        return {"status": "succeeded", "output": {}}
+
+    with ChakraMCP(api_key="ck_test", app_url=app_url, relay_url=relay_url) as c:
+        c.inbox.serve(
+            "agent-id",
+            handler,
+            poll_interval_s=0.01,
+            stop=lambda: pull_count["n"] >= 2,
+        )
+
+    captured = capsys.readouterr()
+    assert "human_in_loop" in captured.err
+    assert "inv-hitl-noh" in captured.err
+    assert "chakramcp message reply" in captured.err
+    assert autonomous_seen == []
+
+
+@respx.mock
+def test_serve_falls_through_to_handler_for_autonomous(
+    app_url: str, relay_url: str
+) -> None:
+    """semantics='autonomous' AND missing-semantics (old relay) both
+    take the autonomous path with respond(succeeded).
+    """
+    pull_count = {"n": 0}
+
+    def _pull(_req: httpx.Request) -> httpx.Response:
+        pull_count["n"] += 1
+        if pull_count["n"] > 1:
+            return httpx.Response(200, json=[])
+        return httpx.Response(
+            200,
+            json=[
+                _hitl_inv_json("inv-auto", semantics="autonomous"),
+                # Forward-compat: pre-PR-#80 relays omit the field.
+                {
+                    k: v
+                    for k, v in _hitl_inv_json("inv-old").items()
+                    if k != "semantics"
+                },
+            ],
+        )
+
+    respx.get(f"{relay_url}/v1/inbox").mock(side_effect=_pull)
+
+    reported: list[tuple[str, str]] = []
+
+    def _result(req: httpx.Request) -> httpx.Response:
+        inv_id = req.url.path.split("/")[3]
+        body = json.loads(req.content)
+        reported.append((inv_id, body["status"]))
+        return httpx.Response(200, json={})
+
+    respx.post(f"{relay_url}/v1/invocations/inv-auto/result").mock(side_effect=_result)
+    respx.post(f"{relay_url}/v1/invocations/inv-old/result").mock(side_effect=_result)
+
+    human_seen: list[str] = []
+    autonomous_seen: list[str] = []
+
+    def handler(inv: dict) -> dict:
+        autonomous_seen.append(inv["id"])
+        return {"status": "succeeded", "output": {"ok": True}}
+
+    def human_handler(inv: dict) -> None:
+        human_seen.append(inv["id"])
+
+    with ChakraMCP(api_key="ck_test", app_url=app_url, relay_url=relay_url) as c:
+        c.inbox.serve(
+            "agent-id",
+            handler,
+            human_handler=human_handler,
+            poll_interval_s=0.01,
+            stop=lambda: pull_count["n"] >= 1 and len(autonomous_seen) >= 2,
+        )
+
+    assert autonomous_seen == ["inv-auto", "inv-old"]
+    assert human_seen == []
+    assert sorted(reported) == [("inv-auto", "succeeded"), ("inv-old", "succeeded")]
+
+
+@respx.mock
+async def test_async_serve_routes_human_in_loop_to_human_handler(
+    app_url: str, relay_url: str
+) -> None:
+    """Async mirror of the sync HITL-routing test."""
+    pull_count = {"n": 0}
+
+    def _pull(_req: httpx.Request) -> httpx.Response:
+        pull_count["n"] += 1
+        if pull_count["n"] > 1:
+            return httpx.Response(200, json=[])
+        return httpx.Response(200, json=[_hitl_inv_json("inv-hitl-async")])
+
+    respx.get(f"{relay_url}/v1/inbox").mock(side_effect=_pull)
+    # No /result route — respx errors if serve() incorrectly POSTs.
+
+    stop_event = asyncio.Event()
+    autonomous_seen: list[str] = []
+    human_seen: list[str] = []
+
+    async def handler(inv: dict) -> dict:
+        autonomous_seen.append(inv["id"])
+        return {"status": "succeeded", "output": {}}
+
+    async def human_handler(inv: dict) -> None:
+        human_seen.append(inv["id"])
+        stop_event.set()
+
+    async with AsyncChakraMCP(
+        api_key="ck_test", app_url=app_url, relay_url=relay_url
+    ) as c:
+        await c.inbox.serve(
+            "agent-id",
+            handler,
+            human_handler=human_handler,
+            poll_interval_s=0.01,
+            stop_event=stop_event,
+        )
+
+    assert human_seen == ["inv-hitl-async"]
+    assert autonomous_seen == []
+
+
+@respx.mock
+async def test_async_serve_warns_when_human_handler_missing_on_hitl(
+    app_url: str, relay_url: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Async mirror of the missing-handler warning test."""
+    pull_count = {"n": 0}
+
+    def _pull(_req: httpx.Request) -> httpx.Response:
+        pull_count["n"] += 1
+        if pull_count["n"] > 1:
+            return httpx.Response(200, json=[])
+        return httpx.Response(200, json=[_hitl_inv_json("inv-hitl-async-noh")])
+
+    respx.get(f"{relay_url}/v1/inbox").mock(side_effect=_pull)
+
+    stop_event = asyncio.Event()
+    autonomous_seen: list[str] = []
+
+    async def handler(inv: dict) -> dict:
+        autonomous_seen.append(inv["id"])
+        return {"status": "succeeded", "output": {}}
+
+    # Trip the stop_event from a background task once the first pull
+    # has been served (so the second pull returns []).
+    async def _wait_and_stop() -> None:
+        while pull_count["n"] < 2:
+            await asyncio.sleep(0.01)
+        stop_event.set()
+
+    stopper = asyncio.create_task(_wait_and_stop())
+
+    async with AsyncChakraMCP(
+        api_key="ck_test", app_url=app_url, relay_url=relay_url
+    ) as c:
+        await c.inbox.serve(
+            "agent-id",
+            handler,
+            poll_interval_s=0.01,
+            stop_event=stop_event,
+        )
+
+    await stopper
+
+    captured = capsys.readouterr()
+    assert "human_in_loop" in captured.err
+    assert "inv-hitl-async-noh" in captured.err
+    assert autonomous_seen == []
+
+
 @respx.mock
 async def test_async_inbox_serve_loops_then_stops(app_url: str, relay_url: str) -> None:
     pull_count = {"n": 0}
