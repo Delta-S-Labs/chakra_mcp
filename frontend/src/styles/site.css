@@ -60,9 +60,69 @@ ol, ul { margin: 0; padding: 0; list-style-position: inside; }
 .hero-board::after { content: ''; position: absolute; inset: auto -8% -28% auto; width: 240px; height: 240px; border-radius: 50%; background: color-mix(in oklab, var(--accent-butter) 75%, transparent); opacity: 0.45; filter: blur(10px); }
 .note-badge { display: inline-flex; align-items: center; justify-self: start; width: fit-content; padding: 0.5rem 1rem 0.46rem; border: 1px solid var(--line); border-radius: 999px; background: var(--accent-butter); transform: rotate(-3deg); font-family: var(--font-display); font-weight: 700; font-size: 0.68rem; letter-spacing: 0.07em; text-transform: uppercase; box-shadow: var(--shadow-butter); }
 /* LinkedIn-blue variant — used on the "not LinkedIn for bots" callout on /,
-   where the visual joke needs the LinkedIn colour to land. Same shape +
-   rotation as the default butter stamp; swaps the palette only. */
-.note-badge--linkedin { background: #0a66c2; color: #ffffff; border-color: color-mix(in oklab, #0a66c2 80%, black 20%); box-shadow: 0 10px 22px -14px rgba(10, 102, 194, 0.55); }
+   where the visual joke needs the LinkedIn colour to land AND the visual
+   needs to actually look like a postage stamp (the base .note-badge is a
+   pill, which on narrow viewports wrapped to multiple lines and rounded
+   into a blue blob — see issue raised on the brand page mobile view).
+   This variant overrides the pill shape with proper stamp affordances:
+     * rectangular (not 999px-radius pill) so wrapped text doesn't oval
+     * white dashed inner outline, the iconic "stamp perforation" cue
+     * perforated outer edge via radial-gradient mask (scalloped notches
+       at regular intervals around all four edges — `mask-composite: subtract`
+       cuts the perforations out of the solid fill)
+     * heavier rotation + drop-shadow so it reads as physically stuck on
+     * max-width clamp so it never explodes on narrow viewports
+*/
+.note-badge--linkedin {
+  background: #0a66c2;
+  color: #ffffff;
+  border: 0;
+  border-radius: 4px;
+  padding: 0.85rem 1.1rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-align: center;
+  white-space: nowrap;
+  /* White dashed inner outline — the universal "stamp" tell. */
+  outline: 1.5px dashed rgba(255, 255, 255, 0.92);
+  outline-offset: -6px;
+  /* A heavier stamp tilt + shadow so the affordance reads as
+     "stuck on top of the paper" rather than "inline pill." */
+  transform: rotate(-3.5deg);
+  box-shadow:
+    0 12px 22px -14px rgba(10, 102, 194, 0.55),
+    0 2px 4px rgba(0, 0, 0, 0.08);
+  /* Don't let mobile text wrap turn this into a blob. The stamp lives
+     in the hero-board which itself constrains width; this is a belt. */
+  max-width: 100%;
+  width: fit-content;
+  /* Perforated outer edge: punch small bite-sized half-circles out of
+     each of the four sides at regular intervals. The four
+     radial-gradient layers paint the bites as black on a transparent
+     field; mask-composite: exclude subtracts them from the solid
+     `linear-gradient(black, black)` fill. Browser support is good
+     (Chrome, Firefox, Safari 15.4+); on older browsers the variant
+     degrades to a rectangular stamp without perforation, which still
+     reads correctly thanks to the dashed inner outline. */
+  --perf-r: 4.5px;
+  --perf-step: 11px;
+  mask:
+    radial-gradient(circle var(--perf-r) at 50% 0,    transparent 96%, black) 50% 0    / var(--perf-step) calc(var(--perf-r) + 1px) repeat-x,
+    radial-gradient(circle var(--perf-r) at 50% 100%, transparent 96%, black) 50% 100% / var(--perf-step) calc(var(--perf-r) + 1px) repeat-x,
+    radial-gradient(circle var(--perf-r) at 0    50%, transparent 96%, black) 0    50% / calc(var(--perf-r) + 1px) var(--perf-step) repeat-y,
+    radial-gradient(circle var(--perf-r) at 100% 50%, transparent 96%, black) 100% 50% / calc(var(--perf-r) + 1px) var(--perf-step) repeat-y,
+    linear-gradient(black, black);
+  mask-composite: exclude;
+  /* WebKit prefix for completeness on Safari < 15.4 (falls back to the
+     unprefixed `mask` if both run). */
+  -webkit-mask:
+    radial-gradient(circle var(--perf-r) at 50% 0,    transparent 96%, black) 50% 0    / var(--perf-step) calc(var(--perf-r) + 1px) repeat-x,
+    radial-gradient(circle var(--perf-r) at 50% 100%, transparent 96%, black) 50% 100% / var(--perf-step) calc(var(--perf-r) + 1px) repeat-x,
+    radial-gradient(circle var(--perf-r) at 0    50%, transparent 96%, black) 0    50% / calc(var(--perf-r) + 1px) var(--perf-step) repeat-y,
+    radial-gradient(circle var(--perf-r) at 100% 50%, transparent 96%, black) 100% 50% / calc(var(--perf-r) + 1px) var(--perf-step) repeat-y,
+    linear-gradient(black, black);
+  -webkit-mask-composite: xor;
+}
 .hero-board-copy { margin-top: auto; color: var(--ink-soft); }
 
 .relay-diagram { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr); gap: 0.75rem; align-items: center; }
