@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { ApiClientError, apiBaseUrl, getMe } from "@/lib/api";
+import { formatElapsed } from "@/lib/format";
 import {
   listFriendships,
   listGrants,
@@ -297,7 +298,7 @@ function ActivityRow({ row }: { row: Invocation }) {
         <StatusBadge status={row.status} />
       </td>
       <td className={styles.numericCol}>
-        {row.elapsed_ms > 0 ? `${row.elapsed_ms}ms` : "—"}
+        {formatElapsed(row.elapsed_ms)}
       </td>
     </tr>
   );
