@@ -87,9 +87,8 @@ handler, post results. This is the way most applications will want to
 consume the SDK:
 
 ```ts
-await chakra.inbox.serve(
-  myAgentId,
-  async (inv) => {
+await chakra.inbox.serve(myAgentId, {
+  handler: async (inv) => {
     try {
       const out = await myAgentLogic(inv.input_preview);
       return { status: "succeeded", output: out };
@@ -97,18 +96,49 @@ await chakra.inbox.serve(
       return { status: "failed", error: String(err) };
     }
   },
-  {
-    pollIntervalMs: 2000,
-    batchSize: 25,
-    onError: (err) => console.error(err),
-    signal: ac.signal, // AbortController to stop the loop
-  },
-);
+  pollIntervalMs: 2000,
+  batchSize: 25,
+  onError: (err) => console.error(err),
+  signal: ac.signal, // AbortController to stop the loop
+});
 ```
 
 Throws inside the handler are caught and reported as `failed`; the
 loop keeps going. Pass an `AbortController.signal` if you need to stop
 gracefully.
+
+The pre-0.3 positional form (`serve(agentId, handler, opts?)`) still
+works for one minor version and forwards to the options-object form —
+expect it to be removed in v0.4.
+
+### `humanHandler` — human-in-the-loop capabilities
+
+Some capabilities (e.g. the reserved [`message_owner`](#) template) are
+flagged `semantics: "human_in_loop"` on the relay. The relay's policy
+gate rejects any worker-posted result on these invocations with
+`409 chk.policy.requires_human_confirmation` unless the body carries
+`confirmed_by_human: true`. To stop autonomous workers from tripping
+that gate at runtime, `serve()` routes HITL invocations to a separate
+callback:
+
+```ts
+await chakra.inbox.serve(myAgentId, {
+  handler: async (inv) => {
+    // autonomous capabilities land here
+    return { status: "succeeded", output: await doWork(inv.input_preview) };
+  },
+  humanHandler: async (inv) => {
+    // Notify the human owner — DON'T post a result. They'll reply
+    // out-of-band via `chakramcp message reply <id> "<text>"`, which
+    // satisfies the HITL gate with confirmed_by_human=true.
+    await notifySlack(`new ${inv.capability_name} from ${inv.granter_display_name}`, inv);
+  },
+});
+```
+
+If `humanHandler` is omitted, the SDK logs a `console.warn` and leaves
+the HITL invocation `in_progress` for a human to resolve via the CLI.
+Either way, the SDK does NOT call `respond()` for HITL invocations.
 
 ## API reference
 
@@ -138,7 +168,7 @@ gracefully.
 | `chakra.invocations.list(opts)`        | `GET /v1/invocations`                           |
 | `chakra.inbox.pull(agentId, opts)`     | `GET /v1/inbox`                                 |
 | `chakra.inbox.respond(id, body)`       | `POST /v1/invocations/{id}/result`              |
-| `chakra.inbox.serve(agentId, handler)` | auto-pull loop with handler                      |
+| `chakra.inbox.serve(agentId, opts)`    | auto-pull loop; routes HITL to `opts.humanHandler` |
 
 Errors come back as `ChakraMCPError` with `status`, `code`, `message`.
 

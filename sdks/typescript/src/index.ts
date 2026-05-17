@@ -332,6 +332,29 @@ export class InvocationsClient {
 }
 
 export interface ServeOptions {
+  /**
+   * Default handler — called for autonomous capabilities. Returns the
+   * `HandlerResult` envelope; the SDK forwards it to `respond()`.
+   */
+  handler: (inv: Invocation) => Promise<HandlerResult>;
+  /**
+   * Optional handler for human-in-the-loop capabilities (issue #69).
+   *
+   * Called when `inv.semantics === "human_in_loop"`. The worker should
+   * use it to notify the human owner (e.g. push a Slack DM, ring a
+   * pager, write to a queue) — it MUST NOT post a result. The human
+   * replies out-of-band via `chakramcp message reply <id> "<text>"`,
+   * which posts the wire result with `confirmed_by_human: true` and
+   * satisfies the relay's HITL gate.
+   *
+   * If absent, the SDK emits a `console.warn` and leaves the invocation
+   * in `in_progress` for a human to handle. Either way the SDK does NOT
+   * call `respond()` for HITL invocations — calling it from an
+   * autonomous worker without `confirmed_by_human` would be rejected
+   * with 409 `chk.policy.requires_human_confirmation`, and setting that
+   * flag from a non-human path defeats the gate.
+   */
+  humanHandler?: (inv: Invocation) => Promise<void>;
   /** How often to poll when the inbox is empty. Default 2000ms. */
   pollIntervalMs?: number;
   /** Max rows to claim per poll. Default 25. */
@@ -367,17 +390,44 @@ export class InboxClient {
   }
 
   /**
-   * Long-running auto-loop: pull → run handler → respond, forever.
+   * Long-running auto-loop: pull → route by semantics → respond, forever.
    *
-   * The handler returns either `{ status: 'succeeded', output }` or
-   * `{ status: 'failed', error }`. Throws are caught and reported as
-   * failed; the loop keeps running.
+   * **Routing (issue #69 PR 4)**: each pulled invocation is dispatched
+   * based on `inv.semantics`:
+   *
+   * - `"human_in_loop"` → `humanHandler` (if provided) is invoked for
+   *   side-effects only (notify the human); the SDK does NOT post a
+   *   result — a human resolves it later via the CLI. If no
+   *   `humanHandler` is wired, the SDK warns to stderr and still leaves
+   *   the invocation in flight.
+   * - everything else (`"autonomous"` or missing) → `handler`, whose
+   *   `HandlerResult` envelope is forwarded to `respond()`.
+   *
+   * Throws inside `handler` are caught and reported as `failed`. Throws
+   * inside `humanHandler` are surfaced via `onError` but do not change
+   * the invocation's state — it stays `in_progress` for the human.
+   */
+  async serve(agentId: string, opts: ServeOptions): Promise<void>;
+  /**
+   * @deprecated Pass `handler` inside the options object instead. The
+   * positional form remains for one minor version to ease v0.2 → v0.3
+   * migration; it will be removed in v0.4.
    */
   async serve(
     agentId: string,
     handler: (inv: Invocation) => Promise<HandlerResult>,
-    opts: ServeOptions = {},
+    opts?: Omit<ServeOptions, "handler">,
+  ): Promise<void>;
+  async serve(
+    agentId: string,
+    optsOrHandler: ServeOptions | ((inv: Invocation) => Promise<HandlerResult>),
+    legacyOpts?: Omit<ServeOptions, "handler">,
   ): Promise<void> {
+    const opts: ServeOptions =
+      typeof optsOrHandler === "function"
+        ? { ...(legacyOpts ?? {}), handler: optsOrHandler }
+        : optsOrHandler;
+
     const interval = opts.pollIntervalMs ?? 2000;
     const limit = opts.batchSize ?? 25;
     while (!opts.signal?.aborted) {
@@ -394,24 +444,46 @@ export class InboxClient {
         continue;
       }
       // Process in parallel - invocations are independent.
-      await Promise.all(
-        batch.map(async (inv) => {
-          try {
-            const result = await handler(inv);
-            await this.respond(inv.id, result);
-          } catch (err) {
-            opts.onError?.(err, inv);
-            try {
-              await this.respond(inv.id, {
-                status: "failed",
-                error: err instanceof Error ? err.message : String(err),
-              });
-            } catch (innerErr) {
-              opts.onError?.(innerErr, inv);
-            }
-          }
-        }),
-      );
+      await Promise.all(batch.map((inv) => this.dispatch(inv, opts)));
+    }
+  }
+
+  private async dispatch(inv: Invocation, opts: ServeOptions): Promise<void> {
+    if (inv.semantics === "human_in_loop") {
+      if (opts.humanHandler) {
+        try {
+          await opts.humanHandler(inv);
+        } catch (err) {
+          // Surface the notification failure but DON'T post a wire
+          // result — a human still has to resolve the invocation,
+          // and reporting `failed` here would close it out from
+          // under them.
+          opts.onError?.(err, inv);
+        }
+      } else {
+        console.warn(
+          `[@chakramcp/sdk] invocation ${inv.id} on capability ` +
+            `"${inv.capability_name}" is human_in_loop, but no ` +
+            `humanHandler was provided to serve(). Leaving it ` +
+            `in_progress for a human to resolve via ` +
+            `\`chakramcp message reply ${inv.id} "<text>"\`.`,
+        );
+      }
+      return;
+    }
+    try {
+      const result = await opts.handler(inv);
+      await this.respond(inv.id, result);
+    } catch (err) {
+      opts.onError?.(err, inv);
+      try {
+        await this.respond(inv.id, {
+          status: "failed",
+          error: err instanceof Error ? err.message : String(err),
+        });
+      } catch (innerErr) {
+        opts.onError?.(innerErr, inv);
+      }
     }
   }
 }

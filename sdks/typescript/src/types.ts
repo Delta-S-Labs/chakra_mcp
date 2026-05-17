@@ -135,6 +135,21 @@ export interface Invocation {
   i_served: boolean;
   i_invoked: boolean;
   /**
+   * HITL semantics of the underlying capability (issue #69). Populated
+   * on `inbox.pull` responses so `InboxClient.serve()` can route
+   * `human_in_loop` invocations to a `humanHandler` instead of an
+   * autonomous handler — autonomous replies on a HITL capability are
+   * rejected by the relay with 409 `chk.policy.requires_human_confirmation`.
+   *
+   * NOTE: as of PR 4 (TS SDK), the relay's `InvocationDto` does not yet
+   * serialise this field — that's a small backend follow-up. The SDK is
+   * forward-compatible: once the relay returns `semantics`, routing
+   * lights up automatically; until then the SDK treats every invocation
+   * as autonomous (the relay's gate still catches HITL mistakes — the
+   * worker just sees a 409 at result-post time instead of a clean route).
+   */
+  semantics?: "autonomous" | "human_in_loop";
+  /**
    * Trust context bundled by the relay on `inbox.pull` responses only.
    * The relay just verified friendship + grant before delivering this
    * row - your handler can trust these assertions without re-querying.
