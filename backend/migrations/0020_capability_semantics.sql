@@ -1,0 +1,59 @@
+-- Mark capabilities as human-in-the-loop (HITL) or autonomous, so the
+-- relay can refuse worker-posted replies on HITL capabilities unless
+-- they're accompanied by an explicit human-confirmed flag.
+--
+-- Motivation: issue #69. A Hermes worker auto-replied to a
+-- `message_owner` invocation and leaked an Obsidian-file diff into
+-- the network-visible reply body. The `message_owner` template's
+-- description has always said "always human-in-the-loop," but until
+-- now nothing enforced that — the relay accepted any
+-- `POST /v1/invocations/{id}/result` payload from any caller that
+-- claimed the invocation.
+--
+-- # Column semantics
+--
+--   * `autonomous` (default for every existing row, every future row
+--     unless overridden, every reserved-template that doesn't opt
+--     in) — the worker is free to handle these without checking
+--     with the human owner. Most capabilities are this. The relay
+--     accepts any well-formed result.
+--
+--   * `human_in_loop` — the worker MUST defer to the human owner.
+--     The SDK's inbox.serve() will route these to a separate
+--     `human_handler` callback. The relay's
+--     POST /v1/invocations/{id}/result rejects the response with
+--     409 Conflict + `chk.policy.requires_human_confirmation`
+--     UNLESS the request body carries `confirmed_by_human: true`.
+--     The CLI's `chakramcp inbox respond` and the new
+--     `chakramcp message reply` sugar set the flag automatically
+--     (they assume a human at the terminal). SDK responses default
+--     to `false`, so an autonomous handler that accidentally tries
+--     to answer a HITL invocation gets caught.
+--
+-- # Default + constraint
+--
+-- `DEFAULT 'autonomous'` keeps the migration backwards-compatible:
+-- every existing capability row stays autonomous, every existing
+-- worker keeps working. The relay's gate is a no-op for these.
+--
+-- `NOT NULL CHECK (...)` enforces the closed enum at the DB layer.
+-- Adding a new semantic later (e.g., 'human_or_autonomous') requires
+-- a CHECK relaxation; that's fine, it forces a deliberate decision.
+--
+-- # Subsequent PRs
+--
+-- The next PR (backend gate) flips the `message_owner` template's
+-- semantics to `human_in_loop`, adds the relay-side rejection logic
+-- in invoke.rs::respond, teaches `chakramcp capabilities create`
+-- about a `--semantics` flag, and adds the `chakramcp message reply
+-- <id> "<text>"` sugar. PR 3/4 plumb the routing through the Python
+-- and TypeScript SDKs. PR 5 ships reference workers demonstrating
+-- both autonomous and HITL handling.
+--
+-- See docs/specs/2026-05-17-hitl-capability-semantics-design.md
+-- (forthcoming) for the full design.
+
+ALTER TABLE agent_capabilities
+    ADD COLUMN IF NOT EXISTS semantics TEXT NOT NULL
+        DEFAULT 'autonomous'
+        CHECK (semantics IN ('autonomous', 'human_in_loop'));
