@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n            i.id, i.grant_id, i.granter_agent_id, i.grantee_agent_id,\n            i.capability_id, i.capability_name, i.status,\n            i.elapsed_ms, i.error_message, i.input_preview, i.output_preview,\n            i.created_at, i.claimed_at,\n            ga.display_name as \"granter_display_name?\",\n            ea.display_name as \"grantee_display_name?\",\n            EXISTS(\n                SELECT 1 FROM account_memberships m\n                WHERE m.user_id = $1 AND m.account_id = ga.account_id\n            ) as \"i_served?\",\n            EXISTS(\n                SELECT 1 FROM account_memberships m\n                WHERE m.user_id = $1 AND m.account_id = ea.account_id\n            ) as \"i_invoked?\"\n        FROM relay_invocations i\n        LEFT JOIN agents ga ON ga.id = i.granter_agent_id\n        LEFT JOIN agents ea ON ea.id = i.grantee_agent_id\n        WHERE i.id = $2\n        ",
+  "query": "\n        SELECT\n            i.id, i.grant_id, i.granter_agent_id, i.grantee_agent_id,\n            i.capability_id, i.capability_name, i.status,\n            i.elapsed_ms, i.error_message, i.input_preview, i.output_preview,\n            i.created_at, i.claimed_at,\n            ga.display_name as \"granter_display_name?\",\n            ea.display_name as \"grantee_display_name?\",\n            cap.semantics   as \"capability_semantics?\",\n            EXISTS(\n                SELECT 1 FROM account_memberships m\n                WHERE m.user_id = $1 AND m.account_id = ga.account_id\n            ) as \"i_served?\",\n            EXISTS(\n                SELECT 1 FROM account_memberships m\n                WHERE m.user_id = $1 AND m.account_id = ea.account_id\n            ) as \"i_invoked?\"\n        FROM relay_invocations i\n        LEFT JOIN agents ga ON ga.id = i.granter_agent_id\n        LEFT JOIN agents ea ON ea.id = i.grantee_agent_id\n        LEFT JOIN agent_capabilities cap ON cap.id = i.capability_id\n        WHERE i.id = $2\n        ",
   "describe": {
     "columns": [
       {
@@ -80,11 +80,16 @@
       },
       {
         "ordinal": 15,
+        "name": "capability_semantics?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 16,
         "name": "i_served?",
         "type_info": "Bool"
       },
       {
-        "ordinal": 16,
+        "ordinal": 17,
         "name": "i_invoked?",
         "type_info": "Bool"
       }
@@ -111,9 +116,10 @@
       true,
       false,
       false,
+      false,
       null,
       null
     ]
   },
-  "hash": "152dda4d8f987a4636ad14d228cb4031956a0387669ab834c6beec009bedd58d"
+  "hash": "91ea15a8ff8a5bd4ed10687b830e14ab41c16c659e27def2282c6e2d3e09e2d4"
 }

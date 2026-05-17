@@ -99,6 +99,13 @@ pub struct InvocationDto {
     pub grantee_display_name: Option<String>,
     pub capability_id: Option<Uuid>,
     pub capability_name: String,
+    /// Capability's HITL classification — `"autonomous"` (worker may
+    /// answer directly) or `"human_in_loop"` (worker must defer to
+    /// the human owner; the relay's `report_result` gate rejects
+    /// non-human-confirmed responses on these). None only if the
+    /// invocation has a NULL `capability_id` (orphaned row); SDK
+    /// clients should treat None as `"autonomous"` for safety.
+    pub semantics: Option<String>,
     pub status: String,
     pub elapsed_ms: i32,
     pub error_message: Option<String>,
@@ -486,6 +493,7 @@ pub async fn inbox(
             g.grantee_agent_id    as "g_grantee_agent_id?",
             g.capability_id       as "g_capability_id?",
             cap.visibility        as "g_capability_visibility?",
+            cap.semantics         as "capability_semantics?",
             g.granted_at          as "g_granted_at?",
             g.expires_at          as "g_expires_at?",
 
@@ -582,6 +590,7 @@ pub async fn inbox(
                     grantee_display_name: r.grantee_display_name,
                     capability_id: r.capability_id,
                     capability_name: r.capability_name,
+                    semantics: r.capability_semantics,
                     status: r.status,
                     elapsed_ms: r.elapsed_ms,
                     error_message: r.error_message,
@@ -741,6 +750,7 @@ pub async fn list(
             i.created_at, i.claimed_at,
             ga.display_name as "granter_display_name?",
             ea.display_name as "grantee_display_name?",
+            cap.semantics   as "capability_semantics?",
             EXISTS(
                 SELECT 1 FROM account_memberships m
                 WHERE m.user_id = $1 AND m.account_id = ga.account_id
@@ -752,6 +762,7 @@ pub async fn list(
         FROM relay_invocations i
         LEFT JOIN agents ga ON ga.id = i.granter_agent_id
         LEFT JOIN agents ea ON ea.id = i.grantee_agent_id
+        LEFT JOIN agent_capabilities cap ON cap.id = i.capability_id
         WHERE
             (
                 -- $2 = want_grantee_is_me (I sent this call OUT)
@@ -788,6 +799,7 @@ pub async fn list(
                 grantee_display_name: r.grantee_display_name,
                 capability_id: r.capability_id,
                 capability_name: r.capability_name,
+                semantics: r.capability_semantics,
                 status: r.status,
                 elapsed_ms: r.elapsed_ms,
                 error_message: r.error_message,
@@ -823,6 +835,7 @@ async fn fetch_one(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<InvocationDto
             i.created_at, i.claimed_at,
             ga.display_name as "granter_display_name?",
             ea.display_name as "grantee_display_name?",
+            cap.semantics   as "capability_semantics?",
             EXISTS(
                 SELECT 1 FROM account_memberships m
                 WHERE m.user_id = $1 AND m.account_id = ga.account_id
@@ -834,6 +847,7 @@ async fn fetch_one(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<InvocationDto
         FROM relay_invocations i
         LEFT JOIN agents ga ON ga.id = i.granter_agent_id
         LEFT JOIN agents ea ON ea.id = i.grantee_agent_id
+        LEFT JOIN agent_capabilities cap ON cap.id = i.capability_id
         WHERE i.id = $2
         "#,
         user_id,
@@ -858,6 +872,7 @@ async fn fetch_one(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<InvocationDto
         grantee_display_name: r.grantee_display_name,
         capability_id: r.capability_id,
         capability_name: r.capability_name,
+        semantics: r.capability_semantics,
         status: r.status,
         elapsed_ms: r.elapsed_ms,
         error_message: r.error_message,
