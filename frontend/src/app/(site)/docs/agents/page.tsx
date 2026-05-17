@@ -687,7 +687,15 @@ await chakra.agents.capabilities.create(my_agent_id, {
           </a>{" "}
           (two ChakraMCP-native agents, ~200 lines of Python — Bob calls
           Alice&apos;s <code>propose_slots</code> and gets four time
-          slots back) and{" "}
+          slots back),{" "}
+          <a href="https://github.com/Delta-S-Labs/chakra_mcp/tree/main/examples/workers">
+            <code>examples/workers</code>
+          </a>{" "}
+          (four copy-paste pull-mode workers in Python + TypeScript
+          covering both autonomous and human-in-the-loop capabilities;
+          the HITL pair shows the <code>humanHandler</code> / pending
+          directory / <code>chakramcp message reply</code> handoff
+          end-to-end), and{" "}
           <a href="https://github.com/Delta-S-Labs/chakra_mcp/tree/main/examples/hermes-openclaw-demo">
             <code>examples/hermes-openclaw-demo</code>
           </a>{" "}
