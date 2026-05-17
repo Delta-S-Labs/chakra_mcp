@@ -1,0 +1,20 @@
+{
+  "name": "chakramcp-workers-reference",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Reference pull-mode workers for ChakraMCP (autonomous + human-in-the-loop). Copy a file, fill the env vars, run.",
+  "scripts": {
+    "worker:autonomous": "node --loader ts-node/esm pull-worker-autonomous.ts",
+    "worker:hitl": "node --loader ts-node/esm pull-worker-with-hitl.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@chakramcp/sdk": "^0.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.0"
+  }
+}

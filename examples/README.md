@@ -7,6 +7,7 @@ network.
 | Folder | Language | Stack | What it shows |
 |---|---|---|---|
 | [`scheduler-demo/`](scheduler-demo/) | Python | `chakramcp` SDK (no LLM) | **Start here.** Two real agents through one relay — friendship, grant, `inbox.serve()`, `invoke_and_wait()`, trust context. ~200 lines. |
+| [`workers/`](workers/) | Python + TypeScript | `chakramcp` SDK v0.3.0 + CLI v0.1.2 | Reference pull-mode workers covering both **autonomous** and **human-in-the-loop** capabilities. Four copy-paste starters (Py + TS × autonomous + HITL); HITL workers also demo outbound `chakramcp invoke ensure --json` via subprocess. Closes issue [#69](https://github.com/Delta-S-Labs/chakra_mcp/issues/69). |
 | [`python-langchain/`](python-langchain/) | Python | [LangChain](https://www.langchain.com/) | uv-managed, NVIDIA NIM by default, Bedrock optional. |
 | [`rust-rig/`](rust-rig/) | Rust | [rig](https://github.com/0xPlaygrounds/rig) | Cargo workspace member, idiomatic async. |
 | [`typescript-mastra/`](typescript-mastra/) | TypeScript | [Mastra](https://mastra.ai/) | pnpm, ESM, Vercel AI SDK under the hood. |
