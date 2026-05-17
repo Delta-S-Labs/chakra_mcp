@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { signOutAndRedirect } from "@/lib/auth-actions";
 import styles from "./shell.module.css";
@@ -6,14 +9,26 @@ import styles from "./shell.module.css";
  * Avatar / dropdown in the top bar.
  *
  * Rendered as a `<details>` so the menu state lives in the DOM — no
- * client component, no useState. The native disclosure triangle is
- * hidden with `summary { list-style: none }` and an
+ * useState for the open/closed bit, which keeps the menu functional
+ * even before hydration. The native disclosure triangle is hidden
+ * with `summary { list-style: none }` and an
  * `::-webkit-details-marker` reset in shell.module.css; what the user
  * sees is a styled chip.
  *
- * Contents:
+ * # Click-outside close
+ *
+ * `<details>` natively toggles on `<summary>` click but does NOT
+ * close when the user clicks elsewhere on the page. Without that,
+ * the dropdown stays open until the user clicks the chip a second
+ * time or navigates away — annoying enough that this used to be a
+ * filed bug. Fixed here with a global `pointerdown` listener that
+ * unsets the `open` attribute when the click target isn't inside
+ * the menu. The listener attaches once per mount.
+ *
+ * # Contents:
  *   - User identity (name + email) at the top
- *   - Secondary nav (API keys, Audit, Pair agent, Admin)
+ *   - In-app links (API keys, Audit, Pair agent, Usage, Admin)
+ *   - Docs link out to the public docs (separate section)
  *   - Sign out form — delegates to `signOutAndRedirect` (see
  *     `src/lib/auth-actions.ts`) which does the belt-and-braces
  *     cookie purge needed under NextAuth v5 beta + Next.js 16. The
@@ -33,9 +48,26 @@ export function UserMenu({
   isAdmin: boolean;
 }) {
   const initial = (name?.trim()?.[0] ?? email?.trim()?.[0] ?? "?").toUpperCase();
+  const detailsRef = useRef<HTMLDetailsElement | null>(null);
+
+  useEffect(() => {
+    const onPointerDown = (e: PointerEvent) => {
+      const el = detailsRef.current;
+      if (!el || !el.open) return;
+      const target = e.target as Node | null;
+      if (target && !el.contains(target)) {
+        el.open = false;
+      }
+    };
+    // pointerdown fires before any click handler, so a click on a
+    // dropdown item (e.g. a Link) still navigates correctly — the
+    // listener only triggers for clicks *outside* the menu element.
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, []);
 
   return (
-    <details className={styles.userMenu}>
+    <details ref={detailsRef} className={styles.userMenu}>
       <summary className={styles.userTrigger} aria-label="Account menu">
         {image ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -82,6 +114,12 @@ export function UserMenu({
               Admin
             </Link>
           )}
+        </div>
+
+        <div className={styles.userDropdownSection}>
+          <Link className={styles.userDropdownItem} href="/docs">
+            Docs
+          </Link>
         </div>
 
         <form
