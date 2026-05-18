@@ -434,7 +434,43 @@ pub async fn accept_invite(
     .execute(&mut *tx)
     .await?;
 
+    // Capture the org's auto-friendship flag before commit so we know
+    // whether to run the backfill below. Reading inside the tx ensures
+    // we see the flag's current state in the same snapshot the membership
+    // insert ran against.
+    let org_auto_friendship = sqlx::query_scalar!(
+        r#"SELECT auto_friendship_enabled FROM accounts WHERE id = $1"#,
+        invite.account_id,
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
     tx.commit().await?;
+
+    // Backfill auto-friendships if joining an auto-friendship-enabled
+    // org. The new member's existing accounts (personal + any other orgs
+    // they're in) now share THIS org with whoever was already a member,
+    // so cross-account agents need to be friended. Fire-and-log; a
+    // backfill failure shouldn't fail the invite acceptance.
+    if org_auto_friendship {
+        match chakramcp_shared::auto_friendship::backfill_for_org(&state.db, invite.account_id)
+            .await
+        {
+            Ok(n) if n > 0 => tracing::info!(
+                org_account_id = %invite.account_id,
+                joining_user_id = %user.user_id,
+                new_friendships = n,
+                "auto-friendship backfill ran on invite accept"
+            ),
+            Ok(_) => {}
+            Err(e) => tracing::error!(
+                org_account_id = %invite.account_id,
+                joining_user_id = %user.user_id,
+                error = ?e,
+                "auto-friendship backfill failed on invite accept (membership still created)"
+            ),
+        }
+    }
 
     Ok(Json(OrgDto {
         id: invite.account_id,
@@ -645,6 +681,17 @@ pub async fn update_settings(
         return Err(ApiError::Forbidden);
     }
 
+    // Snapshot the pre-update flag so we can detect a false → true
+    // transition. If the caller's PUT body doesn't include the flag at
+    // all, the COALESCE below leaves it unchanged and `prev_enabled`
+    // remains equal to the new value — no backfill needed.
+    let prev = sqlx::query_scalar!(
+        r#"SELECT auto_friendship_enabled FROM accounts WHERE id = $1"#,
+        access.id,
+    )
+    .fetch_one(&state.db)
+    .await?;
+
     // COALESCE pattern lets the caller send only the keys they want to
     // change. Each parameter is optional; absent keys leave the column
     // alone instead of clearing it.
@@ -663,6 +710,30 @@ pub async fn update_settings(
     )
     .fetch_one(&state.db)
     .await?;
+
+    // Backfill auto-friendships if the flag just flipped on. Fire-and-
+    // log on error: a backfill failure shouldn't fail the settings save,
+    // because the operator's other change (default_agent_visibility,
+    // future settings) should still land. They can flip the flag off and
+    // back on to retry if needed.
+    if !prev && row.auto_friendship_enabled {
+        match chakramcp_shared::auto_friendship::backfill_for_org(&state.db, access.id).await {
+            Ok(n) => {
+                tracing::info!(
+                    org_account_id = %access.id,
+                    new_friendships = n,
+                    "auto-friendship backfill ran on settings toggle"
+                );
+            }
+            Err(e) => {
+                tracing::error!(
+                    org_account_id = %access.id,
+                    error = ?e,
+                    "auto-friendship backfill failed; settings save still returned ok"
+                );
+            }
+        }
+    }
 
     Ok(Json(OrgSettingsDto {
         default_agent_visibility: row.default_agent_visibility,

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH scope AS (\n            SELECT DISTINCT acc.id AS account_id\n            FROM accounts acc\n            WHERE acc.tombstoned_at IS NULL\n              AND (\n                  acc.id = $1\n                  OR EXISTS (\n                      SELECT 1 FROM account_memberships am\n                      JOIN account_memberships orgm\n                          ON orgm.user_id = am.user_id\n                         AND orgm.account_id = $1\n                      WHERE am.account_id = acc.id\n                  )\n              )\n        ),\n        scope_agents AS (\n            SELECT a.id, a.account_id\n            FROM agents a\n            JOIN scope s ON s.account_id = a.account_id\n            WHERE a.tombstoned_at IS NULL\n        )\n        INSERT INTO friendships\n            (id, proposer_agent_id, target_agent_id, status, decided_at, provenance)\n        SELECT\n            gen_random_uuid(),\n            LEAST(a1.id, a2.id),\n            GREATEST(a1.id, a2.id),\n            'accepted',\n            now(),\n            jsonb_build_object('source', 'auto_friendship', 'org_account_id', $1)\n        FROM scope_agents a1\n        JOIN scope_agents a2\n            ON a1.id < a2.id\n           AND a1.account_id <> a2.account_id\n        WHERE NOT EXISTS (\n            SELECT 1 FROM friendships f\n            WHERE f.status IN ('proposed', 'accepted')\n              AND (\n                  (f.proposer_agent_id = LEAST(a1.id, a2.id) AND f.target_agent_id = GREATEST(a1.id, a2.id))\n                  OR\n                  (f.proposer_agent_id = GREATEST(a1.id, a2.id) AND f.target_agent_id = LEAST(a1.id, a2.id))\n              )\n        )\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3d051ba1c14136ae4e35c2ec4aba0af6c8960d974754dde0374bf7822b57524d"
+}
