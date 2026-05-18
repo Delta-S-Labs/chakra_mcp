@@ -50,7 +50,27 @@ export default async function OrgDetailsPage({
         <div className="eyebrow">
           {org.account_type === "organization" ? "Organization" : "Personal"}
         </div>
-        <h1 className={styles.title}>{org.display_name}</h1>
+        <div className={styles.titleRow}>
+          <h1 className={styles.title}>{org.display_name}</h1>
+          {org.account_type === "organization" && (
+            <Link
+              href={`/app/orgs/${org.slug}/settings`}
+              className={styles.settingsGear}
+              aria-label="Org settings"
+              title="Org settings"
+            >
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                <path
+                  d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm8.94 4.95-1.93-1.13c.06-.43.1-.87.1-1.32s-.04-.89-.1-1.32l1.93-1.13a.75.75 0 0 0 .28-1l-1.82-3.15a.75.75 0 0 0-.95-.33l-2.16.87a8.13 8.13 0 0 0-2.28-1.32l-.33-2.3A.75.75 0 0 0 13 .75h-2a.75.75 0 0 0-.74.65l-.33 2.3a8.13 8.13 0 0 0-2.28 1.32l-2.16-.87a.75.75 0 0 0-.95.33L2.72 7.63a.75.75 0 0 0 .28 1l1.93 1.13c-.06.43-.1.87-.1 1.32s.04.89.1 1.32L2.99 13.5a.75.75 0 0 0-.27 1l1.82 3.15c.18.32.57.46.95.33l2.16-.87c.7.56 1.46 1.01 2.28 1.32l.33 2.3c.06.36.36.65.74.65h2c.38 0 .68-.29.74-.65l.33-2.3c.82-.31 1.59-.76 2.28-1.32l2.16.87c.38.13.77 0 .95-.33l1.82-3.15a.75.75 0 0 0-.28-1Z"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </Link>
+          )}
+        </div>
         <p className={styles.body}>
           <code>{org.slug}</code> · you are a <strong>{org.role}</strong>.
         </p>

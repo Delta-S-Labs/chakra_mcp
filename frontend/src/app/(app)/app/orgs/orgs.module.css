@@ -7,6 +7,47 @@
   padding: 0 0.5rem;
 }
 
+/* Header row: org name + (for org accounts) a small gear that links
+ * to the settings panel. */
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.settingsGear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  color: var(--ink-muted);
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: color 140ms, border-color 140ms, background 140ms;
+}
+.settingsGear:hover {
+  color: var(--accent-coral);
+  border-color: var(--line);
+  background: color-mix(in oklab, var(--accent-butter) 32%, transparent);
+}
+
+/* Small "← back" link reused on subpages (e.g. /orgs/[slug]/settings).
+ * Same convention as the agents-module backLink. */
+.backLink {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  text-decoration: none;
+  transition: color 140ms;
+}
+.backLink:hover { color: var(--ink); }
+
 .title {
   font-family: var(--font-display);
   font-weight: 800;
