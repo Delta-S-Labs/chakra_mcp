@@ -233,24 +233,31 @@ export default async function AppDashboard() {
             <Link href="/app/grants">Grants</Link>.
           </p>
         ) : (
-          <div className="tableScroll">
-            <table className={styles.activityTable}>
-              <thead>
-                <tr>
-                  <th>When</th>
-                  <th>Capability</th>
-                  <th>From → To</th>
-                  <th>Status</th>
-                  <th className={styles.numericCol}>Elapsed</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentInvocations.map((row) => (
-                  <ActivityRow key={row.id} row={row} />
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <div className={`tableScroll ${styles.activityTableWrap}`}>
+              <table className={styles.activityTable}>
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th>Capability</th>
+                    <th>From → To</th>
+                    <th>Status</th>
+                    <th className={styles.numericCol}>Elapsed</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentInvocations.map((row) => (
+                    <ActivityRow key={row.id} row={row} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <ul className={styles.activityCards}>
+              {recentInvocations.map((row) => (
+                <ActivityCard key={row.id} row={row} />
+              ))}
+            </ul>
+          </>
         )}
       </section>
 
@@ -301,6 +308,40 @@ function ActivityRow({ row }: { row: Invocation }) {
         {formatElapsed(row.elapsed_ms)}
       </td>
     </tr>
+  );
+}
+
+function ActivityCard({ row }: { row: Invocation }) {
+  return (
+    <li className={styles.activityCard}>
+      <div className={styles.activityCardHead}>
+        <time
+          className={styles.activityCardWhen}
+          dateTime={row.created_at}
+          title={new Date(row.created_at).toLocaleString()}
+        >
+          {formatRelative(row.created_at)}
+        </time>
+        <span className={styles.activityCardSep} aria-hidden>·</span>
+        <StatusBadge status={row.status} />
+        {row.elapsed_ms > 0 && (
+          <>
+            <span className={styles.activityCardSep} aria-hidden>·</span>
+            <span className={styles.activityCardElapsed}>
+              {formatElapsed(row.elapsed_ms)}
+            </span>
+          </>
+        )}
+      </div>
+      <div className={styles.activityCardCap}>
+        <code className={styles.capCode}>{row.capability_name}</code>
+      </div>
+      <div className={styles.activityCardParties}>
+        <span>{row.grantee_display_name ?? "—"}</span>
+        <span className={styles.arrow} aria-hidden>→</span>
+        <span>{row.granter_display_name ?? "—"}</span>
+      </div>
+    </li>
   );
 }
 
