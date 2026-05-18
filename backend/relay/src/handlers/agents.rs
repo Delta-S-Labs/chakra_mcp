@@ -4,8 +4,11 @@
 //! Mutations require the caller to be a member of that account; admin
 //! mutations (visibility flips, deletes) require owner|admin role.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::Json;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -193,16 +196,114 @@ pub async fn list_mine(
 }
 
 // ─── GET /v1/network/agents — discover ───────────────────
+
+/// Query string for `GET /v1/network/agents`. Mirrors the public
+/// discovery filters (`q`, `mode`, `verified`, `tags`) so the authed
+/// directory at `/app/agents/network` can stand in for the public one
+/// while exposing the `is_mine` + `capability_count` fields the
+/// unauthenticated endpoint can't.
+#[derive(Debug, Deserialize, Default)]
+pub struct NetworkListQuery {
+    pub q: Option<String>,
+    pub mode: Option<String>,
+    pub verified: Option<bool>,
+    /// Comma-separated tags. All must match (AND).
+    pub tags: Option<String>,
+    pub cursor: Option<String>,
+    pub limit: Option<i64>,
+}
+
+const NETWORK_DEFAULT_PAGE_SIZE: i64 = 20;
+const NETWORK_MAX_PAGE_SIZE: i64 = 100;
+const NETWORK_MAX_Q_LEN: usize = 200;
+
+#[derive(Debug, Serialize)]
+pub struct NetworkAgentDto {
+    pub id: Uuid,
+    pub account_id: Uuid,
+    pub account_slug: String,
+    pub account_display_name: String,
+    pub slug: String,
+    pub display_name: String,
+    pub description: String,
+    pub mode: String,
+    pub tags: Vec<String>,
+    pub verified: bool,
+    pub endpoint_url: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub is_mine: bool,
+    pub capability_count: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct NetworkListResponse {
+    pub agents: Vec<NetworkAgentDto>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
 pub async fn list_network(
     State(state): State<RelayState>,
     user: AuthUser,
-) -> ApiResult<Json<Vec<AgentDto>>> {
+    Query(q): Query<NetworkListQuery>,
+) -> ApiResult<Json<NetworkListResponse>> {
+    let limit = q
+        .limit
+        .unwrap_or(NETWORK_DEFAULT_PAGE_SIZE)
+        .clamp(1, NETWORK_MAX_PAGE_SIZE);
+
+    if q.q.as_deref().map(str::len).unwrap_or(0) > NETWORK_MAX_Q_LEN {
+        return Err(ApiError::InvalidRequest("q is too long".into()));
+    }
+
+    let mode = match q.mode.as_deref() {
+        None | Some("") => None,
+        Some(m) if m == "push" || m == "pull" => Some(m.to_string()),
+        Some(_) => return Err(ApiError::InvalidRequest("mode must be push|pull".into())),
+    };
+
+    let tags: Vec<String> = q
+        .tags
+        .as_deref()
+        .map(|s| {
+            s.split(',')
+                .map(|t| t.trim().to_string())
+                .filter(|t| !t.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+    let tags_param: Option<&[String]> = if tags.is_empty() {
+        None
+    } else {
+        Some(tags.as_slice())
+    };
+
+    let tsquery = q.q.as_deref().and_then(to_tsquery);
+
+    let cursor = match q.cursor.as_deref().map(decode_network_cursor).transpose() {
+        Ok(c) => c,
+        Err(_) => return Err(ApiError::InvalidRequest("malformed cursor".into())),
+    };
+    let (cursor_created_at, cursor_id) = match cursor {
+        Some(c) => (Some(c.created_at), Some(c.id)),
+        None => (None, None),
+    };
+
+    // Fetch limit+1 rows so we can detect "is there a next page" without
+    // a second count query. The trailing row only contributes its (created_at, id)
+    // to the next_cursor and is stripped from the response.
+    let fetch_limit = limit + 1;
+
     let rows = sqlx::query!(
         r#"
         SELECT
             a.id, a.account_id, a.slug, a.display_name, a.description,
-            a.visibility, a.endpoint_url, a.created_at, a.updated_at,
-            acc.slug as account_slug, acc.display_name as account_display_name,
+            a.visibility, a.endpoint_url, a.mode, a.tags,
+            a.created_at, a.updated_at,
+            acc.slug as account_slug,
+            acc.display_name as account_display_name,
+            (acc.verified_at IS NOT NULL) as "verified!",
             (SELECT COUNT(*)::bigint FROM agent_capabilities c
                 WHERE c.agent_id = a.id AND c.visibility = 'network') as "capability_count!",
             EXISTS(
@@ -214,32 +315,105 @@ pub async fn list_network(
         WHERE a.visibility = 'network'
           AND a.tombstoned_at IS NULL
           AND acc.tombstoned_at IS NULL
-        ORDER BY a.created_at DESC
+          AND ($2::text    IS NULL OR a.search_vec @@ to_tsquery('simple', $2::text))
+          AND ($3::text    IS NULL OR a.mode = $3::text)
+          AND ($4::boolean IS NULL OR (acc.verified_at IS NOT NULL) = $4::boolean)
+          AND ($5::text[]  IS NULL OR a.tags @> $5::text[])
+          AND (
+              $6::timestamptz IS NULL
+              OR a.created_at < $6::timestamptz
+              OR (a.created_at = $6::timestamptz AND a.id < $7::uuid)
+          )
+        ORDER BY a.created_at DESC, a.id DESC
+        LIMIT $8
         "#,
-        user.user_id
+        user.user_id,
+        tsquery,
+        mode,
+        q.verified,
+        tags_param,
+        cursor_created_at,
+        cursor_id,
+        fetch_limit,
     )
     .fetch_all(&state.db)
     .await?;
 
-    Ok(Json(
-        rows.into_iter()
-            .map(|r| AgentDto {
-                id: r.id,
-                account_id: r.account_id,
-                account_slug: r.account_slug,
-                account_display_name: r.account_display_name,
-                slug: r.slug,
-                display_name: r.display_name,
-                description: r.description,
-                visibility: r.visibility,
-                endpoint_url: if r.is_mine { r.endpoint_url } else { None },
+    let has_more = rows.len() as i64 > limit;
+    let page_rows: Vec<_> = rows.into_iter().take(limit as usize).collect();
+    let next_cursor = if has_more {
+        page_rows.last().map(|r| {
+            encode_network_cursor(&NetworkCursor {
                 created_at: r.created_at,
-                updated_at: r.updated_at,
-                is_mine: r.is_mine,
-                capability_count: r.capability_count,
+                id: r.id,
             })
-            .collect(),
-    ))
+        })
+    } else {
+        None
+    };
+
+    let agents = page_rows
+        .into_iter()
+        .map(|r| NetworkAgentDto {
+            id: r.id,
+            account_id: r.account_id,
+            account_slug: r.account_slug,
+            account_display_name: r.account_display_name,
+            slug: r.slug,
+            display_name: r.display_name,
+            description: r.description,
+            mode: r.mode,
+            tags: r.tags,
+            verified: r.verified,
+            endpoint_url: if r.is_mine { r.endpoint_url } else { None },
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+            is_mine: r.is_mine,
+            capability_count: r.capability_count,
+        })
+        .collect();
+
+    Ok(Json(NetworkListResponse {
+        agents,
+        next_cursor,
+    }))
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct NetworkCursor {
+    created_at: DateTime<Utc>,
+    id: Uuid,
+}
+
+fn encode_network_cursor(c: &NetworkCursor) -> String {
+    URL_SAFE_NO_PAD.encode(serde_json::to_vec(c).expect("network cursor serialize"))
+}
+
+fn decode_network_cursor(s: &str) -> Result<NetworkCursor, ()> {
+    let bytes = URL_SAFE_NO_PAD.decode(s).map_err(|_| ())?;
+    serde_json::from_slice(&bytes).map_err(|_| ())
+}
+
+/// Mirror of `discovery::to_tsquery`. Duplicated rather than crossing
+/// module boundaries for a 15-line helper. Same sanitization rules so
+/// authed + unauthed searches behave identically.
+fn to_tsquery(q: &str) -> Option<String> {
+    let sanitized = q
+        .split_whitespace()
+        .filter(|t| !t.is_empty())
+        .map(|t| {
+            t.chars()
+                .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
+                .collect::<String>()
+        })
+        .filter(|t| !t.is_empty())
+        .map(|t| format!("{}:*", t))
+        .collect::<Vec<_>>();
+    if sanitized.is_empty() {
+        None
+    } else {
+        Some(sanitized.join(" & "))
+    }
 }
 
 // ─── GET /v1/agents/{id} ─────────────────────────────────

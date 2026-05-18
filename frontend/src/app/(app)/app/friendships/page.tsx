@@ -1,5 +1,10 @@
 import { auth } from "@/auth";
-import { listMyAgents, listNetworkAgents, listFriendships } from "@/lib/relay";
+import {
+  listMyAgents,
+  listNetworkAgents,
+  listFriendships,
+  type NetworkAgent,
+} from "@/lib/relay";
 import { ProposeForm } from "./ProposeForm";
 import { FriendshipsList } from "./FriendshipsList";
 import styles from "./friendships.module.css";
@@ -16,7 +21,7 @@ export default async function FriendshipsPage() {
   const token = session?.backendToken;
 
   let mine: Awaited<ReturnType<typeof listMyAgents>> = [];
-  let network: Awaited<ReturnType<typeof listNetworkAgents>> = [];
+  let network: NetworkAgent[] = [];
   let friendships: Awaited<ReturnType<typeof listFriendships>> = [];
   let backendError: string | null = null;
 
@@ -24,11 +29,15 @@ export default async function FriendshipsPage() {
     try {
       const [m, n, f] = await Promise.all([
         listMyAgents(token),
-        listNetworkAgents(token),
+        // Friendship-propose candidates need the full network list,
+        // not just one page. Cap at the endpoint max (100) and warn in
+        // a follow-up if real networks exceed that — for now the
+        // dedicated discovery page handles paging.
+        listNetworkAgents(token, { limit: 100 }),
         listFriendships(token, { direction: "all" }),
       ]);
       mine = m;
-      network = n;
+      network = n.agents;
       friendships = f;
     } catch (err) {
       backendError = err instanceof Error ? err.message : "Relay unavailable.";
