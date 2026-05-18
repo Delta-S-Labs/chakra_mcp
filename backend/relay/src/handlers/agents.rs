@@ -602,6 +602,54 @@ pub async fn create(
     .fetch_one(&state.db)
     .await?;
 
+    // Auto-friendship hook: if any organization account that has the
+    // new agent's owning account in scope ALSO has `auto_friendship_enabled`
+    // set, re-run that org's backfill so the new agent gets cross-account
+    // accepted-friendship rows with every other in-scope agent. The
+    // backfill is idempotent — re-running for an org whose scope didn't
+    // change is a no-op.
+    let enabled_orgs = sqlx::query_scalar!(
+        r#"
+        SELECT DISTINCT acc.id
+        FROM accounts acc
+        WHERE acc.account_type = 'organization'
+          AND acc.auto_friendship_enabled = true
+          AND acc.tombstoned_at IS NULL
+          AND (
+              acc.id = $1
+              OR EXISTS (
+                  SELECT 1 FROM account_memberships am
+                  JOIN account_memberships orgm
+                      ON orgm.user_id = am.user_id
+                     AND orgm.account_id = acc.id
+                  WHERE am.account_id = $1
+              )
+          )
+        "#,
+        inserted.account_id,
+    )
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+
+    for org_id in enabled_orgs {
+        match chakramcp_shared::auto_friendship::backfill_for_org(&state.db, org_id).await {
+            Ok(n) if n > 0 => tracing::info!(
+                agent_id = %inserted.id,
+                org_account_id = %org_id,
+                new_friendships = n,
+                "auto-friendship backfill ran on agent create"
+            ),
+            Ok(_) => {}
+            Err(e) => tracing::error!(
+                agent_id = %inserted.id,
+                org_account_id = %org_id,
+                error = ?e,
+                "auto-friendship backfill failed on agent create (agent still created)"
+            ),
+        }
+    }
+
     Ok(Json(AgentDto {
         id: inserted.id,
         account_id: inserted.account_id,

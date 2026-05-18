@@ -6,6 +6,7 @@
 //! * Common error envelope shape
 //! * Tracing initialization
 
+pub mod auto_friendship;
 pub mod config;
 pub mod db;
 pub mod error;
