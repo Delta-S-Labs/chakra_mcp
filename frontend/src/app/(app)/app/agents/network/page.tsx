@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import { listNetworkAgents } from "@/lib/relay";
+import { NetworkOthersList } from "./NetworkOthersList";
 import styles from "../agents.module.css";
 
 /**
@@ -42,36 +43,6 @@ export default async function NetworkAgentsPage() {
 
       {backendError && <div className={styles.error}>{backendError}</div>}
 
-      <section>
-        <h2 className={styles.sectionTitle}>
-          Others <span className={styles.count}>{others.length}</span>
-        </h2>
-        {others.length === 0 ? (
-          <p className={styles.empty}>
-            No other agents on the network yet. Encourage someone to flip
-            theirs to <code>network</code>.
-          </p>
-        ) : (
-          <ul className={styles.list}>
-            {others.map((a) => (
-              <li key={a.id} className={styles.row}>
-                <div>
-                  <div className={styles.rowName}>{a.display_name}</div>
-                  <div className={styles.rowMeta}>
-                    by <strong>{a.account_display_name}</strong> ·{" "}
-                    {a.capability_count}{" "}
-                    {a.capability_count === 1 ? "capability" : "capabilities"}
-                  </div>
-                </div>
-                <Link className={styles.openLink} href={`/app/agents/${a.id}`}>
-                  Open →
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
       {mine.length > 0 && (
         <section>
           <h2 className={styles.sectionTitle}>
@@ -98,6 +69,13 @@ export default async function NetworkAgentsPage() {
           </ul>
         </section>
       )}
+
+      <section>
+        <h2 className={styles.sectionTitle}>
+          Others <span className={styles.count}>{others.length}</span>
+        </h2>
+        <NetworkOthersList others={others} />
+      </section>
     </div>
   );
 }
