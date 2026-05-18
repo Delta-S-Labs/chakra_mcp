@@ -251,6 +251,12 @@ export interface AgentSummary {
   account_display_name: string;
 }
 
+export interface AutoFriendshipOrgRef {
+  account_id: string;
+  slug: string;
+  display_name: string;
+}
+
 export interface Friendship {
   id: string;
   status: FriendshipStatus;
@@ -264,6 +270,11 @@ export interface Friendship {
   decided_at: string | null;
   i_proposed: boolean;
   i_received: boolean;
+  /** Set when this row was created by the per-org auto-friendship
+   *  policy (see backend chakramcp_shared::auto_friendship). Used by
+   *  the friendships UI to render an "AUTO · via OrgName" badge so
+   *  users can tell auto-created rows from user-proposed ones. */
+  auto_friendship_org?: AutoFriendshipOrgRef | null;
 }
 
 export interface ProposeFriendshipRequest {

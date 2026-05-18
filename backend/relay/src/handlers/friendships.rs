@@ -50,6 +50,19 @@ pub struct FriendshipDto {
     pub i_proposed: bool,
     /// True when the requesting user is on the target side.
     pub i_received: bool,
+    /// When this row was created by the auto-friendship policy (see
+    /// chakramcp_shared::auto_friendship), denormalised pointer to the
+    /// owning org. Lets the UI render an "AUTO · via OrgName" chip
+    /// without a second round-trip. None for user-proposed rows.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_friendship_org: Option<AutoFriendshipOrgRef>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AutoFriendshipOrgRef {
+    pub account_id: Uuid,
+    pub slug: String,
+    pub display_name: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -96,12 +109,19 @@ async fn fetch_friendship(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<Friend
             ta.id   as t_agent_id,   ta.slug as t_agent_slug,   ta.display_name as t_agent_display_name,
             tacc.id as t_acct_id,    tacc.slug as t_acct_slug,  tacc.display_name as t_acct_display_name,
             EXISTS(SELECT 1 FROM account_memberships m WHERE m.account_id = pa.account_id AND m.user_id = $2) as "i_proposed!",
-            EXISTS(SELECT 1 FROM account_memberships m WHERE m.account_id = ta.account_id AND m.user_id = $2) as "i_received!"
+            EXISTS(SELECT 1 FROM account_memberships m WHERE m.account_id = ta.account_id AND m.user_id = $2) as "i_received!",
+            CASE WHEN f.provenance->>'source' = 'auto_friendship'
+                 THEN (f.provenance->>'org_account_id')::uuid END as af_org_id,
+            af_org.slug         as "af_org_slug?",
+            af_org.display_name as "af_org_display_name?"
         FROM friendships f
         JOIN agents pa   ON pa.id   = f.proposer_agent_id
         JOIN accounts pacc ON pacc.id = pa.account_id
         JOIN agents ta   ON ta.id   = f.target_agent_id
         JOIN accounts tacc ON tacc.id = ta.account_id
+        LEFT JOIN accounts af_org
+            ON f.provenance->>'source' = 'auto_friendship'
+           AND af_org.id = (f.provenance->>'org_account_id')::uuid
         WHERE f.id = $1
           AND pa.tombstoned_at  IS NULL
           AND ta.tombstoned_at  IS NULL
@@ -119,6 +139,15 @@ async fn fetch_friendship(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<Friend
         // Friendships are visible to both sides only.
         return Err(ApiError::NotFound);
     }
+
+    let auto_friendship_org = match (r.af_org_id, r.af_org_slug, r.af_org_display_name) {
+        (Some(account_id), Some(slug), Some(display_name)) => Some(AutoFriendshipOrgRef {
+            account_id,
+            slug,
+            display_name,
+        }),
+        _ => None,
+    };
 
     Ok(FriendshipDto {
         id: r.id,
@@ -147,6 +176,7 @@ async fn fetch_friendship(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<Friend
         decided_at: r.decided_at,
         i_proposed: r.i_proposed,
         i_received: r.i_received,
+        auto_friendship_org,
     })
 }
 
@@ -191,12 +221,19 @@ pub async fn list(
             ta.id   as t_agent_id,   ta.slug as t_agent_slug,   ta.display_name as t_agent_display_name,
             tacc.id as t_acct_id,    tacc.slug as t_acct_slug,  tacc.display_name as t_acct_display_name,
             EXISTS(SELECT 1 FROM account_memberships m WHERE m.account_id = pa.account_id AND m.user_id = $1) as "i_proposed!",
-            EXISTS(SELECT 1 FROM account_memberships m WHERE m.account_id = ta.account_id AND m.user_id = $1) as "i_received!"
+            EXISTS(SELECT 1 FROM account_memberships m WHERE m.account_id = ta.account_id AND m.user_id = $1) as "i_received!",
+            CASE WHEN f.provenance->>'source' = 'auto_friendship'
+                 THEN (f.provenance->>'org_account_id')::uuid END as af_org_id,
+            af_org.slug         as "af_org_slug?",
+            af_org.display_name as "af_org_display_name?"
         FROM friendships f
         JOIN agents pa   ON pa.id   = f.proposer_agent_id
         JOIN accounts pacc ON pacc.id = pa.account_id
         JOIN agents ta   ON ta.id   = f.target_agent_id
         JOIN accounts tacc ON tacc.id = ta.account_id
+        LEFT JOIN accounts af_org
+            ON f.provenance->>'source' = 'auto_friendship'
+           AND af_org.id = (f.provenance->>'org_account_id')::uuid
         WHERE
             (
                 ($2::boolean AND EXISTS(SELECT 1 FROM account_memberships m WHERE m.account_id = pa.account_id AND m.user_id = $1))
@@ -246,6 +283,16 @@ pub async fn list(
                 decided_at: r.decided_at,
                 i_proposed: r.i_proposed,
                 i_received: r.i_received,
+                auto_friendship_org: match (r.af_org_id, r.af_org_slug, r.af_org_display_name) {
+                    (Some(account_id), Some(slug), Some(display_name)) => {
+                        Some(AutoFriendshipOrgRef {
+                            account_id,
+                            slug,
+                            display_name,
+                        })
+                    }
+                    _ => None,
+                },
             })
             .collect(),
     ))
