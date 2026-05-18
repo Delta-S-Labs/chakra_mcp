@@ -127,6 +127,120 @@
   margin: 0;
 }
 
+/* ─── Network discovery: toolbar (search + count) ────────────── */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 0.85rem;
+  margin: 0 0 0.85rem;
+}
+
+.searchInput {
+  flex: 1 1 220px;
+  min-width: 0;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 0.55rem;
+  background: var(--paper-soft);
+  font: inherit;
+  font-size: 0.92rem;
+  color: var(--ink);
+  transition: border-color 140ms;
+}
+.searchInput:focus {
+  outline: none;
+  border-color: color-mix(in oklab, var(--accent-coral) 50%, var(--line));
+}
+
+.toolbarCount {
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+/* ─── Network discovery: pagination controls ─────────────────── */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  margin-top: 1rem;
+}
+
+.pagerBtn {
+  padding: 0.42rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--paper-soft);
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 140ms, background 140ms;
+}
+.pagerBtn:hover:not(:disabled) {
+  border-color: color-mix(in oklab, var(--accent-coral) 50%, var(--line));
+}
+.pagerBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.pagerLabel {
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Network discovery: empty state ─────────────────────────── */
+/* Centered empty-state for the network list. The previous version of
+ * this card was left-aligned and mentioned `DISCOVERY_V2` directly
+ * (an env var most users can't change). Now we lead with the situation
+ * + a brief next-step and hand the explanation off to docs. */
+.emptyState {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: center;
+  text-align: center;
+  padding: 1.4rem 1.1rem;
+  border: 1px dashed var(--line);
+  border-radius: 0.85rem;
+  background: color-mix(in oklab, var(--paper-soft) 80%, transparent);
+}
+
+.emptyStateTitle {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.emptyStateBody {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 0.92rem;
+  color: var(--ink-soft);
+  max-width: 48ch;
+}
+
+.emptyStateLink {
+  margin: 0.3rem 0 0;
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+}
+.emptyStateLink a {
+  color: var(--accent-coral);
+  text-decoration: none;
+  border-bottom: 1px dashed currentColor;
+}
+.emptyStateLink a:hover { border-bottom-style: solid; }
+
 /* Empty-state card for surfaces where the empty case has a meaningful
    "here's why this matters + here's how to fix it" payload (currently:
    no capabilities published on an agent the user owns). Heavier than
