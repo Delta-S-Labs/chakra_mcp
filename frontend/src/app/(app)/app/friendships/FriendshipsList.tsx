@@ -79,6 +79,16 @@ function FriendshipRow({ token, friendship }: { token: string | null; friendship
           <span className={styles.arrow}>→</span>{" "}
           <strong>{friendship.target.display_name}</strong>{" "}
           <StatusBadge status={friendship.status} />
+          {friendship.auto_friendship_org && (
+            <span
+              className={styles.autoChip}
+              title={`Auto-created by the auto-friendship policy on ${friendship.auto_friendship_org.display_name}`}
+            >
+              <span className={styles.autoChipLead}>AUTO</span>
+              <span className={styles.autoChipSep}>·</span>
+              <span>via {friendship.auto_friendship_org.display_name}</span>
+            </span>
+          )}
         </div>
         <div className={styles.rowMeta}>
           <span>

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n            f.id, f.status, f.proposer_message, f.response_message,\n            f.counter_of_id, f.created_at, f.updated_at, f.decided_at,\n            pa.id   as p_agent_id,   pa.slug as p_agent_slug,   pa.display_name as p_agent_display_name,\n            pacc.id as p_acct_id,    pacc.slug as p_acct_slug,  pacc.display_name as p_acct_display_name,\n            ta.id   as t_agent_id,   ta.slug as t_agent_slug,   ta.display_name as t_agent_display_name,\n            tacc.id as t_acct_id,    tacc.slug as t_acct_slug,  tacc.display_name as t_acct_display_name,\n            EXISTS(SELECT 1 FROM account_memberships m WHERE m.account_id = pa.account_id AND m.user_id = $2) as \"i_proposed!\",\n            EXISTS(SELECT 1 FROM account_memberships m WHERE m.account_id = ta.account_id AND m.user_id = $2) as \"i_received!\"\n        FROM friendships f\n        JOIN agents pa   ON pa.id   = f.proposer_agent_id\n        JOIN accounts pacc ON pacc.id = pa.account_id\n        JOIN agents ta   ON ta.id   = f.target_agent_id\n        JOIN accounts tacc ON tacc.id = ta.account_id\n        WHERE f.id = $1\n          AND pa.tombstoned_at  IS NULL\n          AND ta.tombstoned_at  IS NULL\n          AND pacc.tombstoned_at IS NULL\n          AND tacc.tombstoned_at IS NULL\n        ",
+  "query": "\n        SELECT\n            f.id, f.status, f.proposer_message, f.response_message,\n            f.counter_of_id, f.created_at, f.updated_at, f.decided_at,\n            pa.id   as p_agent_id,   pa.slug as p_agent_slug,   pa.display_name as p_agent_display_name,\n            pacc.id as p_acct_id,    pacc.slug as p_acct_slug,  pacc.display_name as p_acct_display_name,\n            ta.id   as t_agent_id,   ta.slug as t_agent_slug,   ta.display_name as t_agent_display_name,\n            tacc.id as t_acct_id,    tacc.slug as t_acct_slug,  tacc.display_name as t_acct_display_name,\n            EXISTS(SELECT 1 FROM account_memberships m WHERE m.account_id = pa.account_id AND m.user_id = $1) as \"i_proposed!\",\n            EXISTS(SELECT 1 FROM account_memberships m WHERE m.account_id = ta.account_id AND m.user_id = $1) as \"i_received!\",\n            CASE WHEN f.provenance->>'source' = 'auto_friendship'\n                 THEN (f.provenance->>'org_account_id')::uuid END as af_org_id,\n            af_org.slug         as \"af_org_slug?\",\n            af_org.display_name as \"af_org_display_name?\"\n        FROM friendships f\n        JOIN agents pa   ON pa.id   = f.proposer_agent_id\n        JOIN accounts pacc ON pacc.id = pa.account_id\n        JOIN agents ta   ON ta.id   = f.target_agent_id\n        JOIN accounts tacc ON tacc.id = ta.account_id\n        LEFT JOIN accounts af_org\n            ON f.provenance->>'source' = 'auto_friendship'\n           AND af_org.id = (f.provenance->>'org_account_id')::uuid\n        WHERE\n            (\n                ($2::boolean AND EXISTS(SELECT 1 FROM account_memberships m WHERE m.account_id = pa.account_id AND m.user_id = $1))\n             OR ($3::boolean AND EXISTS(SELECT 1 FROM account_memberships m WHERE m.account_id = ta.account_id AND m.user_id = $1))\n            )\n            AND ($4::text IS NULL OR f.status = $4)\n            AND pa.tombstoned_at  IS NULL\n            AND ta.tombstoned_at  IS NULL\n            AND pacc.tombstoned_at IS NULL\n            AND tacc.tombstoned_at IS NULL\n        ORDER BY f.updated_at DESC\n        ",
   "describe": {
     "columns": [
       {
@@ -112,12 +112,29 @@
         "ordinal": 21,
         "name": "i_received!",
         "type_info": "Bool"
+      },
+      {
+        "ordinal": 22,
+        "name": "af_org_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 23,
+        "name": "af_org_slug?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 24,
+        "name": "af_org_display_name?",
+        "type_info": "Text"
       }
     ],
     "parameters": {
       "Left": [
         "Uuid",
-        "Uuid"
+        "Bool",
+        "Bool",
+        "Text"
       ]
     },
     "nullable": [
@@ -142,8 +159,11 @@
       false,
       false,
       null,
-      null
+      null,
+      null,
+      false,
+      false
     ]
   },
-  "hash": "a53ecdc3ae297ded60734c4968fd5a8cc536c4e54fb426fb5a4aa60ad6971bc2"
+  "hash": "e217480b26515d1e48dcd488b55842b9cd77c5f2cf57013530e3d57d6d40b664"
 }

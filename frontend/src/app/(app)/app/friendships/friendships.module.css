@@ -258,6 +258,36 @@
   color: oklch(40% 0.07 70);
 }
 
+/* Chip rendered next to the status badge for rows created by the per-
+ * org auto-friendship policy. Splits visually into two halves: a coral
+ * "AUTO" lead and a butter "via OrgName" tail, so the row's origin
+ * reads at a glance — "I didn't propose this, the org policy did". */
+.autoChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  margin-left: 0.4rem;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--accent-butter) 32%, var(--paper-soft));
+  border: 1px solid color-mix(in oklab, var(--accent-coral) 40%, var(--line));
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.autoChipLead {
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: var(--accent-coral);
+}
+.autoChipSep {
+  color: var(--ink-muted);
+  opacity: 0.7;
+}
+
 .quote {
   font-family: var(--font-body);
   font-size: 0.92rem;
