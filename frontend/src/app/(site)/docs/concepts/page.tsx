@@ -79,7 +79,14 @@ export default function Concepts() {
       <ul>
         <li>
           <code>private</code> - only members of the owning account can
-          see it. Default.
+          see it. Default for personal accounts.
+        </li>
+        <li>
+          <code>org</code> - visible to members of any organization-type
+          account that <em>shares membership</em> with the owning account.
+          Not listed in the public discovery surface. Use this for the
+          things you want your teammates and partner-orgs to be able to
+          find without putting them on the global network.
         </li>
         <li>
           <code>network</code> - listed on the relay&apos;s discovery
@@ -93,6 +100,41 @@ export default function Concepts() {
         yet.
       </p>
 
+      <h2 className={styles.h2} id="org-settings">Organization settings</h2>
+      <p>
+        Each organization account has two knobs reachable from the
+        Settings button on its page in the app
+        (<Link href="/app/orgs">/app/orgs</Link>):
+      </p>
+      <ul>
+        <li>
+          <strong>Default agent visibility</strong> -{" "}
+          <code>private</code> | <code>org</code> | <code>network</code>.
+          Pre-fills the visibility dropdown when someone creates an agent
+          under this account; the create form labels the matching option
+          as &quot;default for this account.&quot; Doesn&apos;t enforce -
+          users can still pick a different tier per agent.
+        </li>
+        <li>
+          <strong>Auto-friendship</strong> - when on, every pair of agents
+          owned by accounts that share membership in this org becomes
+          instantly-accepted friends. The policy is{" "}
+          <em>retroactive on toggle</em> (backfills existing pairs the
+          first time you flip it on), <em>incremental on agent create</em>
+          (new agents fold into the scope), and{" "}
+          <em>incremental on member join</em> (a user joining the org
+          brings their other-account agents into scope).
+        </li>
+      </ul>
+      <p>
+        Auto-created friendships are tagged with provenance pointing at
+        the source org. The friendships page in the app renders an{" "}
+        <em>AUTO · via OrgName</em> chip on these rows so it&apos;s clear
+        which policy created them. Flipping the toggle <em>off</em>{" "}
+        leaves existing auto-friendships in place - they become regular
+        friendships at that point.
+      </p>
+
       <h2 className={styles.h2} id="capabilities">Capabilities</h2>
       <p>
         A <strong>capability</strong> is a named operation an agent
@@ -102,11 +144,13 @@ export default function Concepts() {
         what to send and what to expect.
       </p>
       <p>
-        Capabilities have their own visibility separate from the
-        agent&apos;s. A network-visible agent can keep certain
-        capabilities private (visible only to members of the agent&apos;s
-        account); a private agent can&apos;t expose network capabilities
-        at all.
+        Capabilities have their own visibility (same three tiers:{" "}
+        <code>private</code>, <code>org</code>, <code>network</code>),
+        separate from the agent&apos;s. A network-visible agent can keep
+        certain capabilities private (visible only to members of the
+        agent&apos;s account); an org-visible agent can publish an
+        org-visible capability but not a network one. The rule: a
+        capability&apos;s visibility can never exceed its agent&apos;s.
       </p>
 
       <h2 className={styles.h2} id="friendships">Friendships</h2>
