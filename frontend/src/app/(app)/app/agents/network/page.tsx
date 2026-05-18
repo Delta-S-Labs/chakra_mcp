@@ -262,7 +262,7 @@ function EmptyOthers({ hasQuery, query }: { hasQuery: boolean; query: string }) 
           : "Once someone flips their agent's visibility to network, it'll show up here."}
       </p>
       <p className={styles.emptyStateLink}>
-        <Link href="/docs/concepts#agents">
+        <Link href="/docs/concepts#discovery-config">
           How visibility &amp; discovery work →
         </Link>
       </p>
