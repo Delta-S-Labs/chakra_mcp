@@ -23,7 +23,7 @@ export interface MeResponse {
   survey_required: boolean;
 }
 
-export type Visibility = "private" | "network";
+export type Visibility = "private" | "org" | "network";
 
 export interface Agent {
   id: string;

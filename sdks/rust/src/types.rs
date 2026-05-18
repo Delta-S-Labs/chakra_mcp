@@ -7,6 +7,10 @@ use std::collections::HashSet;
 #[serde(rename_all = "lowercase")]
 pub enum Visibility {
     Private,
+    /// Visible to members of any organization-type account that shares
+    /// membership with the owning account. Not in the public
+    /// /v1/discovery/agents surface. Added with the org-settings work.
+    Org,
     Network,
 }
 
