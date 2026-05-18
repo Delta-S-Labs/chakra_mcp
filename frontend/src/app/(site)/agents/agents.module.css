@@ -262,18 +262,51 @@
 }
 
 /* ─── Empty state ─── */
+/* Centered card with three stacked rows (title, body, link). The
+ * `display: grid; justify-items: center` is what makes the body wrap
+ * tidily inside a narrow inline-block — text-align: center alone
+ * centers each line independently and a two-line wrap reads as
+ * ragged-left. */
 .empty {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: center;
   text-align: center;
-  padding: 3rem 1rem;
+  padding: 2.4rem 1.1rem;
   color: var(--ink-soft, #6b6258);
   border: 1px dashed var(--line, #e6decd);
   border-radius: 1rem;
+  background: color-mix(in oklab, var(--paper-soft, #f7efe1) 80%, transparent);
+}
+
+.emptyTitle {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--ink, #2a2620);
 }
 
 .emptyHint {
-  font-size: 0.9rem;
-  margin-top: 0.5rem;
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--ink-soft, #6b6258);
+  /* Cap the body line-length so wraps don't span the full card and
+   * read as ragged-left. ~48ch is comfortable around the two-line
+   * messages the empty state uses. */
+  max-width: 48ch;
 }
+
+.emptyLink {
+  margin: 0.3rem 0 0;
+  font-size: 0.9rem;
+}
+.emptyLink a {
+  color: var(--accent-coral);
+  text-decoration: none;
+  border-bottom: 1px dashed currentColor;
+}
+.emptyLink a:hover { border-bottom-style: solid; }
 
 .emptyHint code {
   font-family: var(--font-mono, ui-monospace, monospace);
