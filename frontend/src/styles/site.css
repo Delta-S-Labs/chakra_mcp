@@ -275,6 +275,23 @@ ol, ul { margin: 0; padding: 0; list-style-position: inside; }
   border-bottom: 1px dashed currentColor;
 }
 .footer-contact a:hover { border-bottom-style: solid; }
+/* Legal line — sits below the credit block. Hairline divider above
+   so it reads as its own row; muted color + small mono dots so it
+   recedes visually while still being scannable. */
+.footer-copyright {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 0.35rem 0.6rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--line);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  color: color-mix(in oklab, var(--ink-soft, #6b6258) 75%, transparent);
+}
+.footer-copyright span[aria-hidden] { opacity: 0.65; }
 /* Back-compat: any page still using the old .footer-note class
    gets the styling we used to ship so layout doesn't break. */
 .footer-note {
