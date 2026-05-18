@@ -24,11 +24,28 @@
 }
 
 .shell {
+  /* `<main class="site-main">` is a grid container; grid items default
+   * to `min-width: auto` (their min-content size). A wide `<pre>` with
+   * `white-space: pre` then forces .shell to stretch to the longest
+   * line — verified on phone, .shell measured 865px inside a 375px
+   * viewport, and the body's `overflow-x: hidden` hid the resulting
+   * page scroll but visually clipped the right edge of every card,
+   * code block, and image.
+   *
+   * `min-width: 0` *alone* doesn't tame this in Chrome — grid-item
+   * `width: auto` still resolves to max-content when the item's
+   * intrinsic min-content exceeds the track. Explicit `width: 100%`
+   * forces the item to fit its track; `max-width: 72ch` still applies
+   * on desktop where 100% > 72ch and `margin: 0 auto` re-centers the
+   * extra space. */
+  width: 100%;
   max-width: 72ch;
   margin: 0 auto;
   padding: 4rem 1.5rem 6rem;
   font-family: var(--font-body);
   color: var(--ink);
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .shell.wide {
@@ -211,7 +228,14 @@
   grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
   gap: 1rem;
   margin: 1rem 0 2.5rem;
+  /* Each grid item defaults to `min-width: auto`; a card with a long
+   * unbreakable `<code>` inside would push the column wider than its
+   * track. Forcing 0 lets the grid honour `minmax(min(260px,100%), …)`
+   * — i.e. a single column at narrow widths instead of two cards
+   * burst-cropped against the right edge of the viewport. */
+  min-width: 0;
 }
+.card { min-width: 0; }
 
 .card {
   display: block;
