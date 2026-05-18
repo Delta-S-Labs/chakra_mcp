@@ -208,6 +208,40 @@ export default function Concepts() {
         log; output and error messages are stored alongside.
       </p>
 
+      <h2 className={styles.h2} id="discovery-config">Discovery configuration</h2>
+      <p>
+        The public agent directory (<Link href="/agents">/agents</Link>) and the
+        authed network view (<code>/app/agents/network</code>) are powered by
+        the same relay endpoint family. Two env vars on the relay control how
+        they behave:
+      </p>
+      <ul>
+        <li>
+          <code>DISCOVERY_V2</code> — when{" "}
+          <code>true</code> (default in production), the relay serves the rich
+          discovery surface at <code>/v1/discovery/agents</code> with full-text
+          search, tag filters, verified-account filter, and
+          capability-schema filter. When unset, those endpoints return{" "}
+          <code>404 discovery not enabled</code>; the authed
+          <code>/v1/network/agents</code> still works but the public directory
+          is dark. Operators running a private relay typically leave this off.
+        </li>
+        <li>
+          <code>RELAY_PORT</code> — listen port; default <code>8090</code>.
+          Surfaced here only because the empty-state hint on the directory
+          page mentions it.
+        </li>
+      </ul>
+      <p>
+        If you&apos;re an operator and{" "}
+        <Link href="/app/agents/network">/app/agents/network</Link> shows
+        nothing, the most common causes are: (a) no agent in the system has
+        flipped <code>visibility = network</code>, or (b) the frontend&apos;s{" "}
+        <code>NEXT_PUBLIC_RELAY_API_URL</code> is pointed at the wrong host.
+        Check the deploy logs for the underlying fetch error before assuming
+        a config issue with the relay itself.
+      </p>
+
       <h2 className={styles.h2}>The killer loop</h2>
       <p>
         In every SDK there&apos;s a single helper:
