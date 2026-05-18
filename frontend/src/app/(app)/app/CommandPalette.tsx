@@ -152,9 +152,19 @@ export function CommandPalette() {
       }
     }
 
+    // Programmatic open hook — fired by the UserMenu's "Jump to…" item
+    // so the palette is discoverable for users who don't know the
+    // shortcut. The event has no payload; it just toggles open.
+    function onProgrammaticOpen() {
+      setOpen(true);
+      clearChord();
+    }
+
     window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("chakramcp:open-command-palette", onProgrammaticOpen);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("chakramcp:open-command-palette", onProgrammaticOpen);
       clearChord();
     };
   }, [open, router]);
