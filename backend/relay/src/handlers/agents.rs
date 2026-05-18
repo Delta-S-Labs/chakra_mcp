@@ -312,9 +312,36 @@ pub async fn list_network(
             ) as "is_mine!"
         FROM agents a
         JOIN accounts acc ON acc.id = a.account_id
-        WHERE a.visibility = 'network'
-          AND a.tombstoned_at IS NULL
+        WHERE a.tombstoned_at IS NULL
           AND acc.tombstoned_at IS NULL
+          AND (
+              -- Network-visible: anyone sees these (unchanged from the
+              -- pre-org-tier behaviour of /v1/network/agents).
+              a.visibility = 'network'
+              OR (
+                  -- Org-visible: the caller can see this agent if at
+                  -- least one organization-type account has both the
+                  -- caller AND a member of the agent's owning account
+                  -- as members. "I share an org with the agent owner →
+                  -- I see their 'org'-visibility agents." A caller who
+                  -- is a member of the owning account itself trivially
+                  -- satisfies this (the owning account is the shared
+                  -- org, with caller_m.user_id = owner_m.user_id).
+                  a.visibility = 'org'
+                  AND EXISTS (
+                      SELECT 1
+                      FROM account_memberships caller_m
+                      JOIN accounts shared_org ON shared_org.id = caller_m.account_id
+                      JOIN account_memberships owner_m
+                          ON owner_m.account_id = shared_org.id
+                      JOIN account_memberships owner_acc_m
+                          ON owner_acc_m.user_id = owner_m.user_id
+                          AND owner_acc_m.account_id = a.account_id
+                      WHERE caller_m.user_id = $1
+                        AND shared_org.account_type = 'organization'
+                  )
+              )
+          )
           AND ($2::text    IS NULL OR a.search_vec @@ to_tsquery('simple', $2::text))
           AND ($3::text    IS NULL OR a.mode = $3::text)
           AND ($4::boolean IS NULL OR (acc.verified_at IS NOT NULL) = $4::boolean)
@@ -491,16 +518,34 @@ pub async fn create(
             "slug must be 3-32 chars of [a-z0-9-], no leading/trailing or double hyphens".into(),
         ));
     }
-    let visibility = req.visibility.as_deref().unwrap_or("private");
-    if !matches!(visibility, "private" | "network") {
-        return Err(ApiError::InvalidRequest(
-            "visibility must be private|network".into(),
-        ));
-    }
-
     if !user_is_member(&state.db, user.user_id, req.account_id).await? {
         return Err(ApiError::Forbidden);
     }
+
+    // Visibility resolution:
+    //   1. If the caller passed one, validate it's in the allowed set.
+    //   2. Otherwise, fall back to the owning account's
+    //      `default_agent_visibility` (set via PUT /v1/orgs/{slug}/settings;
+    //      defaults to 'private' for accounts that never customised it).
+    let visibility = match req.visibility.as_deref() {
+        Some(v) => {
+            if !matches!(v, "private" | "org" | "network") {
+                return Err(ApiError::InvalidRequest(
+                    "visibility must be private|org|network".into(),
+                ));
+            }
+            v.to_string()
+        }
+        None => {
+            sqlx::query_scalar!(
+                r#"SELECT default_agent_visibility FROM accounts WHERE id = $1"#,
+                req.account_id
+            )
+            .fetch_one(&state.db)
+            .await?
+        }
+    };
+    let visibility = visibility.as_str();
 
     let id = Uuid::now_v7();
     // ON CONFLICT must match the partial unique index (`tombstoned_at IS NULL`)
