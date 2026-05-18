@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import { listOrgs } from "@/lib/api";
-import { listMyAgents, listNetworkAgents } from "@/lib/relay";
+import {
+  listMyAgents,
+  listNetworkAgents,
+  type NetworkAgent,
+} from "@/lib/relay";
 import { CreateAgentForm } from "./CreateAgentForm";
 import styles from "./agents.module.css";
 
@@ -17,7 +21,7 @@ export default async function AgentsPage() {
   const token = session?.backendToken;
 
   let myAgents: Awaited<ReturnType<typeof listMyAgents>> = [];
-  let networkAgents: Awaited<ReturnType<typeof listNetworkAgents>> = [];
+  let networkAgents: NetworkAgent[] = [];
   let orgs: Awaited<ReturnType<typeof listOrgs>> = [];
   let backendError: string | null = null;
 
@@ -25,11 +29,13 @@ export default async function AgentsPage() {
     try {
       const [m, n, o] = await Promise.all([
         listMyAgents(token),
-        listNetworkAgents(token),
+        // Just want a teaser of "others on the network" — first page,
+        // 6 items, no filters.
+        listNetworkAgents(token, { limit: 6 }),
         listOrgs(token),
       ]);
       myAgents = m;
-      networkAgents = n.filter((a) => !a.is_mine).slice(0, 6);
+      networkAgents = n.agents.filter((a) => !a.is_mine).slice(0, 6);
       orgs = o;
     } catch (err) {
       backendError = err instanceof Error ? err.message : "Relay unavailable.";

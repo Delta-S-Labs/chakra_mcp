@@ -120,8 +120,41 @@ export function listMyAgents(token: string) {
   return request<Agent[]>("/v1/agents", { token });
 }
 
-export function listNetworkAgents(token: string) {
-  return request<Agent[]>("/v1/network/agents", { token });
+export interface NetworkAgent extends Agent {
+  /** "push" (has agent_card_url + endpoint) | "pull" (inbox-only). */
+  mode: "push" | "pull";
+  tags: string[];
+  /** Whether the owning account has been verified by the relay operator. */
+  verified: boolean;
+}
+
+export interface NetworkListResponse {
+  agents: NetworkAgent[];
+  next_cursor?: string | null;
+}
+
+/** Filters mirror the public /v1/discovery/agents shape. All optional. */
+export interface NetworkListQuery {
+  q?: string;
+  mode?: "push" | "pull";
+  verified?: boolean;
+  /** Comma-separated, AND-match. */
+  tags?: string;
+  cursor?: string;
+  limit?: number;
+}
+
+export function listNetworkAgents(token: string, query: NetworkListQuery = {}) {
+  const params = new URLSearchParams();
+  if (query.q) params.set("q", query.q);
+  if (query.mode) params.set("mode", query.mode);
+  if (query.verified) params.set("verified", "true");
+  if (query.tags) params.set("tags", query.tags);
+  if (query.cursor) params.set("cursor", query.cursor);
+  if (query.limit !== undefined) params.set("limit", String(query.limit));
+  const qs = params.toString();
+  const path = qs ? `/v1/network/agents?${qs}` : "/v1/network/agents";
+  return request<NetworkListResponse>(path, { token });
 }
 
 export function getAgent(token: string, id: string) {
