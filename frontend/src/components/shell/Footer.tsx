@@ -55,6 +55,14 @@ export default function Footer() {
           </a>
         </div>
       </div>
+
+      <div className="footer-copyright">
+        <span>&copy; 2026</span>
+        <span aria-hidden="true">·</span>
+        <span>Delta S Labs</span>
+        <span aria-hidden="true">·</span>
+        <span>ChakraMCP</span>
+      </div>
     </footer>
   );
 }
