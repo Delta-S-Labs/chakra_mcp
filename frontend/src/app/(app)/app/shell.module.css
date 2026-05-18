@@ -296,6 +296,84 @@
   gap: 2rem;
 }
 
+/* ─── Bottom tab bar (phone only) ─────────────────────────────────
+ *
+ * Fixed-position bar pinned to the bottom of the viewport, hidden by
+ * default. The 540px breakpoint below flips it to flex AND hides the
+ * top swipe-strip — so on phones the daily-driver nav lives at the
+ * thumb, not at the top of the page.
+ *
+ * `padding-bottom: env(safe-area-inset-bottom)` keeps icons clear of
+ * the iOS home indicator. The `.page` rule below adds matching
+ * bottom-padding so page content never scrolls under the bar.
+ */
+.bottomBar {
+  display: none;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  padding: 0.45rem 0.5rem calc(0.45rem + env(safe-area-inset-bottom, 0px));
+  background: color-mix(in oklab, var(--paper-soft) 90%, white 10%);
+  border-top: 1px solid color-mix(in oklab, var(--line) 80%, var(--ink) 20%);
+  box-shadow: 0 -6px 18px -10px rgba(0, 0, 0, 0.18);
+  backdrop-filter: saturate(140%) blur(8px);
+  -webkit-backdrop-filter: saturate(140%) blur(8px);
+}
+
+.bottomTab {
+  flex: 1 1 0;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 0.18rem;
+  padding: 0.4rem 0.25rem 0.3rem;
+  text-decoration: none;
+  color: var(--ink-muted);
+  border-radius: 0.6rem;
+  min-width: 0;
+  transition: color 140ms;
+}
+
+.bottomTab:hover {
+  color: var(--ink);
+}
+
+.bottomTabIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.45rem;
+  height: 1.45rem;
+}
+
+.bottomTabIcon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.bottomTabLabel {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.bottomTabActive {
+  color: var(--accent-coral);
+}
+.bottomTabActive .bottomTabIcon svg path,
+.bottomTabActive .bottomTabIcon svg circle,
+.bottomTabActive .bottomTabIcon svg rect {
+  /* Active state: outlines stay outlines but pick up the accent color
+   * via currentColor. The icons were drawn with `stroke="currentColor"`
+   * so this just rides the inherited color above. */
+}
+
 @media (max-width: 920px) {
   .userTriggerMeta { display: none; }
 }
@@ -320,7 +398,14 @@
  * the nav's `overflow-x: auto` actually kick in. Verified at 375px:
  * before, body.scrollWidth = 637; after, 375. */
 @media (max-width: 540px) {
-  .page { padding: 1rem 0.75rem 4rem; }
+  /* Reserve room at the bottom for the fixed BottomTabBar. ~3.6rem
+   * covers a 24px icon row, a tiny gap, and the 10px label — plus the
+   * bar's own internal padding above the safe-area inset. Without this
+   * the last card in a long list sits behind the bar. */
+  .page {
+    padding: 1rem 0.75rem
+      calc(4rem + 3.6rem + env(safe-area-inset-bottom, 0px));
+  }
   .header {
     padding: 0.5rem 0.6rem;
     gap: 0.5rem;
@@ -329,18 +414,7 @@
     min-width: 0;
     box-sizing: border-box;
   }
-  .nav {
-    justify-content: flex-start;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    scroll-padding-inline: 0.4rem;
-    /* Without this the nav refuses to shrink below its intrinsic
-       content size and the parent flex (header) grows with it. */
-    min-width: 0;
-    max-width: 100%;
-  }
-  .nav::-webkit-scrollbar { display: none; }
-  .navLink { flex: 0 0 auto; }
+  /* Hide the top swipe-strip; the bottom bar owns nav on phones. */
+  .nav { display: none; }
+  .bottomBar { display: flex; }
 }

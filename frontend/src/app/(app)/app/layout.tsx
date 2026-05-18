@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { AppNav } from "./AppNav";
+import { BottomTabBar } from "./BottomTabBar";
 import { CommandPalette } from "./CommandPalette";
 import { UserMenu } from "./UserMenu";
 import styles from "./shell.module.css";
@@ -57,6 +58,7 @@ export default async function AppShellLayout({ children }: { children: ReactNode
 
         <main className={styles.main}>{children}</main>
       </div>
+      <BottomTabBar />
       <CommandPalette />
     </div>
   );
