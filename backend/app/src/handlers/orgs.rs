@@ -560,3 +560,112 @@ pub async fn delete_org(
 
     Ok(StatusCode::NO_CONTENT)
 }
+
+// ─────────────────────────────────────────────────────────
+// Org settings — GET (member) / PUT (owner|admin)
+//
+// `default_agent_visibility` pre-fills the visibility dropdown for new
+// agents created under this account. Doesn't enforce — users can still
+// override at create-time.
+//
+// `auto_friendship_enabled` is *stored only* in this PR; the
+// backfill/enforcement is a follow-up so a deploy can't accidentally
+// mass-create friendship rows under partial rollout.
+// ─────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+pub struct OrgSettingsDto {
+    pub default_agent_visibility: String,
+    pub auto_friendship_enabled: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateOrgSettingsRequest {
+    /// Validated server-side against {'private','org','network'}.
+    pub default_agent_visibility: Option<String>,
+    pub auto_friendship_enabled: Option<bool>,
+}
+
+pub async fn get_settings(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(slug): Path<String>,
+) -> ApiResult<Json<OrgSettingsDto>> {
+    let row = sqlx::query!(
+        r#"
+        SELECT a.default_agent_visibility, a.auto_friendship_enabled
+        FROM accounts a
+        JOIN account_memberships m ON m.account_id = a.id
+        WHERE a.slug = $1 AND m.user_id = $2
+        LIMIT 1
+        "#,
+        slug,
+        user.user_id
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(ApiError::NotFound)?;
+
+    Ok(Json(OrgSettingsDto {
+        default_agent_visibility: row.default_agent_visibility,
+        auto_friendship_enabled: row.auto_friendship_enabled,
+    }))
+}
+
+pub async fn update_settings(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(slug): Path<String>,
+    Json(req): Json<UpdateOrgSettingsRequest>,
+) -> ApiResult<Json<OrgSettingsDto>> {
+    if let Some(v) = req.default_agent_visibility.as_deref() {
+        if !matches!(v, "private" | "org" | "network") {
+            return Err(ApiError::InvalidRequest(
+                "default_agent_visibility must be private|org|network".into(),
+            ));
+        }
+    }
+
+    let access = sqlx::query!(
+        r#"
+        SELECT a.id, m.role
+        FROM accounts a
+        JOIN account_memberships m ON m.account_id = a.id
+        WHERE a.slug = $1 AND m.user_id = $2
+        LIMIT 1
+        "#,
+        slug,
+        user.user_id
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(ApiError::NotFound)?;
+
+    if !matches!(access.role.as_str(), "owner" | "admin") {
+        return Err(ApiError::Forbidden);
+    }
+
+    // COALESCE pattern lets the caller send only the keys they want to
+    // change. Each parameter is optional; absent keys leave the column
+    // alone instead of clearing it.
+    let row = sqlx::query!(
+        r#"
+        UPDATE accounts
+           SET default_agent_visibility = COALESCE($2, default_agent_visibility),
+               auto_friendship_enabled  = COALESCE($3, auto_friendship_enabled),
+               updated_at = now()
+         WHERE id = $1
+        RETURNING default_agent_visibility, auto_friendship_enabled
+        "#,
+        access.id,
+        req.default_agent_visibility,
+        req.auto_friendship_enabled,
+    )
+    .fetch_one(&state.db)
+    .await?;
+
+    Ok(Json(OrgSettingsDto {
+        default_agent_visibility: row.default_agent_visibility,
+        auto_friendship_enabled: row.auto_friendship_enabled,
+    }))
+}

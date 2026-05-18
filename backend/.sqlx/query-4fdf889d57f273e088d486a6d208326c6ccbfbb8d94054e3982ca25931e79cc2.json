@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT a.default_agent_visibility, a.auto_friendship_enabled\n        FROM accounts a\n        JOIN account_memberships m ON m.account_id = a.id\n        WHERE a.slug = $1 AND m.user_id = $2\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "default_agent_visibility",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "auto_friendship_enabled",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "4fdf889d57f273e088d486a6d208326c6ccbfbb8d94054e3982ca25931e79cc2"
+}

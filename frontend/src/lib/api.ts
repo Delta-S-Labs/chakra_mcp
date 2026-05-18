@@ -245,6 +245,29 @@ export function listMembers(token: string, slug: string) {
   return request<OrgMember[]>(`/v1/orgs/${encodeURIComponent(slug)}/members`, { token });
 }
 
+export interface OrgSettings {
+  default_agent_visibility: "private" | "org" | "network";
+  auto_friendship_enabled: boolean;
+}
+
+export function getOrgSettings(token: string, slug: string) {
+  return request<OrgSettings>(`/v1/orgs/${encodeURIComponent(slug)}/settings`, {
+    token,
+  });
+}
+
+export function updateOrgSettings(
+  token: string,
+  slug: string,
+  body: Partial<OrgSettings>,
+) {
+  return request<OrgSettings>(`/v1/orgs/${encodeURIComponent(slug)}/settings`, {
+    method: "PUT",
+    token,
+    body: JSON.stringify(body),
+  });
+}
+
 export function createInvite(
   token: string,
   slug: string,

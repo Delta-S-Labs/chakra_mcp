@@ -75,6 +75,10 @@ pub fn router(state: AppState) -> Router {
             "/v1/orgs/{slug}",
             get(handlers::orgs::get_one).delete(handlers::orgs::delete_org),
         )
+        .route(
+            "/v1/orgs/{slug}/settings",
+            get(handlers::orgs::get_settings).put(handlers::orgs::update_settings),
+        )
         .route("/v1/orgs/{slug}/members", get(handlers::orgs::list_members))
         .route(
             "/v1/orgs/{slug}/invites",

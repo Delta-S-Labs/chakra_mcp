@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE accounts\n           SET default_agent_visibility = COALESCE($2, default_agent_visibility),\n               auto_friendship_enabled  = COALESCE($3, auto_friendship_enabled),\n               updated_at = now()\n         WHERE id = $1\n        RETURNING default_agent_visibility, auto_friendship_enabled\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "default_agent_visibility",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "auto_friendship_enabled",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "a3e4595f9a9275d293a2c618bd2d5581c224915f46777ae96009dd3b050b3bd4"
+}

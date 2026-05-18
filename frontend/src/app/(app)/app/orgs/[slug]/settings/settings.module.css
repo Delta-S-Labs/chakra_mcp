@@ -1,0 +1,129 @@
+.panel {
+  display: grid;
+  gap: 1.6rem;
+  padding: 1.4rem 1.5rem 1.5rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--paper-soft);
+}
+
+.field {
+  display: grid;
+  gap: 0.55rem;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.field:disabled { opacity: 0.7; }
+
+.legend {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.96rem;
+  color: var(--ink);
+  margin-bottom: 0.15rem;
+  padding: 0;
+}
+
+.hint {
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  margin: 0 0 0.3rem;
+}
+
+.radioRow {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.radioLabel {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  column-gap: 0.55rem;
+  row-gap: 0.2rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 0.55rem;
+  background: color-mix(in oklab, var(--paper) 80%, var(--paper-soft) 20%);
+  cursor: pointer;
+  transition: border-color 140ms;
+}
+.radioLabel:has(input:checked) {
+  border-color: color-mix(in oklab, var(--accent-coral) 60%, var(--line));
+  background: color-mix(in oklab, var(--accent-butter) 20%, var(--paper-soft));
+}
+
+.radioName {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: var(--ink);
+}
+
+.radioDesc {
+  grid-column: 2;
+  font-family: var(--font-body);
+  font-size: 0.84rem;
+  color: var(--ink-soft);
+}
+
+.checkLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-family: var(--font-body);
+  font-size: 0.94rem;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-top: 0.2rem;
+}
+
+.saveBtn {
+  padding: 0.55rem 1.1rem;
+  border: 1px solid color-mix(in oklab, var(--accent-coral) 70%, var(--line));
+  border-radius: 0.55rem;
+  background: var(--accent-butter);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background 140ms, border-color 140ms, opacity 140ms;
+}
+.saveBtn:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--accent-butter) 70%, var(--accent-coral) 30%);
+}
+.saveBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.errorLine {
+  padding: 0.55rem 0.85rem;
+  border: 1px solid color-mix(in oklab, var(--accent-coral) 50%, var(--line));
+  border-radius: 0.5rem;
+  background: color-mix(in oklab, var(--accent-coral) 12%, var(--paper-soft));
+  color: oklch(38% 0.14 28);
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+}
+
+.successLine {
+  padding: 0.55rem 0.85rem;
+  border: 1px solid color-mix(in oklab, oklch(75% 0.18 145) 50%, var(--line));
+  border-radius: 0.5rem;
+  background: color-mix(in oklab, oklch(75% 0.18 145) 14%, var(--paper-soft));
+  color: oklch(35% 0.13 145);
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+}
