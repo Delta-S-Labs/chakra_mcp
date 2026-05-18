@@ -96,6 +96,12 @@ ol, ul { margin: 0; padding: 0; list-style-position: inside; }
      in the hero-board which itself constrains width; this is a belt. */
   max-width: 100%;
   width: fit-content;
+  /* The .hero-board parent is `display: grid`, so without this the
+     badge stretches vertically to fill its row — verified on phone,
+     the stamp rendered ~250px tall (nearly square) with a sea of blue
+     above and below the single line of text. `align-self: start` lets
+     the stamp shrink to its content height. */
+  align-self: start;
   /* Perforated outer edge: punch small bite-sized half-circles out of
      each of the four sides at regular intervals. The four
      radial-gradient layers paint the bites as black on a transparent
