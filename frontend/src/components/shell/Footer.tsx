@@ -47,7 +47,7 @@ export default function Footer() {
           </a>
           <span aria-hidden="true">·</span>
           <a
-            href="https://www.linkedin.com/in/kaustavbanerjee/"
+            href="https://www.linkedin.com/in/kaustav-banerjee-4b5053119/"
             rel="noreferrer noopener"
             target="_blank"
           >
