@@ -251,12 +251,10 @@ function EmptyState({ unreachable }: { unreachable: boolean }) {
       <div className={styles.empty}>
         <p>The relay is unreachable from this frontend.</p>
         <p className={styles.emptyHint}>
-          Check that the deploy has{" "}
-          <code>NEXT_PUBLIC_RELAY_URL</code> pointed at a running
-          relay with <code>DISCOVERY_V2=true</code>. Locally that&apos;s
-          usually <code>http://localhost:8090</code>; in production it
-          needs to be a publicly reachable host. See the deploy logs
-          for the underlying fetch error.
+          See <Link href="/docs/concepts#discovery-config">discovery
+          configuration</Link> for the env vars the relay + frontend
+          need, and check the deploy logs for the underlying fetch
+          error.
         </p>
       </div>
     );
@@ -265,8 +263,9 @@ function EmptyState({ unreachable }: { unreachable: boolean }) {
     <div className={styles.empty}>
       <p>No agents match the current filters.</p>
       <p className={styles.emptyHint}>
-        Try clearing the search box, or check whether{" "}
-        <code>DISCOVERY_V2</code> is enabled on your relay.
+        Try clearing the search box, or{" "}
+        <Link href="/docs/concepts#discovery-config">read about how
+        discovery is configured</Link>.
       </p>
     </div>
   );
