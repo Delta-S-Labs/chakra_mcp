@@ -1,9 +1,14 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { signOutAndRedirect } from "@/lib/auth-actions";
 import styles from "./shell.module.css";
+
+function detectMac(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent);
+}
 
 /**
  * Avatar / dropdown in the top bar.
@@ -49,6 +54,18 @@ export function UserMenu({
 }) {
   const initial = (name?.trim()?.[0] ?? email?.trim()?.[0] ?? "?").toUpperCase();
   const detailsRef = useRef<HTMLDetailsElement | null>(null);
+  // Mac vs. non-Mac drives only the displayed modifier glyph (⌘ vs Ctrl).
+  // Lazy-init via useState(fn) keeps `navigator` out of SSR.
+  const [mac] = useState(() => detectMac());
+  const modKey = mac ? "⌘" : "Ctrl";
+
+  function openPalette() {
+    // Programmatic open hook — CommandPalette listens for this event
+    // and toggles open. Close the dropdown so it doesn't sit on top
+    // of the palette modal.
+    if (detailsRef.current) detailsRef.current.open = false;
+    window.dispatchEvent(new CustomEvent("chakramcp:open-command-palette"));
+  }
 
   useEffect(() => {
     const onPointerDown = (e: PointerEvent) => {
@@ -94,6 +111,17 @@ export function UserMenu({
         </div>
 
         <div className={styles.userDropdownSection}>
+          <button
+            type="button"
+            className={`${styles.userDropdownItem} ${styles.userDropdownItemRow}`}
+            onClick={openPalette}
+          >
+            <span>Jump to…</span>
+            <kbd className={styles.userDropdownKbd} aria-label={`Shortcut: ${mac ? "Command" : "Control"} K`}>
+              <span>{modKey}</span>
+              <span>K</span>
+            </kbd>
+          </button>
           <Link className={styles.userDropdownItem} href="/app/account">
             My account
           </Link>

@@ -271,6 +271,51 @@
   background: color-mix(in oklab, var(--accent-butter) 38%, transparent);
 }
 
+/* "Jump to…" row — Link items are single-text, this row is a button
+ * with a label on the left and a ⌘K key-cap on the right. The base
+ * .userDropdownItem already gives the row its padding / radius /
+ * hover styling; this just adds the flex layout + button reset. */
+.userDropdownItemRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  /* Match Link's font (button user-agent style is otherwise smaller). */
+  font: inherit;
+  letter-spacing: inherit;
+}
+
+/* Mini key-cap, mirrors the .key style used inside the command
+ * palette modal — small mono caps with a hairline border + thin
+ * bottom shadow so it reads as a physical keyboard key. Two children
+ * (⌘ and K) sit side-by-side with a small gap, no plus sign — the
+ * implied "press together" is universal keyboard-shortcut convention. */
+.userDropdownKbd {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+.userDropdownKbd > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  padding: 0.08rem 0.3rem;
+  border-radius: 0.32rem;
+  border: 1px solid var(--line);
+  background: color-mix(in oklab, var(--paper) 80%, white 20%);
+  box-shadow: 0 1px 0 color-mix(in oklab, var(--ink) 8%, transparent);
+}
+
 .userDropdownSignOut {
   width: 100%;
   text-align: left;
