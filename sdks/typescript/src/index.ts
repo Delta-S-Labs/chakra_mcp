@@ -51,6 +51,7 @@ import {
   RevokeGrantRequest,
   TERMINAL_STATUSES,
   UpdateAgentRequest,
+  Visibility,
 } from "./types.js";
 
 export interface ChakraMCPOptions {
@@ -243,7 +244,7 @@ export class AgentsClient {
     addTemplate: (
       agentId: string,
       templateId: string,
-      opts?: { description?: string; visibility?: "network" | "private" },
+      opts?: { description?: string; visibility?: Visibility },
     ): Promise<Capability> => {
       const tpl = getTemplate(templateId);
       const body: CreateCapabilityRequest = { ...tpl };

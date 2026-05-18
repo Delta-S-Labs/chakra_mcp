@@ -8,7 +8,7 @@ or dataclasses if they want runtime validation; we don't impose that.
 
 from typing import Any, Literal, TypedDict
 
-Visibility = Literal["private", "network"]
+Visibility = Literal["private", "org", "network"]
 FriendshipStatus = Literal[
     "proposed", "accepted", "rejected", "cancelled", "countered"
 ]

@@ -9,6 +9,10 @@ type Visibility string
 
 const (
 	VisibilityPrivate Visibility = "private"
+	// VisibilityOrg = visible to members of any organization-type account
+	// that shares membership with the owning account. Not in the public
+	// /v1/discovery/agents surface. Added with the org-settings work.
+	VisibilityOrg     Visibility = "org"
 	VisibilityNetwork Visibility = "network"
 )
 
