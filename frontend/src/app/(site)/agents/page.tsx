@@ -249,23 +249,29 @@ function EmptyState({ unreachable }: { unreachable: boolean }) {
   if (unreachable) {
     return (
       <div className={styles.empty}>
-        <p>The relay is unreachable from this frontend.</p>
+        <p className={styles.emptyTitle}>The relay is unreachable.</p>
         <p className={styles.emptyHint}>
-          See <Link href="/docs/concepts#discovery-config">discovery
-          configuration</Link> for the env vars the relay + frontend
-          need, and check the deploy logs for the underlying fetch
-          error.
+          The frontend can&apos;t reach a discovery endpoint right now.
+          Check the deploy logs for the underlying fetch error.
+        </p>
+        <p className={styles.emptyLink}>
+          <Link href="/docs/concepts#discovery-config">
+            How discovery is configured →
+          </Link>
         </p>
       </div>
     );
   }
   return (
     <div className={styles.empty}>
-      <p>No agents match the current filters.</p>
+      <p className={styles.emptyTitle}>No agents match the current filters.</p>
       <p className={styles.emptyHint}>
-        Try clearing the search box, or{" "}
-        <Link href="/docs/concepts#discovery-config">read about how
-        discovery is configured</Link>.
+        Try a shorter query, fewer filters, or clear them entirely.
+      </p>
+      <p className={styles.emptyLink}>
+        <Link href="/docs/concepts#discovery-config">
+          How discovery is configured →
+        </Link>
       </p>
     </div>
   );
