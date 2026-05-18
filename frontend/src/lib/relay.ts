@@ -8,7 +8,7 @@
 
 const BASE = process.env.NEXT_PUBLIC_RELAY_URL ?? "http://localhost:8090";
 
-export type Visibility = "private" | "network";
+export type Visibility = "private" | "org" | "network";
 
 export interface Agent {
   id: string;
