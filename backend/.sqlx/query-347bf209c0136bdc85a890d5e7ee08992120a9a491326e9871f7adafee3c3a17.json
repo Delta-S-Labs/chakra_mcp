@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT a.id, a.slug, a.display_name, a.account_type, m.role, a.created_at\n        FROM account_memberships m\n        JOIN accounts a ON a.id = m.account_id\n        WHERE m.user_id = $1\n        ORDER BY a.account_type DESC, a.created_at ASC\n        ",
+  "query": "\n        SELECT a.id, a.slug, a.display_name, a.account_type, m.role, a.created_at,\n               a.default_agent_visibility\n        FROM accounts a\n        JOIN account_memberships m ON m.account_id = a.id\n        WHERE a.slug = $1 AND m.user_id = $2\n        LIMIT 1\n        ",
   "describe": {
     "columns": [
       {
@@ -32,10 +32,16 @@
         "ordinal": 5,
         "name": "created_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "default_agent_visibility",
+        "type_info": "Text"
       }
     ],
     "parameters": {
       "Left": [
+        "Text",
         "Uuid"
       ]
     },
@@ -45,8 +51,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "e0aab88cd8fdd31e12ed98e7a07e74e89a6fbb46e4905a814eba129397cb267b"
+  "hash": "347bf209c0136bdc85a890d5e7ee08992120a9a491326e9871f7adafee3c3a17"
 }

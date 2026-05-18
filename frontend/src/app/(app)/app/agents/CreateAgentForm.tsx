@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createAgent, type Agent, type Visibility } from "@/lib/relay";
@@ -19,7 +19,27 @@ export function CreateAgentForm({
   const [slug, setSlug] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
-  const [visibility, setVisibility] = useState<Visibility>("private");
+  // Track whether the user manually changed the visibility from the
+  // account's default. We use this to re-snap the dropdown when they
+  // switch accounts — otherwise switching from a 'network'-default org
+  // to a 'private'-default personal account would leave the dropdown
+  // stuck on 'network' silently.
+  const [visibilityTouched, setVisibilityTouched] = useState(false);
+  const selectedAccount = useMemo(
+    () => accounts.find((a) => a.id === accountId),
+    [accounts, accountId],
+  );
+  const accountDefault = selectedAccount?.default_agent_visibility ?? "private";
+  const [visibility, setVisibility] = useState<Visibility>(accountDefault);
+
+  // Re-snap to the account's default when switching accounts UNLESS the
+  // user has overridden the dropdown for this session. Implemented as a
+  // derived value via useMemo rather than useEffect to avoid an extra
+  // render cycle.
+  const effectiveVisibility: Visibility = visibilityTouched
+    ? visibility
+    : accountDefault;
+
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // After a successful create we keep the user on the page so they can
@@ -45,15 +65,17 @@ export function CreateAgentForm({
         slug: slug.trim(),
         display_name: displayName.trim(),
         description: description.trim(),
-        visibility,
+        visibility: effectiveVisibility,
       });
       setCreated(agent);
       // Reset per-agent fields so a repeat registration in the same
-      // account is one tweak away.
+      // account is one tweak away. Visibility resets to the account's
+      // default (next account-switch will re-snap anyway).
       setSlug("");
       setDisplayName("");
       setDescription("");
-      setVisibility("private");
+      setVisibility(accountDefault);
+      setVisibilityTouched(false);
       // Refresh the "Mine" list below without leaving the page.
       router.refresh();
     } catch (err) {
@@ -88,7 +110,19 @@ export function CreateAgentForm({
       <form className={styles.fields} onSubmit={handleSubmit}>
         <label className={styles.field}>
           <span className={styles.fieldLabel}>Account</span>
-          <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+          <select
+            value={accountId}
+            onChange={(e) => {
+              setAccountId(e.target.value);
+              // Switching accounts re-snaps the visibility to the new
+              // account's default — unless the user already touched it.
+              setVisibility(
+                accounts.find((a) => a.id === e.target.value)
+                  ?.default_agent_visibility ?? "private",
+              );
+              setVisibilityTouched(false);
+            }}
+          >
             {accounts.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.display_name} ({a.account_type})
@@ -132,12 +166,30 @@ export function CreateAgentForm({
         <label className={styles.field}>
           <span className={styles.fieldLabel}>Visibility</span>
           <select
-            value={visibility}
-            onChange={(e) => setVisibility(e.target.value as Visibility)}
+            value={effectiveVisibility}
+            onChange={(e) => {
+              setVisibility(e.target.value as Visibility);
+              setVisibilityTouched(true);
+            }}
           >
-            <option value="private">Private</option>
-            <option value="network">Network</option>
+            <option value="private">
+              Private{accountDefault === "private" ? " · default for this account" : ""}
+            </option>
+            <option value="org">
+              Org{accountDefault === "org" ? " · default for this account" : ""}
+            </option>
+            <option value="network">
+              Network{accountDefault === "network" ? " · default for this account" : ""}
+            </option>
           </select>
+          <span className={styles.fieldHint}>
+            {effectiveVisibility === "private" &&
+              "Only members of the chosen account can see this agent."}
+            {effectiveVisibility === "org" &&
+              "Members of any org that shares membership with the owning account can see it. Not in the public directory."}
+            {effectiveVisibility === "network" &&
+              "Listed in the public /agents directory. Anyone can find it."}
+          </span>
         </label>
 
         <button type="submit" className={styles.create} disabled={pending}>

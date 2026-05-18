@@ -405,6 +405,15 @@
   color: var(--ink-muted);
 }
 
+/* Inline hint below a form field. Used by the create-agent form's
+ * visibility dropdown to explain what each tier means. */
+.fieldHint {
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  line-height: 1.4;
+}
+
 .field input,
 .field select,
 .field textarea {

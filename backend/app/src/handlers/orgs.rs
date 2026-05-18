@@ -20,6 +20,10 @@ pub struct OrgDto {
     pub account_type: String,
     pub role: String,
     pub created_at: DateTime<Utc>,
+    /// Pre-fill value for the visibility dropdown when creating agents
+    /// under this account. Mirrors `accounts.default_agent_visibility`;
+    /// set via `PUT /v1/orgs/{slug}/settings`.
+    pub default_agent_visibility: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -60,7 +64,8 @@ pub struct InviteDto {
 pub async fn list(State(state): State<AppState>, user: AuthUser) -> ApiResult<Json<Vec<OrgDto>>> {
     let rows = sqlx::query!(
         r#"
-        SELECT a.id, a.slug, a.display_name, a.account_type, m.role, a.created_at
+        SELECT a.id, a.slug, a.display_name, a.account_type, m.role, a.created_at,
+               a.default_agent_visibility
         FROM account_memberships m
         JOIN accounts a ON a.id = m.account_id
         WHERE m.user_id = $1
@@ -80,6 +85,7 @@ pub async fn list(State(state): State<AppState>, user: AuthUser) -> ApiResult<Js
                 account_type: r.account_type,
                 role: r.role,
                 created_at: r.created_at,
+                default_agent_visibility: r.default_agent_visibility,
             })
             .collect(),
     ))
@@ -123,7 +129,7 @@ pub async fn create(
         r#"
         INSERT INTO accounts (id, slug, display_name, account_type, owner_user_id)
         VALUES ($1, $2, $3, 'organization', $4)
-        RETURNING id, slug, display_name, account_type, created_at
+        RETURNING id, slug, display_name, account_type, created_at, default_agent_visibility
         "#,
         account_id,
         slug,
@@ -154,6 +160,7 @@ pub async fn create(
         account_type: inserted.account_type,
         role: "owner".into(),
         created_at: inserted.created_at,
+        default_agent_visibility: inserted.default_agent_visibility,
     }))
 }
 
@@ -167,7 +174,8 @@ pub async fn get_one(
 ) -> ApiResult<Json<OrgDto>> {
     let row = sqlx::query!(
         r#"
-        SELECT a.id, a.slug, a.display_name, a.account_type, m.role, a.created_at
+        SELECT a.id, a.slug, a.display_name, a.account_type, m.role, a.created_at,
+               a.default_agent_visibility
         FROM accounts a
         JOIN account_memberships m ON m.account_id = a.id
         WHERE a.slug = $1 AND m.user_id = $2
@@ -187,6 +195,7 @@ pub async fn get_one(
         account_type: row.account_type,
         role: row.role,
         created_at: row.created_at,
+        default_agent_visibility: row.default_agent_visibility,
     }))
 }
 
@@ -389,7 +398,8 @@ pub async fn accept_invite(
     let invite = sqlx::query!(
         r#"
         SELECT i.id, i.account_id, i.email, i.role, i.expires_at, i.accepted_at,
-               a.slug, a.display_name, a.account_type, a.created_at
+               a.slug, a.display_name, a.account_type, a.created_at,
+               a.default_agent_visibility
         FROM account_invites i
         JOIN accounts a ON a.id = i.account_id
         WHERE i.token_hash = $1
@@ -479,6 +489,7 @@ pub async fn accept_invite(
         account_type: invite.account_type,
         role: invite.role,
         created_at: invite.created_at,
+        default_agent_visibility: invite.default_agent_visibility,
     }))
 }
 

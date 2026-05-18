@@ -63,6 +63,9 @@ export interface Org {
   account_type: "individual" | "organization";
   role: "owner" | "admin" | "member";
   created_at: string;
+  /** The org's `default_agent_visibility` setting; pre-fills the
+   *  visibility dropdown when creating an agent under this account. */
+  default_agent_visibility: "private" | "org" | "network";
 }
 
 export interface OrgMember {
