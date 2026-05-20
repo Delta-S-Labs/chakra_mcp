@@ -102,6 +102,10 @@ enum Cmd {
     #[command(subcommand)]
     Agents(commands::agents::Cmd),
 
+    /// View / manage organization accounts you belong to (incl. settings).
+    #[command(subcommand, alias = "orgs")]
+    Org(commands::orgs::Cmd),
+
     /// List network-visible agents you can address.
     Network,
 
@@ -222,6 +226,7 @@ async fn run() -> Result<()> {
         }
         Cmd::Networks(cmd) => commands::networks::run(cmd, &mut cfg)?,
         Cmd::Agents(cmd) => commands::agents::run(cmd, ApiClient::new(cfg)?).await?,
+        Cmd::Org(cmd) => commands::orgs::run(cmd, ApiClient::new(cfg)?).await?,
         Cmd::Network => {
             let api = ApiClient::new(cfg)?;
             let agents: serde_json::Value = api.get_relay("/v1/network/agents").await?;

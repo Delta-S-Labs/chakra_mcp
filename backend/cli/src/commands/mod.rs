@@ -8,4 +8,5 @@ pub mod inbox;
 pub mod invoke;
 pub mod message;
 pub mod networks;
+pub mod orgs;
 pub mod pair;
