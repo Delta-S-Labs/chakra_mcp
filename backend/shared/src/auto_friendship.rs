@@ -93,3 +93,305 @@ where
     .await?;
     Ok(res.rows_affected())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::PgPool;
+    use uuid::Uuid;
+
+    /// One personal account + one user, returns their ids.
+    async fn seed_user(pool: &PgPool) -> (Uuid, Uuid) {
+        let user_id = Uuid::now_v7();
+        sqlx::query!(
+            r#"INSERT INTO users (id, email, display_name, password_hash)
+               VALUES ($1, $2, 'T', 'x')"#,
+            user_id,
+            format!("{user_id}@t.local"),
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        let account_id = Uuid::now_v7();
+        sqlx::query!(
+            r#"INSERT INTO accounts (id, slug, display_name, account_type, owner_user_id)
+               VALUES ($1, $2, 'Personal', 'individual', $3)"#,
+            account_id,
+            format!("personal-{account_id}"),
+            user_id,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            r#"INSERT INTO account_memberships (id, account_id, user_id, role)
+               VALUES ($1, $2, $3, 'owner')"#,
+            Uuid::now_v7(),
+            account_id,
+            user_id,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        (user_id, account_id)
+    }
+
+    /// Org account with `user_id` as owner. Returns the org's account_id.
+    async fn seed_org(pool: &PgPool, owner_user_id: Uuid, slug: &str) -> Uuid {
+        let org_id = Uuid::now_v7();
+        sqlx::query!(
+            r#"INSERT INTO accounts (id, slug, display_name, account_type, owner_user_id, auto_friendship_enabled)
+               VALUES ($1, $2, $3, 'organization', $4, true)"#,
+            org_id,
+            slug,
+            slug,
+            owner_user_id,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            r#"INSERT INTO account_memberships (id, account_id, user_id, role)
+               VALUES ($1, $2, $3, 'owner')"#,
+            Uuid::now_v7(),
+            org_id,
+            owner_user_id,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        org_id
+    }
+
+    /// Make `user_id` a member of `account_id`. Used to put two users in
+    /// the same org so their personal accounts share scope.
+    async fn add_member(pool: &PgPool, account_id: Uuid, user_id: Uuid) {
+        sqlx::query!(
+            r#"INSERT INTO account_memberships (id, account_id, user_id, role)
+               VALUES ($1, $2, $3, 'member')"#,
+            Uuid::now_v7(),
+            account_id,
+            user_id,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    /// Plain agent under `account_id`. Returns the new agent's id.
+    async fn seed_agent(pool: &PgPool, account_id: Uuid, slug: &str) -> Uuid {
+        let id = Uuid::now_v7();
+        sqlx::query!(
+            r#"INSERT INTO agents
+                 (id, account_id, slug, display_name, description, visibility, mode)
+               VALUES ($1, $2, $3, $4, '', 'private', 'pull')"#,
+            id,
+            account_id,
+            slug,
+            slug,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        id
+    }
+
+    async fn count_friendships(pool: &PgPool) -> i64 {
+        sqlx::query_scalar!(r#"SELECT COUNT(*) as "n!" FROM friendships"#)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+
+    async fn friendship_pair_exists(pool: &PgPool, a: Uuid, b: Uuid, status: &str) -> bool {
+        sqlx::query_scalar!(
+            r#"
+            SELECT EXISTS(
+                SELECT 1 FROM friendships
+                WHERE status = $3
+                  AND (
+                      (proposer_agent_id = $1 AND target_agent_id = $2)
+                   OR (proposer_agent_id = $2 AND target_agent_id = $1)
+                  )
+            ) as "e!"
+            "#,
+            a,
+            b,
+            status,
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
+
+    /// The happy-path: two users sharing an org → their personal-account
+    /// agents auto-friend each other plus the org's own agent.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn backfills_cross_account_pairs_in_scope(pool: PgPool) {
+        let (alice_user, alice_acct) = seed_user(&pool).await;
+        let (bob_user, bob_acct) = seed_user(&pool).await;
+        let org = seed_org(&pool, alice_user, "shared-org").await;
+        add_member(&pool, org, bob_user).await;
+
+        let alice_agent = seed_agent(&pool, alice_acct, "alice-a").await;
+        let bob_agent = seed_agent(&pool, bob_acct, "bob-a").await;
+        let org_agent = seed_agent(&pool, org, "org-a").await;
+
+        let n = backfill_for_org(&pool, org).await.unwrap();
+        // 3 unordered pairs: (alice,bob), (alice,org), (bob,org). All
+        // cross-account so all qualify.
+        assert_eq!(n, 3, "expected 3 friendships; got {n}");
+        assert!(friendship_pair_exists(&pool, alice_agent, bob_agent, "accepted").await);
+        assert!(friendship_pair_exists(&pool, alice_agent, org_agent, "accepted").await);
+        assert!(friendship_pair_exists(&pool, bob_agent, org_agent, "accepted").await);
+    }
+
+    /// Re-running backfill on a saturated scope inserts zero new rows.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn idempotent_on_saturated_scope(pool: PgPool) {
+        let (alice_user, alice_acct) = seed_user(&pool).await;
+        let (bob_user, bob_acct) = seed_user(&pool).await;
+        let org = seed_org(&pool, alice_user, "sat-org").await;
+        add_member(&pool, org, bob_user).await;
+        seed_agent(&pool, alice_acct, "a").await;
+        seed_agent(&pool, bob_acct, "b").await;
+
+        let first = backfill_for_org(&pool, org).await.unwrap();
+        let second = backfill_for_org(&pool, org).await.unwrap();
+        assert_eq!(first, 1);
+        assert_eq!(second, 0, "rerun should be a no-op");
+        assert_eq!(count_friendships(&pool).await, 1);
+    }
+
+    /// Two agents owned by the SAME account never get friended even when
+    /// that account is in scope. Friendships are inter-account.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn skips_same_account_pairs(pool: PgPool) {
+        let (owner_user, _personal) = seed_user(&pool).await;
+        let org = seed_org(&pool, owner_user, "same-org").await;
+        // Two org-owned agents; no other account in scope.
+        seed_agent(&pool, org, "org-a").await;
+        seed_agent(&pool, org, "org-b").await;
+
+        let n = backfill_for_org(&pool, org).await.unwrap();
+        assert_eq!(n, 0, "same-account pairs must not auto-friend");
+        assert_eq!(count_friendships(&pool).await, 0);
+    }
+
+    /// Pre-existing active friendship in either direction blocks the
+    /// auto-row — both (a,b) and (b,a) variants get checked.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn respects_existing_proposed_in_either_direction(pool: PgPool) {
+        let (alice_user, alice_acct) = seed_user(&pool).await;
+        let (bob_user, bob_acct) = seed_user(&pool).await;
+        let org = seed_org(&pool, alice_user, "blocked-org").await;
+        add_member(&pool, org, bob_user).await;
+        let a = seed_agent(&pool, alice_acct, "alice-a").await;
+        let b = seed_agent(&pool, bob_acct, "bob-a").await;
+
+        // Manually propose (a, b) — proposed status, alice's side.
+        sqlx::query!(
+            r#"INSERT INTO friendships
+                 (id, proposer_agent_id, target_agent_id, status, proposer_user_id)
+               VALUES ($1, $2, $3, 'proposed', $4)"#,
+            Uuid::now_v7(),
+            a,
+            b,
+            alice_user,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let n = backfill_for_org(&pool, org).await.unwrap();
+        assert_eq!(n, 0, "must not duplicate an existing proposed row");
+        assert_eq!(count_friendships(&pool).await, 1);
+
+        // Now flip to the OTHER direction: clear and try (b, a) proposed.
+        sqlx::query!(r#"DELETE FROM friendships"#)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query!(
+            r#"INSERT INTO friendships
+                 (id, proposer_agent_id, target_agent_id, status, proposer_user_id)
+               VALUES ($1, $2, $3, 'proposed', $4)"#,
+            Uuid::now_v7(),
+            b,
+            a,
+            bob_user,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let n = backfill_for_org(&pool, org).await.unwrap();
+        assert_eq!(n, 0, "must not duplicate a reverse-direction proposed row");
+        assert_eq!(count_friendships(&pool).await, 1);
+    }
+
+    /// A `rejected` row in the table is NOT considered active, so the
+    /// backfill is free to create a fresh `accepted` row for the pair.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn ignores_inactive_rejected_rows(pool: PgPool) {
+        let (alice_user, alice_acct) = seed_user(&pool).await;
+        let (bob_user, bob_acct) = seed_user(&pool).await;
+        let org = seed_org(&pool, alice_user, "rej-org").await;
+        add_member(&pool, org, bob_user).await;
+        let a = seed_agent(&pool, alice_acct, "alice-a").await;
+        let b = seed_agent(&pool, bob_acct, "bob-a").await;
+
+        // Past rejection. Should not block a fresh auto-friendship.
+        sqlx::query!(
+            r#"INSERT INTO friendships
+                 (id, proposer_agent_id, target_agent_id, status, proposer_user_id,
+                  decided_by_user_id, decided_at)
+               VALUES ($1, $2, $3, 'rejected', $4, $5, now())"#,
+            Uuid::now_v7(),
+            a,
+            b,
+            alice_user,
+            bob_user,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let n = backfill_for_org(&pool, org).await.unwrap();
+        assert_eq!(n, 1, "rejected is inactive; backfill should add one");
+        assert!(friendship_pair_exists(&pool, a, b, "accepted").await);
+    }
+
+    /// Tombstoned agents drop out of the scope completely.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn ignores_tombstoned_agents(pool: PgPool) {
+        let (alice_user, alice_acct) = seed_user(&pool).await;
+        let (bob_user, bob_acct) = seed_user(&pool).await;
+        let org = seed_org(&pool, alice_user, "tomb-org").await;
+        add_member(&pool, org, bob_user).await;
+        seed_agent(&pool, alice_acct, "alice-live").await;
+        let bob_dead = seed_agent(&pool, bob_acct, "bob-dead").await;
+        sqlx::query!(
+            r#"UPDATE agents SET tombstoned_at = now() WHERE id = $1"#,
+            bob_dead,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let n = backfill_for_org(&pool, org).await.unwrap();
+        // Alice-live alone in scope — nobody to friend with.
+        assert_eq!(n, 0);
+    }
+
+    /// Called with an org that has nobody in scope but itself: no agents
+    /// → no work. (Triggers the early-exit cheaply.)
+    #[sqlx::test(migrations = "../migrations")]
+    async fn empty_scope_returns_zero(pool: PgPool) {
+        let (owner_user, _personal) = seed_user(&pool).await;
+        let org = seed_org(&pool, owner_user, "empty-org").await;
+        let n = backfill_for_org(&pool, org).await.unwrap();
+        assert_eq!(n, 0);
+        assert_eq!(count_friendships(&pool).await, 0);
+    }
+}
