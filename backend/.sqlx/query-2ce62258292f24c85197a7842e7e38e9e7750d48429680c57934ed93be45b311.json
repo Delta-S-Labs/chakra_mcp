@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT EXISTS(\n                SELECT 1 FROM friendships\n                WHERE status = $3\n                  AND (\n                      (proposer_agent_id = $1 AND target_agent_id = $2)\n                   OR (proposer_agent_id = $2 AND target_agent_id = $1)\n                  )\n            ) as \"e!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "e!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "2ce62258292f24c85197a7842e7e38e9e7750d48429680c57934ed93be45b311"
+}

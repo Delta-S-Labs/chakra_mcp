@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO accounts (id, slug, display_name, account_type, owner_user_id)\n               VALUES ($1, $2, 'Personal', 'individual', $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fdd85a842c68546f5cb806add95134808008217c1ad1be1e3728b42e1493b6b6"
+}
