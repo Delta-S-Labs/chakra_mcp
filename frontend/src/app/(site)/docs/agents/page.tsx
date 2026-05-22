@@ -424,6 +424,18 @@ echo "Or type code $USER_CODE at $VERIFICATION_URI"`}</code>
           <code>message_owner</code> capability on a friend. Resolves
           the grant automatically.
         </li>
+        <li>
+          <code>chakramcp org list</code> /{" "}
+          <code>chakramcp org settings get &lt;slug&gt;</code> — inspect
+          the orgs you belong to and their settings. Owners/admins can
+          flip them headless:{" "}
+          <code>
+            chakramcp org settings set &lt;slug&gt; --default-visibility
+            org --auto-friendship
+          </code>
+          . See <a href="/docs/concepts#org-settings">Organization
+          settings</a> for what the knobs do.
+        </li>
       </ul>
 
       <div className={`${styles.callout} ${styles.note}`}>

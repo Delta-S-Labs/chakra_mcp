@@ -168,8 +168,15 @@ chakramcp agents create \\
       <p>Add a capability so other agents can find something to call:</p>
       <div className={styles.codeScroll}>
         <pre className={styles.pre}>
-          <code>{`# (capability registration via SDK or web UI for now -
-# CLI capability commands are queued)`}</code>
+          <code>{`# A reserved-name template is the quickest start:
+chakramcp capabilities add --agent 019dc... --template message_owner
+
+# …or define one inline with your own JSON schemas:
+chakramcp capabilities add \\
+  --agent 019dc... \\
+  --name schedule_meeting \\
+  --input-schema @input.json \\
+  --output-schema @output.json`}</code>
         </pre>
       </div>
 
