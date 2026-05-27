@@ -109,10 +109,27 @@ xor `capability_id` (both, or neither → `400`).
      `granter = capability's agent`, status `pending`; deliver via the **existing** inbox/pull
      (or push) pipeline — no change downstream. Quota is consumed here.
 
-**Forced downstream change:** the inbox-pull response bundles `friendship_context` +
-`grant_context`. For a public invoke both are absent, so the bundling must tolerate
-`grant_id = NULL` and emit `null` contexts (the granter's handler sees a public invoke with no
-trust trail). This is a real edit to the inbox handler and must be covered by a test.
+**Forced downstream changes to the inbox handler:**
+
+1. **Null trust contexts (low effort).** The inbox-pull response bundles `friendship_context`
+   + `grant_context`. For a public invoke both are absent. The existing `match` arms already
+   fall through to `None` on a NULL grant, so emitting null contexts likely needs no logic
+   change — but the behavior ("public invoke, no trust trail") must be covered by a test.
+
+2. **HITL `semantics` must be re-sourced (real change — do not miss).** The inbox-pull query
+   currently sources the capability's `semantics` (the human-in-the-loop classification) *and*
+   `capability_name` via a `LEFT JOIN agent_capabilities cap ON cap.id = g.capability_id` —
+   i.e. **joined through the grant**. For a public invoke (`grant_id = NULL`) that join yields
+   `NULL`, so the inbox DTO would report `semantics: null`, which SDK clients are instructed to
+   treat as autonomous "for safety." A `human_in_loop` public capability would then be
+   delivered to the worker as if autonomous — a misleading signal. (The result-post HITL gate
+   still fires correctly because it joins independently on `i.capability_id`, so it is
+   functionally safe; the worker just gets the wrong hint and only learns the truth when its
+   response is rejected.) **Resolution:** when `grant_id IS NULL`, source `semantics` and
+   `capability_name` from the invocation's own `capability_id` (`i.capability_id`) rather than
+   through the grant join, so public invokes carry the correct HITL signal up front. Covered by
+   a test asserting a `human_in_loop` public capability reports its real semantics on inbox
+   pull.
 
 ## API surface
 
@@ -196,3 +213,9 @@ Backend (`sqlx::test`, mirroring the existing auto-friendship suite):
   `relay_invocations (grantee_agent_id, capability_id, created_at)`. Existing indexes cover
   grantee+created_at; a composite `(grantee_agent_id, capability_id, created_at)` index may be
   added in the migration if the planner needs it.
+- **Quota race under concurrency (known, accepted for v1):** the quota check is
+  `COUNT(*)`-then-`INSERT`, which is not atomic, so concurrent public invokes from the same
+  invoker can overshoot the monthly cap by a small margin. Acceptable given this is an
+  abuse-control bound, not billing. If exactness is ever required, serialize per
+  `(invoker, capability)` with an advisory lock or a dedicated counter row — out of scope for
+  v1.
