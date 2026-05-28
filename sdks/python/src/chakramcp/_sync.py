@@ -19,6 +19,7 @@ from ._types import (
     CreateAgentRequest,
     CreateCapabilityRequest,
     CreateGrantRequest,
+    EligibilityResponse,
     Friendship,
     FriendshipStatus,
     Grant,
@@ -29,7 +30,11 @@ from ._types import (
     InvokeResponse,
     MeResponse,
     ProposeFriendshipRequest,
+    Review,
+    ReviewListResponse,
+    ReviewTier,
     UpdateAgentRequest,
+    WriteReviewRequest,
 )
 
 DEFAULT_APP_URL = "https://chakramcp.com"
@@ -73,6 +78,7 @@ class ChakraMCP:
         self.grants = GrantsClient(self)
         self.invocations = InvocationsClient(self)
         self.inbox = InboxClient(self)
+        self.reviews = ReviewsClient(self)
 
     def close(self) -> None:
         if self._owns_client:
@@ -400,3 +406,92 @@ class InboxClient:
                     except BaseException as inner:
                         if on_error:
                             on_error(inner, inv)
+
+
+class ReviewsClient:
+    """Agent ratings & reviews (migration 0023).
+
+    Reviews are one-per-(reviewer_agent, target_agent), upsertable in
+    place. Writing a review requires (a) ownership of the reviewer
+    agent and (b) a non-rejected ``relay_invocations`` row from that
+    agent against at least one of the target's capabilities — see
+    :py:meth:`eligibility` for a pre-flight check.
+    """
+
+    def __init__(self, chakra: ChakraMCP) -> None:
+        self._c = chakra
+
+    def list(
+        self,
+        target_agent_id: str,
+        *,
+        tier: ReviewTier | None = None,
+        include_hidden: bool = False,
+        limit: int | None = None,
+        cursor: str | None = None,
+    ) -> ReviewListResponse:
+        """List reviews on a target agent (cursor-paginated) + summary.
+
+        ``include_hidden=True`` is honoured server-side only when the
+        caller is a member of the target's account; non-members get the
+        flag silently cleared. Hidden rows never leak to the public
+        listing.
+        """
+        params: dict[str, str] = {}
+        if tier is not None:
+            params["tier"] = tier
+        if include_hidden:
+            params["include_hidden"] = "true"
+        if limit is not None:
+            params["limit"] = str(limit)
+        if cursor is not None:
+            params["cursor"] = cursor
+        suffix = "?" + "&".join(f"{k}={v}" for k, v in params.items()) if params else ""
+        return self._c._relay(
+            "GET", f"/v1/agents/{target_agent_id}/reviews{suffix}"
+        )
+
+    def write(
+        self,
+        target_agent_id: str,
+        body: WriteReviewRequest | dict[str, Any],
+    ) -> Review:
+        """Write (or upsert) a review for ``target_agent_id``.
+
+        Rating must be 1-5. ``tagged_capability_ids`` must reference
+        capabilities (a) owned by the target and (b) invoked by the
+        reviewer (status != 'rejected'). The relay validates both;
+        violations raise :py:class:`ChakraInvalidRequestError`.
+        """
+        return self._c._relay(
+            "POST", f"/v1/agents/{target_agent_id}/reviews", dict(body)
+        )
+
+    def eligibility(self, target_agent_id: str) -> EligibilityResponse:
+        """Return the caller's agents (with the target capabilities each
+        has invoked) eligible to leave a review for ``target_agent_id``.
+
+        Agents the caller owns that haven't invoked anything on the
+        target are filtered out.
+        """
+        return self._c._relay(
+            "GET", f"/v1/agents/{target_agent_id}/reviews/eligibility"
+        )
+
+    def hide(self, target_agent_id: str, review_id: str) -> Review:
+        """Hide a review. Caller must be a member of the target's
+        account; the reviewer cannot hide their own row on someone
+        else's agent."""
+        return self._c._relay(
+            "POST",
+            f"/v1/agents/{target_agent_id}/reviews/{review_id}/hide",
+            {},
+        )
+
+    def unhide(self, target_agent_id: str, review_id: str) -> Review:
+        """Unhide a previously hidden review."""
+        return self._c._relay(
+            "POST",
+            f"/v1/agents/{target_agent_id}/reviews/{review_id}/unhide",
+            {},
+        )

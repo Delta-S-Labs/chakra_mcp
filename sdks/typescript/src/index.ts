@@ -37,6 +37,7 @@ import {
   CreateAgentRequest,
   CreateCapabilityRequest,
   CreateGrantRequest,
+  EligibilityResponse,
   FriendshipCounterRequest,
   FriendshipResponseRequest,
   Friendship,
@@ -49,10 +50,14 @@ import {
   InvocationStatus,
   MeResponse,
   ProposeFriendshipRequest,
+  Review,
+  ReviewListQuery,
+  ReviewListResponse,
   RevokeGrantRequest,
   TERMINAL_STATUSES,
   UpdateAgentRequest,
   Visibility,
+  WriteReviewRequest,
 } from "./types.js";
 
 export interface ChakraMCPOptions {
@@ -77,6 +82,7 @@ export class ChakraMCP {
   readonly grants: GrantsClient;
   readonly invocations: InvocationsClient;
   readonly inbox: InboxClient;
+  readonly reviews: ReviewsClient;
 
   private readonly fetcher: typeof fetch;
   private readonly headers: Record<string, string>;
@@ -98,6 +104,7 @@ export class ChakraMCP {
     this.grants = new GrantsClient(this);
     this.invocations = new InvocationsClient(this);
     this.inbox = new InboxClient(this);
+    this.reviews = new ReviewsClient(this);
   }
 
   /** Current user + memberships. */
@@ -532,6 +539,74 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
       { once: true },
     );
   });
+}
+
+/**
+ * Agent ratings & reviews (migration 0023). Mirrors the reviews
+ * surface in the Python/Go/Rust SDKs. One review per (reviewer, target)
+ * pair — `write` upserts.
+ */
+export class ReviewsClient {
+  constructor(private readonly chakra: ChakraMCP) {}
+
+  /**
+   * List reviews on a target agent. Cursor-paginated; the response
+   * also carries the summary (average + per-bucket distribution).
+   * `include_hidden` is honoured only when the caller is a member of
+   * the target's account.
+   */
+  list(
+    targetAgentId: string,
+    query: ReviewListQuery = {},
+  ): Promise<ReviewListResponse> {
+    const qs = new URLSearchParams();
+    if (query.cursor) qs.set("cursor", query.cursor);
+    if (query.limit !== undefined) qs.set("limit", String(query.limit));
+    if (query.tier) qs.set("tier", query.tier);
+    if (query.include_hidden) qs.set("include_hidden", "true");
+    const tail = qs.toString();
+    return this.chakra.relayRequest<ReviewListResponse>(
+      "GET",
+      `/v1/agents/${encodeURIComponent(targetAgentId)}/reviews${tail ? `?${tail}` : ""}`,
+    );
+  }
+
+  /** Write or upsert a review. Rating must be 1-5; at least one
+   *  tagged capability is required. */
+  write(targetAgentId: string, body: WriteReviewRequest): Promise<Review> {
+    return this.chakra.relayRequest<Review>(
+      "POST",
+      `/v1/agents/${encodeURIComponent(targetAgentId)}/reviews`,
+      body,
+    );
+  }
+
+  /** Which of the caller's agents are eligible to review this target,
+   *  and which target capabilities each has invoked. */
+  eligibility(targetAgentId: string): Promise<EligibilityResponse> {
+    return this.chakra.relayRequest<EligibilityResponse>(
+      "GET",
+      `/v1/agents/${encodeURIComponent(targetAgentId)}/reviews/eligibility`,
+    );
+  }
+
+  /** Hide a review. Target-account members only. */
+  hide(targetAgentId: string, reviewId: string): Promise<Review> {
+    return this.chakra.relayRequest<Review>(
+      "POST",
+      `/v1/agents/${encodeURIComponent(targetAgentId)}/reviews/${encodeURIComponent(reviewId)}/hide`,
+      {},
+    );
+  }
+
+  /** Unhide a previously hidden review. */
+  unhide(targetAgentId: string, reviewId: string): Promise<Review> {
+    return this.chakra.relayRequest<Review>(
+      "POST",
+      `/v1/agents/${encodeURIComponent(targetAgentId)}/reviews/${encodeURIComponent(reviewId)}/unhide`,
+      {},
+    );
+  }
 }
 
 // Re-export the AgentSummary too for downstream consumers building DTOs.

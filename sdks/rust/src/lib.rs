@@ -49,5 +49,6 @@ pub use error::{Error, Result};
 pub use inbox::{HandlerResult, InboxClient, ServeBuilder};
 pub use resources::{
     AgentsClient, CapabilitiesClient, FriendshipsClient, GrantsClient, InvocationsClient,
+    ReviewsClient,
 };
 pub use types::*;
