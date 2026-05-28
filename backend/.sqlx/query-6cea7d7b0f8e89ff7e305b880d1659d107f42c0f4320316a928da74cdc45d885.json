@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        INSERT INTO agent_capabilities\n            (id, agent_id, name, description, input_schema, output_schema,\n             visibility, semantics, created_by_user_id)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n        ON CONFLICT (agent_id, name) DO NOTHING\n        RETURNING id, agent_id, name, description, input_schema, output_schema,\n                  visibility, created_at, updated_at\n        ",
+  "query": "\n        SELECT id, agent_id, name, description, input_schema, output_schema,\n               visibility, created_at, updated_at,\n               public_invoke, public_monthly_quota_per_agent\n        FROM agent_capabilities\n        WHERE agent_id = $1\n          AND ($2::boolean OR visibility = 'network')\n        ORDER BY name ASC\n        ",
   "describe": {
     "columns": [
       {
@@ -47,19 +47,22 @@
         "ordinal": 8,
         "name": "updated_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "public_invoke",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 10,
+        "name": "public_monthly_quota_per_agent",
+        "type_info": "Int4"
       }
     ],
     "parameters": {
       "Left": [
         "Uuid",
-        "Uuid",
-        "Text",
-        "Text",
-        "Jsonb",
-        "Jsonb",
-        "Text",
-        "Text",
-        "Uuid"
+        "Bool"
       ]
     },
     "nullable": [
@@ -71,8 +74,10 @@
       false,
       false,
       false,
-      false
+      false,
+      false,
+      true
     ]
   },
-  "hash": "9ec8a25cc2162819073226fa978870a25a737e8da5db59cb36aeba4ed767789c"
+  "hash": "6cea7d7b0f8e89ff7e305b880d1659d107f42c0f4320316a928da74cdc45d885"
 }

@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO agent_capabilities\n                  (id, agent_id, name, description, input_schema, output_schema,\n                   visibility, semantics, public_invoke, public_monthly_quota_per_agent)\n               VALUES ($1, $2, 'public_op', '', '{}'::jsonb, '{}'::jsonb,\n                       'network', $3, true, $4),\n                      ($5, $6, 'friend_op', '', '{}'::jsonb, '{}'::jsonb,\n                       'network', 'autonomous', false, NULL)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Int4",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "20e4b90e5722eb3c8e44beb2a8e8205b4dc19ce9037899fe03d7a0538f76f836"
+}

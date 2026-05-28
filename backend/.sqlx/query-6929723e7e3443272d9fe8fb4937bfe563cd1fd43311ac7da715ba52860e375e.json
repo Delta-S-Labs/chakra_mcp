@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COUNT(*) AS \"n!\"\n        FROM relay_invocations\n        WHERE grantee_agent_id = $1\n          AND capability_id = $2\n          AND created_at >= date_trunc('month', now())\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "6929723e7e3443272d9fe8fb4937bfe563cd1fd43311ac7da715ba52860e375e"
+}

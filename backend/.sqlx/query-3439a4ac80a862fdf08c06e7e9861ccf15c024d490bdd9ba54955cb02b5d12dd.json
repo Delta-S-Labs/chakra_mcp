@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT cap.id, cap.name, cap.agent_id AS granter_agent_id,\n               cap.public_invoke, cap.public_monthly_quota_per_agent,\n               ga.visibility AS granter_visibility\n        FROM agent_capabilities cap\n        JOIN agents ga ON ga.id = cap.agent_id\n        WHERE cap.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "granter_agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "public_invoke",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "public_monthly_quota_per_agent",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "granter_visibility",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "3439a4ac80a862fdf08c06e7e9861ccf15c024d490bdd9ba54955cb02b5d12dd"
+}

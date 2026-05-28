@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, agent_id, name, description, input_schema, output_schema,\n               visibility, created_at, updated_at\n        FROM agent_capabilities\n        WHERE agent_id = $1\n          AND ($2::boolean OR visibility = 'network')\n        ORDER BY name ASC\n        ",
+  "query": "\n        UPDATE agent_capabilities\n        SET description = COALESCE($3, description),\n            input_schema = COALESCE($4, input_schema),\n            output_schema = COALESCE($5, output_schema),\n            visibility = COALESCE($6, visibility),\n            public_invoke = COALESCE($7, public_invoke),\n            public_monthly_quota_per_agent = $8\n        WHERE id = $1 AND agent_id = $2\n        RETURNING id, agent_id, name, description, input_schema, output_schema,\n                  visibility, created_at, updated_at,\n                  public_invoke, public_monthly_quota_per_agent\n        ",
   "describe": {
     "columns": [
       {
@@ -47,12 +47,28 @@
         "ordinal": 8,
         "name": "updated_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "public_invoke",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 10,
+        "name": "public_monthly_quota_per_agent",
+        "type_info": "Int4"
       }
     ],
     "parameters": {
       "Left": [
         "Uuid",
-        "Bool"
+        "Uuid",
+        "Text",
+        "Jsonb",
+        "Jsonb",
+        "Text",
+        "Bool",
+        "Int4"
       ]
     },
     "nullable": [
@@ -64,8 +80,10 @@
       false,
       false,
       false,
-      false
+      false,
+      false,
+      true
     ]
   },
-  "hash": "0b8e290184083b9af931fd85fae01fc345d1406b2417ffac3779421a8761d767"
+  "hash": "0b1e45ac5f570415972ca93e18b0c0eec5b4bd0c1b37b599396fdb3743663a5c"
 }
