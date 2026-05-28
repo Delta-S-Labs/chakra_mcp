@@ -140,6 +140,11 @@ enum Cmd {
     /// grant automatically — equivalent to `chakramcp invoke` against
     /// the reserved `message_owner` capability on the peer.
     Message(commands::message::Args),
+
+    /// Read or write agent ratings & reviews (migration 0023).
+    /// `list`, `write`, `eligibility`, `hide`, `unhide`.
+    #[command(subcommand, alias = "review")]
+    Reviews(commands::reviews::Cmd),
 }
 
 #[tokio::main]
@@ -239,6 +244,7 @@ async fn run() -> Result<()> {
         Cmd::Discover(args) => commands::discover::run(args, ApiClient::new(cfg)?).await?,
         Cmd::Capabilities(cmd) => commands::capabilities::run(cmd, ApiClient::new(cfg)?).await?,
         Cmd::Message(args) => commands::message::run(args, ApiClient::new(cfg)?).await?,
+        Cmd::Reviews(cmd) => commands::reviews::run(cmd, ApiClient::new(cfg)?).await?,
     }
 
     Ok(())
