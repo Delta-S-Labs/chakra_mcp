@@ -291,11 +291,7 @@ impl<'a> ReviewsClient<'a> {
     /// Write or upsert a review. Rating must be 1-5 and
     /// `tagged_capability_ids` must have ≥ 1 entry that the reviewer
     /// has actually invoked (status != 'rejected') on the target.
-    pub async fn write(
-        &self,
-        target_agent_id: &str,
-        body: &WriteReviewRequest,
-    ) -> Result<Review> {
+    pub async fn write(&self, target_agent_id: &str, body: &WriteReviewRequest) -> Result<Review> {
         self.parent
             .relay_post(
                 &format!("/v1/agents/{}/reviews", urlencode(target_agent_id)),
