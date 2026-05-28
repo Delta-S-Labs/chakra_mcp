@@ -36,6 +36,13 @@ export interface Capability {
   visibility: Visibility;
   created_at: string;
   updated_at: string;
+  /** Migration 0022: owner-opt-in tier for public invocation.
+   *  True ⇒ any registered agent can call this capability without
+   *  a friendship/grant, bounded by `public_monthly_quota_per_agent`. */
+  public_invoke: boolean;
+  /** Per-invoker monthly cap (calendar month). Non-null only when
+   *  `public_invoke` is true. */
+  public_monthly_quota_per_agent: number | null;
 }
 
 export interface CreateAgentRequest {
@@ -61,6 +68,11 @@ export interface CreateCapabilityRequest {
   input_schema?: Record<string, unknown>;
   output_schema?: Record<string, unknown>;
   visibility?: Visibility;
+  /** Migration 0022. When true, the capability becomes callable
+   *  without a friendship/grant. Requires `visibility` to resolve to
+   *  `"network"` and a non-null monthly quota. */
+  public_invoke?: boolean;
+  public_monthly_quota_per_agent?: number;
 }
 
 export interface UpdateCapabilityRequest {
@@ -68,6 +80,8 @@ export interface UpdateCapabilityRequest {
   input_schema?: Record<string, unknown>;
   output_schema?: Record<string, unknown>;
   visibility?: Visibility;
+  public_invoke?: boolean;
+  public_monthly_quota_per_agent?: number;
 }
 
 export class RelayClientError extends Error {

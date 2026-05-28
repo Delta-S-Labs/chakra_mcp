@@ -26,6 +26,12 @@ export function CapabilitiesPanel({
   const [inputSchema, setInputSchema] = useState("{}");
   const [outputSchema, setOutputSchema] = useState("{}");
   const [visibility, setVisibility] = useState<Visibility>("network");
+  // Migration 0022: opt this capability into being callable by any
+  // registered agent without a friendship/grant. The toggle only
+  // appears when visibility is `network` (matches the DB CHECK
+  // `cap_public_requires_network`).
+  const [publicInvoke, setPublicInvoke] = useState(false);
+  const [monthlyQuota, setMonthlyQuota] = useState<number | "">("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -53,6 +59,19 @@ export function CapabilitiesPanel({
       setError(err instanceof Error ? err.message : "Schema parse failed.");
       return;
     }
+    // Pre-validate public-invoke combo so the user sees a clear error
+    // rather than waiting for the relay's 400. The relay validates
+    // identically; this is just UX.
+    if (publicInvoke) {
+      if (visibility !== "network") {
+        setError("Public-invoke requires visibility 'network'.");
+        return;
+      }
+      if (monthlyQuota === "" || monthlyQuota < 1) {
+        setError("Monthly quota must be at least 1 when public-invoke is on.");
+        return;
+      }
+    }
     setPending(true);
     try {
       const created = await createCapability(token, agentId, {
@@ -61,6 +80,12 @@ export function CapabilitiesPanel({
         input_schema: input,
         output_schema: output,
         visibility,
+        ...(publicInvoke
+          ? {
+              public_invoke: true,
+              public_monthly_quota_per_agent: monthlyQuota as number,
+            }
+          : {}),
       });
       setItems((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
       setName("");
@@ -68,6 +93,8 @@ export function CapabilitiesPanel({
       setInputSchema("{}");
       setOutputSchema("{}");
       setVisibility("network");
+      setPublicInvoke(false);
+      setMonthlyQuota("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't add capability.");
     } finally {
@@ -134,6 +161,18 @@ export function CapabilitiesPanel({
                   >
                     {cap.visibility}
                   </span>
+                  {cap.public_invoke && (
+                    <span
+                      className={`${styles.badge} ${styles.badgeOn}`}
+                      title={
+                        cap.public_monthly_quota_per_agent
+                          ? `Publicly invokable — ${cap.public_monthly_quota_per_agent}/month per agent.`
+                          : "Publicly invokable."
+                      }
+                    >
+                      public · {cap.public_monthly_quota_per_agent}/mo
+                    </span>
+                  )}
                 </div>
                 {cap.description && (
                   <div className={styles.rowMeta}>{cap.description}</div>
@@ -179,12 +218,59 @@ export function CapabilitiesPanel({
               <span className={styles.fieldLabel}>Visibility</span>
               <select
                 value={visibility}
-                onChange={(e) => setVisibility(e.target.value as Visibility)}
+                onChange={(e) => {
+                  const v = e.target.value as Visibility;
+                  setVisibility(v);
+                  // Flipping away from "network" auto-clears the
+                  // public-invoke toggle so the form can't submit
+                  // a state the server's CHECKs would reject.
+                  if (v !== "network") {
+                    setPublicInvoke(false);
+                    setMonthlyQuota("");
+                  }
+                }}
               >
                 <option value="network">Network</option>
                 <option value="private">Private</option>
               </select>
             </label>
+
+            {/* Migration 0022: public-invoke toggle. Only rendered for
+                network-visible capabilities so we never show users a
+                control whose state the relay would 400 on. */}
+            {visibility === "network" && (
+              <label
+                className={`${styles.field} ${styles.fieldFull}`}
+                style={{ flexDirection: "row", alignItems: "center", gap: "0.55rem" }}
+              >
+                <input
+                  type="checkbox"
+                  checked={publicInvoke}
+                  onChange={(e) => {
+                    setPublicInvoke(e.target.checked);
+                    if (!e.target.checked) setMonthlyQuota("");
+                  }}
+                />
+                <span className={styles.fieldLabel} style={{ marginRight: "auto" }}>
+                  Publicly invokable — any agent can call it without a friendship
+                </span>
+              </label>
+            )}
+            {visibility === "network" && publicInvoke && (
+              <label className={styles.field}>
+                <span className={styles.fieldLabel}>Monthly quota per agent</span>
+                <input
+                  type="number"
+                  min={1}
+                  required
+                  value={monthlyQuota}
+                  onChange={(e) =>
+                    setMonthlyQuota(e.target.value === "" ? "" : Number(e.target.value))
+                  }
+                  placeholder="100"
+                />
+              </label>
+            )}
 
             <label className={`${styles.field} ${styles.fieldFull}`}>
               <span className={styles.fieldLabel}>Description</span>

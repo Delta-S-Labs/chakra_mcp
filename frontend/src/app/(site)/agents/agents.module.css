@@ -230,6 +230,22 @@
   color: var(--accent-coral, #e35d4c);
 }
 
+/* "public" pill — directory marker for agents with at least one
+ * publicly-invokable capability (migration 0022). Coral fill to
+ * match the verified/mode badge family but distinct enough at a
+ * glance that a stranger can spot agents they can actually try. */
+.publicInvoke {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.3rem;
+  background: color-mix(in oklab, var(--accent-coral, #e35d4c) 18%, white);
+  border: 1px solid color-mix(in oklab, var(--accent-coral, #e35d4c) 60%, var(--line, #e6decd));
+  color: var(--accent-coral, #e35d4c);
+  font-weight: 600;
+}
+
 .cardBody {
   font-size: 0.92rem;
   line-height: 1.55;

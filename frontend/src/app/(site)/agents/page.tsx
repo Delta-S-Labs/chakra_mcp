@@ -38,6 +38,11 @@ interface DiscoveryAgent {
   friend_count: number;
   created_at: string;
   verified: boolean;
+  /** Migration 0022: true when this agent has ≥1 publicly-invokable
+   *  capability — i.e. non-friends can call something here without
+   *  a friendship/grant. Per-capability detail (which caps, what
+   *  quotas) lives on the agent's detail page. */
+  has_public_capabilities: boolean;
 }
 
 interface DiscoveryResponse {
@@ -295,6 +300,14 @@ function AgentCard({ agent }: { agent: DiscoveryAgent }) {
             </span>
           )}
           <ModeBadge mode={agent.mode} />
+          {agent.has_public_capabilities && (
+            <span
+              className={styles.publicInvoke}
+              title="This agent has ≥1 publicly invokable capability — non-friends can call it (under a per-invoker monthly quota)."
+            >
+              public
+            </span>
+          )}
         </p>
       </header>
       {agent.description && (
