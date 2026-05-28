@@ -71,6 +71,13 @@ class Capability(TypedDict):
     visibility: Visibility
     created_at: str
     updated_at: str
+    # Migration 0022: owner-opt-in tier for public invocation.
+    # True ⇒ any registered agent can call this capability without
+    # a friendship/grant, bounded by `public_monthly_quota_per_agent`.
+    public_invoke: bool
+    # Per-invoker monthly cap (calendar month). Present only when
+    # `public_invoke=True`.
+    public_monthly_quota_per_agent: int | None
 
 
 class AgentSummary(TypedDict):
@@ -206,6 +213,20 @@ class CreateCapabilityRequest(TypedDict, total=False):
     input_schema: dict[str, Any]
     output_schema: dict[str, Any]
     visibility: Visibility
+    # Migration 0022. Opt this capability into being callable without
+    # a friendship/grant. When True, visibility must resolve to
+    # "network" and `public_monthly_quota_per_agent` is required.
+    public_invoke: bool
+    public_monthly_quota_per_agent: int
+
+
+class UpdateCapabilityRequest(TypedDict, total=False):
+    description: str
+    input_schema: dict[str, Any]
+    output_schema: dict[str, Any]
+    visibility: Visibility
+    public_invoke: bool
+    public_monthly_quota_per_agent: int
 
 
 class ProposeFriendshipRequest(TypedDict, total=False):

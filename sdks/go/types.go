@@ -117,6 +117,14 @@ type Capability struct {
 	Visibility    Visibility             `json:"visibility"`
 	CreatedAt     time.Time              `json:"created_at"`
 	UpdatedAt     time.Time              `json:"updated_at"`
+	// PublicInvoke = true when the owner has opted this capability
+	// into being callable without a friendship/grant (migration 0022).
+	// When true, PublicMonthlyQuotaPerAgent carries the per-invoker
+	// monthly cap.
+	PublicInvoke bool `json:"public_invoke"`
+	// PublicMonthlyQuotaPerAgent — per-invoker monthly quota (calendar
+	// month). Non-nil only when PublicInvoke is true.
+	PublicMonthlyQuotaPerAgent *int32 `json:"public_monthly_quota_per_agent"`
 }
 
 type AgentSummary struct {
@@ -236,6 +244,21 @@ type CreateCapabilityRequest struct {
 	InputSchema  map[string]interface{} `json:"input_schema,omitempty"`
 	OutputSchema map[string]interface{} `json:"output_schema,omitempty"`
 	Visibility   Visibility             `json:"visibility,omitempty"`
+	// PublicInvoke (migration 0022): when *true, makes the capability
+	// callable without a friendship/grant. Requires Visibility == Network
+	// and PublicMonthlyQuotaPerAgent != nil. Pointer so the zero value
+	// doesn't accidentally set it false on every PATCH.
+	PublicInvoke               *bool  `json:"public_invoke,omitempty"`
+	PublicMonthlyQuotaPerAgent *int32 `json:"public_monthly_quota_per_agent,omitempty"`
+}
+
+type UpdateCapabilityRequest struct {
+	Description                *string                `json:"description,omitempty"`
+	InputSchema                map[string]interface{} `json:"input_schema,omitempty"`
+	OutputSchema               map[string]interface{} `json:"output_schema,omitempty"`
+	Visibility                 Visibility             `json:"visibility,omitempty"`
+	PublicInvoke               *bool                  `json:"public_invoke,omitempty"`
+	PublicMonthlyQuotaPerAgent *int32                 `json:"public_monthly_quota_per_agent,omitempty"`
 }
 
 type ProposeFriendshipRequest struct {
@@ -251,10 +274,15 @@ type CreateGrantRequest struct {
 	ExpiresAt      *time.Time `json:"expires_at,omitempty"`
 }
 
+// InvokeRequest carries exactly one of GrantID (trusted path) or
+// CapabilityID (public-invoke path, migration 0022). The relay
+// returns 400 if you send both or neither. Both are `omitempty` so a
+// caller fills only the one it's using.
 type InvokeRequest struct {
-	GrantID         string          `json:"grant_id"`
-	GranteeAgentID  string          `json:"grantee_agent_id"`
-	Input           json.RawMessage `json:"input"`
+	GrantID        string          `json:"grant_id,omitempty"`
+	CapabilityID   string          `json:"capability_id,omitempty"`
+	GranteeAgentID string          `json:"grantee_agent_id"`
+	Input          json.RawMessage `json:"input"`
 }
 
 // HandlerResult is what an inbox.serve handler returns.

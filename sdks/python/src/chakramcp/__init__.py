@@ -13,7 +13,7 @@ helpers (``invoke_and_wait``, ``inbox.serve``).
 __version__ = "0.3.1"
 
 from ._async import AsyncChakraMCP
-from ._errors import ChakraMCPError
+from ._errors import ChakraMCPError, QuotaExhaustedError
 from ._sync import ChakraMCP
 from ._templates import (
     CHAKRAMCP_TEMPLATES,
@@ -46,6 +46,7 @@ from ._types import (
     ProposeFriendshipRequest,
     ResultStatus,
     UpdateAgentRequest,
+    UpdateCapabilityRequest,
     User,
     Visibility,
 )
@@ -54,6 +55,7 @@ __all__ = [
     "AsyncChakraMCP",
     "ChakraMCP",
     "ChakraMCPError",
+    "QuotaExhaustedError",
     "CHAKRAMCP_TEMPLATES",
     "MESSAGE_OWNER",
     "get_template",
@@ -64,6 +66,7 @@ __all__ = [
     "Capability",
     "CreateAgentRequest",
     "CreateCapabilityRequest",
+    "UpdateCapabilityRequest",
     "CreateGrantRequest",
     "Friendship",
     "FriendshipContext",

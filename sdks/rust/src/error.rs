@@ -24,6 +24,17 @@ pub enum Error {
         message: String,
     },
 
+    /// Public-invoke monthly quota exhausted (HTTP 429, body code
+    /// `monthly_quota_exhausted`; migration 0022). Surfaces the
+    /// owner-set quota and the UTC instant the window resets so
+    /// callers can back off cleanly.
+    #[error("[429 monthly_quota_exhausted] {message} (quota={quota}, resets_at={resets_at})")]
+    QuotaExhausted {
+        message: String,
+        quota: i32,
+        resets_at: chrono::DateTime<chrono::Utc>,
+    },
+
     #[error("invocation timed out after {0:?} - still in flight; check the audit log")]
     InvocationTimeout(std::time::Duration),
 

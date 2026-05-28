@@ -132,6 +132,13 @@ pub struct Capability {
     pub visibility: Visibility,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// True when the owner has opted this capability into being
+    /// callable without a friendship/grant (migration 0022). When
+    /// true, `public_monthly_quota_per_agent` carries the per-invoker
+    /// monthly cap.
+    pub public_invoke: bool,
+    /// Per-invoker monthly quota. Some(_) only when `public_invoke`.
+    pub public_monthly_quota_per_agent: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -273,6 +280,31 @@ pub struct CreateCapabilityRequest {
     pub output_schema: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub visibility: Option<Visibility>,
+    /// Migration 0022. When `Some(true)`, the capability becomes
+    /// callable by any registered agent without a friendship/grant —
+    /// requires `visibility=Network` and a non-`None` quota.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub public_invoke: Option<bool>,
+    /// Per-invoker monthly cap (calendar month). Required when
+    /// `public_invoke` is on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub public_monthly_quota_per_agent: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct UpdateCapabilityRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_schema: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_schema: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<Visibility>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub public_invoke: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub public_monthly_quota_per_agent: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -292,9 +324,15 @@ pub struct CreateGrantRequest {
     pub expires_at: Option<DateTime<Utc>>,
 }
 
+/// Two flavours — exactly one of `grant_id` (trusted) or
+/// `capability_id` (public-invoke, migration 0022) must be set. The
+/// relay returns 400 if you send both or neither.
 #[derive(Debug, Clone, Serialize)]
 pub struct InvokeRequest {
-    pub grant_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grant_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capability_id: Option<String>,
     pub grantee_agent_id: String,
     pub input: Value,
 }
