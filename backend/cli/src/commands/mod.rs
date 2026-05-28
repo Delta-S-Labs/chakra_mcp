@@ -10,3 +10,4 @@ pub mod message;
 pub mod networks;
 pub mod orgs;
 pub mod pair;
+pub mod reviews;
