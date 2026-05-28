@@ -51,6 +51,7 @@ examples/python-langchain/.python-version
 examples/rust-rig/target/
 examples/rust-rig/Cargo.lock
 examples/typescript-mastra/dist/
+examples/typescript-mastra/pnpm-lock.yaml
 
 # IDE
 .idea/
