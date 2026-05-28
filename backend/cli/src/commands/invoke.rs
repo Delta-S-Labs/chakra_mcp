@@ -50,13 +50,21 @@ pub struct Args {
     pub send: SendArgs,
 }
 
-/// Legacy "submit an invocation now" args. When no subcommand is
-/// given, these (with `--grant` required) are what the CLI accepts.
+/// Legacy "submit an invocation now" args. Exactly one of `--grant`
+/// (trusted path) or `--capability` (public-invoke path, migration
+/// 0022) is required.
 #[derive(Parser, Debug, Default)]
 pub struct SendArgs {
-    /// Grant id authorising this call.
-    #[arg(long)]
+    /// Grant id authorising this call. Trusted path: friendship +
+    /// grant already in place. Mutually exclusive with `--capability`.
+    #[arg(long, conflicts_with = "capability")]
     pub grant: Option<String>,
+    /// Public-invoke path: target a capability directly by id without
+    /// a friendship/grant. Only works for capabilities whose owner has
+    /// set `public_invoke=true` (see `capabilities add --public-invoke
+    /// --monthly-quota N`). Mutually exclusive with `--grant`.
+    #[arg(long)]
+    pub capability: Option<String>,
     /// Your agent that's making the call (the grantee side).
     #[arg(long = "as")]
     pub as_agent: Option<String>,
@@ -166,20 +174,37 @@ pub async fn run(args: Args, api: ApiClient) -> Result<()> {
 // ─── Legacy `invoke --grant … --as …` ─────────────────────
 
 async fn legacy_send(send: SendArgs, api: &ApiClient) -> Result<()> {
-    let grant = send.grant.ok_or_else(|| {
-        anyhow::anyhow!(
-            "--grant is required — see `chakramcp grants list` or use `chakramcp invoke ensure`"
-        )
-    })?;
+    // Exactly one of --grant (trusted) or --capability (public-invoke).
+    // Clap's `conflicts_with` on --grant already rejects both at the
+    // arg layer; this is the "neither" guard with a useful message.
     let as_agent = send
         .as_agent
         .ok_or_else(|| anyhow::anyhow!("--as is required"))?;
     let input = read_json_arg(&send.input)?;
-    let body = json!({
-        "grant_id": grant,
-        "grantee_agent_id": as_agent,
-        "input": input,
-    });
+    let body = match (send.grant, send.capability) {
+        (Some(grant), None) => json!({
+            "grant_id": grant,
+            "grantee_agent_id": as_agent,
+            "input": input,
+        }),
+        (None, Some(capability_id)) => json!({
+            "capability_id": capability_id,
+            "grantee_agent_id": as_agent,
+            "input": input,
+        }),
+        (None, None) => {
+            return Err(anyhow::anyhow!(
+                "one of --grant (trusted) or --capability (public-invoke) is required — see `chakramcp grants list` or `chakramcp invoke ensure`"
+            ));
+        }
+        (Some(_), Some(_)) => {
+            // Should be unreachable via clap conflicts_with, but a
+            // belt-and-braces guard keeps the error story honest.
+            return Err(anyhow::anyhow!(
+                "specify exactly one of --grant or --capability, not both"
+            ));
+        }
+    };
     let resp: Value = api.post_relay("/v1/invoke", &body).await?;
 
     if !send.wait {
