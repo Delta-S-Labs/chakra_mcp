@@ -9,3 +9,4 @@ pub mod invoke;
 pub mod jwks;
 pub mod mcp;
 pub mod published_cards;
+pub mod reviews;

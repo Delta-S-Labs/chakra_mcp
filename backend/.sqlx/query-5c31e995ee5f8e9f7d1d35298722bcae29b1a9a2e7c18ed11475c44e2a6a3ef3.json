@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO agent_review_tags (review_id, capability_id)\n        SELECT $1, t.id\n        FROM unnest($2::uuid[]) AS t(id)\n        ON CONFLICT DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5c31e995ee5f8e9f7d1d35298722bcae29b1a9a2e7c18ed11475c44e2a6a3ef3"
+}

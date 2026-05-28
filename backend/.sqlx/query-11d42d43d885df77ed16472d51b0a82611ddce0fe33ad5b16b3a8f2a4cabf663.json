@@ -1,0 +1,143 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            r.id, r.reviewer_agent_id, r.target_agent_id, r.rating, r.comment,\n            r.tier, r.hidden_at, r.created_at, r.updated_at,\n            ra.slug as r_slug, ra.display_name as r_display,\n            racc.id as r_acct_id, racc.slug as r_acct_slug, racc.display_name as r_acct_display,\n            ta.slug as t_slug, ta.display_name as t_display,\n            tacc.id as t_acct_id, tacc.slug as t_acct_slug, tacc.display_name as t_acct_display,\n            EXISTS(\n                SELECT 1 FROM account_memberships m\n                WHERE m.account_id = racc.id AND m.user_id = $2\n            ) AS \"i_authored!\",\n            COALESCE(\n                (\n                    SELECT json_agg(json_build_object('capability_id', c.id, 'capability_name', c.name)\n                                    ORDER BY c.name)\n                    FROM agent_review_tags rt\n                    JOIN agent_capabilities c ON c.id = rt.capability_id\n                    WHERE rt.review_id = r.id\n                ),\n                '[]'::json\n            ) AS \"tags!\"\n        FROM agent_reviews r\n        JOIN agents ra   ON ra.id   = r.reviewer_agent_id\n        JOIN accounts racc ON racc.id = ra.account_id\n        JOIN agents ta   ON ta.id   = r.target_agent_id\n        JOIN accounts tacc ON tacc.id = ta.account_id\n        WHERE r.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "reviewer_agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "target_agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "rating",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 4,
+        "name": "comment",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "tier",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "hidden_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "r_slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "r_display",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "r_acct_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 12,
+        "name": "r_acct_slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "r_acct_display",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "t_slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 15,
+        "name": "t_display",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 16,
+        "name": "t_acct_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 17,
+        "name": "t_acct_slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 18,
+        "name": "t_acct_display",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 19,
+        "name": "i_authored!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 20,
+        "name": "tags!",
+        "type_info": "Json"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "11d42d43d885df77ed16472d51b0a82611ddce0fe33ad5b16b3a8f2a4cabf663"
+}
