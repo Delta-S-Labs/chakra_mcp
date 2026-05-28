@@ -24,6 +24,11 @@ export interface Agent {
   updated_at: string;
   is_mine: boolean;
   capability_count: number;
+  /** Migration 0023: average of un-hidden review ratings.
+   *  `null` when the agent has no reviews yet. */
+  avg_rating: number | null;
+  /** Count of un-hidden reviews. */
+  review_count: number;
 }
 
 export interface Capability {
@@ -522,6 +527,133 @@ export function listInvocations(
   if (opts.status) qs.set("status", opts.status);
   const q = qs.toString();
   return request<Invocation[]>(`/v1/invocations${q ? `?${q}` : ""}`, { token });
+}
+
+// ─── Reviews (migration 0023) ────────────────────────────
+
+export type ReviewTier = "friend" | "public";
+
+export interface ReviewTag {
+  capability_id: string;
+  capability_name: string;
+}
+
+export interface Review {
+  id: string;
+  reviewer: AgentSummary;
+  target: AgentSummary;
+  rating: number;
+  comment: string | null;
+  /** Stamped at write-time. Won't drift if the friendship state
+   *  changes later. */
+  tier: ReviewTier;
+  tags: ReviewTag[];
+  hidden: boolean;
+  created_at: string;
+  updated_at: string;
+  i_authored: boolean;
+}
+
+export interface ReviewDistribution {
+  "1": number;
+  "2": number;
+  "3": number;
+  "4": number;
+  "5": number;
+}
+
+export interface ReviewSummary {
+  average: number | null;
+  count: number;
+  distribution: ReviewDistribution;
+}
+
+export interface ReviewListResponse {
+  reviews: Review[];
+  next_cursor?: string | null;
+  summary: ReviewSummary;
+}
+
+export interface ReviewListQuery {
+  cursor?: string;
+  limit?: number;
+  tier?: ReviewTier;
+  /** Owners-only flag. Silently ignored for non-target-members. */
+  include_hidden?: boolean;
+}
+
+export interface WriteReviewRequest {
+  reviewer_agent_id: string;
+  rating: number;
+  comment?: string | null;
+  tagged_capability_ids: string[];
+}
+
+export interface EligibleReviewer {
+  reviewer_agent_id: string;
+  reviewer_display_name: string;
+  tagable_capability_ids: string[];
+}
+
+export interface EligibilityResponse {
+  eligible: EligibleReviewer[];
+}
+
+export function listReviews(
+  token: string,
+  targetAgentId: string,
+  query: ReviewListQuery = {},
+) {
+  const qs = new URLSearchParams();
+  if (query.cursor) qs.set("cursor", query.cursor);
+  if (query.limit !== undefined) qs.set("limit", String(query.limit));
+  if (query.tier) qs.set("tier", query.tier);
+  if (query.include_hidden) qs.set("include_hidden", "true");
+  const q = qs.toString();
+  return request<ReviewListResponse>(
+    `/v1/agents/${encodeURIComponent(targetAgentId)}/reviews${q ? `?${q}` : ""}`,
+    { token },
+  );
+}
+
+export function writeReview(
+  token: string,
+  targetAgentId: string,
+  body: WriteReviewRequest,
+) {
+  return request<Review>(
+    `/v1/agents/${encodeURIComponent(targetAgentId)}/reviews`,
+    { method: "POST", token, body: JSON.stringify(body) },
+  );
+}
+
+export function getReviewEligibility(token: string, targetAgentId: string) {
+  return request<EligibilityResponse>(
+    `/v1/agents/${encodeURIComponent(targetAgentId)}/reviews/eligibility`,
+    { token },
+  );
+}
+
+export function hideReview(
+  token: string,
+  targetAgentId: string,
+  reviewId: string,
+) {
+  return request<Review>(
+    `/v1/agents/${encodeURIComponent(targetAgentId)}/reviews/${encodeURIComponent(reviewId)}/hide`,
+    { method: "POST", token, body: "{}" },
+  );
+}
+
+export function unhideReview(
+  token: string,
+  targetAgentId: string,
+  reviewId: string,
+) {
+  return request<Review>(
+    `/v1/agents/${encodeURIComponent(targetAgentId)}/reviews/${encodeURIComponent(reviewId)}/unhide`,
+    { method: "POST", token, body: "{}" },
+  );
 }
 
 export const relayBaseUrl = BASE;
