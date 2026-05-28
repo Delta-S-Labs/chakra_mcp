@@ -21,6 +21,15 @@ pub struct CapabilityDto {
     pub visibility: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
+    /// True when this capability is callable by any registered agent
+    /// without a friendship/grant. Owner opt-in via the capability
+    /// create/update endpoints; default false. See migration 0022 +
+    /// docs/superpowers/specs/...-public-invokable-...
+    pub public_invoke: bool,
+    /// Per-invoker monthly cap (calendar month) for a public
+    /// capability. None when `public_invoke` is false; required (>=1)
+    /// when true.
+    pub public_monthly_quota_per_agent: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -40,6 +49,18 @@ pub struct CreateRequest {
     /// `handlers::invoke::report_result`.
     #[serde(default)]
     pub semantics: Option<String>,
+    /// Opt this capability into being callable by any registered
+    /// agent without a friendship. Default false. When true,
+    /// `visibility` must resolve to `network` and
+    /// `public_monthly_quota_per_agent` must be >= 1 (DB CHECKs
+    /// `cap_public_requires_network` + `cap_public_requires_quota`).
+    #[serde(default)]
+    pub public_invoke: Option<bool>,
+    /// Owner-set per-invoker monthly cap. Required when
+    /// `public_invoke` is true. Counted against `relay_invocations`
+    /// rows in the current calendar month.
+    #[serde(default)]
+    pub public_monthly_quota_per_agent: Option<i32>,
 }
 
 fn default_schema() -> serde_json::Value {
@@ -52,6 +73,39 @@ pub struct UpdateRequest {
     pub input_schema: Option<serde_json::Value>,
     pub output_schema: Option<serde_json::Value>,
     pub visibility: Option<String>,
+    /// COALESCE: absent keys leave the column unchanged. When set so
+    /// that effective `public_invoke=true`, the effective `visibility`
+    /// must be `network` and the effective monthly quota must be >= 1
+    /// — server pre-validates by reading the current row.
+    pub public_invoke: Option<bool>,
+    pub public_monthly_quota_per_agent: Option<i32>,
+}
+
+/// Pre-validates the post-write public-invoke triple before letting
+/// it hit the DB CHECKs. Returns 400 with a friendly message rather
+/// than letting a constraint violation bubble up as a 500.
+fn validate_public_invoke_combo(
+    public_invoke: bool,
+    visibility: &str,
+    quota: Option<i32>,
+) -> Result<(), ApiError> {
+    if !public_invoke {
+        return Ok(());
+    }
+    if visibility != "network" {
+        return Err(ApiError::InvalidRequest(
+            "public_invoke=true requires visibility='network'".into(),
+        ));
+    }
+    match quota {
+        Some(n) if n >= 1 => Ok(()),
+        Some(_) => Err(ApiError::InvalidRequest(
+            "public_monthly_quota_per_agent must be >= 1 when public_invoke=true".into(),
+        )),
+        None => Err(ApiError::InvalidRequest(
+            "public_monthly_quota_per_agent is required when public_invoke=true".into(),
+        )),
+    }
 }
 
 async fn agent_account_for_member(
@@ -101,7 +155,8 @@ pub async fn list(
     let rows = sqlx::query!(
         r#"
         SELECT id, agent_id, name, description, input_schema, output_schema,
-               visibility, created_at, updated_at
+               visibility, created_at, updated_at,
+               public_invoke, public_monthly_quota_per_agent
         FROM agent_capabilities
         WHERE agent_id = $1
           AND ($2::boolean OR visibility = 'network')
@@ -125,6 +180,8 @@ pub async fn list(
                 visibility: r.visibility,
                 created_at: r.created_at,
                 updated_at: r.updated_at,
+                public_invoke: r.public_invoke,
+                public_monthly_quota_per_agent: r.public_monthly_quota_per_agent,
             })
             .collect(),
     ))
@@ -167,16 +224,33 @@ pub async fn create(
         ));
     }
 
+    let public_invoke = req.public_invoke.unwrap_or(false);
+    validate_public_invoke_combo(
+        public_invoke,
+        visibility,
+        req.public_monthly_quota_per_agent,
+    )?;
+    // When `public_invoke` is false the quota column is meaningless;
+    // we store NULL so a later flip to true forces the owner to set a
+    // fresh quota rather than reusing a stale leftover value.
+    let public_quota = if public_invoke {
+        req.public_monthly_quota_per_agent
+    } else {
+        None
+    };
+
     let id = Uuid::now_v7();
     let inserted = sqlx::query!(
         r#"
         INSERT INTO agent_capabilities
             (id, agent_id, name, description, input_schema, output_schema,
-             visibility, semantics, created_by_user_id)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             visibility, semantics, created_by_user_id,
+             public_invoke, public_monthly_quota_per_agent)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         ON CONFLICT (agent_id, name) DO NOTHING
         RETURNING id, agent_id, name, description, input_schema, output_schema,
-                  visibility, created_at, updated_at
+                  visibility, created_at, updated_at,
+                  public_invoke, public_monthly_quota_per_agent
         "#,
         id,
         agent_id,
@@ -187,6 +261,8 @@ pub async fn create(
         visibility,
         semantics,
         user.user_id,
+        public_invoke,
+        public_quota,
     )
     .fetch_optional(&state.db)
     .await?
@@ -204,6 +280,8 @@ pub async fn create(
         visibility: inserted.visibility,
         created_at: inserted.created_at,
         updated_at: inserted.updated_at,
+        public_invoke: inserted.public_invoke,
+        public_monthly_quota_per_agent: inserted.public_monthly_quota_per_agent,
     }))
 }
 
@@ -224,16 +302,57 @@ pub async fn update(
         }
     }
 
+    // Read the pre-update row so we can pre-validate the effective
+    // (COALESCE'd) public_invoke / visibility / quota triple before
+    // letting the UPDATE hit the DB CHECKs. One extra round-trip in
+    // exchange for a friendly 400 instead of a 500-shaped constraint
+    // violation.
+    let current = sqlx::query!(
+        r#"
+        SELECT visibility, public_invoke, public_monthly_quota_per_agent
+        FROM agent_capabilities
+        WHERE id = $1 AND agent_id = $2
+        "#,
+        cap_id,
+        agent_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(ApiError::NotFound)?;
+
+    let effective_visibility: &str = req
+        .visibility
+        .as_deref()
+        .unwrap_or(current.visibility.as_str());
+    let effective_public_invoke = req.public_invoke.unwrap_or(current.public_invoke);
+    // When the PATCH explicitly sets `public_invoke=false`, we wipe the
+    // stale quota so re-enabling later forces a fresh choice. Otherwise
+    // we COALESCE the new value in or leave the existing quota.
+    let effective_quota: Option<i32> = if !effective_public_invoke {
+        None
+    } else {
+        req.public_monthly_quota_per_agent
+            .or(current.public_monthly_quota_per_agent)
+    };
+    validate_public_invoke_combo(
+        effective_public_invoke,
+        effective_visibility,
+        effective_quota,
+    )?;
+
     let updated = sqlx::query!(
         r#"
         UPDATE agent_capabilities
         SET description = COALESCE($3, description),
             input_schema = COALESCE($4, input_schema),
             output_schema = COALESCE($5, output_schema),
-            visibility = COALESCE($6, visibility)
+            visibility = COALESCE($6, visibility),
+            public_invoke = COALESCE($7, public_invoke),
+            public_monthly_quota_per_agent = $8
         WHERE id = $1 AND agent_id = $2
         RETURNING id, agent_id, name, description, input_schema, output_schema,
-                  visibility, created_at, updated_at
+                  visibility, created_at, updated_at,
+                  public_invoke, public_monthly_quota_per_agent
         "#,
         cap_id,
         agent_id,
@@ -241,6 +360,8 @@ pub async fn update(
         req.input_schema,
         req.output_schema,
         req.visibility.as_deref(),
+        req.public_invoke,
+        effective_quota,
     )
     .fetch_optional(&state.db)
     .await?
@@ -256,6 +377,8 @@ pub async fn update(
         visibility: updated.visibility,
         created_at: updated.created_at,
         updated_at: updated.updated_at,
+        public_invoke: updated.public_invoke,
+        public_monthly_quota_per_agent: updated.public_monthly_quota_per_agent,
     }))
 }
 

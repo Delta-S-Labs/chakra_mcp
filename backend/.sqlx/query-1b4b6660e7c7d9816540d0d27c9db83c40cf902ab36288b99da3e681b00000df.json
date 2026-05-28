@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT visibility, public_invoke, public_monthly_quota_per_agent\n        FROM agent_capabilities\n        WHERE id = $1 AND agent_id = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "visibility",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "public_invoke",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "public_monthly_quota_per_agent",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "1b4b6660e7c7d9816540d0d27c9db83c40cf902ab36288b99da3e681b00000df"
+}

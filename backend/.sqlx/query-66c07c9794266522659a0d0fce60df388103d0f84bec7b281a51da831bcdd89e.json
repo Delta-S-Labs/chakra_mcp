@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        UPDATE agent_capabilities\n        SET description = COALESCE($3, description),\n            input_schema = COALESCE($4, input_schema),\n            output_schema = COALESCE($5, output_schema),\n            visibility = COALESCE($6, visibility)\n        WHERE id = $1 AND agent_id = $2\n        RETURNING id, agent_id, name, description, input_schema, output_schema,\n                  visibility, created_at, updated_at\n        ",
+  "query": "\n        INSERT INTO agent_capabilities\n            (id, agent_id, name, description, input_schema, output_schema,\n             visibility, semantics, created_by_user_id,\n             public_invoke, public_monthly_quota_per_agent)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)\n        ON CONFLICT (agent_id, name) DO NOTHING\n        RETURNING id, agent_id, name, description, input_schema, output_schema,\n                  visibility, created_at, updated_at,\n                  public_invoke, public_monthly_quota_per_agent\n        ",
   "describe": {
     "columns": [
       {
@@ -47,6 +47,16 @@
         "ordinal": 8,
         "name": "updated_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "public_invoke",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 10,
+        "name": "public_monthly_quota_per_agent",
+        "type_info": "Int4"
       }
     ],
     "parameters": {
@@ -54,9 +64,14 @@
         "Uuid",
         "Uuid",
         "Text",
+        "Text",
         "Jsonb",
         "Jsonb",
-        "Text"
+        "Text",
+        "Text",
+        "Uuid",
+        "Bool",
+        "Int4"
       ]
     },
     "nullable": [
@@ -68,8 +83,10 @@
       false,
       false,
       false,
-      false
+      false,
+      false,
+      true
     ]
   },
-  "hash": "eb1da35870d3a4d613940b8c8256f1ca03da0c01611192597505e0a3b47de70b"
+  "hash": "66c07c9794266522659a0d0fce60df388103d0f84bec7b281a51da831bcdd89e"
 }

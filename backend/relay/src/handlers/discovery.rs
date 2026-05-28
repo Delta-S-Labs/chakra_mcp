@@ -93,6 +93,13 @@ pub struct DiscoveryAgent {
     pub friend_count: i64,
     pub created_at: DateTime<Utc>,
     pub verified: bool,
+    /// True when this agent has at least one `public_invoke=true`
+    /// capability — i.e. non-friends can call something here without
+    /// a friendship/grant. Per-capability detail (which capabilities,
+    /// what quota) lives on `GET /v1/agents/{id}/capabilities`; this
+    /// flag is just the directory-level "publicly callable" signal.
+    /// Migration 0022.
+    pub has_public_capabilities: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -164,7 +171,11 @@ pub async fn search(State(state): State<RelayState>, Query(q): Query<DiscoveryQu
                 a.friend_count,
                 a.created_at,
                 acc.slug       AS account_slug,
-                acc.verified_at IS NOT NULL AS verified
+                acc.verified_at IS NOT NULL AS verified,
+                EXISTS(
+                    SELECT 1 FROM agent_capabilities c
+                    WHERE c.agent_id = a.id AND c.public_invoke = true
+                ) AS has_public_capabilities
               FROM agents a
               JOIN accounts acc ON acc.id = a.account_id
              WHERE a.tombstoned_at  IS NULL
@@ -198,7 +209,8 @@ pub async fn search(State(state): State<RelayState>, Query(q): Query<DiscoveryQu
             tags        AS "tags!",
             friend_count AS "friend_count!",
             created_at  AS "created_at!",
-            verified    AS "verified!"
+            verified    AS "verified!",
+            has_public_capabilities AS "has_public_capabilities!"
           FROM q
         "#,
         q.q.as_deref().and_then(to_tsquery),
@@ -299,6 +311,7 @@ pub async fn search(State(state): State<RelayState>, Query(q): Query<DiscoveryQu
             friend_count: r.friend_count.into(),
             created_at: r.created_at,
             verified: r.verified,
+            has_public_capabilities: r.has_public_capabilities,
         })
         .collect();
 

@@ -75,9 +75,21 @@ const INBOX_MAX_LIMIT: i64 = 100;
 
 #[derive(Debug, Deserialize)]
 pub struct InvokeRequest {
-    pub grant_id: Uuid,
+    /// Trusted path: caller has an active grant from the granter for
+    /// the capability. Resolves friendship + grant the existing way.
+    /// Mutually exclusive with `capability_id`.
+    pub grant_id: Option<Uuid>,
+    /// Public path (no friendship/grant required): target the
+    /// capability directly by id. Only works for capabilities whose
+    /// owner has set `public_invoke = true` (migration 0022). Mutually
+    /// exclusive with `grant_id`. The invoker is still authenticated
+    /// and must be a member of `grantee_agent_id`'s account; only the
+    /// friendship+grant gate is dropped.
+    pub capability_id: Option<Uuid>,
     /// The agent the caller is invoking AS — must be a member of its
-    /// account, must match the grant's grantee_agent_id.
+    /// account. On the trusted path, must match the grant's
+    /// grantee_agent_id; on the public path, just identifies the
+    /// invoker for audit + quota + later review attribution.
     pub grantee_agent_id: Uuid,
     pub input: Value,
 }
@@ -252,10 +264,60 @@ async fn record_terminal(
 }
 
 // ─── POST /v1/invoke (enqueue) ───────────────────────────
+//
+// Two paths:
+//
+//   * Trusted (existing): body carries `grant_id`. Resolves friendship +
+//     grant exactly as before.
+//   * Public (new — migration 0022): body carries `capability_id`. The
+//     capability's owner has opted into `public_invoke=true`, so no
+//     friendship/grant is required — just authentication + membership
+//     in the invoker's own account + a per-invoker monthly quota.
+//
+// Exactly one of grant_id / capability_id must be set; both, or neither,
+// is a 400. Return type widens to `Response` so the public path can emit
+// a 429 with a structured quota payload that doesn't fit `InvokeResponse`.
 pub async fn invoke(
     State(state): State<RelayState>,
     user: AuthUser,
     Json(req): Json<InvokeRequest>,
+) -> Result<axum::response::Response, ApiError> {
+    use axum::response::IntoResponse;
+
+    let grant_id = match (req.grant_id, req.capability_id) {
+        (Some(_), Some(_)) => {
+            return Err(ApiError::InvalidRequest(
+                "specify exactly one of grant_id or capability_id, not both".into(),
+            ));
+        }
+        (None, None) => {
+            return Err(ApiError::InvalidRequest(
+                "one of grant_id (trusted) or capability_id (public) is required".into(),
+            ));
+        }
+        (None, Some(capability_id)) => {
+            return invoke_public(
+                &state,
+                &user,
+                capability_id,
+                req.grantee_agent_id,
+                &req.input,
+            )
+            .await;
+        }
+        (Some(grant_id), None) => grant_id,
+    };
+
+    invoke_trusted(state, user, grant_id, req)
+        .await
+        .map(IntoResponse::into_response)
+}
+
+async fn invoke_trusted(
+    state: RelayState,
+    user: AuthUser,
+    grant_id: Uuid,
+    req: InvokeRequest,
 ) -> Result<(StatusCode, Json<InvokeResponse>), ApiError> {
     let input_preview = truncate_for_audit(&req.input);
 
@@ -275,7 +337,7 @@ pub async fn invoke(
         JOIN agent_capabilities cap ON cap.id = g.capability_id
         WHERE g.id = $1
         "#,
-        req.grant_id,
+        grant_id,
     )
     .fetch_optional(&state.db)
     .await?
@@ -418,6 +480,163 @@ pub async fn invoke(
     ))
 }
 
+/// Public-invoke path (migration 0022). Caller addresses the capability
+/// directly — no grant, no friendship. Still must authenticate + own
+/// the invoker agent. Enforces a per-invoker monthly quota counted
+/// against `relay_invocations`. Writes the invocation with
+/// `grant_id = NULL`.
+async fn invoke_public(
+    state: &RelayState,
+    user: &AuthUser,
+    capability_id: Uuid,
+    grantee_agent_id: Uuid,
+    input: &Value,
+) -> Result<axum::response::Response, ApiError> {
+    use axum::response::IntoResponse;
+    let input_preview = truncate_for_audit(input);
+
+    // Resolve the capability + its owning agent. We hide existence of
+    // non-public or non-network capabilities with a uniform 404 so this
+    // endpoint can't be used to probe private state.
+    let cap = sqlx::query!(
+        r#"
+        SELECT cap.id, cap.name, cap.agent_id AS granter_agent_id,
+               cap.public_invoke, cap.public_monthly_quota_per_agent,
+               ga.visibility AS granter_visibility
+        FROM agent_capabilities cap
+        JOIN agents ga ON ga.id = cap.agent_id
+        WHERE cap.id = $1
+        "#,
+        capability_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(ApiError::NotFound)?;
+
+    if !cap.public_invoke || cap.granter_visibility != "network" {
+        return Err(ApiError::NotFound);
+    }
+    let quota = cap.public_monthly_quota_per_agent.ok_or_else(|| {
+        // Belt: the CHECK guarantees this, but if a row ever slipped
+        // through it'd be a real misconfig and the right move is 500.
+        ApiError::Internal(anyhow::anyhow!(
+            "public_invoke=true with NULL quota for capability {}; DB CHECK should have prevented this",
+            capability_id
+        ))
+    })?;
+
+    // Resolve the invoker agent + its account, then membership-check.
+    let invoker = sqlx::query!(
+        r#"SELECT account_id FROM agents WHERE id = $1"#,
+        grantee_agent_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::InvalidRequest("grantee_agent_id not found".into()))?;
+    if !user_is_member(&state.db, user.user_id, invoker.account_id).await? {
+        return Err(ApiError::Forbidden);
+    }
+
+    // Self-invoke guard. Calling your own agent's public capability
+    // wouldn't be wrong per se, but it pollutes quota + future ratings
+    // with self-traffic, so we reject it explicitly.
+    if cap.granter_agent_id == grantee_agent_id {
+        return Err(ApiError::InvalidRequest(
+            "cannot invoke your own agent's capability via the public path".into(),
+        ));
+    }
+
+    // Per-invoker monthly quota. Calendar month (resets on the 1st).
+    // Consumed on enqueue: every attempt counts so failures can't be
+    // farmed for extra calls. Known race: COUNT-then-INSERT isn't
+    // atomic, so concurrent invokes from the same caller can overshoot
+    // by a small margin — accepted for v1 (abuse bound, not billing).
+    let used: i64 = sqlx::query_scalar!(
+        r#"
+        SELECT COUNT(*) AS "n!"
+        FROM relay_invocations
+        WHERE grantee_agent_id = $1
+          AND capability_id = $2
+          AND created_at >= date_trunc('month', now())
+        "#,
+        grantee_agent_id,
+        capability_id,
+    )
+    .fetch_one(&state.db)
+    .await?;
+    if used >= i64::from(quota) {
+        let resets_at = next_month_start();
+        return Ok((
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(serde_json::json!({
+                "error": {
+                    "code": "monthly_quota_exhausted",
+                    "message": format!(
+                        "monthly quota of {quota} public invocations on this capability exhausted; resets at {resets_at}"
+                    ),
+                    "retryable": false,
+                },
+                "quota": quota,
+                "resets_at": resets_at,
+            })),
+        )
+            .into_response());
+    }
+
+    // Enqueue with grant_id = NULL. Same audit columns as the trusted
+    // path; the friendship/grant context bundled into the eventual
+    // inbox-pull row will be `null` (the inbox handler tolerates it).
+    let id = Uuid::now_v7();
+    sqlx::query!(
+        r#"
+        INSERT INTO relay_invocations
+            (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
+             capability_name, invoked_by_user_id, status, input_preview,
+             api_key_id, minted_jti)
+        VALUES ($1, NULL, $2, $3, $4, $5, $6, 'pending', $7, $8, $9)
+        "#,
+        id,
+        cap.granter_agent_id,
+        grantee_agent_id,
+        capability_id,
+        cap.name,
+        user.user_id,
+        input_preview,
+        user.api_key_id,
+        user.minted_jti,
+    )
+    .execute(&state.db)
+    .await?;
+
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(InvokeResponse {
+            invocation_id: id,
+            status: "pending".into(),
+            error: None,
+        }),
+    )
+        .into_response())
+}
+
+/// First instant of next calendar month, UTC. Used as `resets_at` in
+/// the 429 quota-exhausted response.
+fn next_month_start() -> DateTime<Utc> {
+    use chrono::{Datelike, NaiveDate, TimeZone};
+    let now = Utc::now();
+    let (y, m) = if now.month() == 12 {
+        (now.year() + 1, 1)
+    } else {
+        (now.year(), now.month() + 1)
+    };
+    Utc.from_utc_datetime(
+        &NaiveDate::from_ymd_opt(y, m, 1)
+            .expect("valid date")
+            .and_hms_opt(0, 0, 0)
+            .expect("valid time"),
+    )
+}
+
 // ─── GET /v1/inbox?agent_id=X[&limit=N] ──────────────────
 pub async fn inbox(
     State(state): State<RelayState>,
@@ -508,7 +727,12 @@ pub async fn inbox(
         LEFT JOIN agents ga             ON ga.id  = i.granter_agent_id
         LEFT JOIN agents ea             ON ea.id  = i.grantee_agent_id
         LEFT JOIN grants g              ON g.id   = i.grant_id
-        LEFT JOIN agent_capabilities cap ON cap.id = g.capability_id
+        -- Source the capability via the invocation's own column rather
+        -- than through the grant, so public invokes (grant_id IS NULL)
+        -- still carry the correct HITL `semantics` + capability_name on
+        -- inbox pull. Trusted invokes always have i.capability_id =
+        -- g.capability_id, so this is a no-op for them. (Migration 0022.)
+        LEFT JOIN agent_capabilities cap ON cap.id = i.capability_id
         LEFT JOIN LATERAL (
             SELECT *
             FROM friendships f2
@@ -1618,5 +1842,464 @@ mod hitl_gate_tests {
         .await
         .unwrap();
         assert_eq!(row_status, "succeeded");
+    }
+}
+
+#[cfg(test)]
+mod public_invoke_tests {
+    //! Coverage for the public-invoke path introduced in migration 0022.
+    //! See `docs/superpowers/specs/2026-05-23-public-invokable-capabilities-design.md`.
+
+    use super::legacy_v01_contract_tests::config;
+    use axum::body::Body;
+    use axum::http::{header, Request, StatusCode};
+    use chakramcp_shared::jwt::{encode_jwt, UserClaims};
+    use http_body_util::BodyExt;
+    use serde_json::Value;
+    use sqlx::PgPool;
+    use tower::ServiceExt;
+    use uuid::Uuid;
+
+    /// Two users + their personal accounts; the granter has a network
+    /// agent with a `public_invoke=true` capability, plus a regular
+    /// (friend-only) capability for the negative case. The invoker
+    /// (Bob) has his own agent, private, no friendship with the
+    /// granter. Returns the ids needed by each test.
+    struct PubFixture {
+        granter_user: Uuid,
+        granter_agent: Uuid,
+        invoker_user: Uuid,
+        invoker_account: Uuid,
+        invoker_agent: Uuid,
+        invoker_token: String,
+        public_cap: Uuid,
+        friend_only_cap: Uuid,
+    }
+
+    async fn seed_public(pool: &PgPool, quota: i32, hitl: bool) -> PubFixture {
+        let granter_user = Uuid::now_v7();
+        let invoker_user = Uuid::now_v7();
+        for (uid, name) in [(granter_user, "Granter"), (invoker_user, "Invoker")] {
+            sqlx::query!(
+                r#"INSERT INTO users (id, email, display_name, password_hash)
+                   VALUES ($1, $2, $3, 'x')"#,
+                uid,
+                format!("{name}-{uid}@t.local"),
+                name,
+            )
+            .execute(pool)
+            .await
+            .unwrap();
+        }
+
+        let granter_account = Uuid::now_v7();
+        let invoker_account = Uuid::now_v7();
+        sqlx::query!(
+            r#"INSERT INTO accounts (id, slug, display_name, account_type, owner_user_id)
+               VALUES ($1, $2, 'Granter', 'individual', $3),
+                      ($4, $5, 'Invoker', 'individual', $6)"#,
+            granter_account,
+            format!("granter-{granter_account}"),
+            granter_user,
+            invoker_account,
+            format!("invoker-{invoker_account}"),
+            invoker_user,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            r#"INSERT INTO account_memberships (id, account_id, user_id, role)
+               VALUES ($1, $2, $3, 'owner'),
+                      ($4, $5, $6, 'owner')"#,
+            Uuid::now_v7(),
+            granter_account,
+            granter_user,
+            Uuid::now_v7(),
+            invoker_account,
+            invoker_user,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+
+        let granter_agent = Uuid::now_v7();
+        let invoker_agent = Uuid::now_v7();
+        sqlx::query!(
+            r#"INSERT INTO agents (id, account_id, slug, display_name, visibility)
+               VALUES ($1, $2, 'granter-svc', 'Granter Svc', 'network'),
+                      ($3, $4, 'invoker-cli', 'Invoker CLI', 'private')"#,
+            granter_agent,
+            granter_account,
+            invoker_agent,
+            invoker_account,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+
+        let semantics = if hitl { "human_in_loop" } else { "autonomous" };
+        let public_cap = Uuid::now_v7();
+        let friend_only_cap = Uuid::now_v7();
+        sqlx::query!(
+            r#"INSERT INTO agent_capabilities
+                  (id, agent_id, name, description, input_schema, output_schema,
+                   visibility, semantics, public_invoke, public_monthly_quota_per_agent)
+               VALUES ($1, $2, 'public_op', '', '{}'::jsonb, '{}'::jsonb,
+                       'network', $3, true, $4),
+                      ($5, $6, 'friend_op', '', '{}'::jsonb, '{}'::jsonb,
+                       'network', 'autonomous', false, NULL)"#,
+            public_cap,
+            granter_agent,
+            semantics,
+            quota,
+            friend_only_cap,
+            granter_agent,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+
+        // The invoker authenticates with a JWT. Same `test-secret` the
+        // legacy fixture uses (see `config()` in legacy_v01_contract_tests).
+        let token = encode_jwt(
+            &UserClaims::new(invoker_user, format!("{invoker_user}@t.local"), false, 1),
+            "test-secret",
+        )
+        .unwrap();
+
+        PubFixture {
+            granter_user,
+            granter_agent,
+            invoker_user,
+            invoker_account,
+            invoker_agent,
+            invoker_token: token,
+            public_cap,
+            friend_only_cap,
+        }
+    }
+
+    fn invoke_req(token: &str, body: serde_json::Value) -> Request<Body> {
+        Request::builder()
+            .method("POST")
+            .uri("/v1/invoke")
+            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::AUTHORIZATION, format!("Bearer {token}"))
+            .body(Body::from(serde_json::to_vec(&body).unwrap()))
+            .unwrap()
+    }
+
+    /// Happy path. Non-friend invokes a public_invoke=true capability →
+    /// 202, row written with grant_id=NULL + correct grantee/granter +
+    /// status=pending.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn public_invoke_enqueues_with_null_grant(pool: PgPool) {
+        let f = seed_public(&pool, 5, false).await;
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        let res = app
+            .oneshot(invoke_req(
+                &f.invoker_token,
+                serde_json::json!({
+                    "capability_id": f.public_cap,
+                    "grantee_agent_id": f.invoker_agent,
+                    "input": {"hi": 1}
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::ACCEPTED, "expected 202");
+        let body: Value =
+            serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        assert_eq!(body["status"], "pending");
+        let id: Uuid = body["invocation_id"].as_str().unwrap().parse().unwrap();
+
+        let row = sqlx::query!(
+            r#"SELECT grant_id, granter_agent_id, grantee_agent_id, capability_id, status
+               FROM relay_invocations WHERE id = $1"#,
+            id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(
+            row.grant_id.is_none(),
+            "public invoke must write grant_id = NULL"
+        );
+        assert_eq!(row.granter_agent_id, Some(f.granter_agent));
+        assert_eq!(row.grantee_agent_id, Some(f.invoker_agent));
+        assert_eq!(row.capability_id, Some(f.public_cap));
+        assert_eq!(row.status, "pending");
+        // Silence warnings about unused fields in the fixture.
+        let _ = (f.granter_user, f.invoker_user);
+    }
+
+    /// Friend-only capability via the public path → 404. Don't leak
+    /// whether a non-public capability exists.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn friend_only_capability_via_public_path_is_404(pool: PgPool) {
+        let f = seed_public(&pool, 5, false).await;
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        let res = app
+            .oneshot(invoke_req(
+                &f.invoker_token,
+                serde_json::json!({
+                    "capability_id": f.friend_only_cap,
+                    "grantee_agent_id": f.invoker_agent,
+                    "input": {}
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    }
+
+    /// Per-invoker monthly quota: 2 enqueues succeed, third → 429 with
+    /// structured body. Consumed on enqueue (status stays `pending` —
+    /// no downstream completion needed to consume quota).
+    #[sqlx::test(migrations = "../migrations")]
+    async fn monthly_quota_enforced(pool: PgPool) {
+        let f = seed_public(&pool, 2, false).await;
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        for _ in 0..2 {
+            let res = app
+                .clone()
+                .oneshot(invoke_req(
+                    &f.invoker_token,
+                    serde_json::json!({
+                        "capability_id": f.public_cap,
+                        "grantee_agent_id": f.invoker_agent,
+                        "input": {}
+                    }),
+                ))
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::ACCEPTED);
+        }
+        // Third → 429.
+        let res = app
+            .oneshot(invoke_req(
+                &f.invoker_token,
+                serde_json::json!({
+                    "capability_id": f.public_cap,
+                    "grantee_agent_id": f.invoker_agent,
+                    "input": {}
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
+        let body: Value =
+            serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        assert_eq!(body["error"]["code"], "monthly_quota_exhausted");
+        assert_eq!(body["quota"], 2);
+        assert!(body["resets_at"].is_string(), "resets_at must be present");
+    }
+
+    /// Quota counts only the current calendar month. Backdate two rows
+    /// to the previous month; the third "live" invoke should still
+    /// succeed (the prior-month rows don't consume this month's budget).
+    #[sqlx::test(migrations = "../migrations")]
+    async fn prior_month_invocations_dont_count(pool: PgPool) {
+        let f = seed_public(&pool, 2, false).await;
+        // Two rows backdated 35 days = previous calendar month.
+        for _ in 0..2 {
+            sqlx::query!(
+                r#"INSERT INTO relay_invocations
+                       (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
+                        capability_name, invoked_by_user_id, status, created_at)
+                   VALUES ($1, NULL, $2, $3, $4, 'public_op', $5, 'succeeded',
+                           now() - interval '35 days')"#,
+                Uuid::now_v7(),
+                f.granter_agent,
+                f.invoker_agent,
+                f.public_cap,
+                f.invoker_user,
+            )
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        let res = app
+            .oneshot(invoke_req(
+                &f.invoker_token,
+                serde_json::json!({
+                    "capability_id": f.public_cap,
+                    "grantee_agent_id": f.invoker_agent,
+                    "input": {}
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            res.status(),
+            StatusCode::ACCEPTED,
+            "prior-month rows must not count toward this month's quota"
+        );
+    }
+
+    /// Validation: both grant_id + capability_id → 400; neither → 400.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn validation_400s(pool: PgPool) {
+        let f = seed_public(&pool, 5, false).await;
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        // Both — bogus grant id is fine, the validation fires before the lookup.
+        let res = app
+            .clone()
+            .oneshot(invoke_req(
+                &f.invoker_token,
+                serde_json::json!({
+                    "grant_id": Uuid::now_v7(),
+                    "capability_id": f.public_cap,
+                    "grantee_agent_id": f.invoker_agent,
+                    "input": {}
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST, "both ids → 400");
+        // Neither.
+        let res = app
+            .oneshot(invoke_req(
+                &f.invoker_token,
+                serde_json::json!({
+                    "grantee_agent_id": f.invoker_agent,
+                    "input": {}
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST, "neither id → 400");
+    }
+
+    /// Self-invoke (`grantee == granter`) → 400. Calling your own
+    /// agent's public capability is pointless and would pollute quota
+    /// + future ratings with self-traffic.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn self_invoke_400(pool: PgPool) {
+        let f = seed_public(&pool, 5, false).await;
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        // Invoker tries to invoke the granter's cap "as" the granter agent —
+        // which they don't own. To exercise self-invoke we need the invoker
+        // to be a member of the granter's account. Easier: register a JWT
+        // for the granter user, then attempt to invoke as granter_agent.
+        let granter_token = encode_jwt(
+            &UserClaims::new(
+                f.granter_user,
+                format!("{}@t.local", f.granter_user),
+                false,
+                1,
+            ),
+            "test-secret",
+        )
+        .unwrap();
+        let res = app
+            .oneshot(invoke_req(
+                &granter_token,
+                serde_json::json!({
+                    "capability_id": f.public_cap,
+                    "grantee_agent_id": f.granter_agent,
+                    "input": {}
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    }
+
+    /// Invoking as an agent the caller does not own → 403. The caller
+    /// authenticates as Invoker (the user) but tries to claim it is
+    /// invoking as the granter's agent (which the invoker does not own).
+    #[sqlx::test(migrations = "../migrations")]
+    async fn invoke_as_not_mine_403(pool: PgPool) {
+        let f = seed_public(&pool, 5, false).await;
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        let res = app
+            .oneshot(invoke_req(
+                &f.invoker_token,
+                serde_json::json!({
+                    "capability_id": f.public_cap,
+                    "grantee_agent_id": f.granter_agent,
+                    "input": {}
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        // suppress unused-field lint
+        let _ = f.invoker_account;
+    }
+
+    /// Inbox-pull for a public invocation: friendship_context +
+    /// grant_context are absent (no trust trail), AND the HITL
+    /// `semantics` is sourced from `i.capability_id` (the fix in this
+    /// PR), so a `human_in_loop` public capability surfaces its real
+    /// classification rather than being silently degraded to autonomous.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn inbox_pull_carries_correct_semantics_and_null_contexts(pool: PgPool) {
+        let f = seed_public(&pool, 5, true).await; // hitl=true
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+
+        // Enqueue a public invocation.
+        let res = app
+            .clone()
+            .oneshot(invoke_req(
+                &f.invoker_token,
+                serde_json::json!({
+                    "capability_id": f.public_cap,
+                    "grantee_agent_id": f.invoker_agent,
+                    "input": {}
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::ACCEPTED);
+
+        // Granter pulls from inbox.
+        let granter_token = encode_jwt(
+            &UserClaims::new(
+                f.granter_user,
+                format!("{}@t.local", f.granter_user),
+                false,
+                1,
+            ),
+            "test-secret",
+        )
+        .unwrap();
+        let inbox_res = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/inbox?agent_id={}", f.granter_agent))
+                    .header(header::AUTHORIZATION, format!("Bearer {granter_token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(inbox_res.status(), StatusCode::OK);
+        let body: Value =
+            serde_json::from_slice(&inbox_res.into_body().collect().await.unwrap().to_bytes())
+                .unwrap();
+        let arr = body.as_array().expect("array");
+        assert_eq!(arr.len(), 1, "exactly one row should be pulled");
+        let row = &arr[0];
+        // HITL signal must survive the grantless path.
+        assert_eq!(
+            row["semantics"], "human_in_loop",
+            "public invoke must carry the cap's real semantics — null would silently degrade to autonomous"
+        );
+        // No grant_id on a public invoke.
+        assert!(row["grant_id"].is_null());
+        // Trust contexts must be absent (serde_skip → key not present).
+        assert!(
+            row.get("friendship_context").is_none() || row["friendship_context"].is_null(),
+            "no friendship context on public invoke"
+        );
+        assert!(
+            row.get("grant_context").is_none() || row["grant_context"].is_null(),
+            "no grant context on public invoke"
+        );
     }
 }

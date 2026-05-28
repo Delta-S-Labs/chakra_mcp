@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO agents (id, account_id, slug, display_name, visibility)\n               VALUES ($1, $2, 'granter-svc', 'Granter Svc', 'network'),\n                      ($3, $4, 'invoker-cli', 'Invoker CLI', 'private')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5c3f8c0260fdc766c12b84775f7301412bb22fc48e9f9e524634b8e9e316393c"
+}
