@@ -18,6 +18,7 @@ from ._types import (
     CreateAgentRequest,
     CreateCapabilityRequest,
     CreateGrantRequest,
+    EligibilityResponse,
     Friendship,
     FriendshipStatus,
     Grant,
@@ -28,7 +29,11 @@ from ._types import (
     InvokeResponse,
     MeResponse,
     ProposeFriendshipRequest,
+    Review,
+    ReviewListResponse,
+    ReviewTier,
     UpdateAgentRequest,
+    WriteReviewRequest,
 )
 
 DEFAULT_APP_URL = "https://chakramcp.com"
@@ -73,6 +78,7 @@ class AsyncChakraMCP:
         self.grants = AsyncGrantsClient(self)
         self.invocations = AsyncInvocationsClient(self)
         self.inbox = AsyncInboxClient(self)
+        self.reviews = AsyncReviewsClient(self)
 
     async def aclose(self) -> None:
         if self._owns_client:
@@ -427,3 +433,62 @@ class AsyncInboxClient:
             except BaseException as inner:
                 if on_error:
                     on_error(inner, inv)
+
+
+class AsyncReviewsClient:
+    """Async mirror of :py:class:`ReviewsClient`. See its docstring for
+    the full semantics; this class only flips the awaits."""
+
+    def __init__(self, chakra: AsyncChakraMCP) -> None:
+        self._c = chakra
+
+    async def list(
+        self,
+        target_agent_id: str,
+        *,
+        tier: ReviewTier | None = None,
+        include_hidden: bool = False,
+        limit: int | None = None,
+        cursor: str | None = None,
+    ) -> ReviewListResponse:
+        params: dict[str, str] = {}
+        if tier is not None:
+            params["tier"] = tier
+        if include_hidden:
+            params["include_hidden"] = "true"
+        if limit is not None:
+            params["limit"] = str(limit)
+        if cursor is not None:
+            params["cursor"] = cursor
+        suffix = "?" + "&".join(f"{k}={v}" for k, v in params.items()) if params else ""
+        return await self._c._relay(
+            "GET", f"/v1/agents/{target_agent_id}/reviews{suffix}"
+        )
+
+    async def write(
+        self,
+        target_agent_id: str,
+        body: WriteReviewRequest | dict[str, Any],
+    ) -> Review:
+        return await self._c._relay(
+            "POST", f"/v1/agents/{target_agent_id}/reviews", dict(body)
+        )
+
+    async def eligibility(self, target_agent_id: str) -> EligibilityResponse:
+        return await self._c._relay(
+            "GET", f"/v1/agents/{target_agent_id}/reviews/eligibility"
+        )
+
+    async def hide(self, target_agent_id: str, review_id: str) -> Review:
+        return await self._c._relay(
+            "POST",
+            f"/v1/agents/{target_agent_id}/reviews/{review_id}/hide",
+            {},
+        )
+
+    async def unhide(self, target_agent_id: str, review_id: str) -> Review:
+        return await self._c._relay(
+            "POST",
+            f"/v1/agents/{target_agent_id}/reviews/{review_id}/unhide",
+            {},
+        )

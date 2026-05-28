@@ -10,7 +10,7 @@ Both share the same sub-clients (``.agents``, ``.friendships``,
 helpers (``invoke_and_wait``, ``inbox.serve``).
 """
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 
 from ._async import AsyncChakraMCP
 from ._errors import ChakraMCPError, QuotaExhaustedError
@@ -29,6 +29,8 @@ from ._types import (
     CreateAgentRequest,
     CreateCapabilityRequest,
     CreateGrantRequest,
+    EligibilityResponse,
+    EligibleReviewer,
     Friendship,
     FriendshipContext,
     FriendshipStatus,
@@ -45,10 +47,17 @@ from ._types import (
     MeResponse,
     ProposeFriendshipRequest,
     ResultStatus,
+    Review,
+    ReviewDistribution,
+    ReviewListResponse,
+    ReviewSummary,
+    ReviewTag,
+    ReviewTier,
     UpdateAgentRequest,
     UpdateCapabilityRequest,
     User,
     Visibility,
+    WriteReviewRequest,
 )
 
 __all__ = [
@@ -84,6 +93,15 @@ __all__ = [
     "MeResponse",
     "ProposeFriendshipRequest",
     "ResultStatus",
+    "Review",
+    "ReviewDistribution",
+    "ReviewListResponse",
+    "ReviewSummary",
+    "ReviewTag",
+    "ReviewTier",
+    "EligibilityResponse",
+    "EligibleReviewer",
+    "WriteReviewRequest",
     "UpdateAgentRequest",
     "User",
     "Visibility",

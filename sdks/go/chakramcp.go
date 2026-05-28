@@ -94,6 +94,7 @@ func (c *Client) Friendships() *FriendshipsClient { return &FriendshipsClient{c:
 func (c *Client) Grants() *GrantsClient           { return &GrantsClient{c: c} }
 func (c *Client) Invocations() *InvocationsClient { return &InvocationsClient{c: c} }
 func (c *Client) Inbox() *InboxClient             { return &InboxClient{c: c} }
+func (c *Client) Reviews() *ReviewsClient         { return &ReviewsClient{c: c} }
 
 // ─── Top-level RPCs ──────────────────────────────────────
 

@@ -59,6 +59,10 @@ class Agent(TypedDict):
     updated_at: str
     is_mine: bool
     capability_count: int
+    # Migration 0023: aggregates over the agent's un-hidden reviews.
+    # ``avg_rating`` is ``None`` when ``review_count == 0``.
+    avg_rating: float | None
+    review_count: int
 
 
 class Capability(TypedDict):
@@ -240,6 +244,69 @@ class CreateGrantRequest(TypedDict, total=False):
     grantee_agent_id: str  # required
     capability_id: str  # required
     expires_at: str | None
+
+
+ReviewTier = Literal["friend", "public"]
+
+
+class ReviewTag(TypedDict):
+    capability_id: str
+    capability_name: str
+
+
+class Review(TypedDict):
+    id: str
+    reviewer: AgentSummary
+    target: AgentSummary
+    rating: int
+    comment: str | None
+    # Stamped at write-time. Won't drift if the friendship state
+    # changes later.
+    tier: ReviewTier
+    tags: list[ReviewTag]
+    hidden: bool
+    created_at: str
+    updated_at: str
+    i_authored: bool
+
+
+class ReviewDistribution(TypedDict):
+    # JSON keys are stringly-typed bucket numbers, mirroring the relay.
+    one: int
+    two: int
+    three: int
+    four: int
+    five: int
+
+
+class ReviewSummary(TypedDict):
+    # Mean rating over the *visible* set. ``None`` when ``count == 0``.
+    average: float | None
+    count: int
+    distribution: dict[str, int]
+
+
+class ReviewListResponse(TypedDict, total=False):
+    reviews: list[Review]
+    next_cursor: str | None
+    summary: ReviewSummary
+
+
+class WriteReviewRequest(TypedDict, total=False):
+    reviewer_agent_id: str  # required
+    rating: int  # required, 1-5
+    comment: str | None
+    tagged_capability_ids: list[str]  # required, length >= 1
+
+
+class EligibleReviewer(TypedDict):
+    reviewer_agent_id: str
+    reviewer_display_name: str
+    tagable_capability_ids: list[str]
+
+
+class EligibilityResponse(TypedDict):
+    eligible: list[EligibleReviewer]
 
 
 class HandlerSucceeded(TypedDict):

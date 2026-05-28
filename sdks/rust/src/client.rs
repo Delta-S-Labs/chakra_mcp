@@ -5,7 +5,9 @@ use serde::{de::DeserializeOwned, Serialize};
 
 use crate::error::{Error, Result};
 use crate::inbox::InboxClient;
-use crate::resources::{AgentsClient, FriendshipsClient, GrantsClient, InvocationsClient};
+use crate::resources::{
+    AgentsClient, FriendshipsClient, GrantsClient, InvocationsClient, ReviewsClient,
+};
 use crate::types::{Agent, Invocation, InvokeRequest, InvokeResponse, MeResponse};
 
 pub(crate) const DEFAULT_APP_URL: &str = "https://chakramcp.com";
@@ -54,6 +56,9 @@ impl ChakraMCP {
     }
     pub fn inbox(&self) -> InboxClient<'_> {
         InboxClient::new(self)
+    }
+    pub fn reviews(&self) -> ReviewsClient<'_> {
+        ReviewsClient::new(self)
     }
 
     // ─── Top-level RPC ───────────────────────────────────

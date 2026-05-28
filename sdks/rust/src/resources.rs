@@ -242,6 +242,110 @@ impl<'a> InvocationsClient<'a> {
     }
 }
 
+// ─── Reviews (migration 0023) ──────────────────────────────
+
+pub struct ReviewsClient<'a> {
+    parent: &'a ChakraMCP,
+}
+
+impl<'a> ReviewsClient<'a> {
+    pub(crate) fn new(parent: &'a ChakraMCP) -> Self {
+        Self { parent }
+    }
+
+    /// List a target agent's reviews (cursor-paginated) plus the
+    /// aggregate summary. `include_hidden` is honoured server-side
+    /// only when the caller is a member of the target's account;
+    /// non-members get it silently cleared.
+    pub async fn list(
+        &self,
+        target_agent_id: &str,
+        opts: ReviewListQuery,
+    ) -> Result<ReviewListResponse> {
+        let mut q = Vec::new();
+        if let Some(c) = opts.cursor.as_deref() {
+            q.push(format!("cursor={}", urlencode(c)));
+        }
+        if let Some(n) = opts.limit {
+            q.push(format!("limit={n}"));
+        }
+        if let Some(t) = opts.tier {
+            q.push(format!("tier={}", serde_plain(&t)));
+        }
+        if opts.include_hidden {
+            q.push("include_hidden=true".into());
+        }
+        let qs = if q.is_empty() {
+            String::new()
+        } else {
+            format!("?{}", q.join("&"))
+        };
+        self.parent
+            .relay_get(&format!(
+                "/v1/agents/{}/reviews{qs}",
+                urlencode(target_agent_id)
+            ))
+            .await
+    }
+
+    /// Write or upsert a review. Rating must be 1-5 and
+    /// `tagged_capability_ids` must have ≥ 1 entry that the reviewer
+    /// has actually invoked (status != 'rejected') on the target.
+    pub async fn write(
+        &self,
+        target_agent_id: &str,
+        body: &WriteReviewRequest,
+    ) -> Result<Review> {
+        self.parent
+            .relay_post(
+                &format!("/v1/agents/{}/reviews", urlencode(target_agent_id)),
+                body,
+            )
+            .await
+    }
+
+    /// Which of your agents can leave a review for `target_agent_id`,
+    /// and which capabilities each has invoked. Drives the picker
+    /// UI in the frontend / CLI.
+    pub async fn eligibility(&self, target_agent_id: &str) -> Result<EligibilityResponse> {
+        self.parent
+            .relay_get(&format!(
+                "/v1/agents/{}/reviews/eligibility",
+                urlencode(target_agent_id)
+            ))
+            .await
+    }
+
+    /// Hide a review on one of your agents. Caller must be a member
+    /// of the target's account.
+    pub async fn hide(&self, target_agent_id: &str, review_id: &str) -> Result<Review> {
+        self.parent
+            .relay_post(
+                &format!(
+                    "/v1/agents/{}/reviews/{}/hide",
+                    urlencode(target_agent_id),
+                    urlencode(review_id)
+                ),
+                &json!({}),
+            )
+            .await
+    }
+
+    /// Unhide a previously hidden review.
+    pub async fn unhide(&self, target_agent_id: &str, review_id: &str) -> Result<Review> {
+        self.parent
+            .relay_post(
+                &format!(
+                    "/v1/agents/{}/reviews/{}/unhide",
+                    urlencode(target_agent_id),
+                    urlencode(review_id)
+                ),
+                &json!({}),
+            )
+            .await
+    }
+}
+
 // ─── Tiny utilities ──────────────────────────────────────
 
 fn urlencode(s: &str) -> String {

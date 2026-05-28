@@ -105,6 +105,10 @@ type Agent struct {
 	UpdatedAt           time.Time  `json:"updated_at"`
 	IsMine              bool       `json:"is_mine"`
 	CapabilityCount     int64      `json:"capability_count"`
+	// AvgRating is the mean of un-hidden review ratings.
+	// Nil when ReviewCount == 0. Added in migration 0023.
+	AvgRating   *float64 `json:"avg_rating"`
+	ReviewCount int64    `json:"review_count"`
 }
 
 type Capability struct {
@@ -304,4 +308,85 @@ func Succeeded(output any) HandlerResult {
 // Failed is a convenience constructor for HandlerResult.
 func Failed(err string) HandlerResult {
 	return HandlerResult{Status: "failed", Error: err}
+}
+
+// ─── Reviews (migration 0023) ──────────────────────────────
+
+// ReviewTier is either "friend" (the reviewer has an accepted
+// friendship with the target at write-time) or "public" (no
+// friendship; reviewer reached the target via a public-invokable
+// capability).
+type ReviewTier string
+
+const (
+	ReviewTierFriend ReviewTier = "friend"
+	ReviewTierPublic ReviewTier = "public"
+)
+
+type ReviewTag struct {
+	CapabilityID   string `json:"capability_id"`
+	CapabilityName string `json:"capability_name"`
+}
+
+type Review struct {
+	ID        string       `json:"id"`
+	Reviewer  AgentSummary `json:"reviewer"`
+	Target    AgentSummary `json:"target"`
+	Rating    int16        `json:"rating"`
+	Comment   *string      `json:"comment"`
+	Tier      ReviewTier   `json:"tier"`
+	Tags      []ReviewTag  `json:"tags"`
+	Hidden    bool         `json:"hidden"`
+	CreatedAt time.Time    `json:"created_at"`
+	UpdatedAt time.Time    `json:"updated_at"`
+	// IAuthored is true when the caller owns the reviewer agent.
+	IAuthored bool `json:"i_authored"`
+}
+
+// ReviewDistribution maps star bucket → count. Mirrors the relay's
+// JSON shape where keys are stringified bucket numbers.
+type ReviewDistribution struct {
+	One   int64 `json:"1"`
+	Two   int64 `json:"2"`
+	Three int64 `json:"3"`
+	Four  int64 `json:"4"`
+	Five  int64 `json:"5"`
+}
+
+type ReviewSummary struct {
+	// Average is the mean rating over the *visible* set. Nil when
+	// Count == 0.
+	Average      *float64           `json:"average"`
+	Count        int64              `json:"count"`
+	Distribution ReviewDistribution `json:"distribution"`
+}
+
+type ReviewListResponse struct {
+	Reviews    []Review      `json:"reviews"`
+	NextCursor *string       `json:"next_cursor,omitempty"`
+	Summary    ReviewSummary `json:"summary"`
+}
+
+type ReviewListQuery struct {
+	Cursor        string
+	Limit         int
+	Tier          ReviewTier
+	IncludeHidden bool
+}
+
+type WriteReviewRequest struct {
+	ReviewerAgentID    string   `json:"reviewer_agent_id"`
+	Rating             int16    `json:"rating"`
+	Comment            *string  `json:"comment,omitempty"`
+	TaggedCapabilityIDs []string `json:"tagged_capability_ids"`
+}
+
+type EligibleReviewer struct {
+	ReviewerAgentID        string   `json:"reviewer_agent_id"`
+	ReviewerDisplayName    string   `json:"reviewer_display_name"`
+	TagableCapabilityIDs   []string `json:"tagable_capability_ids"`
+}
+
+type EligibilityResponse struct {
+	Eligible []EligibleReviewer `json:"eligible"`
 }

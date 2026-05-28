@@ -119,6 +119,11 @@ pub struct Agent {
     pub updated_at: DateTime<Utc>,
     pub is_mine: bool,
     pub capability_count: i64,
+    /// Mean of un-hidden review ratings (migration 0023). `None` when
+    /// `review_count == 0`.
+    pub avg_rating: Option<f64>,
+    /// Count of un-hidden reviews.
+    pub review_count: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -335,4 +340,101 @@ pub struct InvokeRequest {
     pub capability_id: Option<String>,
     pub grantee_agent_id: String,
     pub input: Value,
+}
+
+// ─── Reviews (migration 0023) ──────────────────────────────
+
+/// `friend` when the reviewer agent has an accepted friendship with
+/// the target at write-time; `public` otherwise. Stamped on write,
+/// won't drift later if the friendship state changes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReviewTier {
+    Friend,
+    Public,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviewTag {
+    pub capability_id: String,
+    pub capability_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Review {
+    pub id: String,
+    pub reviewer: AgentSummary,
+    pub target: AgentSummary,
+    pub rating: i16,
+    pub comment: Option<String>,
+    pub tier: ReviewTier,
+    pub tags: Vec<ReviewTag>,
+    pub hidden: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    /// True when the caller owns the reviewer agent.
+    pub i_authored: bool,
+}
+
+/// JSON keys are stringified bucket numbers, mirroring the relay's
+/// `ReviewDistribution` shape. Use `Serialize`/`Deserialize`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviewDistribution {
+    #[serde(rename = "1")]
+    pub one: i64,
+    #[serde(rename = "2")]
+    pub two: i64,
+    #[serde(rename = "3")]
+    pub three: i64,
+    #[serde(rename = "4")]
+    pub four: i64,
+    #[serde(rename = "5")]
+    pub five: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviewSummary {
+    /// Mean rating over the *visible* set. `None` when `count == 0`.
+    pub average: Option<f64>,
+    pub count: i64,
+    pub distribution: ReviewDistribution,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviewListResponse {
+    pub reviews: Vec<Review>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+    pub summary: ReviewSummary,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ReviewListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u32>,
+    pub tier: Option<ReviewTier>,
+    /// Owners-only flag. The relay silently force-clears it for
+    /// non-target-account members so hidden reviews never leak.
+    pub include_hidden: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WriteReviewRequest {
+    pub reviewer_agent_id: String,
+    pub rating: i16,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
+    pub tagged_capability_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EligibleReviewer {
+    pub reviewer_agent_id: String,
+    pub reviewer_display_name: String,
+    pub tagable_capability_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EligibilityResponse {
+    pub eligible: Vec<EligibleReviewer>,
 }

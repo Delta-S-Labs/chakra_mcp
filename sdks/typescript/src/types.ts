@@ -39,6 +39,11 @@ export interface Agent {
   updated_at: string;
   is_mine: boolean;
   capability_count: number;
+  /** Migration 0023: mean rating over un-hidden reviews; `null` when
+   *  `review_count === 0`. */
+  avg_rating: number | null;
+  /** Count of un-hidden reviews. */
+  review_count: number;
 }
 
 export interface Capability {
@@ -338,4 +343,75 @@ export class QuotaExhaustedError extends ChakraMCPError {
     super(429, "monthly_quota_exhausted", message);
     this.name = "QuotaExhaustedError";
   }
+}
+
+// ─── Reviews (migration 0023) ────────────────────────────
+
+export type ReviewTier = "friend" | "public";
+
+export interface ReviewTag {
+  capability_id: string;
+  capability_name: string;
+}
+
+export interface Review {
+  id: string;
+  reviewer: AgentSummary;
+  target: AgentSummary;
+  rating: number;
+  comment: string | null;
+  /** Stamped at write-time. Doesn't drift if the friendship state
+   *  changes later. */
+  tier: ReviewTier;
+  tags: ReviewTag[];
+  hidden: boolean;
+  created_at: string;
+  updated_at: string;
+  i_authored: boolean;
+}
+
+export interface ReviewDistribution {
+  "1": number;
+  "2": number;
+  "3": number;
+  "4": number;
+  "5": number;
+}
+
+export interface ReviewSummary {
+  /** Mean rating over the *visible* set. `null` when `count === 0`. */
+  average: number | null;
+  count: number;
+  distribution: ReviewDistribution;
+}
+
+export interface ReviewListResponse {
+  reviews: Review[];
+  next_cursor?: string | null;
+  summary: ReviewSummary;
+}
+
+export interface ReviewListQuery {
+  cursor?: string;
+  limit?: number;
+  tier?: ReviewTier;
+  /** Owners-only flag. Silently ignored server-side for non-members. */
+  include_hidden?: boolean;
+}
+
+export interface WriteReviewRequest {
+  reviewer_agent_id: string;
+  rating: number;
+  comment?: string | null;
+  tagged_capability_ids: string[];
+}
+
+export interface EligibleReviewer {
+  reviewer_agent_id: string;
+  reviewer_display_name: string;
+  tagable_capability_ids: string[];
+}
+
+export interface EligibilityResponse {
+  eligible: EligibleReviewer[];
 }
