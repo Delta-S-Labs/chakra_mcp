@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import { listNetworkAgents, type NetworkAgent } from "@/lib/relay";
+import { StarRating } from "@/components/StarRating";
 import styles from "../agents.module.css";
 
 /**
@@ -107,6 +108,10 @@ export default async function NetworkAgentsPage({
                     </code>{" "}
                     · {a.capability_count}{" "}
                     {a.capability_count === 1 ? "capability" : "capabilities"}
+                    <RatingChip
+                      avg={a.avg_rating}
+                      count={a.review_count}
+                    />
                   </div>
                 </div>
                 <Link className={styles.openLink} href={`/app/agents/${a.id}`}>
@@ -202,6 +207,10 @@ export default async function NetworkAgentsPage({
                       by <strong>{a.account_display_name}</strong> ·{" "}
                       {a.capability_count}{" "}
                       {a.capability_count === 1 ? "capability" : "capabilities"}
+                      <RatingChip
+                        avg={a.avg_rating}
+                        count={a.review_count}
+                      />
                       {a.tags.length > 0 && (
                         <>
                           {" · "}
@@ -228,6 +237,24 @@ export default async function NetworkAgentsPage({
         )}
       </section>
     </div>
+  );
+}
+
+function RatingChip({
+  avg,
+  count,
+}: {
+  avg: number | null;
+  count: number;
+}) {
+  if (count === 0) return null;
+  return (
+    <span style={{ marginLeft: "0.5rem", whiteSpace: "nowrap" }}>
+      · <StarRating value={avg} size={12} /> {avg?.toFixed(1)}{" "}
+      <span style={{ color: "var(--ink-muted)" }}>
+        ({count})
+      </span>
+    </span>
   );
 }
 

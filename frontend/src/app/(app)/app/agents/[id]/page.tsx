@@ -1,9 +1,19 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@/auth";
-import { getAgent, listCapabilities, RelayClientError } from "@/lib/relay";
+import {
+  getAgent,
+  listCapabilities,
+  listReviews,
+  getReviewEligibility,
+  RelayClientError,
+  type EligibilityResponse,
+  type ReviewListResponse,
+} from "@/lib/relay";
+import { StarRating } from "@/components/StarRating";
 import { EditAgentForm } from "./EditAgentForm";
 import { CapabilitiesPanel } from "./CapabilitiesPanel";
+import { ReviewsPanel } from "./ReviewsPanel";
 import styles from "../agents.module.css";
 
 export default async function AgentDetailPage({
@@ -35,6 +45,38 @@ export default async function AgentDetailPage({
     // non-fatal - show the header anyway
   }
 
+  // Reviews + eligibility are non-fatal too — show the rest of the page
+  // even if these requests blow up.
+  let reviews: ReviewListResponse = {
+    reviews: [],
+    summary: {
+      average: null,
+      count: 0,
+      distribution: { "1": 0, "2": 0, "3": 0, "4": 0, "5": 0 },
+    },
+    next_cursor: null,
+  };
+  try {
+    reviews = await listReviews(token, id, {
+      include_hidden: agent.is_mine ? true : false,
+    });
+  } catch {
+    // non-fatal
+  }
+
+  let eligibility: EligibilityResponse = { eligible: [] };
+  // The eligibility endpoint is only meaningful when the caller is
+  // NOT the target's owner (you can't review your own agent). Skip the
+  // call for owners — saves a round-trip + avoids the trivially-empty
+  // payload.
+  if (!agent.is_mine) {
+    try {
+      eligibility = await getReviewEligibility(token, id);
+    } catch {
+      // non-fatal — modal won't open, but the read-only panel still renders
+    }
+  }
+
   return (
     <div className={styles.page}>
       <header className={styles.head}>
@@ -59,6 +101,15 @@ export default async function AgentDetailPage({
           </code>{" "}
           · owned by <strong>{agent.account_display_name}</strong>
         </p>
+        {agent.review_count > 0 && (
+          <p className={styles.body}>
+            <StarRating value={agent.avg_rating} size={16} showNumber /> ·{" "}
+            <span style={{ color: "var(--ink-soft)" }}>
+              {agent.review_count}{" "}
+              {agent.review_count === 1 ? "review" : "reviews"}
+            </span>
+          </p>
+        )}
         {agent.description && <p className={styles.body}>{agent.description}</p>}
       </header>
 
@@ -76,6 +127,16 @@ export default async function AgentDetailPage({
         agentId={agent.id}
         canEdit={agent.is_mine}
         initial={capabilities}
+      />
+
+      <ReviewsPanel
+        token={token}
+        targetAgentId={agent.id}
+        targetDisplayName={agent.display_name}
+        isOwner={agent.is_mine}
+        initial={reviews}
+        eligibility={eligibility}
+        targetCapabilities={capabilities}
       />
     </div>
   );
