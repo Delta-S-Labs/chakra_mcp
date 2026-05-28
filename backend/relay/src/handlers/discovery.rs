@@ -100,6 +100,11 @@ pub struct DiscoveryAgent {
     /// flag is just the directory-level "publicly callable" signal.
     /// Migration 0022.
     pub has_public_capabilities: bool,
+    /// Average star rating over un-hidden reviews. `None` when no
+    /// reviews. Migration 0023.
+    pub avg_rating: Option<f64>,
+    /// Count of un-hidden reviews. Migration 0023.
+    pub review_count: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -175,7 +180,11 @@ pub async fn search(State(state): State<RelayState>, Query(q): Query<DiscoveryQu
                 EXISTS(
                     SELECT 1 FROM agent_capabilities c
                     WHERE c.agent_id = a.id AND c.public_invoke = true
-                ) AS has_public_capabilities
+                ) AS has_public_capabilities,
+                (SELECT AVG(rating)::float8 FROM agent_reviews r
+                    WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS avg_rating,
+                (SELECT COUNT(*)::bigint FROM agent_reviews r
+                    WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS review_count
               FROM agents a
               JOIN accounts acc ON acc.id = a.account_id
              WHERE a.tombstoned_at  IS NULL
@@ -210,7 +219,9 @@ pub async fn search(State(state): State<RelayState>, Query(q): Query<DiscoveryQu
             friend_count AS "friend_count!",
             created_at  AS "created_at!",
             verified    AS "verified!",
-            has_public_capabilities AS "has_public_capabilities!"
+            has_public_capabilities AS "has_public_capabilities!",
+            avg_rating,
+            review_count AS "review_count!"
           FROM q
         "#,
         q.q.as_deref().and_then(to_tsquery),
@@ -312,6 +323,8 @@ pub async fn search(State(state): State<RelayState>, Query(q): Query<DiscoveryQu
             created_at: r.created_at,
             verified: r.verified,
             has_public_capabilities: r.has_public_capabilities,
+            avg_rating: r.avg_rating,
+            review_count: r.review_count,
         })
         .collect();
 

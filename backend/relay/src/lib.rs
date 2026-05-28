@@ -48,6 +48,23 @@ pub fn router(state: RelayState) -> Router {
             "/v1/agents/{id}/capabilities/{cap_id}",
             patch(handlers::capabilities::update).delete(handlers::capabilities::delete),
         )
+        // ─── Reviews (sub-project 2 of the ratings feature) ────
+        .route(
+            "/v1/agents/{target_agent_id}/reviews",
+            get(handlers::reviews::list).post(handlers::reviews::write),
+        )
+        .route(
+            "/v1/agents/{target_agent_id}/reviews/eligibility",
+            get(handlers::reviews::eligibility),
+        )
+        .route(
+            "/v1/agents/{target_agent_id}/reviews/{review_id}/hide",
+            post(handlers::reviews::hide),
+        )
+        .route(
+            "/v1/agents/{target_agent_id}/reviews/{review_id}/unhide",
+            post(handlers::reviews::unhide),
+        )
         // ─── Network discovery ─────────────────────────
         .route("/v1/network/agents", get(handlers::agents::list_network))
         // ─── Friendships ───────────────────────────────

@@ -98,6 +98,11 @@ pub struct AgentDto {
     /// True when the requesting user is a member of the owning account.
     pub is_mine: bool,
     pub capability_count: i64,
+    /// Average star rating over un-hidden reviews (migration 0023).
+    /// `None` when this agent has no reviews.
+    pub avg_rating: Option<f64>,
+    /// Count of un-hidden reviews (migration 0023).
+    pub review_count: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -159,7 +164,11 @@ pub async fn list_mine(
             a.id, a.account_id, a.slug, a.display_name, a.description,
             a.visibility, a.endpoint_url, a.created_at, a.updated_at,
             acc.slug as account_slug, acc.display_name as account_display_name,
-            (SELECT COUNT(*)::bigint FROM agent_capabilities c WHERE c.agent_id = a.id) as "capability_count!"
+            (SELECT COUNT(*)::bigint FROM agent_capabilities c WHERE c.agent_id = a.id) as "capability_count!",
+            (SELECT AVG(rating)::float8 FROM agent_reviews r
+                WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS avg_rating,
+            (SELECT COUNT(*)::bigint FROM agent_reviews r
+                WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS "review_count!"
         FROM agents a
         JOIN accounts acc ON acc.id = a.account_id
         WHERE a.account_id IN (
@@ -190,6 +199,8 @@ pub async fn list_mine(
                 updated_at: r.updated_at,
                 is_mine: true,
                 capability_count: r.capability_count,
+                avg_rating: r.avg_rating,
+                review_count: r.review_count,
             })
             .collect(),
     ))
@@ -234,6 +245,11 @@ pub struct NetworkAgentDto {
     pub updated_at: DateTime<Utc>,
     pub is_mine: bool,
     pub capability_count: i64,
+    /// Average star rating over un-hidden reviews (migration 0023).
+    /// `None` when this agent has no reviews.
+    pub avg_rating: Option<f64>,
+    /// Count of un-hidden reviews (migration 0023).
+    pub review_count: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -306,6 +322,10 @@ pub async fn list_network(
             (acc.verified_at IS NOT NULL) as "verified!",
             (SELECT COUNT(*)::bigint FROM agent_capabilities c
                 WHERE c.agent_id = a.id AND c.visibility = 'network') as "capability_count!",
+            (SELECT AVG(rating)::float8 FROM agent_reviews r
+                WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS avg_rating,
+            (SELECT COUNT(*)::bigint FROM agent_reviews r
+                WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS "review_count!",
             EXISTS(
                 SELECT 1 FROM account_memberships m
                 WHERE m.account_id = a.account_id AND m.user_id = $1
@@ -397,6 +417,8 @@ pub async fn list_network(
             updated_at: r.updated_at,
             is_mine: r.is_mine,
             capability_count: r.capability_count,
+            avg_rating: r.avg_rating,
+            review_count: r.review_count,
         })
         .collect();
 
@@ -456,6 +478,10 @@ pub async fn get_one(
             a.visibility, a.endpoint_url, a.created_at, a.updated_at,
             acc.slug as account_slug, acc.display_name as account_display_name,
             (SELECT COUNT(*)::bigint FROM agent_capabilities c WHERE c.agent_id = a.id) as "capability_count!",
+            (SELECT AVG(rating)::float8 FROM agent_reviews r
+                WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS avg_rating,
+            (SELECT COUNT(*)::bigint FROM agent_reviews r
+                WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS "review_count!",
             EXISTS(
                 SELECT 1 FROM account_memberships m
                 WHERE m.account_id = a.account_id AND m.user_id = $1
@@ -491,6 +517,8 @@ pub async fn get_one(
         updated_at: r.updated_at,
         is_mine: r.is_mine,
         capability_count: r.capability_count,
+        avg_rating: r.avg_rating,
+        review_count: r.review_count,
     }))
 }
 
@@ -664,6 +692,8 @@ pub async fn create(
         updated_at: inserted.updated_at,
         is_mine: true,
         capability_count: 0,
+        avg_rating: None,
+        review_count: 0,
     }))
 }
 
@@ -825,7 +855,11 @@ pub async fn update(
             a.id, a.account_id, a.slug, a.display_name, a.description,
             a.visibility, a.endpoint_url, a.created_at, a.updated_at,
             acc.slug as account_slug, acc.display_name as account_display_name,
-            (SELECT COUNT(*)::bigint FROM agent_capabilities c WHERE c.agent_id = a.id) as "capability_count!"
+            (SELECT COUNT(*)::bigint FROM agent_capabilities c WHERE c.agent_id = a.id) as "capability_count!",
+            (SELECT AVG(rating)::float8 FROM agent_reviews r
+                WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS avg_rating,
+            (SELECT COUNT(*)::bigint FROM agent_reviews r
+                WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS "review_count!"
         FROM agents a
         JOIN accounts acc ON acc.id = a.account_id
         WHERE a.id = $1
@@ -849,6 +883,8 @@ pub async fn update(
         updated_at: r.updated_at,
         is_mine: true,
         capability_count: r.capability_count,
+        avg_rating: r.avg_rating,
+        review_count: r.review_count,
     }))
 }
 

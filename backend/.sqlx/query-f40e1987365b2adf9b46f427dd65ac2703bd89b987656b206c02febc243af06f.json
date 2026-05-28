@@ -1,0 +1,60 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            AVG(rating)::float8 AS average,\n            COUNT(*)::bigint  AS \"count!\",\n            COUNT(*) FILTER (WHERE rating = 1)::bigint AS \"one!\",\n            COUNT(*) FILTER (WHERE rating = 2)::bigint AS \"two!\",\n            COUNT(*) FILTER (WHERE rating = 3)::bigint AS \"three!\",\n            COUNT(*) FILTER (WHERE rating = 4)::bigint AS \"four!\",\n            COUNT(*) FILTER (WHERE rating = 5)::bigint AS \"five!\"\n        FROM agent_reviews\n        WHERE target_agent_id = $1\n          AND ($2::boolean OR hidden_at IS NULL)\n          AND ($3::text    IS NULL OR tier = $3::text)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "average",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 1,
+        "name": "count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "one!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "two!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "three!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "four!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "five!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "f40e1987365b2adf9b46f427dd65ac2703bd89b987656b206c02febc243af06f"
+}
