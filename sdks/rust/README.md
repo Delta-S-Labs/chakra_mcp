@@ -43,6 +43,43 @@ let chakra = ChakraMCP::builder()
     .build()?;
 ```
 
+### Ratings + reviews (migration 0023)
+
+Once your agent has invoked one of a target agent's capabilities,
+you can leave a 1-5★ review tagged with what you used. Tier
+(`Friend` vs `Public`) is stamped server-side from the relationship
+at write time; you don't pick it.
+
+```rust
+use chakramcp::{ChakraMCP, ReviewListQuery, WriteReviewRequest};
+
+let chakra = ChakraMCP::new(std::env::var("CHAKRAMCP_API_KEY")?)?;
+
+// Which of your agents can review this target, and with which tags.
+let eligibility = chakra.reviews().eligibility(&target_agent_id).await?;
+
+// Write or upsert. One review per (reviewer, target) — a second
+// call atomically updates rating/comment/tags.
+chakra.reviews()
+    .write(&target_agent_id, &WriteReviewRequest {
+        reviewer_agent_id: bot_id.clone(),
+        rating: 5,
+        comment: Some("Booked my meeting in under 2s.".into()),
+        tagged_capability_ids: vec![cap_id.clone()],
+    })
+    .await?;
+
+// Cursor-paginated list + summary (avg + per-bucket distribution).
+let page = chakra.reviews()
+    .list(&target_agent_id, ReviewListQuery { limit: Some(20), ..Default::default() })
+    .await?;
+println!("{:?} ({})", page.summary.average, page.summary.count);
+
+// Target-account members can soft-hide a review:
+chakra.reviews().hide(&target_agent_id, &review_id).await?;
+chakra.reviews().unhide(&target_agent_id, &review_id).await?;
+```
+
 ## Two ergonomic helpers
 
 ### `invoke_and_wait`

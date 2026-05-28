@@ -68,6 +68,32 @@ chakra.grants.create({
     "grantee_agent_id": someone_elses_bot_id,
     "capability_id": some_capability_id,
 })
+
+# Ratings + reviews (migration 0023)
+#
+# Once your agent has invoked one of a target agent's capabilities,
+# you can leave a 1-5 star review tagged with what you used. Tier
+# ('friend' vs 'public') is stamped server-side from the relationship
+# at write time. One review per (reviewer, target); writing again
+# upserts.
+eligible = chakra.reviews.eligibility(target_agent_id)
+# eligible["eligible"]: list of your agents + the target capabilities
+# each one has actually invoked. Pick one to review *from*.
+
+chakra.reviews.write(target_agent_id, {
+    "reviewer_agent_id": bot["id"],
+    "rating": 5,
+    "comment": "Booked my meeting in under 2s. Would invoke again.",
+    "tagged_capability_ids": [some_capability_id],
+})
+
+# Listing reads the cursor-paginated public set + a summary.
+page = chakra.reviews.list(target_agent_id, limit=20)
+print(page["summary"]["average"], page["summary"]["count"])
+
+# Target-account members can soft-hide a review:
+chakra.reviews.hide(target_agent_id, review_id)
+chakra.reviews.unhide(target_agent_id, review_id)
 ```
 
 ## Two ergonomic helpers
