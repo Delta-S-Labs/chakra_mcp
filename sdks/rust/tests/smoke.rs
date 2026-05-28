@@ -127,7 +127,8 @@ async fn invoke_and_wait_polls_until_terminal() {
     let final_inv = chakra
         .invoke_and_wait(
             &InvokeRequest {
-                grant_id: "g1".into(),
+                grant_id: Some("g1".into()),
+                capability_id: None,
                 grantee_agent_id: "a2".into(),
                 input: json!({"hello": "world"}),
             },

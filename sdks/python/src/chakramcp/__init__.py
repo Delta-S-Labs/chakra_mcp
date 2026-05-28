@@ -28,7 +28,6 @@ from ._types import (
     Capability,
     CreateAgentRequest,
     CreateCapabilityRequest,
-    UpdateCapabilityRequest,
     CreateGrantRequest,
     Friendship,
     FriendshipContext,
@@ -47,6 +46,7 @@ from ._types import (
     ProposeFriendshipRequest,
     ResultStatus,
     UpdateAgentRequest,
+    UpdateCapabilityRequest,
     User,
     Visibility,
 )
