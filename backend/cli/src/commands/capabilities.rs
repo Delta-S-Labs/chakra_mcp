@@ -79,12 +79,25 @@ pub enum Cmd {
         /// passing this flag overrides the template's value.
         #[arg(long, value_parser = ["autonomous", "human_in_loop"])]
         semantics: Option<String>,
+        /// Make this capability publicly invokable: any registered
+        /// agent on the network can call it without a friendship/grant
+        /// (migration 0022). Requires `--visibility network` (default)
+        /// and a non-zero `--monthly-quota`. The relay enforces a
+        /// per-invoker monthly cap; exceeders get a 429.
+        #[arg(long)]
+        public_invoke: bool,
+        /// Per-invoker monthly cap on this capability (required when
+        /// `--public-invoke` is set; ignored otherwise). Calendar
+        /// month, resets on the 1st.
+        #[arg(long)]
+        monthly_quota: Option<i32>,
     },
     /// List the reserved capability templates available with
     /// `add --template <id>`. Names are stable across SDK + CLI;
     /// schemas live in /docs/agents.
     Templates,
-    /// Patch a capability's metadata (description, visibility, schemas).
+    /// Patch a capability's metadata (description, visibility, schemas,
+    /// public-invoke + quota).
     Update {
         #[arg(long)]
         agent: String,
@@ -102,6 +115,19 @@ pub enum Cmd {
         /// Replace the output schema (inline JSON or `@file`).
         #[arg(long)]
         output_schema: Option<String>,
+        /// Turn public-invoke ON for this capability (migration 0022).
+        /// Mutually exclusive with `--no-public-invoke`. Requires the
+        /// effective visibility to be `network` and a non-zero quota
+        /// (set on this same command or already on the row).
+        #[arg(long, conflicts_with = "no_public_invoke")]
+        public_invoke: bool,
+        /// Turn public-invoke OFF for this capability.
+        #[arg(long)]
+        no_public_invoke: bool,
+        /// Set the per-invoker monthly quota. Required when enabling
+        /// public-invoke; otherwise updates the cap.
+        #[arg(long)]
+        monthly_quota: Option<i32>,
     },
     /// Soft-delete a capability. Existing grants are revoked.
     Delete {
@@ -140,6 +166,8 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             output_schema,
             visibility,
             semantics,
+            public_invoke,
+            monthly_quota,
         } => {
             let mut payload = if let Some(tpl_id) = template {
                 // Template path: load the canonical body, then apply
@@ -181,6 +209,18 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             if let Some(s) = semantics {
                 payload["semantics"] = Value::String(s);
             }
+            // Public-invoke + quota. The relay enforces the
+            // (network-only) + (quota required when on) invariants;
+            // we just plumb the values through.
+            if public_invoke {
+                if monthly_quota.is_none() {
+                    return Err(anyhow!("--public-invoke requires --monthly-quota <N>"));
+                }
+                payload["public_invoke"] = Value::Bool(true);
+            }
+            if let Some(q) = monthly_quota {
+                payload["public_monthly_quota_per_agent"] = json!(q);
+            }
             let body: Value = api
                 .post_relay(&format!("/v1/agents/{agent}/capabilities"), &payload)
                 .await?;
@@ -208,6 +248,9 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             visibility,
             input_schema,
             output_schema,
+            public_invoke,
+            no_public_invoke,
+            monthly_quota,
         } => {
             let mut payload = serde_json::Map::new();
             if let Some(d) = description {
@@ -222,9 +265,19 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             if let Some(s) = output_schema {
                 payload.insert("output_schema".into(), parse_schema(&s, "output_schema")?);
             }
+            // Public-invoke toggle: `--public-invoke` xor
+            // `--no-public-invoke` (clap enforces the conflict).
+            if public_invoke {
+                payload.insert("public_invoke".into(), Value::Bool(true));
+            } else if no_public_invoke {
+                payload.insert("public_invoke".into(), Value::Bool(false));
+            }
+            if let Some(q) = monthly_quota {
+                payload.insert("public_monthly_quota_per_agent".into(), json!(q));
+            }
             if payload.is_empty() {
                 return Err(anyhow!(
-                    "nothing to update — pass at least one of --description, --visibility, --input-schema, --output-schema"
+                    "nothing to update — pass at least one of --description, --visibility, --input-schema, --output-schema, --public-invoke, --no-public-invoke, --monthly-quota"
                 ));
             }
             let body: Value = api
