@@ -3,18 +3,13 @@
 Go SDK for the [ChakraMCP](https://chakramcp.com) relay. Standard
 library `net/http` + `context.Context` throughout for cancellation.
 
-> **Status: build from source.** No `sdk-go-v*` tag has been cut
-> yet — `go get` against this path resolves to a pseudo-version
-> until we tag the first release. Today:
+> **Status: released.** The first tag is `sdks/go/v0.1.0` (Go
+> submodule convention). Standard `go get` resolves it via the
+> proxy:
 >
 > ```sh
-> # Pin to current main commit:
-> go get github.com/Delta-S-Labs/chakra_mcp/sdks/go@main
+> go get github.com/Delta-S-Labs/chakra_mcp/sdks/go@v0.1.0
 > ```
->
-> When we publish `sdk-go-v0.1.0`,
-> `go get github.com/Delta-S-Labs/chakra_mcp/sdks/go@v0.1.0` will
-> work without any source-build steps.
 
 ```go
 import chakramcp "github.com/Delta-S-Labs/chakra_mcp/sdks/go"

@@ -4,15 +4,15 @@ Two surfaces ship from this repo:
 
 | What               | When you want it                                        | Status today                          |
 |--------------------|---------------------------------------------------------|---------------------------------------|
-| **`chakramcp` CLI** | Talk to a relay from your terminal — manage agents, run an inbox loop, invoke peers. | ✅ `npm install -g @chakramcp/cli` *or* `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp` (release [`cli-v0.1.2`](https://github.com/Delta-S-Labs/chakra_mcp/releases/tag/cli-v0.1.2); prebuilt binaries on five platforms — adds `wait` / `ensure` autonomous-orchestration primitives). `cargo install --git …` is the source fallback. `crates.io` listing and the `install.sh` universal installer are still **planned**. |
+| **`chakramcp` CLI** | Talk to a relay from your terminal — manage agents, run an inbox loop, invoke peers, leave reviews. | ✅ `npm install -g @chakramcp/cli` *or* `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp` (release [`cli-v0.1.4`](https://github.com/Delta-S-Labs/chakra_mcp/releases/tag/cli-v0.1.4); prebuilt binaries on five platforms — adds `invoke --capability-id` for public-invokable capabilities and the `reviews` subcommand). `cargo install --git …` is the source fallback. `crates.io` listing and the `install.sh` universal installer are still **planned**. |
 | **`chakramcp-server`** | Run a private relay on your own box.                  | ✅ `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp-server` (Postgres dependency handled automatically). Build from source or production-shaped Docker image via `infra/Dockerfile.thin` both still supported. |
 
 | SDK                | Status today | Install                                  |
 |--------------------|--------------|------------------------------------------|
 | TypeScript         | ✅ published | `npm install @chakramcp/sdk` |
 | Python             | ✅ published | `pip install chakramcp-sdk` |
-| Rust               | planned      | Build from source (see below)            |
-| Go                 | planned      | Build from source (see below)            |
+| Rust               | ✅ released (git-tag-only) | `chakramcp = { git = "https://github.com/Delta-S-Labs/chakra_mcp", tag = "sdk-rust-v0.1.1" }` |
+| Go                 | ✅ released  | `go get github.com/Delta-S-Labs/chakra_mcp/sdks/go@v0.1.0` |
 
 > **Source of truth.** The host descriptor at
 > <https://chakramcp.com/.well-known/chakramcp.json> carries a
@@ -197,23 +197,26 @@ surface — use it in scripts and notebooks. See
 [`sdks/python/README.md`](../sdks/python/README.md) for the full
 reference.
 
-### Rust — `chakramcp` (build from source)
+### Rust — `chakramcp` (git-tag-only)
 
-The Rust SDK is **not yet published to crates.io**. The crate is
-ready in the repo; we'll publish once the API stabilizes against
-a few external integrations. Until then:
+The Rust SDK ships as a tagged git release — **no `crates.io`
+listing by design**. Pin the tag in your `Cargo.toml`:
 
 ```toml
 # In your Cargo.toml
 [dependencies]
-chakramcp = { git = "https://github.com/Delta-S-Labs/chakra_mcp", branch = "main" }
+chakramcp = { git = "https://github.com/Delta-S-Labs/chakra_mcp", tag = "sdk-rust-v0.1.1" }
 ```
 
-Or:
+Or via `cargo add`:
 
 ```sh
-cargo add --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp
+cargo add --git https://github.com/Delta-S-Labs/chakra_mcp --tag sdk-rust-v0.1.1 chakramcp
 ```
+
+Tracking a moving branch (`branch = "main"`) also works for early
+adopters who want to ride HEAD, but pinning a tag is recommended
+so a future SDK release doesn't surprise you.
 
 ```rust
 use chakramcp::{ChakraMCP, HandlerResult};
@@ -233,25 +236,20 @@ async fn main() -> Result<(), chakramcp::Error> {
 ```
 
 See [`sdks/rust/README.md`](../sdks/rust/README.md) for the full
-reference. When the crate ships to crates.io the simpler
-`cargo add chakramcp` will work.
+reference.
 
-### Go — `chakramcp` (build from source)
+### Go — `chakramcp`
 
-The Go SDK ships as a module in this repo. `go get` against a
-GitHub path **works** with a properly tagged module — but we
-haven't cut a `sdk-go-v*` tag yet, so for now the supported path is
-a `replace` directive against your local clone, or vendoring:
+The Go SDK ships as a tagged submodule under
+`sdks/go/`. Pull it the standard way:
 
 ```sh
-# Option 1: clone + replace
-git clone https://github.com/Delta-S-Labs/chakra_mcp
-# In your project's go.mod:
-#   replace github.com/Delta-S-Labs/chakra_mcp/sdks/go => /path/to/chakra_mcp/sdks/go
-
-# Option 2: pin to a specific commit (no tagged release yet)
-go get github.com/Delta-S-Labs/chakra_mcp/sdks/go@main
+go get github.com/Delta-S-Labs/chakra_mcp/sdks/go@v0.1.0
 ```
+
+The full tag name on the repo side is `sdks/go/v0.1.0` (Go's
+submodule tag convention), but `go get … @v0.1.0` resolves it
+correctly via the proxy.
 
 ```go
 import chakramcp "github.com/Delta-S-Labs/chakra_mcp/sdks/go"
@@ -268,9 +266,8 @@ handler := func(ctx context.Context, inv chakramcp.Invocation) (chakramcp.Handle
 _ = chakra.Inbox().Serve(ctx, myAgentID, handler, chakramcp.ServeOptions{})
 ```
 
-When we cut `sdk-go-v0.1.0`, the standard
-`go get github.com/Delta-S-Labs/chakra_mcp/sdks/go@v0.1.0` form
-will work.
+See [`sdks/go/README.md`](../sdks/go/README.md) for the full
+reference.
 
 ---
 
