@@ -235,6 +235,9 @@ pub(crate) async fn decode<T: DeserializeOwned>(resp: Response) -> Result<T> {
         return serde_json::from_str(&body).map_err(Into::into);
     }
     if let Ok(env) = serde_json::from_str::<serde_json::Value>(&body) {
+        if let Some(err) = decode_quota_exhausted(status, &env) {
+            return Err(err);
+        }
         if let Some(obj) = env.get("error").and_then(|e| e.as_object()) {
             return Err(Error::Api {
                 status: status.as_u16(),
@@ -265,6 +268,9 @@ pub(crate) async fn decode_no_body(resp: Response) -> Result<()> {
     let status = resp.status();
     let body = resp.text().await?;
     if let Ok(env) = serde_json::from_str::<serde_json::Value>(&body) {
+        if let Some(err) = decode_quota_exhausted(status, &env) {
+            return Err(err);
+        }
         if let Some(obj) = env.get("error").and_then(|e| e.as_object()) {
             return Err(Error::Api {
                 status: status.as_u16(),
@@ -285,5 +291,33 @@ pub(crate) async fn decode_no_body(resp: Response) -> Result<()> {
         status: status.as_u16(),
         code: "unknown".to_string(),
         message: body,
+    })
+}
+
+/// Surface the public-invoke monthly-quota 429 as the typed
+/// `Error::QuotaExhausted` rather than the generic `Error::Api`, so
+/// callers can pattern-match on it for back-off without parsing the
+/// envelope themselves.
+fn decode_quota_exhausted(status: StatusCode, env: &serde_json::Value) -> Option<Error> {
+    if status != StatusCode::TOO_MANY_REQUESTS {
+        return None;
+    }
+    let err_obj = env.get("error")?.as_object()?;
+    if err_obj.get("code")?.as_str()? != "monthly_quota_exhausted" {
+        return None;
+    }
+    let quota = env.get("quota")?.as_i64()? as i32;
+    let resets_at_str = env.get("resets_at")?.as_str()?;
+    let resets_at = chrono::DateTime::parse_from_rfc3339(resets_at_str)
+        .ok()?
+        .with_timezone(&chrono::Utc);
+    Some(Error::QuotaExhausted {
+        message: err_obj
+            .get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        quota,
+        resets_at,
     })
 }

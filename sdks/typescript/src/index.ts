@@ -33,6 +33,7 @@ import {
   AgentSummary,
   Capability,
   ChakraMCPError,
+  QuotaExhaustedError,
   CreateAgentRequest,
   CreateCapabilityRequest,
   CreateGrantRequest,
@@ -191,7 +192,28 @@ export class ChakraMCP {
       }
     }
     if (!res.ok) {
-      const env = parsed as { error?: { code?: string; message?: string } } | null;
+      const env = parsed as
+        | {
+            error?: { code?: string; message?: string };
+            quota?: number;
+            resets_at?: string;
+          }
+        | null;
+      // Public-invoke monthly quota: 429 with a structured payload.
+      // Surface as a typed error so callers can back off cleanly
+      // without parsing the envelope themselves.
+      if (
+        res.status === 429 &&
+        env?.error?.code === "monthly_quota_exhausted" &&
+        typeof env.quota === "number" &&
+        typeof env.resets_at === "string"
+      ) {
+        throw new QuotaExhaustedError(
+          env.error.message ?? "monthly quota exhausted",
+          env.quota,
+          env.resets_at,
+        );
+      }
       throw new ChakraMCPError(
         res.status,
         env?.error?.code ?? "unknown",

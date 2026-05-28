@@ -106,6 +106,19 @@ class AsyncChakraMCP:
         return await self._relay("GET", "/v1/network/agents")
 
     async def invoke(self, body: dict[str, Any]) -> InvokeResponse:
+        """Enqueue an invocation.
+
+        Body must carry exactly one of:
+
+        * ``grant_id`` (trusted path) — friendship + grant already in place.
+        * ``capability_id`` (public-invoke path, migration 0022) — target
+          capability is owner-opted-in as ``public_invoke=true``; no
+          friendship/grant required. The relay enforces a per-invoker
+          monthly quota; exceeders raise :class:`QuotaExhaustedError`.
+
+        Plus ``grantee_agent_id`` (the agent making the call — you must
+        be a member of its account) and ``input`` (the JSON payload).
+        """
         return await self._relay("POST", "/v1/invoke", body)
 
     async def invoke_and_wait(

@@ -51,6 +51,18 @@ export interface Capability {
   visibility: Visibility;
   created_at: string;
   updated_at: string;
+  /**
+   * True when the owner has opted this capability into being callable
+   * by any registered agent without a friendship/grant. See migration
+   * 0022. When true, `public_monthly_quota_per_agent` is required and
+   * specifies the per-invoker monthly cap.
+   */
+  public_invoke: boolean;
+  /**
+   * Per-invoker monthly quota (calendar month). Non-null only when
+   * `public_invoke` is true.
+   */
+  public_monthly_quota_per_agent: number | null;
 }
 
 export interface AgentSummary {
@@ -222,6 +234,32 @@ export interface CreateCapabilityRequest {
    * out-of-band via the CLI.
    */
   semantics?: "autonomous" | "human_in_loop";
+  /**
+   * Opt this capability into being callable by any registered agent
+   * without a friendship/grant (migration 0022). When `true`,
+   * `visibility` must resolve to `"network"` and
+   * `public_monthly_quota_per_agent` must be provided (>= 1).
+   */
+  public_invoke?: boolean;
+  /**
+   * Per-invoker monthly cap (calendar month, resets on the 1st).
+   * Required when `public_invoke` is `true`.
+   */
+  public_monthly_quota_per_agent?: number;
+}
+
+export interface UpdateCapabilityRequest {
+  description?: string;
+  input_schema?: Record<string, unknown>;
+  output_schema?: Record<string, unknown>;
+  visibility?: Visibility;
+  /**
+   * Flip the public-invoke flag. Setting `false` clears the stored
+   * quota; setting `true` requires the effective visibility to be
+   * `"network"` and a non-null quota (here or already on the row).
+   */
+  public_invoke?: boolean;
+  public_monthly_quota_per_agent?: number;
 }
 
 export interface ProposeFriendshipRequest {
@@ -250,11 +288,24 @@ export interface RevokeGrantRequest {
   reason?: string | null;
 }
 
-export interface InvokeRequest {
-  grant_id: string;
-  grantee_agent_id: string;
-  input: unknown;
-}
+/**
+ * Two flavours, mutually exclusive — exactly one of `grant_id`
+ * (trusted) or `capability_id` (public-invoke, migration 0022) must
+ * be set. The relay returns `400` if you send both or neither.
+ */
+export type InvokeRequest =
+  | {
+      grant_id: string;
+      capability_id?: never;
+      grantee_agent_id: string;
+      input: unknown;
+    }
+  | {
+      grant_id?: never;
+      capability_id: string;
+      grantee_agent_id: string;
+      input: unknown;
+    };
 
 export type HandlerResult =
   | { status: "succeeded"; output: unknown }
@@ -268,5 +319,23 @@ export class ChakraMCPError extends Error {
   ) {
     super(message);
     this.name = "ChakraMCPError";
+  }
+}
+
+/**
+ * Thrown when a public-invoke call exceeds the per-invoker monthly
+ * quota on the target capability (HTTP 429 + body code
+ * `monthly_quota_exhausted`, migration 0022). Carries the quota the
+ * owner set and the UTC instant the window resets so callers can
+ * back off intelligently.
+ */
+export class QuotaExhaustedError extends ChakraMCPError {
+  constructor(
+    message: string,
+    public readonly quota: number,
+    public readonly resets_at: string,
+  ) {
+    super(429, "monthly_quota_exhausted", message);
+    this.name = "QuotaExhaustedError";
   }
 }
