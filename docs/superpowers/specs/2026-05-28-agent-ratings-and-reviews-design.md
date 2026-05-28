@@ -58,7 +58,7 @@ that grounds a review is already recorded in `relay_invocations`.
 | Public tier gate | `relay_invocations` row exists where `grantee_agent_id = reviewer AND capability_id = <tagged> AND <tagged>.agent_id = target`. Enforced by the tag rule (below). |
 | Tier resolution timing | **Write-time**: stamped on the review row from the relationship state at create/update. Doesn't drift if friendship later changes. |
 | Capability tag policy | **≥1 tagged capability required**, every tagged capability must (a) belong to `target_agent_id` and (b) have at least one matching `relay_invocations` row for `(reviewer, capability)`. Tagging a friend-only capability is allowed for friend-tier reviewers; non-friend reviewers can only tag `public_invoke=true` capabilities (falls out naturally from the invocation gate). |
-| What counts as "invoked" | Any `relay_invocations` row — regardless of `status`. Consistent with PR1's per-invoker quota counting "consumed on enqueue." |
+| What counts as "invoked" | Any `relay_invocations` row whose `status` is **not** `'rejected'` — i.e. the call left the relay (succeeded, failed, timed out, or is still pending). `'rejected'` rows are pre-flight failures (no grant, missing endpoint, etc.) where the target agent never saw the call, so they aren't honest usage proof. (Per-invoker quota in PR1 still counts every attempt including rejections, because quota is an abuse bound; the ratings gate is a usage assertion, which is stricter.) |
 | Edit/delete | **Editable upsert**, **no hard delete**. One row per (reviewer, target); writes after the first revise rating/comment/tags in place. `updated_at` records the most recent edit. |
 | Moderation | **Target's owner can soft-hide** a review (`hidden_at IS NOT NULL`); hidden reviews are excluded from aggregates and from the public-facing list, but the row stays for audit. Owner can also un-hide. No removal. No relay-operator moderation in v1. |
 | Aggregate surfaces | **Directory card** (avg ★ + count) **and agent detail page** (stars summary, optional distribution, paginated list with per-tier badges + Hide control for owners). |
@@ -148,8 +148,8 @@ Validation, in order:
 3. **Tags belong to target** — every `tagged_capability_ids` resolves to a row with
    `agent_id = target_agent_id`. Else `400`.
 4. **Usage proof** — for each tagged capability, at least one row exists in
-   `relay_invocations` where `grantee_agent_id = reviewer AND capability_id = <tag>` (any
-   status). Else `400` (`cannot tag a capability you haven't invoked`).
+   `relay_invocations` where `grantee_agent_id = reviewer AND capability_id = <tag>` and
+   `status != 'rejected'`. Else `400` (`cannot tag a capability you haven't invoked`).
 5. **Tier resolution** — `'friend'` if an `accepted` friendship between reviewer + target
    exists in either direction; else `'public'`. Stamped on the row.
 6. **Upsert** — `INSERT … ON CONFLICT (reviewer_agent_id, target_agent_id) DO UPDATE …` for
@@ -190,7 +190,9 @@ covers the *visible* (un-hidden) set unless `include_hidden=true`.
 - `GET /v1/agents/{id}` (`AgentDto`) / authed network list: same two fields.
 
 Both are correlated subqueries on `agent_reviews WHERE target_agent_id = a.id AND hidden_at IS NULL`.
-An index on `(target_agent_id, hidden_at)` partial-by-`hidden_at IS NULL` keeps this cheap.
+The `idx_reviews_target_live` partial index defined on the migration (`(target_agent_id,
+created_at DESC) WHERE hidden_at IS NULL`) already covers this lookup — no additional index
+needed.
 
 ## Frontend
 
@@ -216,10 +218,12 @@ Above the capabilities list:
 
 **Eligibility helper endpoint:** computing "which of my agents can review this target, and
 with which capability tags" without an extra round trip per agent is expensive. Add
-`GET /v1/agents/{target}/reviews/eligibility` returning
+`GET /v1/agents/{target}/reviews/eligibility` (no query params) returning every reviewer
+agent the *authenticated caller owns* that has at least one non-`'rejected'` invocation of
+one of the target's capabilities:
 `{ eligible: [{ reviewer_agent_id, tagable_capability_ids: [Uuid] }] }`. One query joins
-`agents` (mine), `relay_invocations` (mine → target's caps), and `agent_capabilities` (target).
-Drives the inline form; nothing else uses it.
+`agents` (mine, by membership), `relay_invocations` (mine → target's caps, status filter),
+and `agent_capabilities` (target). Drives the inline form; nothing else uses it.
 
 ### Owner moderation surface
 
@@ -244,7 +248,8 @@ chakramcp reviews unhide <review_id>
 
 - `Review` type with all of `ReviewDto`'s fields.
 - `ReviewsClient` on the main SDK: `list(target, opts)`, `write(target, body)`,
-  `hide(targetId, reviewId)`, `unhide(targetId, reviewId)`, `eligibility(target, reviewer)`.
+  `hide(targetId, reviewId)`, `unhide(targetId, reviewId)`, `eligibility(target)` (returns
+  all of the caller's own agents that are eligible to review this target).
 - Errors:
   - `400 invalid_request` with code `capability_not_invoked` surfaces as
     `CapabilityNotInvokedError` (subclass of `ChakraMCPError` / `Error::*` variant).
