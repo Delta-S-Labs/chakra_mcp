@@ -10,7 +10,7 @@ use crate::resources::{
 };
 use crate::types::{Agent, Invocation, InvokeRequest, InvokeResponse, MeResponse};
 
-pub(crate) const DEFAULT_APP_URL: &str = "https://chakramcp.com";
+pub(crate) const DEFAULT_APP_URL: &str = "https://app.chakramcp.com";
 pub(crate) const DEFAULT_RELAY_URL: &str = "https://relay.chakramcp.com";
 const USER_AGENT: &str = concat!("chakramcp-rust-sdk/", env!("CARGO_PKG_VERSION"));
 
