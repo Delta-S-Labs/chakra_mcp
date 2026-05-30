@@ -37,7 +37,7 @@ from ._types import (
     WriteReviewRequest,
 )
 
-DEFAULT_APP_URL = "https://chakramcp.com"
+DEFAULT_APP_URL = "https://app.chakramcp.com"
 DEFAULT_RELAY_URL = "https://relay.chakramcp.com"
 USER_AGENT = "chakramcp-python-sdk"
 

@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	defaultAppURL    = "https://chakramcp.com"
+	defaultAppURL    = "https://app.chakramcp.com"
 	defaultRelayURL  = "https://relay.chakramcp.com"
 	defaultUserAgent = "chakramcp-go-sdk"
 	defaultTimeout   = 60 * time.Second

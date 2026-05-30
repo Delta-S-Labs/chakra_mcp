@@ -71,7 +71,7 @@ export interface ChakraMCPOptions {
   fetch?: typeof fetch;
 }
 
-const DEFAULT_APP_URL = "https://chakramcp.com";
+const DEFAULT_APP_URL = "https://app.chakramcp.com";
 const DEFAULT_RELAY_URL = "https://relay.chakramcp.com";
 
 export class ChakraMCP {
