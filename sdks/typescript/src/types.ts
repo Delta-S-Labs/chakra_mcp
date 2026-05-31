@@ -177,10 +177,21 @@ export interface Invocation {
    */
   semantics?: "autonomous" | "human_in_loop";
   /**
-   * Trust context bundled by the relay on `inbox.pull` responses only.
-   * The relay just verified friendship + grant before delivering this
-   * row - your handler can trust these assertions without re-querying.
-   * Always undefined on audit-log endpoints (`invocations.list/get`).
+   * Trust context for this invocation. Two sources:
+   *
+   *   - On `inbox.pull` responses, the relay just verified friendship
+   *     + grant before delivering this row — your handler can trust
+   *     these assertions without re-querying.
+   *
+   *   - On audit-log endpoints (`invocations.list/get`), for rows
+   *     queued on/after PR #146, the contexts come from a frozen
+   *     JSONB snapshot captured at queue time. They reflect what was
+   *     true when the call was queued, not necessarily what's true
+   *     now — useful for "who had what access on May 18 at 14:32"
+   *     audits without the live state drifting under you.
+   *
+   * Undefined on public-invoke rows (no friendship/grant existed) and
+   * on legacy pre-snapshot rows.
    */
   friendship_context?: FriendshipContext;
   grant_context?: GrantContext;

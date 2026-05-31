@@ -158,7 +158,7 @@ pub struct InvocationDto {
 
 /// Friendship details the relay verified before queuing this
 /// invocation. Trust the assertions here without re-querying.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct FriendshipContext {
     pub id: Uuid,
     pub status: String,
@@ -170,7 +170,7 @@ pub struct FriendshipContext {
 }
 
 /// Grant details the relay verified before queuing this invocation.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct GrantContext {
     pub id: Uuid,
     pub status: String,
@@ -342,15 +342,36 @@ async fn invoke_trusted(
         SELECT
             g.id as grant_id, g.status as grant_status,
             g.granter_agent_id, g.grantee_agent_id, g.capability_id,
-            g.expires_at,
+            g.expires_at, g.granted_at,
             ga.account_id as granter_account_id,
             ea.account_id as grantee_account_id,
-            cap.name as capability_name
+            cap.name as capability_name,
+            cap.visibility as capability_visibility,
+            -- Friendship row that authorised this grant. LEFT JOIN so a
+            -- grant whose friendship was deleted (shouldn't happen in
+            -- normal operation; FKs are tombstone, not cascade) still
+            -- resolves — we just record a NULL-friendship snapshot.
+            f.id as "friendship_id?",
+            f.status as "friendship_status?",
+            f.proposer_agent_id as "friendship_proposer_agent_id?",
+            f.target_agent_id as "friendship_target_agent_id?",
+            f.proposer_message as "friendship_proposer_message?",
+            f.response_message as "friendship_response_message?",
+            f.decided_at as "friendship_decided_at?"
         FROM grants g
         JOIN agents ga ON ga.id = g.granter_agent_id
         JOIN agents ea ON ea.id = g.grantee_agent_id
         JOIN agent_capabilities cap ON cap.id = g.capability_id
+        LEFT JOIN friendships f
+            ON f.status = 'accepted'
+            AND (
+                (f.proposer_agent_id = g.granter_agent_id
+                    AND f.target_agent_id = g.grantee_agent_id)
+                OR (f.proposer_agent_id = g.grantee_agent_id
+                    AND f.target_agent_id = g.granter_agent_id)
+            )
         WHERE g.id = $1
+        LIMIT 1
         "#,
         grant_id,
     )
@@ -451,6 +472,34 @@ async fn invoke_trusted(
         }
     }
 
+    // Freeze the trust context at queue time (migration 0024). Audit
+    // log endpoints return this verbatim so they show what was true
+    // when the call happened, not what's true now. Shape mirrors the
+    // typed FriendshipContext + GrantContext so consumers see one shape
+    // across inbox + audit-log responses.
+    let trust_snapshot = serde_json::json!({
+        "friendship": row.friendship_id.map(|fid| serde_json::json!({
+            "id": fid,
+            "status": row.friendship_status.clone().unwrap_or_default(),
+            "proposer_agent_id": row.friendship_proposer_agent_id,
+            "target_agent_id": row.friendship_target_agent_id,
+            "proposer_message": row.friendship_proposer_message,
+            "response_message": row.friendship_response_message,
+            "decided_at": row.friendship_decided_at,
+        })),
+        "grant": {
+            "id": row.grant_id,
+            "status": row.grant_status,
+            "granter_agent_id": row.granter_agent_id,
+            "grantee_agent_id": row.grantee_agent_id,
+            "capability_id": row.capability_id,
+            "capability_name": row.capability_name.clone(),
+            "capability_visibility": row.capability_visibility,
+            "granted_at": row.granted_at,
+            "expires_at": row.expires_at,
+        },
+    });
+
     // Enqueue the invocation. Granter side will pull it from /v1/inbox.
     //
     // `api_key_id` attributes the call to the **caller** — the credential
@@ -468,8 +517,8 @@ async fn invoke_trusted(
         INSERT INTO relay_invocations
             (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
              capability_name, invoked_by_user_id, status, input_preview,
-             api_key_id, minted_jti)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9, $10)
+             api_key_id, minted_jti, trust_snapshot)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9, $10, $11)
         "#,
         id,
         row.grant_id,
@@ -481,6 +530,7 @@ async fn invoke_trusted(
         input_preview,
         user.api_key_id,
         user.minted_jti,
+        trust_snapshot,
     )
     .execute(&state.db)
     .await?;
@@ -991,7 +1041,7 @@ pub async fn list(
             i.id, i.grant_id, i.granter_agent_id, i.grantee_agent_id,
             i.capability_id, i.capability_name, i.status,
             i.elapsed_ms, i.error_message, i.input_preview, i.output_preview,
-            i.created_at, i.claimed_at,
+            i.created_at, i.claimed_at, i.trust_snapshot,
             ga.display_name as "granter_display_name?",
             ea.display_name as "grantee_display_name?",
             cap.semantics   as "capability_semantics?",
@@ -1034,32 +1084,36 @@ pub async fn list(
 
     Ok(Json(
         rows.into_iter()
-            .map(|r| InvocationDto {
-                id: r.id,
-                grant_id: r.grant_id,
-                granter_agent_id: r.granter_agent_id,
-                granter_display_name: r.granter_display_name,
-                grantee_agent_id: r.grantee_agent_id,
-                grantee_display_name: r.grantee_display_name,
-                capability_id: r.capability_id,
-                capability_name: r.capability_name,
-                semantics: r.capability_semantics,
-                status: r.status,
-                elapsed_ms: r.elapsed_ms,
-                error_message: r.error_message,
-                input_preview: r.input_preview,
-                output_preview: r.output_preview,
-                created_at: r.created_at,
-                claimed_at: r.claimed_at,
-                i_served: r.i_served.unwrap_or(false),
-                i_invoked: r.i_invoked.unwrap_or(false),
-                tier: if r.grant_id.is_some() {
-                    "friend".into()
-                } else {
-                    "public".into()
-                },
-                friendship_context: None,
-                grant_context: None,
+            .map(|r| {
+                let (friendship_context, grant_context) =
+                    contexts_from_snapshot(r.trust_snapshot.as_ref());
+                InvocationDto {
+                    id: r.id,
+                    grant_id: r.grant_id,
+                    granter_agent_id: r.granter_agent_id,
+                    granter_display_name: r.granter_display_name,
+                    grantee_agent_id: r.grantee_agent_id,
+                    grantee_display_name: r.grantee_display_name,
+                    capability_id: r.capability_id,
+                    capability_name: r.capability_name,
+                    semantics: r.capability_semantics,
+                    status: r.status,
+                    elapsed_ms: r.elapsed_ms,
+                    error_message: r.error_message,
+                    input_preview: r.input_preview,
+                    output_preview: r.output_preview,
+                    created_at: r.created_at,
+                    claimed_at: r.claimed_at,
+                    i_served: r.i_served.unwrap_or(false),
+                    i_invoked: r.i_invoked.unwrap_or(false),
+                    tier: if r.grant_id.is_some() {
+                        "friend".into()
+                    } else {
+                        "public".into()
+                    },
+                    friendship_context,
+                    grant_context,
+                }
             })
             .collect(),
     ))
@@ -1081,7 +1135,7 @@ async fn fetch_one(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<InvocationDto
             i.id, i.grant_id, i.granter_agent_id, i.grantee_agent_id,
             i.capability_id, i.capability_name, i.status,
             i.elapsed_ms, i.error_message, i.input_preview, i.output_preview,
-            i.created_at, i.claimed_at,
+            i.created_at, i.claimed_at, i.trust_snapshot,
             ga.display_name as "granter_display_name?",
             ea.display_name as "grantee_display_name?",
             cap.semantics   as "capability_semantics?",
@@ -1112,6 +1166,8 @@ async fn fetch_one(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<InvocationDto
         return Err(ApiError::NotFound);
     }
 
+    let (friendship_context, grant_context) = contexts_from_snapshot(r.trust_snapshot.as_ref());
+
     Ok(InvocationDto {
         id: r.id,
         grant_id: r.grant_id,
@@ -1136,9 +1192,37 @@ async fn fetch_one(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<InvocationDto
         } else {
             "public".into()
         },
-        friendship_context: None,
-        grant_context: None,
+        friendship_context,
+        grant_context,
     })
+}
+
+/// Deserialize the `trust_snapshot` JSONB blob (migration 0024) back
+/// into the typed contexts. The snapshot's shape is
+/// `{"friendship": {...}, "grant": {...}}` with the same fields as
+/// the live FriendshipContext + GrantContext. Used by audit-log
+/// endpoints (list, get) so they return state-as-of-queue-time
+/// instead of state-now or null.
+///
+/// On rows whose snapshot is NULL (public-invoke + legacy pre-0024
+/// rows), both come back None — same as before this change. We
+/// silently swallow malformed snapshots; a future schema migration
+/// should be an additive ALTER rather than a destructive one.
+fn contexts_from_snapshot(
+    snapshot: Option<&Value>,
+) -> (Option<FriendshipContext>, Option<GrantContext>) {
+    let Some(snap) = snapshot else {
+        return (None, None);
+    };
+    let f = snap
+        .get("friendship")
+        .filter(|v| !v.is_null())
+        .and_then(|v| serde_json::from_value::<FriendshipContext>(v.clone()).ok());
+    let g = snap
+        .get("grant")
+        .filter(|v| !v.is_null())
+        .and_then(|v| serde_json::from_value::<GrantContext>(v.clone()).ok());
+    (f, g)
 }
 
 #[cfg(test)]
@@ -2475,5 +2559,138 @@ mod tier_field_tests {
         // Sanity: contexts are present on the inbox response.
         assert!(!inbox_arr[0]["grant_context"].is_null());
         assert!(!inbox_arr[0]["friendship_context"].is_null());
+    }
+}
+
+#[cfg(test)]
+mod trust_snapshot_tests {
+    //! Edge 2 from the trust-context audit (migration 0024). Audit-log
+    //! endpoints must return the friendship + grant *as they were at
+    //! queue time*, not as they are now. The relay snapshots both into
+    //! a JSONB column on the row's INSERT, and the read path
+    //! deserializes the snapshot back into the same typed contexts the
+    //! inbox endpoint returns — so consumers see one shape regardless
+    //! of which read path delivered it.
+    use axum::body::Body;
+    use axum::http::{header, Request, StatusCode};
+    use http_body_util::BodyExt;
+    use serde_json::Value;
+    use sqlx::PgPool;
+    use tower::ServiceExt;
+    use uuid::Uuid;
+
+    use super::legacy_v01_contract_tests::{config, seed_demo};
+
+    /// The grant-path invoke must stamp `trust_snapshot` with both
+    /// friendship + grant rows, and the audit-log endpoints must
+    /// surface them as typed contexts — even after the underlying
+    /// friendship / grant changes.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn audit_log_returns_frozen_contexts_even_after_state_drift(pool: PgPool) {
+        let f = seed_demo(&pool).await;
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+
+        // Bob (caller) → POST /v1/invoke.
+        let invoke_res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/invoke")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, format!("Bearer {}", f.caller_token))
+                    .body(Body::from(
+                        serde_json::to_vec(&serde_json::json!({
+                            "grant_id": f.grant_id,
+                            "grantee_agent_id": f.grantee_agent_id,
+                            "input": {"duration_min": 30}
+                        }))
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(invoke_res.status(), StatusCode::ACCEPTED);
+        let invoke_body: Value =
+            serde_json::from_slice(&invoke_res.into_body().collect().await.unwrap().to_bytes())
+                .unwrap();
+        let invocation_id = invoke_body["invocation_id"].as_str().unwrap();
+
+        // Snapshot lives on the row from the moment it's queued.
+        let snapshot: Option<Value> = sqlx::query_scalar!(
+            "SELECT trust_snapshot FROM relay_invocations WHERE id = $1",
+            invocation_id.parse::<Uuid>().unwrap(),
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let snapshot = snapshot.expect("grant-path invoke must populate trust_snapshot");
+        assert_eq!(
+            snapshot["friendship"]["status"], "accepted",
+            "friendship snapshot should reflect the accepted state at queue time"
+        );
+        assert_eq!(
+            snapshot["grant"]["status"], "active",
+            "grant snapshot should reflect the active state at queue time"
+        );
+        assert_eq!(snapshot["grant"]["id"], f.grant_id.to_string());
+
+        // Now drift the state: revoke the grant. The audit log must still
+        // return the contexts AS THEY WERE WHEN QUEUED.
+        sqlx::query!(
+            "UPDATE grants SET status = 'revoked', revoked_at = now() WHERE id = $1",
+            f.grant_id,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Audit-log get → contexts populated from the frozen snapshot.
+        let get_res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/v1/invocations/{invocation_id}"))
+                    .header(header::AUTHORIZATION, format!("Bearer {}", f.caller_token))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let get_body: Value =
+            serde_json::from_slice(&get_res.into_body().collect().await.unwrap().to_bytes())
+                .unwrap();
+        assert_eq!(get_body["tier"], "friend");
+        assert_eq!(
+            get_body["grant_context"]["status"], "active",
+            "audit log must show the grant state AT QUEUE TIME (active), \
+             not the now-revoked state"
+        );
+        assert_eq!(get_body["grant_context"]["id"], f.grant_id.to_string());
+        assert_eq!(get_body["friendship_context"]["status"], "accepted");
+
+        // Audit-log list → same.
+        let list_res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/invocations?direction=outbound")
+                    .header(header::AUTHORIZATION, format!("Bearer {}", f.caller_token))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let list_body: Value =
+            serde_json::from_slice(&list_res.into_body().collect().await.unwrap().to_bytes())
+                .unwrap();
+        let row = list_body
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["id"] == invocation_id)
+            .expect("row present");
+        assert_eq!(row["grant_context"]["status"], "active");
+        assert_eq!(row["friendship_context"]["status"], "accepted");
     }
 }

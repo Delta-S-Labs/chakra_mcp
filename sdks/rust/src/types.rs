@@ -225,10 +225,20 @@ pub struct Invocation {
     /// relays predating PR #145.
     #[serde(default)]
     pub tier: String,
-    /// Trust context bundled by the relay on `inbox.pull` responses
-    /// only - the relay just verified friendship + grant before
-    /// delivering this row, so handlers can trust these assertions
-    /// without re-querying. `None` on audit-log endpoints.
+    /// Trust context for this invocation. Two sources:
+    ///
+    ///   - On `inbox.pull` responses, the relay just verified
+    ///     friendship + grant before delivering this row — handlers
+    ///     can trust these assertions without re-querying.
+    ///
+    ///   - On audit-log endpoints (`invocations.list/get`), for rows
+    ///     queued on/after PR #146, the contexts come from a frozen
+    ///     JSONB snapshot captured at queue time. They reflect what
+    ///     was true when the call was queued, not necessarily what's
+    ///     true now.
+    ///
+    /// `None` on public-invoke rows (no friendship/grant existed) and
+    /// on legacy pre-snapshot rows.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub friendship_context: Option<FriendshipContext>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

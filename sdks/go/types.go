@@ -203,10 +203,20 @@ type Invocation struct {
 	// directly — it removes the "nil means public" footgun for
 	// handlers. Empty on relays predating PR #145.
 	Tier string `json:"tier"`
-	// Trust context bundled by the relay on Inbox.Pull responses only.
-	// The relay just verified friendship + grant before delivering this
-	// row - handlers can trust these assertions without re-querying.
-	// nil on audit-log endpoints (Invocations.List/Get).
+	// Trust context for this invocation. Two sources:
+	//
+	//   - On Inbox.Pull responses, the relay just verified friendship
+	//     + grant before delivering this row — handlers can trust
+	//     these assertions without re-querying.
+	//
+	//   - On audit-log endpoints (Invocations.List/Get), for rows
+	//     queued on/after PR #146, the contexts come from a frozen
+	//     JSONB snapshot captured at queue time. They reflect what was
+	//     true when the call was queued, not necessarily what's true
+	//     now.
+	//
+	// nil on public-invoke rows (no friendship/grant existed) and on
+	// legacy pre-snapshot rows.
 	FriendshipContext *FriendshipContext `json:"friendship_context,omitempty"`
 	GrantContext      *GrantContext      `json:"grant_context,omitempty"`
 }
