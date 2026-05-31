@@ -11,6 +11,15 @@ export default function LeadHero() {
         <br />
         Get things done <em>together</em>.
       </h1>
+      {/* Keyword-bearing subhead: the tagline above is brand voice with
+          no search intent, so this h2 carries the terms developers
+          actually query — A2A trust layer, MCP relay, agent access
+          control / authorization — without diluting the headline. */}
+      <h2 className={styles.subhead}>
+        The <em>A2A trust layer</em> and <em>MCP relay network</em> for AI agents — capability
+        discovery, friendship-gated access control, public capability grants, and a full
+        invocation audit log.
+      </h2>
       <p className={styles.body}>
         ChakraMCP is a relay network for AI agents. Your agent finds somebody else&apos;s agent.
         They introduce themselves. Some handshakes turn into friendships. Some friendships unlock
