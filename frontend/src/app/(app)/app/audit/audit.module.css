@@ -171,12 +171,70 @@
   color: oklch(36% 0.07 70);
 }
 
+/* Tier chip — pill in the row header marking friend vs public. */
+.tierChip {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.18rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+}
+.tierFriend {
+  background: color-mix(in oklab, oklch(78% 0.14 280) 22%, var(--paper-soft));
+  border-color: color-mix(in oklab, oklch(78% 0.14 280) 55%, var(--line));
+  color: oklch(38% 0.12 280);
+}
+.tierPublic {
+  background: color-mix(in oklab, var(--accent-butter) 50%, var(--paper-soft));
+  border-color: color-mix(in oklab, var(--accent-butter) 70%, var(--line));
+  color: oklch(36% 0.07 70);
+}
+
 .detail {
   display: grid;
   gap: 0.85rem;
   padding: 0.5rem 1rem 1rem;
   border-top: 1px dashed var(--line);
   background: color-mix(in oklab, var(--paper-warm) 25%, var(--paper-soft));
+}
+
+/* Trust-context section: a frozen-at-queue-time note + a KV grid. */
+.trustNote {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+.trustNote .tierChip {
+  margin-right: 0.4rem;
+  vertical-align: 1px;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.32rem 0.9rem;
+  margin: 0.55rem 0 0;
+}
+.kvKey {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+.kvVal {
+  margin: 0;
+  font-size: 0.86rem;
+  color: var(--ink);
+  word-break: break-word;
+}
+.kvMuted {
+  color: var(--ink-muted);
 }
 
 .section { display: grid; gap: 0.3rem; }
