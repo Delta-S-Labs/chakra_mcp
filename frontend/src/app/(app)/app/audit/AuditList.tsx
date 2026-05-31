@@ -169,6 +169,7 @@ function Row({
           <code className={styles.capCode}>{item.capability_name}</code>
           <span className={styles.arrow}>←</span>{" "}
           <strong>{item.grantee_display_name ?? "deleted agent"}</strong>
+          {item.tier && <TierChip tier={item.tier} />}
           <StatusBadge status={item.status} />
         </div>
         <div className={styles.rowMeta}>
@@ -196,6 +197,7 @@ function Row({
 
       {expanded && (
         <div className={styles.detail}>
+          <TrustContext item={item} />
           <Section title="Input">
             <Pre value={item.input_preview} />
           </Section>
@@ -205,6 +207,119 @@ function Row({
         </div>
       )}
     </li>
+  );
+}
+
+/**
+ * Trust context for the row. The contexts here are frozen at queue
+ * time (migration 0024) — they show what was true when the relay
+ * authorised the call, not the live state now. A grant that's since
+ * been revoked still renders as it was at the time, which is exactly
+ * what an audit trail should preserve.
+ */
+function TrustContext({ item }: { item: Invocation }) {
+  const g = item.grant_context;
+  const f = item.friendship_context;
+
+  // Public-invoke rows carry no friendship/grant — the relay's
+  // per-invoker quota was the gate. Say so plainly rather than
+  // showing an empty section.
+  if (item.tier === "public" && !g) {
+    return (
+      <Section title="Trust context">
+        <p className={styles.trustNote}>
+          <span className={`${styles.tierChip} ${styles.tierPublic}`}>public</span>
+          No friendship or grant — this call rode a{" "}
+          <code>public_invoke</code> capability, authorised by the
+          relay&apos;s per-invoker monthly quota.
+        </p>
+      </Section>
+    );
+  }
+
+  // No snapshot at all (legacy pre-migration row, or a pre-flight
+  // rejection that never resolved a grant). Don't invent data.
+  if (!g && !f) {
+    return (
+      <Section title="Trust context">
+        <p className={styles.trustNote}>
+          No trust snapshot on this row — it predates the snapshot
+          migration, or the call was rejected before a grant resolved.
+        </p>
+      </Section>
+    );
+  }
+
+  return (
+    <Section title="Trust context">
+      <p className={styles.trustNote}>
+        Frozen at the time of the call — reflects the grant &amp;
+        friendship state when the relay authorised it, not necessarily
+        the live state now.
+      </p>
+      <dl className={styles.kv}>
+        {g && (
+          <>
+            <KV k="Grant" v={<code>{g.id}</code>} />
+            <KV k="Grant status" v={g.status} />
+            <KV
+              k="Capability"
+              v={
+                <>
+                  <code>{g.capability_name}</code>{" "}
+                  <span className={styles.kvMuted}>({g.capability_visibility})</span>
+                </>
+              }
+            />
+            <KV k="Granted" v={new Date(g.granted_at).toLocaleString()} />
+            <KV
+              k="Expires"
+              v={g.expires_at ? new Date(g.expires_at).toLocaleString() : "never"}
+            />
+          </>
+        )}
+        {f && (
+          <>
+            <KV
+              k="Friendship"
+              v={
+                <>
+                  <code>{f.id}</code>{" "}
+                  <span className={styles.kvMuted}>({f.status})</span>
+                </>
+              }
+            />
+            {f.decided_at && (
+              <KV k="Friended" v={new Date(f.decided_at).toLocaleString()} />
+            )}
+          </>
+        )}
+      </dl>
+    </Section>
+  );
+}
+
+function KV({ k, v }: { k: string; v: React.ReactNode }) {
+  return (
+    <>
+      <dt className={styles.kvKey}>{k}</dt>
+      <dd className={styles.kvVal}>{v}</dd>
+    </>
+  );
+}
+
+function TierChip({ tier }: { tier: "friend" | "public" }) {
+  return (
+    <span
+      className={`${styles.tierChip} ${tier === "friend" ? styles.tierFriend : styles.tierPublic}`}
+      title={
+        tier === "friend"
+          ? "Authorised by a friendship + grant"
+          : "Authorised by a public-invoke capability (no friendship needed)"
+      }
+    >
+      {tier}
+    </span>
   );
 }
 

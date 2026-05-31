@@ -451,6 +451,32 @@ export interface InvokeResponse {
   error: string | null;
 }
 
+/** Friendship state the relay froze at queue time (migration 0024).
+ *  Present on audit-log rows queued on/after that migration whose call
+ *  rode a friendship+grant; null on public-invoke + legacy rows. */
+export interface FriendshipContext {
+  id: string;
+  status: FriendshipStatus;
+  proposer_agent_id: string;
+  target_agent_id: string;
+  proposer_message: string | null;
+  response_message: string | null;
+  decided_at: string | null;
+}
+
+/** Grant state the relay froze at queue time (migration 0024). */
+export interface GrantContext {
+  id: string;
+  status: GrantStatus;
+  granter_agent_id: string;
+  grantee_agent_id: string;
+  capability_id: string;
+  capability_name: string;
+  capability_visibility: Visibility;
+  granted_at: string;
+  expires_at: string | null;
+}
+
 export interface Invocation {
   id: string;
   grant_id: string | null;
@@ -469,6 +495,16 @@ export interface Invocation {
   claimed_at: string | null;
   i_served: boolean;
   i_invoked: boolean;
+  /** Which trust path authorised the call: "friend" (rode a
+   *  friendship+grant) or "public" (public_invoke capability).
+   *  Absent on relays predating the tier field (#145). */
+  tier?: "friend" | "public";
+  /** Frozen trust context (migration 0024). On audit-log endpoints
+   *  these reflect state AT QUEUE TIME, not now — so a since-revoked
+   *  grant still shows as it was when the call was authorised. Absent
+   *  on public-invoke + pre-snapshot rows. */
+  friendship_context?: FriendshipContext;
+  grant_context?: GrantContext;
 }
 
 export interface ReportResultRequest {
