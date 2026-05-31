@@ -152,6 +152,16 @@ export interface Invocation {
   i_served: boolean;
   i_invoked: boolean;
   /**
+   * Which trust path authorised this invocation. `"friend"` = rode a
+   * friendship + grant (`friendship_context` / `grant_context` are
+   * populated on inbox responses). `"public"` = rode a
+   * `public_invoke=true` capability (migration 0022); contexts come
+   * back null. Use this instead of inspecting `grant_id` or the
+   * contexts directly — it removes the "null means public" footgun
+   * for handlers. Absent on relays predating PR #145.
+   */
+  tier: "friend" | "public";
+  /**
    * HITL semantics of the underlying capability (issue #69). Populated
    * on `inbox.pull` responses so `InboxClient.serve()` can route
    * `human_in_loop` invocations to a `humanHandler` instead of an

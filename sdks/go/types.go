@@ -195,6 +195,14 @@ type Invocation struct {
 	ClaimedAt          *time.Time       `json:"claimed_at"`
 	IServed            bool             `json:"i_served"`
 	IInvoked           bool             `json:"i_invoked"`
+	// Tier identifies which trust path authorised this invocation.
+	// "friend" = rode a friendship + grant (FriendshipContext /
+	// GrantContext are populated on inbox responses). "public" = rode
+	// a public_invoke=true capability (migration 0022); contexts come
+	// back nil. Use this instead of inspecting GrantID or the contexts
+	// directly — it removes the "nil means public" footgun for
+	// handlers. Empty on relays predating PR #145.
+	Tier string `json:"tier"`
 	// Trust context bundled by the relay on Inbox.Pull responses only.
 	// The relay just verified friendship + grant before delivering this
 	// row - handlers can trust these assertions without re-querying.

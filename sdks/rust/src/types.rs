@@ -215,6 +215,16 @@ pub struct Invocation {
     pub claimed_at: Option<DateTime<Utc>>,
     pub i_served: bool,
     pub i_invoked: bool,
+    /// Which trust path authorised this invocation. `"friend"` = rode a
+    /// friendship + grant (`friendship_context` / `grant_context` are
+    /// populated on inbox responses). `"public"` = rode a
+    /// `public_invoke=true` capability (migration 0022); contexts come
+    /// back `None`. Use this instead of inspecting `grant_id` or the
+    /// contexts directly — it removes the "None means public" footgun
+    /// for handlers. Defaults to empty when consuming responses from
+    /// relays predating PR #145.
+    #[serde(default)]
+    pub tier: String,
     /// Trust context bundled by the relay on `inbox.pull` responses
     /// only - the relay just verified friendship + grant before
     /// delivering this row, so handlers can trust these assertions
