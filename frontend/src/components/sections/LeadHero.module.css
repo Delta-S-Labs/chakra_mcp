@@ -41,6 +41,23 @@
   padding: 0 0.12em;
 }
 
+.subhead {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(1.3rem, 2.1vw, 1.85rem);
+  line-height: 1.32;
+  letter-spacing: -0.015em;
+  color: var(--ink-soft);
+  margin: 0;
+  max-width: 42ch;
+  text-wrap: balance;
+}
+
+.subhead em {
+  font-style: normal;
+  color: var(--accent-coral);
+}
+
 .body {
   font-family: var(--font-body);
   font-size: clamp(1.15rem, 1.4vw, 1.35rem);
