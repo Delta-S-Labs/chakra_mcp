@@ -1,0 +1,124 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            g.id as grant_id, g.status as grant_status,\n            g.granter_agent_id, g.grantee_agent_id, g.capability_id,\n            g.expires_at, g.granted_at,\n            ga.account_id as granter_account_id,\n            ea.account_id as grantee_account_id,\n            cap.name as capability_name,\n            cap.visibility as capability_visibility,\n            -- Friendship row that authorised this grant. LEFT JOIN so a\n            -- grant whose friendship was deleted (shouldn't happen in\n            -- normal operation; FKs are tombstone, not cascade) still\n            -- resolves — we just record a NULL-friendship snapshot.\n            f.id as \"friendship_id?\",\n            f.status as \"friendship_status?\",\n            f.proposer_agent_id as \"friendship_proposer_agent_id?\",\n            f.target_agent_id as \"friendship_target_agent_id?\",\n            f.proposer_message as \"friendship_proposer_message?\",\n            f.response_message as \"friendship_response_message?\",\n            f.decided_at as \"friendship_decided_at?\"\n        FROM grants g\n        JOIN agents ga ON ga.id = g.granter_agent_id\n        JOIN agents ea ON ea.id = g.grantee_agent_id\n        JOIN agent_capabilities cap ON cap.id = g.capability_id\n        LEFT JOIN friendships f\n            ON f.status = 'accepted'\n            AND (\n                (f.proposer_agent_id = g.granter_agent_id\n                    AND f.target_agent_id = g.grantee_agent_id)\n                OR (f.proposer_agent_id = g.grantee_agent_id\n                    AND f.target_agent_id = g.granter_agent_id)\n            )\n        WHERE g.id = $1\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "grant_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "grant_status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "granter_agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "grantee_agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "capability_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "granted_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "granter_account_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 8,
+        "name": "grantee_account_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 9,
+        "name": "capability_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "capability_visibility",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "friendship_id?",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 12,
+        "name": "friendship_status?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "friendship_proposer_agent_id?",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 14,
+        "name": "friendship_target_agent_id?",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 15,
+        "name": "friendship_proposer_message?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 16,
+        "name": "friendship_response_message?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 17,
+        "name": "friendship_decided_at?",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "2b6a8d7f0c9679f936eb1e0b153686faf09c5b7153259829c3dad0fb33be8a95"
+}

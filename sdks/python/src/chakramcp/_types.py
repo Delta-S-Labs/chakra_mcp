@@ -196,8 +196,15 @@ class Invocation(TypedDict, total=False):
     # on relays predating PR #80; absence is treated as autonomous by
     # `inbox.serve` for forward compatibility.
     semantics: str | None
-    friendship_context: FriendshipContext  # only set on inbox responses
-    grant_context: GrantContext  # only set on inbox responses
+    # Set on inbox.pull responses (verified live by the relay) AND on
+    # audit-log endpoints for rows queued on/after the trust-snapshot
+    # migration (#146). On audit-log paths the contexts come from a
+    # frozen JSONB snapshot captured at queue time — they reflect what
+    # was true when the call was queued, not necessarily what's true
+    # now. Absent on public-invoke rows (no friendship/grant existed)
+    # and on legacy pre-snapshot rows.
+    friendship_context: FriendshipContext
+    grant_context: GrantContext
 
 
 # ─── Request bodies ──────────────────────────────────────
