@@ -381,6 +381,14 @@ pub async fn revoke(
         return Err(ApiError::Forbidden);
     }
 
+    // Atomic: flip the grant to revoked AND cancel any in-flight
+    // invocations that depend on it. Without this second UPDATE the
+    // worker would still pull queued rows off the inbox, run them,
+    // and post results against a now-revoked grant — defeating the
+    // intent of the revoke. We only touch `pending` rows; anything
+    // already `in_progress` has been pulled and is presumably being
+    // handled, and the result-posting path can decide its own fate.
+    let mut tx = state.db.begin().await?;
     sqlx::query!(
         r#"
         UPDATE grants
@@ -394,8 +402,274 @@ pub async fn revoke(
         user.user_id,
         req.reason,
     )
-    .execute(&state.db)
+    .execute(&mut *tx)
     .await?;
+    sqlx::query!(
+        r#"
+        UPDATE relay_invocations
+        SET status = 'rejected',
+            error_message = COALESCE(error_message, 'grant revoked while queued')
+        WHERE grant_id = $1 AND status = 'pending'
+        "#,
+        id,
+    )
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
 
     Ok(Json(fetch_grant(&state.db, user.user_id, id).await?))
+}
+
+#[cfg(test)]
+mod revoke_cancels_pending_tests {
+    //! Edge 3 from the trust-context audit: when a grant is revoked,
+    //! any `relay_invocations` row still in `pending` status (queued
+    //! but not yet pulled by the worker) must transition to
+    //! `rejected`. Without this, the worker would silently pull
+    //! revoked-grant traffic off the inbox and run it — defeating
+    //! the intent of the revoke.
+    //!
+    //! `in_progress` rows are intentionally left alone (a worker has
+    //! already pulled and is presumably executing); their result
+    //! posting will follow its own path. Already-terminal rows
+    //! (`succeeded`, `failed`, etc.) are untouched.
+    use axum::body::Body;
+    use axum::http::{header, Request};
+    use chakramcp_shared::config::SharedConfig;
+    use chakramcp_shared::jwt::{encode_jwt, UserClaims};
+    use sqlx::PgPool;
+    use tower::ServiceExt;
+    use uuid::Uuid;
+
+    fn config() -> SharedConfig {
+        SharedConfig {
+            database_url: "ignored".into(),
+            jwt_secret: "test-secret".into(),
+            admin_email: None,
+            survey_enabled: false,
+            frontend_base_url: "http://localhost:3000".into(),
+            app_base_url: "http://localhost:8080".into(),
+            relay_base_url: "http://localhost:8090".into(),
+            discovery_v2_enabled: false,
+            log_filter: "warn".into(),
+        }
+    }
+
+    /// Seed alice (granter) + bob (grantee) + friendship + grant.
+    /// Returns the grant id, the granter's user id (for JWT minting),
+    /// and the grantee's agent id (for invocation rows).
+    async fn seed_pair_with_grant(pool: &PgPool) -> (Uuid, Uuid, Uuid, Uuid, Uuid) {
+        let alice_user = Uuid::now_v7();
+        let bob_user = Uuid::now_v7();
+        for (uid, name) in [(alice_user, "Alice"), (bob_user, "Bob")] {
+            sqlx::query!(
+                r#"INSERT INTO users (id, email, display_name, password_hash)
+                   VALUES ($1, $2, $3, 'x')"#,
+                uid,
+                format!("{name}-{uid}@t.local"),
+                name,
+            )
+            .execute(pool)
+            .await
+            .unwrap();
+        }
+        let alice_acct = Uuid::now_v7();
+        let bob_acct = Uuid::now_v7();
+        sqlx::query!(
+            r#"INSERT INTO accounts (id, slug, display_name, account_type, owner_user_id)
+               VALUES ($1, $2, 'Alice', 'individual', $3),
+                      ($4, $5, 'Bob',   'individual', $6)"#,
+            alice_acct,
+            format!("alice-{alice_acct}"),
+            alice_user,
+            bob_acct,
+            format!("bob-{bob_acct}"),
+            bob_user,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            r#"INSERT INTO account_memberships (id, account_id, user_id, role)
+               VALUES ($1, $2, $3, 'owner'),
+                      ($4, $5, $6, 'owner')"#,
+            Uuid::now_v7(),
+            alice_acct,
+            alice_user,
+            Uuid::now_v7(),
+            bob_acct,
+            bob_user,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        let alice_agent = Uuid::now_v7();
+        let bob_agent = Uuid::now_v7();
+        sqlx::query!(
+            r#"INSERT INTO agents (id, account_id, slug, display_name, visibility)
+               VALUES ($1, $2, 'alice-bot', 'Alice Bot', 'network'),
+                      ($3, $4, 'bob-bot',   'Bob Bot',   'network')"#,
+            alice_agent,
+            alice_acct,
+            bob_agent,
+            bob_acct,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        let cap = Uuid::now_v7();
+        sqlx::query!(
+            r#"INSERT INTO agent_capabilities
+                  (id, agent_id, name, description, input_schema, output_schema, visibility)
+               VALUES ($1, $2, 'do_thing', 'd', '{}'::jsonb, '{}'::jsonb, 'network')"#,
+            cap,
+            alice_agent,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            r#"INSERT INTO friendships
+                  (id, proposer_agent_id, target_agent_id, status, decided_at)
+               VALUES ($1, $2, $3, 'accepted', now())"#,
+            Uuid::now_v7(),
+            alice_agent,
+            bob_agent,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        let grant = Uuid::now_v7();
+        sqlx::query!(
+            r#"INSERT INTO grants
+                  (id, granter_agent_id, grantee_agent_id, capability_id, status)
+               VALUES ($1, $2, $3, $4, 'active')"#,
+            grant,
+            alice_agent,
+            bob_agent,
+            cap,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        (grant, alice_user, bob_user, alice_agent, bob_agent)
+    }
+
+    async fn seed_invocation(
+        pool: &PgPool,
+        grant_id: Uuid,
+        granter: Uuid,
+        grantee: Uuid,
+        status: &str,
+    ) -> Uuid {
+        let id = Uuid::now_v7();
+        sqlx::query!(
+            r#"INSERT INTO relay_invocations
+                  (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
+                   capability_name, status)
+               VALUES ($1, $2, $3, $4, NULL, 'do_thing', $5)"#,
+            id,
+            grant_id,
+            granter,
+            grantee,
+            status,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        id
+    }
+
+    async fn invocation_status(pool: &PgPool, id: Uuid) -> String {
+        sqlx::query_scalar!("SELECT status FROM relay_invocations WHERE id = $1", id,)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn revoke_cancels_pending_but_leaves_in_progress_and_terminal(pool: PgPool) {
+        let (grant, alice_user, _bob_user, alice_agent, bob_agent) =
+            seed_pair_with_grant(&pool).await;
+
+        // Three invocations in different states, all on the same grant.
+        let pending = seed_invocation(&pool, grant, alice_agent, bob_agent, "pending").await;
+        let in_progress =
+            seed_invocation(&pool, grant, alice_agent, bob_agent, "in_progress").await;
+        let succeeded = seed_invocation(&pool, grant, alice_agent, bob_agent, "succeeded").await;
+
+        // Alice (granter owner) revokes.
+        let alice_token = encode_jwt(
+            &UserClaims::new(alice_user, format!("{alice_user}@t.local"), false, 1),
+            "test-secret",
+        )
+        .unwrap();
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/grants/{grant}/revoke"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, format!("Bearer {alice_token}"))
+                    .body(Body::from(r#"{"reason":"key compromise"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(res.status().is_success(), "got {}", res.status());
+
+        // pending row: cancelled.
+        assert_eq!(invocation_status(&pool, pending).await, "rejected");
+        let pending_err: Option<String> = sqlx::query_scalar!(
+            "SELECT error_message FROM relay_invocations WHERE id = $1",
+            pending,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(pending_err.as_deref(), Some("grant revoked while queued"));
+
+        // in_progress row: untouched (worker is presumably handling it).
+        assert_eq!(invocation_status(&pool, in_progress).await, "in_progress");
+        // succeeded row: untouched (terminal — already done).
+        assert_eq!(invocation_status(&pool, succeeded).await, "succeeded");
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn revoke_with_no_pending_is_a_no_op(pool: PgPool) {
+        // Sanity check: revoke still succeeds when there's nothing to
+        // cascade — and doesn't accidentally hit unrelated grants.
+        let (grant, alice_user, _, alice_agent, bob_agent) = seed_pair_with_grant(&pool).await;
+        let succeeded = seed_invocation(&pool, grant, alice_agent, bob_agent, "succeeded").await;
+
+        let alice_token = encode_jwt(
+            &UserClaims::new(alice_user, format!("{alice_user}@t.local"), false, 1),
+            "test-secret",
+        )
+        .unwrap();
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/grants/{grant}/revoke"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, format!("Bearer {alice_token}"))
+                    .body(Body::from(r#"{}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(res.status().is_success());
+        assert_eq!(invocation_status(&pool, succeeded).await, "succeeded");
+
+        // Grant is now revoked.
+        let grant_status: String =
+            sqlx::query_scalar!("SELECT status FROM grants WHERE id = $1", grant,)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(grant_status, "revoked");
+    }
 }

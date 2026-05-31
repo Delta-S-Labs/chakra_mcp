@@ -184,6 +184,14 @@ class Invocation(TypedDict, total=False):
     claimed_at: str | None
     i_served: bool
     i_invoked: bool
+    # Which trust path authorised this invocation. ``"friend"`` =
+    # rode a friendship + grant (friendship_context / grant_context
+    # are populated on inbox responses). ``"public"`` = rode a
+    # ``public_invoke=true`` capability (migration 0022); contexts
+    # come back ``None``. Use this instead of inspecting grant_id or
+    # the contexts directly — it removes the "null means public"
+    # footgun for handlers. Absent on relays predating PR #145.
+    tier: str
     # Capability semantics — `"autonomous"` or `"human_in_loop"`. Absent
     # on relays predating PR #80; absence is treated as autonomous by
     # `inbox.serve` for forward compatibility.

@@ -139,6 +139,21 @@ pub struct InvocationDto {
     pub friendship_context: Option<FriendshipContext>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub grant_context: Option<GrantContext>,
+    /// Which trust path authorised this invocation, computed at read
+    /// time from the row's `grant_id`:
+    ///
+    /// * `"friend"` — `grant_id IS NOT NULL`. The call rode a
+    ///   friendship + grant; `grant_context` / `friendship_context`
+    ///   are populated on inbox responses.
+    /// * `"public"` — `grant_id IS NULL`. The call rode a
+    ///   `public_invoke=true` capability (migration 0022); the
+    ///   relay's per-invoker quota check is the trust assertion.
+    ///   Both contexts come back `None` on inbox responses.
+    ///
+    /// Use this instead of inspecting `grant_id` / contexts directly —
+    /// it removes the "null means public" footgun for handlers and
+    /// gives the audit log a single, stable column to filter by.
+    pub tier: String,
 }
 
 /// Friendship details the relay verified before queuing this
@@ -824,6 +839,11 @@ pub async fn inbox(
                     claimed_at: r.claimed_at,
                     i_served: true,
                     i_invoked: false,
+                    tier: if r.grant_id.is_some() {
+                        "friend".into()
+                    } else {
+                        "public".into()
+                    },
                     friendship_context,
                     grant_context,
                 }
@@ -1033,6 +1053,11 @@ pub async fn list(
                 claimed_at: r.claimed_at,
                 i_served: r.i_served.unwrap_or(false),
                 i_invoked: r.i_invoked.unwrap_or(false),
+                tier: if r.grant_id.is_some() {
+                    "friend".into()
+                } else {
+                    "public".into()
+                },
                 friendship_context: None,
                 grant_context: None,
             })
@@ -1106,6 +1131,11 @@ async fn fetch_one(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<InvocationDto
         claimed_at: r.claimed_at,
         i_served,
         i_invoked,
+        tier: if r.grant_id.is_some() {
+            "friend".into()
+        } else {
+            "public".into()
+        },
         friendship_context: None,
         grant_context: None,
     })
@@ -2292,6 +2322,12 @@ mod public_invoke_tests {
         );
         // No grant_id on a public invoke.
         assert!(row["grant_id"].is_null());
+        // tier field stamped by the relay so handlers don't have to
+        // infer "null grant_id = public" themselves.
+        assert_eq!(
+            row["tier"], "public",
+            "public invoke must stamp tier='public'"
+        );
         // Trust contexts must be absent (serde_skip → key not present).
         assert!(
             row.get("friendship_context").is_none() || row["friendship_context"].is_null(),
@@ -2301,5 +2337,143 @@ mod public_invoke_tests {
             row.get("grant_context").is_none() || row["grant_context"].is_null(),
             "no grant context on public invoke"
         );
+    }
+}
+
+#[cfg(test)]
+mod tier_field_tests {
+    //! Edge 1 from the trust-context audit: the `tier` field on
+    //! `InvocationDto` must be `"friend"` for grant-path invocations
+    //! and `"public"` for public-invoke calls, and that signal must
+    //! survive across all three read endpoints (inbox.pull, list, get)
+    //! so handlers + audit-log consumers can use it uniformly.
+    use axum::body::Body;
+    use axum::http::{header, Request, StatusCode};
+    use chakramcp_shared::jwt::{encode_jwt, UserClaims};
+    use http_body_util::BodyExt;
+    use serde_json::Value;
+    use sqlx::PgPool;
+    use tower::ServiceExt;
+
+    use super::legacy_v01_contract_tests::{config, seed_demo};
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn grant_path_invocation_carries_tier_friend(pool: PgPool) {
+        let f = seed_demo(&pool).await;
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+
+        // Bob (caller) → POST /v1/invoke against Alice's grant.
+        let invoke_res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/invoke")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, format!("Bearer {}", f.caller_token))
+                    .body(Body::from(
+                        serde_json::to_vec(&serde_json::json!({
+                            "grant_id": f.grant_id,
+                            "grantee_agent_id": f.grantee_agent_id,
+                            "input": {"duration_min": 30}
+                        }))
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(invoke_res.status(), StatusCode::ACCEPTED);
+        let invoke_body: Value =
+            serde_json::from_slice(&invoke_res.into_body().collect().await.unwrap().to_bytes())
+                .unwrap();
+        let invocation_id = invoke_body["invocation_id"].as_str().unwrap();
+
+        // Caller-side read via the audit log (GET /v1/invocations/{id}).
+        let get_res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/v1/invocations/{invocation_id}"))
+                    .header(header::AUTHORIZATION, format!("Bearer {}", f.caller_token))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(get_res.status(), StatusCode::OK);
+        let get_body: Value =
+            serde_json::from_slice(&get_res.into_body().collect().await.unwrap().to_bytes())
+                .unwrap();
+        assert_eq!(
+            get_body["tier"], "friend",
+            "grant-path invocation must stamp tier='friend' on get()"
+        );
+        assert!(
+            !get_body["grant_id"].is_null(),
+            "grant-path invocation keeps grant_id non-null"
+        );
+
+        // Audit-log list view (GET /v1/invocations).
+        let list_res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/invocations?direction=outbound")
+                    .header(header::AUTHORIZATION, format!("Bearer {}", f.caller_token))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let list_body: Value =
+            serde_json::from_slice(&list_res.into_body().collect().await.unwrap().to_bytes())
+                .unwrap();
+        let arr = list_body.as_array().expect("array");
+        let row = arr
+            .iter()
+            .find(|r| r["id"] == invocation_id)
+            .expect("row in list");
+        assert_eq!(
+            row["tier"], "friend",
+            "grant-path invocation must stamp tier='friend' on list()"
+        );
+
+        // Granter-side read via inbox.pull (where contexts are populated).
+        let alice_user_id: uuid::Uuid = sqlx::query_scalar!(
+            "SELECT owner_user_id FROM accounts a JOIN agents g ON g.account_id=a.id WHERE g.id=$1",
+            f.granter_agent_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+        .unwrap();
+        let alice_token = encode_jwt(
+            &UserClaims::new(alice_user_id, format!("{alice_user_id}@t.local"), false, 1),
+            "test-secret",
+        )
+        .unwrap();
+        let inbox_res = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/v1/inbox?agent_id={}", f.granter_agent_id))
+                    .header(header::AUTHORIZATION, format!("Bearer {alice_token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let inbox_body: Value =
+            serde_json::from_slice(&inbox_res.into_body().collect().await.unwrap().to_bytes())
+                .unwrap();
+        let inbox_arr = inbox_body.as_array().expect("array");
+        assert_eq!(inbox_arr.len(), 1);
+        assert_eq!(
+            inbox_arr[0]["tier"], "friend",
+            "grant-path invocation must stamp tier='friend' on inbox.pull"
+        );
+        // Sanity: contexts are present on the inbox response.
+        assert!(!inbox_arr[0]["grant_context"].is_null());
+        assert!(!inbox_arr[0]["friendship_context"].is_null());
     }
 }

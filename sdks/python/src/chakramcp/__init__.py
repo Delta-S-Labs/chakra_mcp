@@ -10,7 +10,7 @@ Both share the same sub-clients (``.agents``, ``.friendships``,
 helpers (``invoke_and_wait``, ``inbox.serve``).
 """
 
-__version__ = "0.3.3"
+__version__ = "0.3.4"
 
 from ._async import AsyncChakraMCP
 from ._errors import ChakraMCPError, QuotaExhaustedError
