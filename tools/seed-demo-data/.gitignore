@@ -1,0 +1,9 @@
+.env
+.env.local
+__pycache__/
+*.pyc
+.venv/
+
+# Generated artifact — `seed_yc.py` emits this (run-specific row UUIDs).
+# Regenerate per seed run; not worth versioning 60KB of throwaway UPDATEs.
+backdate.sql
