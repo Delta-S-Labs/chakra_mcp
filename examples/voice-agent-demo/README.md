@@ -62,7 +62,7 @@ Push-to-talk: hold **space** while you speak, release to send.
 | Voice STT | Sarvam `POST /speech-to-text` |
 | Voice TTS | Sarvam `POST /text-to-speech` (`bulbul:v3`) |
 | ChakraMCP access | Reads the JWT minted by `chakramcp login`, opens an MCP client to `https://relay.chakramcp.com/mcp` |
-| Swiggy Dineout | MCP client to `https://mcp.swiggy.com/...` (token from env) |
+| Swiggy Dineout | MCP client to `https://mcp.swiggy.com/...` (OAuth 2.1 + PKCE, browser login at startup) |
 | TUI | [Textual](https://textual.textualize.io/) — 2 tabs, expandable tree for logs |
 | Audio I/O | `sounddevice` + `numpy` (push-to-talk) |
 
@@ -90,6 +90,15 @@ chakramcp login
 # Mic permission: macOS will ask the terminal for mic access on first
 # space-press. Grant it once.
 ```
+
+**Swiggy login happens at startup, not here.** Swiggy MCP is OAuth 2.1
+(PKCE) — there's no token to paste. The *first* time you run the agent
+on a laptop, it opens a browser tab for Swiggy login, then caches the
+~5-day token locally (per persona, under
+`~/.config/voice-agent-demo/`). Do this first run a few minutes before
+filming so the browser handoff isn't on camera. Re-runs within 5 days
+skip it. Leave `SWIGGY_MCP_URL` blank in `.env` to skip Swiggy
+entirely (the agent will just suggest a restaurant verbally).
 
 ## Run
 
@@ -142,7 +151,9 @@ the relay and you can start the discovery flow.
 | Sarvam 401 | `SARVAM_API_KEY` in `.env` is wrong or expired. |
 | `friendships.propose` 409 | A friendship between these two agents already exists — accept it from her side or skip step 2. |
 | `negotiate_dinner` not found | The peer agent hasn't published it yet. On each laptop's first run, ask the agent to register itself + publish the capability (see "First run" above). |
-| Swiggy MCP errors mid-call | The agent catches it and falls back to a verbal suggestion. (Live-only mode by request; can swap to a curated fallback list in `swiggy_mcp.py`.) |
+| Swiggy browser tab didn't open | The terminal prints the auth URL — open it manually. Headless box? Run the first auth on a machine with a browser; the cached token under `~/.config/voice-agent-demo/` is portable. |
+| Swiggy token expired (>5 days) | Delete `~/.config/voice-agent-demo/swiggy_token_<persona>.json` and re-run — it re-auths. Swiggy v1.0 has no refresh, so the 5-day token is the whole session. |
+| Swiggy MCP errors mid-call | The agent catches it and falls back to a verbal suggestion. (Live-only by request; add a curated fallback list in `swiggy_mcp.py` if you want belt-and-suspenders.) |
 
 ## Files
 
