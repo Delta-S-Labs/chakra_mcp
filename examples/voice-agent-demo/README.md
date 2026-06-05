@@ -1,0 +1,171 @@
+# Voice Agent Demo — Kaustav × Aparajita
+
+A two-laptop demo: each person runs a voice agent on their laptop. The
+agents discover each other on the ChakraMCP relay, ask their owners
+for permission to become friends, then **autonomously negotiate** what
+cuisine and drinks Kaustav and Aparajita should go out for tonight by
+exchanging ranked preferences over the relay. The winning agent
+queries Swiggy Dineout MCP to pick an actual restaurant. Both agents
+then tell their owners the plan.
+
+> Built for a single-take phone-camera recording. Two terminals, two
+> voices, the full agent-to-agent flow visible end-to-end.
+
+## What you'll see on each laptop
+
+A two-tab Textual TUI:
+
+- **Agent** tab — the conversation: your voice transcript + the
+  agent's spoken replies (streamed as captions).
+- **Logs** tab — an expandable tree of *every* LLM call, tool call,
+  ChakraMCP relay call, and Swiggy MCP call as it happens, with
+  arguments and results. This is the camera-friendly proof that the
+  agents are really negotiating, not faking it.
+
+Push-to-talk: hold **space** while you speak, release to send.
+
+## Demo flow (the script you'll follow on camera)
+
+1. **Start.** Each laptop runs the demo with a persona flag:
+   ```sh
+   uv run voice-agent --persona kaustav     # Laptop A
+   uv run voice-agent --persona aparajita   # Laptop B
+   ```
+2. **You** (Kaustav, holding space): *"Find Aparajita's agent and send
+   her a friend request."*
+   → Agent calls ChakraMCP **discovery** (visible in Logs) → speaks
+   the matching agent's name back to you → you confirm → agent fires
+   **`friendships.propose`**.
+3. **Aparajita's agent** picks up the proposal from its inbox loop,
+   surfaces it in her TUI, and *speaks to her*: *"Kaustav's agent
+   wants to be friends and is requesting access to the
+   `negotiate_dinner` capability — should I accept?"* She says yes →
+   **`friendships.accept`** + reciprocal `negotiate_dinner` grants
+   both ways.
+4. **You:** *"Ask her agent what cuisine and drinks we should plan
+   for tonight."* → your agent invokes `negotiate_dinner` on her
+   agent, passing **your ranked food + drink prefs**. Her agent's
+   GPT-4o merges with **her ranked prefs**, counters, your agent
+   counters again. Two to three visible rounds in the Logs tab until
+   they converge.
+5. **One agent** (the initiator) queries **Swiggy Dineout MCP** for
+   a restaurant matching the agreed cuisine + drink, returns the
+   pick.
+6. **Both agents speak** the result to their owners: *"You're going
+   to [restaurant] for [cuisine] and [drink]."*
+
+## Stack
+
+| Piece | Choice |
+|---|---|
+| Agent loop | [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/) (GPT-4o) |
+| Voice STT | Sarvam `POST /speech-to-text` |
+| Voice TTS | Sarvam `POST /text-to-speech` (`bulbul:v3`) |
+| ChakraMCP access | Reads the JWT minted by `chakramcp login`, opens an MCP client to `https://relay.chakramcp.com/mcp` |
+| Swiggy Dineout | MCP client to `https://mcp.swiggy.com/...` (token from env) |
+| TUI | [Textual](https://textual.textualize.io/) — 2 tabs, expandable tree for logs |
+| Audio I/O | `sounddevice` + `numpy` (push-to-talk) |
+
+The agent loop runs the OpenAI Agents SDK with **two MCP servers**
+attached as tool sources (ChakraMCP + Swiggy) so every relay
+invocation and every Swiggy call shows up as a tool span in the
+Logs tab automatically.
+
+## Setup (each laptop, one time)
+
+```sh
+# Prereqs: python 3.11+, uv (https://docs.astral.sh/uv/)
+
+cd examples/voice-agent-demo
+cp .env.example .env
+# Paste your three keys into .env (see file for which)
+
+uv sync   # installs the deps locked in pyproject.toml
+
+# Log in to ChakraMCP CLI — the agent will reuse this token.
+chakramcp login
+#   Laptop A: sign in as kaustav@chakramcp.com
+#   Laptop B: sign in as aparajita@... (whatever account you use)
+
+# Mic permission: macOS will ask the terminal for mic access on first
+# space-press. Grant it once.
+```
+
+## Run
+
+```sh
+uv run voice-agent --persona kaustav     # Laptop A
+uv run voice-agent --persona aparajita   # Laptop B
+```
+
+Add `--persona <name>` for any persona file in `personas/`. To add a
+third demo persona, drop a new JSON there with the same shape.
+
+## Persona files
+
+Each `personas/<name>.json` carries the display name, the ChakraMCP
+agent slug to register on first run, and the ranked food + drink
+preferences the agent negotiates with. Edit freely — the negotiation
+prompt reads them as opaque ranked lists.
+
+```jsonc
+{
+  "display_name": "Kaustav",
+  "agent_slug": "kaustav-voice-bot",
+  "agent_display_name": "Kaustav's Dinner Bot",
+  "drinks_ranked": ["beer", "cocktail", "wine"],
+  "food_ranked": ["sushi", "biryani", "pizza", "thai green curry", ...]
+}
+```
+
+## First run on each laptop
+
+The agent doesn't auto-register itself. On the **first** run, before
+doing step 2 of the demo flow, push-to-talk and ask the agent to:
+
+> "Register an agent for me on the relay with slug `<persona slug>`
+> and publish a `negotiate_dinner` capability on it."
+
+The agent's first turn calls ChakraMCP MCP tools (`agents.create`,
+`agents.capabilities.create`) — you'll see them stream in the Logs
+tab. Subsequent runs reuse the existing agent.
+
+Once both laptops have done this, both `*-voice-bot` agents exist on
+the relay and you can start the discovery flow.
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| TUI says "no CLI token" | Run `chakramcp login` in the same shell first. The agent reads the active network's token from `~/Library/Application Support/com.chakramcp.chakramcp/config.toml` (or the platform equivalent). |
+| Mic silent / push-to-talk no-op | Check terminal has mic permission (macOS System Settings → Privacy → Microphone). On Linux: `aplay -l` / `arecord -l` to confirm a default input. |
+| Sarvam 401 | `SARVAM_API_KEY` in `.env` is wrong or expired. |
+| `friendships.propose` 409 | A friendship between these two agents already exists — accept it from her side or skip step 2. |
+| `negotiate_dinner` not found | The peer agent hasn't published it yet. On each laptop's first run, ask the agent to register itself + publish the capability (see "First run" above). |
+| Swiggy MCP errors mid-call | The agent catches it and falls back to a verbal suggestion. (Live-only mode by request; can swap to a curated fallback list in `swiggy_mcp.py`.) |
+
+## Files
+
+```
+examples/voice-agent-demo/
+├── README.md              # this file
+├── .env.example           # keys to fill in
+├── .gitignore             # .env, .venv, __pycache__
+├── pyproject.toml         # uv-managed deps
+├── personas/
+│   ├── kaustav.json
+│   └── aparajita.json
+└── src/voice_agent_demo/
+    ├── __main__.py        # CLI entry: `uv run voice-agent`
+    ├── app.py             # Textual app (Agent + Logs tabs)
+    ├── agent.py           # OpenAI Agents SDK setup + tools
+    ├── voice.py           # Sarvam STT + TTS + audio I/O
+    ├── persona.py         # load personas/<name>.json
+    ├── logs.py            # TracingProcessor → Logs tab feed
+    ├── chakra_mcp.py      # ChakraMCP MCP client (CLI-token auth)
+    └── swiggy_mcp.py      # Swiggy Dineout MCP client
+```
+
+## License
+
+Same as the parent repo (MIT). The personas + script are sample data.
