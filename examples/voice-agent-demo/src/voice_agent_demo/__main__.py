@@ -29,7 +29,8 @@ from .app import VoiceAgentApp
 from .chakra_mcp import build_chakra_mcp_server, load_cli_session
 from .logs import QueueProcessor
 from .persona import Persona
-from .swiggy_mcp import build_swiggy_mcp_server
+from .swiggy_auth import ensure_swiggy_token
+from .swiggy_mcp import build_swiggy_mcp_server, swiggy_mcp_url
 from .voice import SarvamClient, voice_config_from_env
 
 
@@ -79,7 +80,22 @@ async def _run(persona: Persona) -> None:
         sys.exit(2)
 
     chakra_mcp = build_chakra_mcp_server(session)
-    swiggy_mcp = build_swiggy_mcp_server()  # None if env not set
+
+    # Swiggy — OAuth 2.1 at startup (before the TUI grabs the screen, so
+    # the browser handoff is clean). First run on each laptop opens a
+    # browser; later runs reuse the cached ~5-day token. If the user
+    # hasn't configured Swiggy (no SWIGGY_MCP_URL) or auth fails, we run
+    # without it and the agent degrades gracefully.
+    swiggy_token: str | None = None
+    if swiggy_mcp_url():
+        click.echo("  · Authenticating Swiggy Dineout (OAuth 2.1)…")
+        try:
+            swiggy_token = ensure_swiggy_token(
+                persona.name, swiggy_mcp_url(), on_status=lambda s: click.echo(f"    {s}")
+            )
+        except Exception as e:
+            click.echo(f"  ! Swiggy auth failed ({e}); continuing without Swiggy.", err=True)
+    swiggy_mcp = build_swiggy_mcp_server(swiggy_token)
 
     # Tracing — register BEFORE entering the MCP servers so the very
     # first list_tools call shows up in the Logs tab.

@@ -1,10 +1,11 @@
 """Swiggy Dineout MCP client.
 
-URL + bearer token come from `.env` (`SWIGGY_MCP_URL`,
-`SWIGGY_MCP_TOKEN`). If the token isn't set, we still construct a
-None — the caller decides whether that's fatal (the demo flow only
-needs Swiggy at the very end, after the cuisine + drink have been
-agreed, so Swiggy unavailability degrades gracefully).
+Swiggy is OAuth 2.1 (PKCE + DCR) — there's no static token to paste.
+`swiggy_auth.ensure_swiggy_token()` runs the browser flow at startup
+and returns a bearer; we just attach it here. A `None` token (Swiggy
+not configured, or auth failed) means we build no server, and the
+agent degrades gracefully — the demo only needs Swiggy at the very
+end, after cuisine + drink are agreed.
 """
 
 from __future__ import annotations
@@ -14,9 +15,12 @@ import os
 from agents.mcp import MCPServerStreamableHttp
 
 
-def build_swiggy_mcp_server() -> MCPServerStreamableHttp | None:
-    url = os.environ.get("SWIGGY_MCP_URL")
-    token = os.environ.get("SWIGGY_MCP_TOKEN")
+def swiggy_mcp_url() -> str | None:
+    return os.environ.get("SWIGGY_MCP_URL")
+
+
+def build_swiggy_mcp_server(token: str | None) -> MCPServerStreamableHttp | None:
+    url = swiggy_mcp_url()
     if not url or not token:
         return None
     return MCPServerStreamableHttp(
