@@ -1,0 +1,25 @@
+{
+  "display_name": "Kaustav",
+  "agent_slug": "kaustav-voice-bot",
+  "agent_display_name": "Kaustav's Dinner Bot",
+  "agent_description": "Voice-driven dinner-planning agent for Kaustav. Knows his food + drink preferences and negotiates with peer agents over the relay.",
+  "drinks_ranked": ["beer", "cocktail", "wine"],
+  "food_ranked": [
+    "biryani",
+    "sushi",
+    "korean bbq",
+    "thai green curry",
+    "neapolitan pizza",
+    "south indian thali",
+    "vietnamese pho",
+    "japanese ramen",
+    "tandoori grills",
+    "mediterranean mezze",
+    "burgers",
+    "dim sum",
+    "burmese khao suey",
+    "italian pasta",
+    "mexican tacos"
+  ],
+  "dietary_notes": "Eats everything; mild preference for spicy. No allergies."
+}

@@ -1,0 +1,25 @@
+{
+  "display_name": "Aparajita",
+  "agent_slug": "aparajita-voice-bot",
+  "agent_display_name": "Aparajita's Dinner Bot",
+  "agent_description": "Voice-driven dinner-planning agent for Aparajita. Knows her food + drink preferences and negotiates with peer agents over the relay.",
+  "drinks_ranked": ["cocktail", "wine", "beer"],
+  "food_ranked": [
+    "neapolitan pizza",
+    "italian pasta",
+    "mediterranean mezze",
+    "sushi",
+    "thai green curry",
+    "dim sum",
+    "vietnamese pho",
+    "korean bbq",
+    "mexican tacos",
+    "south indian thali",
+    "lebanese shawarma",
+    "japanese ramen",
+    "burgers",
+    "biryani",
+    "north indian curries"
+  ],
+  "dietary_notes": "Eats everything; mild preference for vegetarian-friendly menus. No allergies."
+}
