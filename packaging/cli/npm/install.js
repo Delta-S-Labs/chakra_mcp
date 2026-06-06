@@ -80,6 +80,71 @@ async function main() {
   }
   fs.unlinkSync(tmpArchive);
   console.log(`[chakramcp] installed ${target} ${VERSION}`);
+  pathHint();
+}
+
+// After a global install, npm links the `chakramcp` bin into the global
+// prefix's bin dir. If that dir isn't on the user's PATH, the command is
+// "not found" even though the install succeeded — the single most common
+// confusion. Detect it and print the exact line to fix it. Best-effort:
+// never throws, never blocks the install.
+function globalBinDir() {
+  // npm exposes the resolved prefix as an env var during lifecycle
+  // scripts — prefer it (no subprocess, works even when `npm` isn't on
+  // the script shell's PATH). Fall back to asking npm directly.
+  let prefix = process.env.npm_config_prefix;
+  if (!prefix) {
+    try {
+      prefix = execSync("npm config get prefix", { encoding: "utf8" }).trim();
+    } catch {
+      return null;
+    }
+  }
+  if (!prefix) return null;
+  // Windows drops shims directly in <prefix>; unix in <prefix>/bin.
+  return process.platform === "win32" ? prefix : path.join(prefix, "bin");
+}
+
+function pathHint() {
+  try {
+    // Only relevant for global installs — local installs are invoked via
+    // npx / package.json scripts, not a bare `chakramcp`.
+    if (process.env.npm_config_global !== "true") return;
+    const binDir = globalBinDir();
+    if (!binDir) return;
+    const onPath = (process.env.PATH || "")
+      .split(path.delimiter)
+      .some((p) => {
+        try {
+          return p && path.resolve(p) === path.resolve(binDir);
+        } catch {
+          return false;
+        }
+      });
+    if (onPath) return;
+
+    console.log("");
+    console.log("[chakramcp] ⚠  `chakramcp` was installed but its directory is");
+    console.log("            not on your PATH, so the command won't be found yet:");
+    console.log(`              ${binDir}`);
+    console.log("");
+    console.log("[chakramcp] add it so it's callable from anywhere:");
+    if (process.platform === "win32") {
+      console.log(`              setx PATH "${binDir};%PATH%"`);
+      console.log("            then open a new terminal.");
+    } else {
+      const rc = (process.env.SHELL || "").includes("bash")
+        ? "~/.bashrc"
+        : "~/.zshrc";
+      console.log(`              echo 'export PATH="${binDir}:$PATH"' >> ${rc}`);
+      console.log(`              source ${rc}`);
+    }
+    console.log("");
+    console.log("[chakramcp] then verify:  chakramcp --version");
+    console.log("");
+  } catch {
+    /* a missing PATH hint must never fail the install */
+  }
 }
 
 main().catch((err) => {
