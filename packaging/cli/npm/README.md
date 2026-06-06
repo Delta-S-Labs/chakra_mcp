@@ -15,6 +15,19 @@ npm i -g @chakramcp/cli
 npx @chakramcp/cli login
 ```
 
+If `chakramcp` is "command not found" right after a global install, npm's
+global bin directory isn't on your `PATH`. The installer prints the exact
+line to add — or do it manually:
+
+```sh
+# find npm's global bin dir
+echo "$(npm config get prefix)/bin"
+# add it to your shell rc (zsh shown; bash users use ~/.bashrc)
+echo 'export PATH="'"$(npm config get prefix)/bin"':$PATH"' >> ~/.zshrc
+source ~/.zshrc
+chakramcp --version
+```
+
 ## Quick start
 
 ```sh
