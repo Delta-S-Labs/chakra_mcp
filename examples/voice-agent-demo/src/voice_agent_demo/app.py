@@ -72,11 +72,54 @@ class TranscriptView(Static):
 
     def render(self) -> str:
         if not self.lines:
-            return "[dim]Hold [b]space[/b] to talk. Release to send.[/dim]"
+            return (
+                "[dim]Press [b]space[/b] to start talking, [b]space[/b] again to "
+                "send.\nYour words appear here as [b]"
+                f"{self._owner_name}[/b]: …, the agent replies below.[/dim]"
+            )
         return "\n".join(self.lines[-200:])  # keep memory bounded
+
+    _owner_name: str = "you"
 
     def add_line(self, text: str) -> None:
         self.lines = [*self.lines, text]
+
+
+class PttIndicator(Static):
+    """Big, always-visible voice-state bar so the operator (and the
+    camera) can tell at a glance what the agent is doing: idle,
+    LISTENING (recording), transcribing, thinking, or speaking.
+
+    The `frame` counter is bumped by a timer on the App; we animate an
+    equalizer so "listening" and "speaking" read as live, not frozen.
+    """
+
+    phase: reactive[str] = reactive("idle")
+    frame: reactive[int] = reactive(0)
+
+    _BARS = "▁▂▃▄▅▆▇█▇▆▅▄▃▂"
+
+    def _eq(self, step: int, width: int = 16) -> str:
+        n = len(self._BARS)
+        return "".join(self._BARS[(self.frame * step + i) % n] for i in range(width))
+
+    def render(self) -> str:
+        p = self.phase
+        if p == "listening":
+            return (
+                f"[b white on red] ● REC [/b white on red]  "
+                f"[green]{self._eq(1)}[/green]   "
+                "[dim]speak now — press [b]SPACE[/b] again to send[/dim]"
+            )
+        if p == "transcribing":
+            dots = "." * (1 + self.frame % 3)
+            return f"[b yellow]✍  transcribing{dots}[/b yellow]"
+        if p == "thinking":
+            dots = "." * (1 + self.frame % 3)
+            return f"[b cyan]🤔 thinking{dots}[/b cyan]"
+        if p == "speaking":
+            return f"[b magenta]🔊 speaking[/b magenta]  [magenta]{self._eq(2)}[/magenta]"
+        return "[dim]●[/dim] [b]ready[/b] — press [b green]SPACE[/b green] to talk, [b]SPACE[/b] again to send"
 
 
 class LogsView(Vertical):
@@ -168,6 +211,13 @@ class VoiceAgentApp(App):
         padding: 0 1;
         background: $primary 30%;
     }
+    #ptt {
+        dock: top;
+        height: 1;
+        padding: 0 1;
+        background: $boost;
+        text-style: bold;
+    }
     #status {
         dock: bottom;
         height: 1;
@@ -187,11 +237,11 @@ class VoiceAgentApp(App):
     """
 
     BINDINGS = [
-        Binding("space", "ptt_start", "Talk (hold)", show=True, priority=True),
+        Binding("space", "ptt_start", "Talk / send", show=True, priority=True),
         Binding("q", "quit", "Quit", show=True),
     ]
 
-    status: reactive[str] = reactive("ready · hold space to talk")
+    status: reactive[str] = reactive("ready · press space to talk")
 
     def __init__(
         self,
@@ -208,6 +258,7 @@ class VoiceAgentApp(App):
         self._busy = False  # blocks recursive ptt while a turn is in flight
         self._transcript: TranscriptView | None = None
         self._logs: LogsView | None = None
+        self._ptt: PttIndicator | None = None
 
     # ---- Layout -------------------------------------------------------
 
@@ -222,9 +273,12 @@ class VoiceAgentApp(App):
             ),
             id="header",
         )
+        self._ptt = PttIndicator(id="ptt")
+        yield self._ptt
         with TabbedContent(initial="agent"):
             with TabPane("Agent", id="agent"):
                 self._transcript = TranscriptView()
+                self._transcript._owner_name = persona.display_name
                 yield self._transcript
             with TabPane("Logs", id="logs"):
                 self._logs = LogsView()
@@ -241,6 +295,8 @@ class VoiceAgentApp(App):
     # ---- App lifecycle ------------------------------------------------
 
     async def on_mount(self) -> None:
+        # Drive the PTT indicator's equalizer animation (~8 fps).
+        self.set_interval(0.12, self._animate_ptt)
         # Pump the log queue into the LogsView forever.
         self.run_worker(self._drain_logs(), exclusive=False)
         # Background: poll the relay's inbox so we surface incoming
@@ -298,14 +354,27 @@ class VoiceAgentApp(App):
 
     # ---- Push-to-talk -------------------------------------------------
 
+    def _animate_ptt(self) -> None:
+        # Only advance frames when something is animating, to keep the
+        # idle/ready bar perfectly still.
+        if self._ptt is not None and self._ptt.phase != "idle":
+            self._ptt.frame += 1
+
+    def _set_phase(self, phase: str) -> None:
+        if self._ptt is not None:
+            self._ptt.frame = 0
+            self._ptt.phase = phase
+
     async def action_ptt_start(self) -> None:
         if self._busy or self._recording:
             return
         self._recording = True
-        self.status = "🎙 recording — release space to send"
+        self._set_phase("listening")
+        self.status = "🎙 recording — press space again to send"
         try:
             self.recorder.start()
         except Exception as e:
+            self._set_phase("idle")
             self.status = f"mic error: {e}"
             self._recording = False
             return
@@ -330,19 +399,23 @@ class VoiceAgentApp(App):
         if self._busy:
             return
         if not wav:
-            self.status = "(nothing recorded)"
+            self._set_phase("idle")
+            self.status = "(nothing recorded — press space and speak)"
             return
         self._busy = True
         try:
+            self._set_phase("transcribing")
             self.status = "transcribing…"
             text = await self.sarvam.transcribe(wav)
             if not text:
-                self.status = "(silence)"
+                self._set_phase("idle")
+                self.status = "(heard silence — try again)"
                 return
             assert self._transcript is not None
             self._transcript.add_line(
                 f"[b]{self.stack.persona.display_name}:[/b] {text}"
             )
+            self._set_phase("thinking")
             self.status = "thinking…"
             reply = await self.stack.run_turn(text)
             await self._on_agent_reply(reply, speak=True)
@@ -350,7 +423,8 @@ class VoiceAgentApp(App):
             self.status = f"error: {e}"
         finally:
             self._busy = False
-            self.status = "ready · hold space to talk"
+            self._set_phase("idle")
+            self.status = "ready · press space to talk"
 
     # ---- Agent → owner channel ----------------------------------------
 
@@ -362,6 +436,7 @@ class VoiceAgentApp(App):
             f"[b cyan]{self.stack.persona.agent_display_name}:[/b cyan] {text}"
         )
         if speak:
+            self._set_phase("speaking")
             self.status = "speaking…"
             audio = await self.sarvam.synthesize(text)
             await play_wav_bytes_async(audio)
