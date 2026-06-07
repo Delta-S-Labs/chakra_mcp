@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from contextlib import AsyncExitStack
 from pathlib import Path
 
 import click
@@ -104,41 +105,52 @@ async def _run(persona: Persona) -> None:
     processor.attach(log_queue, asyncio.get_running_loop())
     add_trace_processor(processor)
 
-    # The MCP clients need to be entered (connection opened) before the
-    # agent can call tools through them. The OpenAI SDK accepts them as
-    # async context managers; we use ExitStack-style nesting.
-    async with chakra_mcp:
-        cm_swiggy = swiggy_mcp if swiggy_mcp is not None else _NullCtx()
-        async with cm_swiggy:
-            # Build the agent. Owner-notification is a forward reference
-            # to the Textual app, which doesn't exist yet — we plumb a
-            # closure that the app re-binds on mount.
-            app_ref: dict[str, VoiceAgentApp | None] = {"app": None}
+    # The MCP clients need their connection open before the agent can
+    # call tools through them. ChakraMCP is required — a failure there is
+    # fatal (no relay = no demo). Swiggy is OPTIONAL: if its MCP session
+    # won't establish (auth edge, wrong path, server hiccup), we drop it
+    # and the agent degrades to a verbal restaurant suggestion rather
+    # than crashing the whole app on startup.
+    async with AsyncExitStack() as mcp_stack:
+        await mcp_stack.enter_async_context(chakra_mcp)
 
-            def notifier(text: str):
-                a = app_ref["app"]
-                if a is None:
-                    return None
-                a.notifier_sync(text)
-                return None
-
-            stack = await build_agent_stack(
-                persona, chakra_mcp, swiggy_mcp, notifier
-            )
-
-            app = VoiceAgentApp(stack=stack, sarvam=sarvam, log_queue=log_queue)
-            app_ref["app"] = app
+        if swiggy_mcp is not None:
             try:
-                await app.run_async()
-            finally:
-                await sarvam.aclose()
+                await mcp_stack.enter_async_context(swiggy_mcp)
+            except Exception as e:
+                click.echo(
+                    f"  ! Swiggy MCP didn't connect ({type(e).__name__}: {e}); "
+                    "continuing without it — the agent will suggest a "
+                    "restaurant verbally instead.",
+                    err=True,
+                )
+                click.echo(
+                    "    (If you want Swiggy live, try a different SWIGGY_MCP_URL "
+                    "in .env — e.g. drop the trailing /mcp — and re-run.)",
+                    err=True,
+                )
+                swiggy_mcp = None
 
+        # Build the agent. Owner-notification is a forward reference to
+        # the Textual app, which doesn't exist yet — we plumb a closure
+        # that the app re-binds on mount.
+        app_ref: dict[str, VoiceAgentApp | None] = {"app": None}
 
-class _NullCtx:
-    async def __aenter__(self):
-        return None
-    async def __aexit__(self, *a):
-        return False
+        def notifier(text: str):
+            a = app_ref["app"]
+            if a is None:
+                return None
+            a.notifier_sync(text)
+            return None
+
+        stack = await build_agent_stack(persona, chakra_mcp, swiggy_mcp, notifier)
+
+        app = VoiceAgentApp(stack=stack, sarvam=sarvam, log_queue=log_queue)
+        app_ref["app"] = app
+        try:
+            await app.run_async()
+        finally:
+            await sarvam.aclose()
 
 
 if __name__ == "__main__":
