@@ -25,7 +25,7 @@ from dotenv import load_dotenv
 
 from agents import add_trace_processor
 
-from .agent import build_agent_stack
+from .agent import build_agent_stack, ensure_capabilities
 from .app import VoiceAgentApp
 from .chakra_mcp import build_chakra_mcp_server, load_cli_session, resolve_agent_id
 from .logs import QueueProcessor
@@ -123,6 +123,15 @@ async def _run(persona: Persona) -> None:
         agent_id = await resolve_agent_id(chakra_mcp, persona.agent_slug)
         if agent_id:
             click.echo(f"  ✓ relay agent: {persona.agent_slug} ({agent_id})")
+            # The agent may have been created in a prior session before its
+            # capabilities were published. Backfill any missing ones now
+            # (idempotent) so the demo flow always has negotiate_dinner.
+            try:
+                pub = await ensure_capabilities(chakra_mcp, agent_id)
+                if pub:
+                    click.echo(f"  ✓ published capabilities: {', '.join(pub)}")
+            except Exception as e:
+                click.echo(f"  ! couldn't ensure capabilities ({e})", err=True)
         else:
             click.echo(
                 f"\n  ⚠ No relay agent with slug '{persona.agent_slug}' is "

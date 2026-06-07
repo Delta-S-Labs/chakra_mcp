@@ -66,7 +66,9 @@ def _system_prompt(persona: Persona, agent_id: str | None) -> str:
             f"You ARE registered on the relay. Your agent id is `{agent_id}` "
             f"(slug `{persona.agent_slug}`). ALWAYS pass agent_id=\"{agent_id}\" "
             "to pull_inbox and respond. If asked whether you're registered, say "
-            "yes and give your slug."
+            "yes and give your slug. If asked to register, set yourself up, or "
+            "publish/check your capabilities, call the `register_me` tool — it's "
+            "idempotent and will publish any missing capabilities."
         )
     else:
         identity = (
@@ -173,7 +175,22 @@ async def ensure_registered(
         created = True
     identity.agent_id = agent_id  # so the prompt + inbox loop see it live
 
-    # 3. Capabilities — check first, publish only what's missing.
+    # 3. Capabilities — publish any that are missing (idempotent).
+    published = await ensure_capabilities(chakra_mcp, agent_id)
+
+    verb = "Registered" if created else "Already registered"
+    caps_msg = (
+        f"published {', '.join(published)}" if published else "capabilities already present"
+    )
+    return f"{verb} as {persona.agent_slug} (id {agent_id}); {caps_msg}."
+
+
+async def ensure_capabilities(
+    chakra_mcp: MCPServerStreamableHttp, agent_id: str
+) -> list[str]:
+    """Publish the demo capabilities the agent is missing. Idempotent —
+    checks `list_capabilities` first and only publishes the gaps. Returns
+    the names it newly published (empty if all were already there)."""
     caps = await call_tool_json(chakra_mcp, "list_capabilities", {"agent_id": agent_id})
     have = {c.get("name") for c in caps} if isinstance(caps, list) else set()
     published: list[str] = []
@@ -204,12 +221,7 @@ async def ensure_registered(
             },
         )
         published.append("message_owner")
-
-    verb = "Registered" if created else "Already registered"
-    caps_msg = (
-        f"published {', '.join(published)}" if published else "capabilities already present"
-    )
-    return f"{verb} as {persona.agent_slug} (id {agent_id}); {caps_msg}."
+    return published
 
 
 def make_local_tools(

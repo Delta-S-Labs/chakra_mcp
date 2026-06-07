@@ -28,7 +28,16 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
 from textual.reactive import reactive
-from textual.widgets import Footer, Header, Label, Static, TabbedContent, TabPane, Tree
+from textual.widgets import (
+    Footer,
+    Header,
+    Label,
+    RichLog,
+    Static,
+    TabbedContent,
+    TabPane,
+    Tree,
+)
 
 from .agent import AgentStack
 from .chakra_mcp import call_tool_json
@@ -63,25 +72,28 @@ def _pretty_json(v: Any) -> str:
 # ─── Widgets ────────────────────────────────────────────────────
 
 
-class TranscriptView(Static):
-    """The Agent tab content — captions only.
+class TranscriptView(RichLog):
+    """The Agent tab content — a scrolling caption log.
 
-    Lines build up over time. The Static widget rerenders the whole
-    block per update; that's fine at human-speech cadence.
+    Using RichLog (not a Static) is what makes new turns visible: it
+    appends and AUTO-SCROLLS to the latest line. A plain Static rendered
+    top-aligned, so after the first message everything new fell below the
+    viewport — looking like "only the first message shows".
     """
 
-    lines: reactive[list[str]] = reactive(list)
-
-    def render(self) -> str:
-        if not self.lines:
-            return (
-                "[dim]Press [b]space[/b] to start talking, [b]space[/b] again to "
-                "send.\nYour words appear here as [b]"
-                f"{self._owner_name}[/b]: …, the agent replies below.[/dim]"
-            )
-        return "\n".join(self.lines[-200:])  # keep memory bounded
-
     _owner_name: str = "you"
+
+    def __init__(self) -> None:
+        super().__init__(markup=True, wrap=True, highlight=False, auto_scroll=True)
+
+    def on_mount(self) -> None:
+        self.write(
+            "[dim]Press [b]space[/b] to talk, [b]space[/b] again to send. "
+            f"You appear as [b]{self._owner_name}[/b]; the agent replies below.[/dim]"
+        )
+
+    def add_line(self, text: str) -> None:
+        self.write(text)
 
     def add_line(self, text: str) -> None:
         self.lines = [*self.lines, text]
