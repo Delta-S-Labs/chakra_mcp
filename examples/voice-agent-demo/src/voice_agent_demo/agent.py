@@ -36,6 +36,33 @@ DEFAULT_MODEL = "gpt-5-mini"
 def _model_from_env() -> str:
     return os.environ.get("OPENAI_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
 
+
+# Sliding-window memory: keep the most recent N conversation TURNS for the
+# session. Windowing by whole turns (a turn = a user message plus the
+# assistant/tool-call/tool-output items that follow it) prevents context
+# bloat without orphaning a tool_call from its tool_output — slicing by raw
+# item count can split that pair and make the model API error.
+MAX_HISTORY_TURNS = 16
+
+
+def _is_user_message(item: Any) -> bool:
+    return isinstance(item, dict) and item.get("role") == "user"
+
+
+def _trim_history(items: list, max_turns: int = MAX_HISTORY_TURNS) -> list:
+    """Drop the oldest complete turns, keeping the last `max_turns`."""
+    turns: list[list] = []
+    current: list = []
+    for it in items:
+        if _is_user_message(it) and current:
+            turns.append(current)
+            current = []
+        current.append(it)
+    if current:
+        turns.append(current)
+    kept = turns[-max_turns:]
+    return [it for turn in kept for it in turn]
+
 # Type for the owner-notification callback the TUI registers.
 OwnerNotifier = Callable[[str], "asyncio.Future[None] | None"]
 
@@ -316,9 +343,11 @@ class AgentStack:
             agent_input = user_text
         result = await Runner.run(self.agent, agent_input, max_turns=12)
         if remember:
-            # Persist the full thread (incl. tool calls/results), capped so
-            # a long session doesn't grow unbounded.
-            self.history = result.to_input_list()[-60:]
+            # Keep the full thread (incl. tool calls/results) but window it
+            # to the last N turns so the session remembers context without
+            # the prompt growing unbounded — trimmed at turn boundaries so
+            # tool_call/tool_output pairs are never split.
+            self.history = _trim_history(result.to_input_list())
 
         out = result.final_output
         text = out.strip() if isinstance(out, str) else ("" if out is None else str(out).strip())
