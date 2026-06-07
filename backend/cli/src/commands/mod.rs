@@ -1,4 +1,5 @@
 pub mod agents;
+pub mod audit;
 pub mod capabilities;
 pub mod configure;
 pub mod discover;
@@ -11,3 +12,4 @@ pub mod networks;
 pub mod orgs;
 pub mod pair;
 pub mod reviews;
+pub mod usage;
