@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT name, visibility, semantics FROM agent_capabilities WHERE agent_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "visibility",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "semantics",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "1b2728bdb6199bceaf7c177ce8238e1b87e44e657d30df93b80eddebf41236d3"
+}
