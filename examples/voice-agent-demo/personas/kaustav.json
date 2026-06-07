@@ -3,6 +3,7 @@
   "agent_slug": "kaustav-voice-bot",
   "agent_display_name": "Kaustav's Dinner Bot",
   "agent_description": "Voice-driven dinner-planning agent for Kaustav. Knows his food + drink preferences and negotiates with peer agents over the relay.",
+  "voice_speaker": "manan",
   "drinks_ranked": ["beer", "cocktail", "wine"],
   "food_ranked": [
     "biryani",

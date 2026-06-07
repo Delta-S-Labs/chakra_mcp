@@ -27,6 +27,7 @@ class Persona:
     drinks_ranked: list[str]
     food_ranked: list[str]
     dietary_notes: str
+    voice_speaker: str = ""  # Sarvam TTS speaker; falls back to env/default
 
     @classmethod
     def load(cls, name: str) -> "Persona":
@@ -51,6 +52,7 @@ class Persona:
             drinks_ranked=list(data["drinks_ranked"]),
             food_ranked=list(data["food_ranked"]),
             dietary_notes=data.get("dietary_notes", ""),
+            voice_speaker=data.get("voice_speaker", ""),
         )
 
     def negotiation_payload(self) -> dict:

@@ -3,6 +3,7 @@
   "agent_slug": "aparajita-voice-bot",
   "agent_display_name": "Aparajita's Dinner Bot",
   "agent_description": "Voice-driven dinner-planning agent for Aparajita. Knows her food + drink preferences and negotiates with peer agents over the relay.",
+  "voice_speaker": "ritu",
   "drinks_ranked": ["cocktail", "wine", "beer"],
   "food_ranked": [
     "neapolitan pizza",

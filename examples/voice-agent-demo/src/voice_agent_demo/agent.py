@@ -19,6 +19,7 @@ stops claiming it's unregistered.
 from __future__ import annotations
 
 import asyncio
+import os
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -27,6 +28,13 @@ from agents.mcp import MCPServerStreamableHttp
 
 from .chakra_mcp import call_tool_json
 from .persona import Persona
+
+# OpenAI model, overridable via .env. Defaults to gpt-5-mini.
+DEFAULT_MODEL = "gpt-5-mini"
+
+
+def _model_from_env() -> str:
+    return os.environ.get("OPENAI_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
 
 # Type for the owner-notification callback the TUI registers.
 OwnerNotifier = Callable[[str], "asyncio.Future[None] | None"]
@@ -350,7 +358,7 @@ async def build_agent_stack(
     agent = Agent(
         name=persona.agent_display_name,
         instructions=instructions,
-        model="gpt-4o",
+        model=_model_from_env(),
         mcp_servers=mcp_servers,
         tools=make_local_tools(persona, notifier, chakra_mcp, identity),
     )

@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from contextlib import AsyncExitStack
+from dataclasses import replace
 from pathlib import Path
 
 import click
@@ -68,9 +69,14 @@ def cli(persona: str, env_path: str | None) -> None:
 
 
 async def _run(persona: Persona) -> None:
-    # Voice — fail fast if Sarvam isn't configured.
+    # Voice — fail fast if Sarvam isn't configured. The persona's own
+    # `voice_speaker` (e.g. manan / ritu) wins over the env default so each
+    # agent has a distinct voice.
     voice_cfg = voice_config_from_env()
+    if persona.voice_speaker:
+        voice_cfg = replace(voice_cfg, speaker=persona.voice_speaker)
     sarvam = SarvamClient(voice_cfg)
+    click.echo(f"  · voice: {voice_cfg.model} / speaker {voice_cfg.speaker}")
 
     # ChakraMCP — relies on `chakramcp login`.
     try:
