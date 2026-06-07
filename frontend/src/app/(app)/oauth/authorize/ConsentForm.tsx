@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { issueOAuthCode } from "@/lib/api";
+import { issueOAuthCode, ApiClientError } from "@/lib/api";
 import styles from "./oauth.module.css";
 
 export function ConsentForm({
@@ -37,6 +37,17 @@ export function ConsentForm({
       });
       window.location.href = appendQuery(redirectUri, { code, state });
     } catch (err) {
+      // A 401 here means the NextAuth session is still present but its
+      // backend token has gone stale — the proxy can't catch that (it
+      // only sees "logged in"), so the consent renders, then Approve
+      // dead-ends with "unauthorized". Bounce through /login (which
+      // mints a fresh token) and return to this exact authorize URL via
+      // the app's standard `from` param, so the OAuth flow resumes.
+      if (err instanceof ApiClientError && err.status === 401) {
+        const back = window.location.pathname + window.location.search;
+        window.location.href = `/login?from=${encodeURIComponent(back)}`;
+        return;
+      }
       setError(err instanceof Error ? err.message : "Couldn't issue code.");
       setPending(false);
     }

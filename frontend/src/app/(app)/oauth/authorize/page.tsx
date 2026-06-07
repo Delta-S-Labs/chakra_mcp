@@ -47,7 +47,13 @@ export default async function OAuthAuthorizePage({
     try {
       client = await getOAuthClient(clientId);
     } catch (err) {
-      if (err instanceof ApiClientError && err.status === 404) {
+      if (err instanceof ApiClientError && err.status === 401) {
+        // Session present but backend token stale — re-login, then
+        // resume this exact authorize request via `from`. (redirect()
+        // throws NEXT_REDIRECT, which must propagate — so it's outside
+        // any further try/catch.)
+        redirect(`/login?from=${encodeURIComponent(authorizeReturnUrl(params))}`);
+      } else if (err instanceof ApiClientError && err.status === 404) {
         clientLookupError = "This MCP client isn't registered with us.";
       } else {
         clientLookupError =
@@ -121,4 +127,26 @@ function readParam(
   const v = params[key];
   if (Array.isArray(v)) return v[0] ?? null;
   return v ?? null;
+}
+
+/** Rebuild the original `/oauth/authorize?…` URL so a re-login can
+ *  bounce the browser straight back into the OAuth flow. */
+function authorizeReturnUrl(
+  params: Record<string, string | string[] | undefined>,
+): string {
+  const qs = new URLSearchParams();
+  for (const k of [
+    "response_type",
+    "client_id",
+    "redirect_uri",
+    "code_challenge",
+    "code_challenge_method",
+    "state",
+    "scope",
+  ]) {
+    const v = readParam(params, k);
+    if (v) qs.set(k, v);
+  }
+  const q = qs.toString();
+  return q ? `/oauth/authorize?${q}` : "/oauth/authorize";
 }
