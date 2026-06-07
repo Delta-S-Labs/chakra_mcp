@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT action, COUNT(*)::bigint AS \"count!\"\n        FROM usage_events\n        WHERE account_id IN (\n                  SELECT account_id FROM account_memberships WHERE user_id = $1\n              )\n           OR actor_user_id = $1\n        GROUP BY action\n        ORDER BY \"count!\" DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "action",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "8bf70dfa2dc211283a3cecec11c921a009340212a5c2695ef713afae7cac0e46"
+}

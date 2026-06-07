@@ -153,6 +153,9 @@ pub fn router(state: RelayState) -> Router {
             "/v1/invocations/{id}/result",
             post(handlers::invoke::report_result),
         )
+        // ─── Audit + usage (migration 0025) ────────────
+        .route("/v1/audit", get(handlers::events_read::audit_list))
+        .route("/v1/usage/events", get(handlers::events_read::usage_list))
         // ─── MCP server ────────────────────────────────
         .route(
             "/.well-known/oauth-protected-resource",

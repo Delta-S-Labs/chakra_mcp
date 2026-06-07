@@ -1821,6 +1821,56 @@ mod manage_agents_tests {
     }
 
     #[sqlx::test(migrations = "../migrations")]
+    async fn audit_and_usage_read_endpoints(pool: PgPool) {
+        let (_uid, account_id, token) = seed_user_with_jwt(&pool).await;
+        call(
+            &pool,
+            &token,
+            "create_agent",
+            json!({ "account_id": account_id, "slug": "rd-bot", "display_name": "R", "visibility": "network" }),
+        )
+        .await;
+        call(&pool, &token, "list_my_agents", json!({})).await;
+
+        async fn get_json(pool: &PgPool, token: &str, path: &str) -> Value {
+            let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+            let res = app
+                .oneshot(
+                    Request::builder()
+                        .method("GET")
+                        .uri(path)
+                        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert!(res.status().is_success(), "http {}", res.status());
+            let b = res.into_body().collect().await.unwrap().to_bytes();
+            serde_json::from_slice::<Value>(&b).unwrap()
+        }
+
+        let audit = get_json(&pool, &token, "/v1/audit").await;
+        let actions: Vec<&str> = audit["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["action"].as_str().unwrap())
+            .collect();
+        assert!(actions.contains(&"agent.create"), "audit: {actions:?}");
+
+        let usage = get_json(&pool, &token, "/v1/usage/events").await;
+        let totals: Vec<&str> = usage["totals_by_action"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["action"].as_str().unwrap())
+            .collect();
+        assert!(totals.contains(&"mcp:create_agent"), "usage: {totals:?}");
+        assert!(usage["total"].as_i64().unwrap() >= 2);
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
     async fn list_my_accounts_returns_membership(pool: PgPool) {
         let (_uid, account_id, token) = seed_user_with_jwt(&pool).await;
         let result = call(&pool, &token, "list_my_accounts", json!({})).await;
