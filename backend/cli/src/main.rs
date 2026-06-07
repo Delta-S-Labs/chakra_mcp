@@ -145,6 +145,14 @@ enum Cmd {
     /// `list`, `write`, `eligibility`, `hide`, `unhide`.
     #[command(subcommand, alias = "review")]
     Reviews(commands::reviews::Cmd),
+
+    /// Your write/audit trail — create/update/delete/state-change events
+    /// across your agents, friendships, grants, capabilities, reviews.
+    Audit(commands::audit::AuditArgs),
+
+    /// Your metered request history (billing substrate) with per-action
+    /// totals. Every REST + MCP call, reads included.
+    Usage(commands::usage::UsageArgs),
 }
 
 #[tokio::main]
@@ -245,6 +253,8 @@ async fn run() -> Result<()> {
         Cmd::Capabilities(cmd) => commands::capabilities::run(cmd, ApiClient::new(cfg)?).await?,
         Cmd::Message(args) => commands::message::run(args, ApiClient::new(cfg)?).await?,
         Cmd::Reviews(cmd) => commands::reviews::run(cmd, ApiClient::new(cfg)?).await?,
+        Cmd::Audit(args) => commands::audit::run(args, ApiClient::new(cfg)?).await?,
+        Cmd::Usage(args) => commands::usage::run(args, ApiClient::new(cfg)?).await?,
     }
 
     Ok(())
