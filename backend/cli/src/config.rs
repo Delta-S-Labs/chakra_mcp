@@ -98,11 +98,40 @@ pub struct LegacyServer {
     pub oauth_client_id: Option<String>,
 }
 
+/// The hosted public network, seeded by default so a fresh install
+/// targets `app.chakramcp.com` out of the box — never localhost. Named
+/// "public" to match the onboarding wizard's first option. Self-hosters
+/// add their own via `chakramcp networks add` and `networks use`.
+pub fn public_network() -> Network {
+    Network {
+        name: "public".to_string(),
+        app_url: PUBLIC_APP_URL.to_string(),
+        relay_url: PUBLIC_RELAY_URL.to_string(),
+        oauth_client_id: None,
+        auth: AuthConfig::default(),
+    }
+}
+
 impl CliConfig {
+    /// A brand-new config with the hosted public network active. This is
+    /// what a machine with no config file gets, so `chakramcp login`
+    /// goes straight to the hosted relay instead of erroring or
+    /// defaulting to a localhost dev network.
+    fn seeded_public() -> Self {
+        CliConfig {
+            active: Some("public".to_string()),
+            networks: vec![public_network()],
+            server: None,
+            auth: None,
+        }
+    }
+
     pub fn load() -> Result<Self> {
         let path = config_path()?;
         if !path.exists() {
-            return Ok(Self::default());
+            // First run on this machine: default to the hosted public
+            // network rather than an empty config.
+            return Ok(Self::seeded_public());
         }
         let raw =
             fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
@@ -122,6 +151,14 @@ impl CliConfig {
                 });
                 cfg.active = Some(DEFAULT_NETWORK.to_string());
                 // Persist the migrated form so the legacy keys vanish.
+                cfg.save()?;
+            } else {
+                // Config exists but carries no networks and nothing to
+                // migrate (e.g. hand-edited down to empty). Seed the
+                // hosted public network so the CLI is usable instead of
+                // stranded with no active network.
+                cfg.networks.push(public_network());
+                cfg.active = Some("public".to_string());
                 cfg.save()?;
             }
         }
@@ -239,4 +276,32 @@ fn now_secs() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fresh_config_defaults_to_hosted_public_network() {
+        // A brand-new machine (no config file) must land on the hosted
+        // public network — never localhost, never an empty/stranded
+        // config. Regression guard for the "CLI pointed at 127.0.0.1"
+        // first-run trap.
+        let cfg = CliConfig::seeded_public();
+        assert_eq!(cfg.active.as_deref(), Some("public"));
+        let net = cfg.active_network().expect("active network present");
+        assert_eq!(net.name, "public");
+        assert_eq!(net.app_url, PUBLIC_APP_URL);
+        assert_eq!(net.relay_url, PUBLIC_RELAY_URL);
+        assert!(net.app_url.starts_with("https://"));
+        assert!(!net.app_url.contains("localhost") && !net.app_url.contains("127.0.0.1"));
+    }
+
+    #[test]
+    fn public_network_helper_points_hosted() {
+        let n = public_network();
+        assert_eq!(n.relay_url, "https://relay.chakramcp.com");
+        assert_eq!(n.app_url, "https://app.chakramcp.com");
+    }
 }
