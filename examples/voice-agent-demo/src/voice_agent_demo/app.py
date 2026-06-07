@@ -35,6 +35,11 @@ from .chakra_mcp import call_tool_json
 from .logs import LogEvent
 from .voice import Recorder, SarvamClient, play_wav_bytes_async
 
+# Hard ceiling on one agent turn. Turns legitimately take 20-45s (many
+# tool calls), but beyond this we assume it's wedged and recover rather
+# than freezing the TUI.
+TURN_TIMEOUT_S = 120
+
 
 # ─── Helpers ────────────────────────────────────────────────────
 
@@ -305,6 +310,10 @@ class VoiceAgentApp(App):
         self.recorder = Recorder()
         self._recording = False
         self._busy = False  # a turn (user or inbox) is in flight
+        # Serializes ALL agent turns. The inbox loop and a user turn must
+        # never run Runner.run concurrently — they share one MCP session,
+        # and concurrent calls on a Streamable-HTTP MCP session deadlock.
+        self._turn_lock = asyncio.Lock()
         self._inbox_tick = 0
         self._transcript: TranscriptView | None = None
         self._logs: LogsView | None = None
@@ -404,14 +413,15 @@ class VoiceAgentApp(App):
                 continue
             if not (pending_friend or self._inbox_tick % 5 == 0):
                 continue
-            # Re-check the user didn't just start talking.
-            if self._recording or self._busy:
+            # Yield to the user: skip if they're recording or a turn (theirs
+            # or a prior inbox tick) holds the lock.
+            if self._recording or self._busy or self._turn_lock.locked():
                 continue
 
             try:
                 self._busy = True
                 self.status = "checking inbox…"
-                reply = await self.stack.run_turn(
+                reply = await self._guarded_turn(
                     f'Check your relay inbox by calling pull_inbox with '
                     f'agent_id="{agent_id}". If a friendship was proposed and '
                     "the owner hasn't approved it yet, notify the owner via "
@@ -490,23 +500,27 @@ class VoiceAgentApp(App):
         self._set_phase("listening")
         self.status = "🎙 recording — press space again to send"
 
+    async def _guarded_turn(self, prompt: str) -> str:
+        """Run ONE agent turn, serialized against the inbox loop and
+        time-bounded so a hung LLM/MCP call can't freeze the TUI forever."""
+        async with self._turn_lock:
+            try:
+                return await asyncio.wait_for(
+                    self.stack.run_turn(prompt), timeout=TURN_TIMEOUT_S
+                )
+            except asyncio.TimeoutError:
+                return "Sorry, that took too long — let's try again."
+
     async def _handle_utterance(self, wav: bytes) -> None:
         if not wav:
             self._set_phase("idle")
             self.status = "(nothing recorded — press space and speak)"
             return
-        # A background inbox turn may be running; wait briefly for it to
-        # finish rather than dropping the user's speech.
-        waited = 0.0
-        while self._busy and waited < 30.0:
-            self.status = "finishing previous task…"
-            await asyncio.sleep(0.2)
-            waited += 0.2
         self._busy = True
         try:
             self._set_phase("transcribing")
             self.status = "transcribing…"
-            text = await self.sarvam.transcribe(wav)
+            text = await asyncio.wait_for(self.sarvam.transcribe(wav), timeout=40)
             if not text:
                 self._set_phase("idle")
                 self.status = "(heard silence — try again)"
@@ -516,8 +530,8 @@ class VoiceAgentApp(App):
                 f"[b]{self.stack.persona.display_name}:[/b] {text}"
             )
             self._set_phase("thinking")
-            self.status = "thinking…"
-            reply = await self.stack.run_turn(text)
+            self.status = "thinking… (working on it)"
+            reply = await self._guarded_turn(text)
             await self._on_agent_reply(reply, speak=True)
         except Exception as e:
             self.status = f"error: {e}"
