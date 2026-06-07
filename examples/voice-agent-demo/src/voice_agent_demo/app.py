@@ -40,6 +40,10 @@ from .voice import Recorder, SarvamClient, play_wav_bytes_async
 # than freezing the TUI.
 TURN_TIMEOUT_S = 120
 
+# How often the background loop checks the relay for new friend requests
+# and pending invocations. Cheap (one or two MCP list calls), so frequent.
+POLL_INTERVAL_S = 5
+
 
 # ─── Helpers ────────────────────────────────────────────────────
 
@@ -314,7 +318,9 @@ class VoiceAgentApp(App):
         # never run Runner.run concurrently — they share one MCP session,
         # and concurrent calls on a Streamable-HTTP MCP session deadlock.
         self._turn_lock = asyncio.Lock()
-        self._inbox_tick = 0
+        # State so we announce each pending friend request exactly ONCE and
+        # don't nag until it's resolved (then a brand-new one re-announces).
+        self._announced_friendships: set[str] = set()
         self._transcript: TranscriptView | None = None
         self._logs: LogsView | None = None
         self._ptt: PttIndicator | None = None
@@ -381,77 +387,108 @@ class VoiceAgentApp(App):
                 self._logs._tree.root.add(f"[red]log render error: {e}[/red]")
 
     async def _inbox_loop(self) -> None:
-        """Periodically poke the agent with 'check your inbox' so it
-        surfaces incoming friend proposals + invocations proactively.
+        """Frequent, deterministic relay poll.
 
-        The agent's instructions tell it to handle inbox items by
-        either resolving them (e.g. running an invocation) or
-        notifying its owner via update_owner_status.
+        Two channels, both checked every tick:
+          * Friend requests (list_friendships inbound/proposed) — surfaced
+            to the owner exactly ONCE each (state in _announced_friendships)
+            and never re-announced until resolved.
+          * Pending invocations (pull_inbox) — served by one LLM turn only
+            when something is actually claimed.
+        When there's nothing new we stay silent — just a quiet status line,
+        no speech, no owner interruption.
         """
         await asyncio.sleep(3)  # let startup settle
         while True:
-            await asyncio.sleep(12)
-            # The user ALWAYS has priority: never run a background turn
-            # while they're recording or a turn is already in flight.
-            # (This is what kept push-to-talk dead — the old loop held
-            # _busy for seconds every 8s, swallowing space presses.)
-            if self._recording or self._busy:
-                continue
+            await asyncio.sleep(POLL_INTERVAL_S)
             agent_id = self.stack.agent_id
             if agent_id is None:
                 continue  # not registered yet — nothing to poll
-
-            # Cheap pre-check (no LLM): is there a pending inbound friend
-            # request? If so, handle this tick. Otherwise only run a full
-            # serve-turn occasionally (~every 60s) to catch invocations,
-            # so we don't burn an LLM call (and block the user) each tick.
-            self._inbox_tick += 1
             try:
-                pending_friend = await self._has_pending_friend(agent_id)
+                await self._poll_friend_requests()
+                # Serving an invocation needs the LLM — only when the user
+                # isn't mid-turn/recording (they always have priority).
+                if not (self._recording or self._busy or self._turn_lock.locked()):
+                    await self._poll_invocations(agent_id)
             except Exception as e:
-                self.status = f"inbox poll error: {e}"
-                continue
-            if not (pending_friend or self._inbox_tick % 5 == 0):
-                continue
-            # Yield to the user: skip if they're recording or a turn (theirs
-            # or a prior inbox tick) holds the lock.
-            if self._recording or self._busy or self._turn_lock.locked():
-                continue
+                # Quiet log only — never nag the owner about poll failures.
+                self.status = f"· relay poll error: {e}"
 
-            try:
-                self._busy = True
-                self.status = "checking inbox…"
-                reply = await self._guarded_turn(
-                    "Do a background relay check. "
-                    'First call list_friendships(direction="inbound", '
-                    'status="proposed"); for each pending request, notify the '
-                    "owner via update_owner_status naming the proposer's "
-                    "display name (do NOT auto-accept — wait for the owner). "
-                    "Then call pull_inbox with "
-                    f'agent_id="{agent_id}" for pending capability '
-                    "invocations and handle any directly (respond with the "
-                    f'same agent_id="{agent_id}"). If there is nothing new in '
-                    "either, reply with an empty string.",
-                    remember=False,  # keep inbox polls out of user dialogue
-                )
-                if reply:
-                    await self._on_agent_reply(reply, speak=True)
-            except Exception as e:
-                self.status = f"inbox error: {e}"
-            finally:
-                self._busy = False
-                if not self._recording:
-                    self._set_phase("idle")
-                    self.status = "ready · press space to talk"
-
-    async def _has_pending_friend(self, agent_id: str) -> bool:
-        """Cheap, no-LLM, no-claim check for an inbound proposed friendship."""
+    async def _poll_friend_requests(self) -> None:
         fr = await call_tool_json(
             self.stack.chakra_mcp,
             "list_friendships",
             {"direction": "inbound", "status": "proposed"},
         )
-        return bool(isinstance(fr, list) and fr)
+        fr = fr if isinstance(fr, list) else []
+        current_ids = {f.get("id") for f in fr}
+        # Forget any we'd announced that are no longer pending (accepted /
+        # rejected) so a genuinely NEW request later announces again.
+        self._announced_friendships &= current_ids
+
+        new = [f for f in fr if f.get("id") not in self._announced_friendships]
+        if not new:
+            # Nothing new — quiet heartbeat, no speech, no transcript line.
+            if not self._busy and not self._recording:
+                self.status = "· up to date — press space to talk"
+            return
+
+        assert self._transcript is not None
+        for f in new:
+            self._announced_friendships.add(f.get("id"))
+            who = f.get("proposer_display_name") or "An agent"
+            line = f"{who} sent you a friend request — say “accept” to approve."
+            self._transcript.add_line(f"[b yellow]· {line}[/b yellow]")
+            # Speak the heads-up once, but only if we won't talk over the
+            # user; otherwise it's already visible in the transcript.
+            if not self._recording and not self._busy:
+                await self._speak(line)
+
+    async def _poll_invocations(self, agent_id: str) -> None:
+        # pull_inbox CLAIMS pending invocations (→ in_progress), so this is
+        # self-deduping: once pulled they won't reappear. Only spin up the
+        # LLM when something was actually claimed.
+        inbox = await call_tool_json(
+            self.stack.chakra_mcp, "pull_inbox", {"agent_id": agent_id}
+        )
+        inbox = inbox if isinstance(inbox, list) else []
+        if not inbox:
+            return
+        self._busy = True
+        try:
+            self._set_phase("thinking")
+            self.status = "serving an incoming request…"
+            reply = await self._guarded_turn(
+                "You just CLAIMED these pending invocations from your inbox "
+                f"(do not pull again): {json.dumps(inbox)[:2000]}. For each, "
+                "fulfil the capability — for negotiate_dinner use "
+                "get_my_preferences and converge on a cuisine + drink — then "
+                "call respond(invocation_id=<id>, status=\"succeeded\", "
+                "output=<result object>). Finally tell the owner in one "
+                "sentence what you agreed.",
+                remember=False,
+            )
+            if reply:
+                await self._on_agent_reply(reply, speak=True)
+        finally:
+            self._busy = False
+            if not self._recording:
+                self._set_phase("idle")
+                self.status = "ready · press space to talk"
+
+    async def _speak(self, text: str) -> None:
+        """Speak a line via TTS without adding a transcript entry."""
+        if not text:
+            return
+        self._set_phase("speaking")
+        try:
+            audio = await self.sarvam.synthesize(text)
+            await play_wav_bytes_async(audio)
+        except Exception:
+            pass
+        finally:
+            if not self._recording and not self._busy:
+                self._set_phase("idle")
 
     # ---- Push-to-talk -------------------------------------------------
 
