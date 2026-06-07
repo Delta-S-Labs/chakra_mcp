@@ -237,7 +237,7 @@ class VoiceAgentApp(App):
     """
 
     BINDINGS = [
-        Binding("space", "ptt_start", "Talk / send", show=True, priority=True),
+        Binding("space", "ptt_toggle", "Talk / send", show=True, priority=True),
         Binding("q", "quit", "Quit", show=True),
     ]
 
@@ -365,35 +365,41 @@ class VoiceAgentApp(App):
             self._ptt.frame = 0
             self._ptt.phase = phase
 
-    async def action_ptt_start(self) -> None:
-        if self._busy or self._recording:
+    async def action_ptt_toggle(self) -> None:
+        """SPACE toggles recording.
+
+        This MUST be a single toggling action, not a start-action plus an
+        on_key stop-handler: the `space` binding is `priority=True`, so
+        Textual consumes the key and dispatches it to this action — the
+        app's `on_key` never sees it. So the same action handles both the
+        start press and the send press.
+        """
+        # A turn is mid-flight (transcribe/think/speak): ignore.
+        if self._busy:
             return
-        self._recording = True
-        self._set_phase("listening")
-        self.status = "🎙 recording — press space again to send"
+
+        if self._recording:
+            # Second press → stop + send.
+            self._recording = False
+            try:
+                wav = self.recorder.stop()
+            except Exception as e:
+                self._set_phase("idle")
+                self.status = f"mic error: {e}"
+                return
+            asyncio.create_task(self._handle_utterance(wav))
+            return
+
+        # First press → start recording.
         try:
             self.recorder.start()
         except Exception as e:
             self._set_phase("idle")
             self.status = f"mic error: {e}"
-            self._recording = False
             return
-
-    async def on_key(self, event) -> None:
-        # Textual fires key events for both press and release on some
-        # backends; we treat the next 'space' after start as "stop".
-        # Simpler: use a short timer-based heuristic. Press → record.
-        # Release detection on most terminals is unreliable, so we
-        # actually stop on the NEXT key event after recording begins —
-        # any key — which fits the on-camera flow (a single press-then-
-        # release-then-key gesture).
-        if not self._recording:
-            return
-        if event.key == "space":
-            self._recording = False
-            wav = self.recorder.stop()
-            event.stop()
-            asyncio.create_task(self._handle_utterance(wav))
+        self._recording = True
+        self._set_phase("listening")
+        self.status = "🎙 recording — press space again to send"
 
     async def _handle_utterance(self, wav: bytes) -> None:
         if self._busy:
