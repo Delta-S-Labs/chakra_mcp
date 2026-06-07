@@ -1,0 +1,80 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, created_at, actor_user_id, account_id, surface, action,\n               method, route, status_code, ok\n        FROM usage_events\n        WHERE (\n                account_id IN (\n                    SELECT account_id FROM account_memberships WHERE user_id = $1\n                )\n                OR actor_user_id = $1\n              )\n          AND ($2::text IS NULL OR surface = $2)\n          AND (\n                $3::timestamptz IS NULL\n                OR (created_at, id) < ($3, $4)\n              )\n        ORDER BY created_at DESC, id DESC\n        LIMIT $5\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "actor_user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "account_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "surface",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "action",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "method",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "route",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "status_code",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "ok",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Timestamptz",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "1a1b4bbc0c5ec6b3a2d67d06223419f5492565ee783c870476973837d31df3d3"
+}
