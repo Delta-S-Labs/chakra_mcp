@@ -26,18 +26,9 @@ from typing import Any
 from rich.markup import escape
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.reactive import reactive
-from textual.widgets import (
-    Footer,
-    Header,
-    Label,
-    RichLog,
-    Static,
-    TabbedContent,
-    TabPane,
-    Tree,
-)
+from textual.widgets import Footer, Header, Label, Static, TabbedContent, TabPane, Tree
 
 from .agent import AgentStack
 from .chakra_mcp import call_tool_json
@@ -72,31 +63,46 @@ def _pretty_json(v: Any) -> str:
 # ─── Widgets ────────────────────────────────────────────────────
 
 
-class TranscriptView(RichLog):
-    """The Agent tab content — a scrolling caption log.
+class TranscriptView(Static):
+    """The Agent tab content — a caption log.
 
-    Using RichLog (not a Static) is what makes new turns visible: it
-    appends and AUTO-SCROLLS to the latest line. A plain Static rendered
-    top-aligned, so after the first message everything new fell below the
-    viewport — looking like "only the first message shows".
+    A plain Static (markup) wrapped in a VerticalScroll. We keep the
+    lines ourselves, re-render the joined block, then scroll the parent
+    to the bottom so the newest turn is always visible. (RichLog would be
+    the obvious choice, but its internals are version-fragile across the
+    Textual builds the two laptops resolved — this is robust.)
     """
 
     _owner_name: str = "you"
 
     def __init__(self) -> None:
-        super().__init__(markup=True, wrap=True, highlight=False, auto_scroll=True)
+        super().__init__()
+        self._lines: list[str] = []
 
     def on_mount(self) -> None:
-        self.write(
-            "[dim]Press [b]space[/b] to talk, [b]space[/b] again to send. "
-            f"You appear as [b]{self._owner_name}[/b]; the agent replies below.[/dim]"
-        )
+        self._rerender()
 
     def add_line(self, text: str) -> None:
-        self.write(text)
+        self._lines.append(text)
+        self._rerender()
+        # Scroll after layout settles so the latest line is visible.
+        self.call_after_refresh(self._scroll_end)
 
-    def add_line(self, text: str) -> None:
-        self.lines = [*self.lines, text]
+    def _rerender(self) -> None:
+        if self._lines:
+            self.update("\n".join(self._lines[-300:]))
+        else:
+            self.update(
+                "[dim]Press [b]space[/b] to talk, [b]space[/b] again to send. "
+                f"You appear as [b]{self._owner_name}[/b]; the agent replies "
+                "below.[/dim]"
+            )
+
+    def _scroll_end(self) -> None:
+        try:
+            self.app.query_one("#agent-scroll", VerticalScroll).scroll_end(animate=False)
+        except Exception:
+            pass
 
 
 class PttIndicator(Static):
@@ -260,8 +266,12 @@ class VoiceAgentApp(App):
         background: $panel;
         color: $text-muted;
     }
+    #agent-scroll {
+        height: 1fr;
+    }
     TranscriptView {
         padding: 1 2;
+        height: auto;
     }
     LogsView {
         padding: 0;
@@ -319,7 +329,7 @@ class VoiceAgentApp(App):
             with TabPane("Agent", id="agent"):
                 self._transcript = TranscriptView()
                 self._transcript._owner_name = persona.display_name
-                yield self._transcript
+                yield VerticalScroll(self._transcript, id="agent-scroll")
             with TabPane("Logs", id="logs"):
                 self._logs = LogsView()
                 yield self._logs

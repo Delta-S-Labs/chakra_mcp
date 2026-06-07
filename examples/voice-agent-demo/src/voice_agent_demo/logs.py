@@ -182,8 +182,14 @@ def _classify(span: Span[Any]) -> tuple[str, str, dict[str, Any]]:
             },
         )
 
-    # ---- Catch-all -----------------------------------------------------
-    return ("generic", cls.replace("SpanData", ""), {"raw": repr(sd_)[:200]})
+    # ---- Catch-all (Task/Turn/Handoff/… wrapper spans) -----------------
+    # These have no useful payload of their own — they're just structural
+    # frames. Show a clean labeled node (no opaque object repr).
+    return (
+        "generic",
+        cls.replace("SpanData", "").replace("Span", "") or "span",
+        {},
+    )
 
 
 class QueueProcessor(TracingProcessor):
