@@ -510,6 +510,10 @@ class VoiceAgentApp(App):
                 )
             except asyncio.TimeoutError:
                 return "Sorry, that took too long — let's try again."
+            except Exception as e:
+                # Surface the real failure into the transcript instead of
+                # going silent — makes a broken turn diagnosable on camera.
+                return f"⚠ couldn't finish that: {type(e).__name__}: {e}"
 
     async def _handle_utterance(self, wav: bytes) -> None:
         if not wav:
@@ -558,11 +562,17 @@ class VoiceAgentApp(App):
     def notifier_sync(self, text: str) -> None:
         """The sync entry point passed to make_local_tools.
 
-        The agent calls `update_owner_status(text)`, which lands here
-        via _maybe_await. We schedule the actual UI/voice work on the
-        app's event loop.
+        The agent calls `update_owner_status(text)` from a tool, which
+        runs ON the app's event loop — so `call_from_thread` would raise
+        ("same thread"). Schedule directly when already on the loop, and
+        only bounce via call_from_thread when invoked from another thread.
         """
-        # Called from tool-execution context; safe to schedule.
-        self.call_from_thread(
-            lambda: asyncio.create_task(self._on_agent_reply(text, speak=True))
-        )
+        coro = self._on_agent_reply(text, speak=True)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if loop is not None:
+            loop.create_task(coro)
+        else:
+            self.call_from_thread(lambda: asyncio.create_task(coro))

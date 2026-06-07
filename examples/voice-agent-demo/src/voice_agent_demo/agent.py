@@ -290,9 +290,41 @@ class AgentStack:
         return self.identity.agent_id
 
     async def run_turn(self, user_text: str) -> str:
-        """One full agent turn — returns the spoken reply string."""
-        result = await Runner.run(self.agent, user_text)
-        return (result.final_output or "").strip()
+        """One full agent turn — returns a non-empty spoken reply string.
+
+        The model sometimes ends a turn on tool calls without emitting a
+        final assistant sentence, which left the UI silent. We fall back
+        to the concatenated message text, then to a summary of the tools
+        it ran, so a turn that DID work always says something.
+        """
+        result = await Runner.run(self.agent, user_text, max_turns=12)
+
+        out = result.final_output
+        text = out.strip() if isinstance(out, str) else ("" if out is None else str(out).strip())
+        if text:
+            return text
+
+        # Fallback 1: concatenate any assistant message text in the run.
+        try:
+            from agents.items import ItemHelpers
+
+            text = (ItemHelpers.text_message_outputs(result.new_items) or "").strip()
+        except Exception:
+            text = ""
+        if text:
+            return text
+
+        # Fallback 2: name the tools it invoked so the turn isn't silent.
+        names: list[str] = []
+        for item in getattr(result, "new_items", []) or []:
+            raw = getattr(item, "raw_item", None)
+            name = getattr(raw, "name", None)
+            if name:
+                names.append(name)
+        if names:
+            uniq = list(dict.fromkeys(names))
+            return "Done — I called: " + ", ".join(uniq) + "."
+        return "Okay."
 
 
 async def build_agent_stack(
