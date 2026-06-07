@@ -354,6 +354,19 @@ pub async fn propose(
     })?
     .ok_or_else(|| ApiError::Internal(anyhow::anyhow!("insert returned no row")))?;
 
+    crate::events::record_audit(
+        &state.db,
+        &user,
+        Some(proposer_account),
+        "friendship.propose",
+        "friendship",
+        Some(inserted.id),
+        Some(req.target_agent_id),
+        "proposed a friendship",
+        serde_json::json!({}),
+    )
+    .await;
+
     Ok(Json(
         fetch_friendship(&state.db, user.user_id, inserted.id).await?,
     ))
@@ -398,6 +411,19 @@ pub async fn cancel(
     )
     .execute(&state.db)
     .await?;
+
+    crate::events::record_audit(
+        &state.db,
+        &user,
+        Some(proposer_account),
+        "friendship.cancel",
+        "friendship",
+        Some(id),
+        None,
+        "cancelled a friendship proposal",
+        serde_json::json!({}),
+    )
+    .await;
 
     Ok(Json(fetch_friendship(&state.db, user.user_id, id).await?))
 }
@@ -445,6 +471,19 @@ pub async fn accept(
     .execute(&state.db)
     .await?;
 
+    crate::events::record_audit(
+        &state.db,
+        &user,
+        Some(target_account),
+        "friendship.accept",
+        "friendship",
+        Some(id),
+        Some(row.target_agent_id),
+        "accepted a friendship",
+        serde_json::json!({}),
+    )
+    .await;
+
     Ok(Json(fetch_friendship(&state.db, user.user_id, id).await?))
 }
 
@@ -490,6 +529,19 @@ pub async fn reject(
     )
     .execute(&state.db)
     .await?;
+
+    crate::events::record_audit(
+        &state.db,
+        &user,
+        Some(target_account),
+        "friendship.reject",
+        "friendship",
+        Some(id),
+        Some(row.target_agent_id),
+        "rejected a friendship",
+        serde_json::json!({}),
+    )
+    .await;
 
     Ok(Json(fetch_friendship(&state.db, user.user_id, id).await?))
 }
@@ -567,6 +619,19 @@ pub async fn counter(
     })?;
 
     tx.commit().await?;
+
+    crate::events::record_audit(
+        &state.db,
+        &user,
+        Some(target_account),
+        "friendship.counter",
+        "friendship",
+        Some(new_id),
+        Some(id),
+        "countered a friendship proposal",
+        serde_json::json!({ "countered_of": id }),
+    )
+    .await;
 
     Ok(Json(
         fetch_friendship(&state.db, user.user_id, new_id).await?,

@@ -47,42 +47,38 @@ impl FromRequestParts<RelayState> for AuthUser {
         let header = parts
             .headers
             .get(axum::http::header::AUTHORIZATION)
-            .and_then(|v| v.to_str().ok())
-            .ok_or(ApiError::Unauthorized)?;
-
-        let token = header
-            .strip_prefix("Bearer ")
-            .ok_or(ApiError::Unauthorized)?;
-
-        if let Ok(claims) = jwt::decode_jwt(token, state.jwt_secret()) {
-            // Revocation check — mirror of `chakramcp-app`'s
-            // `AuthUser` extractor. The two services share
-            // JWT_SECRET, so a JWT minted by `app` works against
-            // either. Revocation has to be honored at both ends or
-            // signing-out doesn't actually kick anything out of the
-            // relay.
-            if is_token_revoked(&state.db, claims.jti).await? {
-                return Err(ApiError::Unauthorized);
-            }
-            return Ok(AuthUser {
-                user_id: claims.sub,
-                email: claims.email,
-                is_admin: claims.is_admin,
-                // JWT path — no api_keys row backs this credential.
-                api_key_id: None,
-                // The jti of *this* bearer, recorded so we can join
-                // back to the device-flow / oauth-code row that minted
-                // it (migration 0017 stamped minted_jti on those rows).
-                minted_jti: Some(claims.jti),
-            });
-        }
-
-        if let Some(user) = api_key_lookup(&state.db, token).await? {
-            return Ok(user);
-        }
-
-        Err(ApiError::Unauthorized)
+            .and_then(|v| v.to_str().ok());
+        authenticate(state, header)
+            .await
+            .ok_or(ApiError::Unauthorized)
     }
+}
+
+/// Resolve an `Authorization` header value into an [`AuthUser`], or `None`
+/// if it's missing/invalid/revoked. Shared by the extractor and the usage
+/// middleware (which needs to attribute requests without going through the
+/// extractor machinery).
+pub async fn authenticate(state: &RelayState, auth_header: Option<&str>) -> Option<AuthUser> {
+    let token = auth_header?.strip_prefix("Bearer ")?;
+
+    if let Ok(claims) = jwt::decode_jwt(token, state.jwt_secret()) {
+        // Revocation honored at both services (shared JWT_SECRET).
+        if is_token_revoked(&state.db, claims.jti)
+            .await
+            .unwrap_or(true)
+        {
+            return None;
+        }
+        return Some(AuthUser {
+            user_id: claims.sub,
+            email: claims.email,
+            is_admin: claims.is_admin,
+            api_key_id: None,
+            minted_jti: Some(claims.jti),
+        });
+    }
+
+    api_key_lookup(&state.db, token).await.ok().flatten()
 }
 
 async fn is_token_revoked(db: &PgPool, jti: Uuid) -> Result<bool, ApiError> {
