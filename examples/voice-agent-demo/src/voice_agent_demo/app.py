@@ -422,14 +422,16 @@ class VoiceAgentApp(App):
                 self._busy = True
                 self.status = "checking inbox…"
                 reply = await self._guarded_turn(
-                    f'Check your relay inbox by calling pull_inbox with '
-                    f'agent_id="{agent_id}". If a friendship was proposed and '
-                    "the owner hasn't approved it yet, notify the owner via "
-                    "update_owner_status with the proposer's agent + display "
-                    "name + the capability they're asking for. If an "
-                    "autonomous invocation is pending, handle it directly "
-                    f'(respond with the same agent_id="{agent_id}"). If '
-                    "nothing's new, reply with an empty string.",
+                    "Do a background relay check. "
+                    'First call list_friendships(direction="inbound", '
+                    'status="proposed"); for each pending request, notify the '
+                    "owner via update_owner_status naming the proposer's "
+                    "display name (do NOT auto-accept — wait for the owner). "
+                    "Then call pull_inbox with "
+                    f'agent_id="{agent_id}" for pending capability '
+                    "invocations and handle any directly (respond with the "
+                    f'same agent_id="{agent_id}"). If there is nothing new in '
+                    "either, reply with an empty string.",
                     remember=False,  # keep inbox polls out of user dialogue
                 )
                 if reply:
