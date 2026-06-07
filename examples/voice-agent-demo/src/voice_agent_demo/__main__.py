@@ -27,7 +27,7 @@ from agents import add_trace_processor
 
 from .agent import build_agent_stack
 from .app import VoiceAgentApp
-from .chakra_mcp import build_chakra_mcp_server, load_cli_session
+from .chakra_mcp import build_chakra_mcp_server, load_cli_session, resolve_agent_id
 from .logs import QueueProcessor
 from .persona import Persona
 from .swiggy_auth import ensure_swiggy_token
@@ -114,6 +114,27 @@ async def _run(persona: Persona) -> None:
     async with AsyncExitStack() as mcp_stack:
         await mcp_stack.enter_async_context(chakra_mcp)
 
+        # Resolve THIS persona's own relay agent id up front. Every relay
+        # interaction tool (pull_inbox, respond, invoke) requires it, and
+        # the LLM can't infer it — so we pin it into the system prompt.
+        # If the agent isn't registered yet, we surface the fix loudly and
+        # keep going in a degraded "needs registration" mode rather than
+        # letting the agent spew "missing field agent_id" errors.
+        agent_id = await resolve_agent_id(chakra_mcp, persona.agent_slug)
+        if agent_id:
+            click.echo(f"  ✓ relay agent: {persona.agent_slug} ({agent_id})")
+        else:
+            click.echo(
+                f"\n  ⚠ No relay agent with slug '{persona.agent_slug}' is "
+                "registered for this account.\n"
+                "    The demo flow (inbox, friendships, invoke) needs one. "
+                "Register it with:\n"
+                f"      ./scripts/register-agent.sh {persona.name}\n"
+                "    Running anyway in degraded mode (voice works; relay "
+                "actions will be declined).\n",
+                err=True,
+            )
+
         if swiggy_mcp is not None:
             try:
                 await mcp_stack.enter_async_context(swiggy_mcp)
@@ -143,7 +164,9 @@ async def _run(persona: Persona) -> None:
             a.notifier_sync(text)
             return None
 
-        stack = await build_agent_stack(persona, chakra_mcp, swiggy_mcp, notifier)
+        stack = await build_agent_stack(
+            persona, chakra_mcp, swiggy_mcp, notifier, agent_id
+        )
 
         app = VoiceAgentApp(stack=stack, sarvam=sarvam, log_queue=log_queue)
         app_ref["app"] = app

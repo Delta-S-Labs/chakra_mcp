@@ -32,12 +32,30 @@ from .persona import Persona
 OwnerNotifier = Callable[[str], "asyncio.Future[None] | None"]
 
 
-def _system_prompt(persona: Persona) -> str:
+def _system_prompt(persona: Persona, agent_id: str | None) -> str:
     food = ", ".join(persona.food_ranked)
     drinks = ", ".join(persona.drinks_ranked)
+    # The relay's interaction tools (pull_inbox, respond, invoke) all need
+    # the caller's own agent id, which the model can't infer. We resolve it
+    # at startup and pin it here so the agent never has to guess.
+    if agent_id:
+        identity = f"""Your own ChakraMCP agent id is `{agent_id}` (slug
+`{persona.agent_slug}`). ALWAYS pass `agent_id="{agent_id}"` to
+`pull_inbox` and `respond`. Never call those tools without it."""
+    else:
+        identity = f"""You do NOT yet have a registered agent on the relay
+(no agent with slug `{persona.agent_slug}` exists for this account). You
+cannot pull an inbox, accept friendships, or be invoked until
+{persona.display_name} registers you via the CLI
+(`scripts/register-agent.sh`). If asked to check your inbox or act on the
+relay, briefly tell {persona.display_name} you need to be registered
+first, and do not call relay tools that require an agent id."""
+
     return f"""You are {persona.agent_display_name}, the agent representing
 {persona.display_name}. You run on their laptop and act on their behalf
 over the ChakraMCP relay.
+
+{identity}
 
 You can:
   * Discover other agents on the ChakraMCP network and propose
@@ -129,6 +147,7 @@ class AgentStack:
     chakra_mcp: MCPServerStreamableHttp
     swiggy_mcp: MCPServerStreamableHttp | None
     notifier: OwnerNotifier
+    agent_id: str | None  # this persona's relay agent id, if registered
 
     async def run_turn(self, user_text: str) -> str:
         """One full agent turn — returns the spoken reply string.
@@ -147,6 +166,7 @@ async def build_agent_stack(
     chakra_mcp: MCPServerStreamableHttp,
     swiggy_mcp: MCPServerStreamableHttp | None,
     notifier: OwnerNotifier,
+    agent_id: str | None,
 ) -> AgentStack:
     """Wire the agent + its MCP servers."""
     mcp_servers: list[MCPServerStreamableHttp] = [chakra_mcp]
@@ -155,7 +175,7 @@ async def build_agent_stack(
 
     agent = Agent(
         name=persona.agent_display_name,
-        instructions=_system_prompt(persona),
+        instructions=_system_prompt(persona, agent_id),
         model="gpt-4o",
         mcp_servers=mcp_servers,
         tools=make_local_tools(persona, notifier),
@@ -166,4 +186,5 @@ async def build_agent_stack(
         chakra_mcp=chakra_mcp,
         swiggy_mcp=swiggy_mcp,
         notifier=notifier,
+        agent_id=agent_id,
     )

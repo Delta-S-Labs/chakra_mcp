@@ -265,19 +265,28 @@ class VoiceAgentApp(App):
         notifying its owner via update_owner_status.
         """
         await asyncio.sleep(2)  # let startup settle
+        # No registered agent → nothing to poll. Stay quiet rather than
+        # asking the LLM to call pull_inbox (which needs an agent id it
+        # doesn't have) every 8s. The startup banner already told the
+        # operator to register.
+        if self.stack.agent_id is None:
+            self.status = "ready · agent not registered — voice only"
+            return
         while True:
             if not self._busy:
                 try:
                     self._busy = True
                     self.status = "checking inbox…"
                     reply = await self.stack.run_turn(
-                        "Check your relay inbox. If a friendship was proposed "
-                        "and the owner hasn't approved it yet, notify the "
-                        "owner via update_owner_status with the proposer's "
-                        "agent + display name + the capability they're "
-                        "asking for. If an autonomous invocation is pending, "
-                        "handle it directly. If nothing's new, reply with "
-                        "an empty string."
+                        f'Check your relay inbox by calling pull_inbox with '
+                        f'agent_id="{self.stack.agent_id}". If a friendship '
+                        "was proposed and the owner hasn't approved it yet, "
+                        "notify the owner via update_owner_status with the "
+                        "proposer's agent + display name + the capability "
+                        "they're asking for. If an autonomous invocation is "
+                        "pending, handle it directly (respond with the same "
+                        f'agent_id="{self.stack.agent_id}"). If nothing\'s '
+                        "new, reply with an empty string."
                     )
                     if reply:
                         await self._on_agent_reply(reply, speak=True)

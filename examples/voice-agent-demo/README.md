@@ -129,18 +129,32 @@ prompt reads them as opaque ranked lists.
 
 ## First run on each laptop
 
-The agent doesn't auto-register itself. On the **first** run, before
-doing step 2 of the demo flow, push-to-talk and ask the agent to:
+The agent **can't register itself**: the relay's MCP surface is
+interaction-only (`list_my_agents`, `invoke`, `pull_inbox`, `respond`,
+`propose_friendship`, …) — there is no agent-create or capability-publish
+tool over MCP. So registration happens once, up front, via the CLI.
 
-> "Register an agent for me on the relay with slug `<persona slug>`
-> and publish a `negotiate_dinner` capability on it."
+After `chakramcp login`, run the bundled script:
 
-The agent's first turn calls ChakraMCP MCP tools (`agents.create`,
-`agents.capabilities.create`) — you'll see them stream in the Logs
-tab. Subsequent runs reuse the existing agent.
+```bash
+./scripts/register-agent.sh kaustav      # on Kaustav's laptop
+./scripts/register-agent.sh aparajita    # on Aparajita's laptop
+```
 
-Once both laptops have done this, both `*-voice-bot` agents exist on
-the relay and you can start the discovery flow.
+It reads `personas/<name>.json`, picks your account from
+`chakramcp whoami`, registers the agent **network-visible** (so the peer
+can discover it), and publishes the two capabilities the flow uses:
+`message_owner` (reserved template, human-in-the-loop) and the custom
+`negotiate_dinner`. Verify with `chakramcp capabilities list --agent <slug>`.
+
+On startup the voice agent resolves its own agent id by slug and pins it
+into the system prompt — that's what lets `pull_inbox`/`respond`/`invoke`
+work. If no matching agent exists yet, it prints a registration reminder
+and runs in voice-only degraded mode instead of erroring on every inbox
+poll.
+
+Once both laptops have registered, both `*-voice-bot` agents exist on the
+relay and you can start the discovery flow.
 
 ## Troubleshooting
 
@@ -150,7 +164,8 @@ the relay and you can start the discovery flow.
 | Mic silent / push-to-talk no-op | Check terminal has mic permission (macOS System Settings → Privacy → Microphone). On Linux: `aplay -l` / `arecord -l` to confirm a default input. |
 | Sarvam 401 | `SARVAM_API_KEY` in `.env` is wrong or expired. |
 | `friendships.propose` 409 | A friendship between these two agents already exists — accept it from her side or skip step 2. |
-| `negotiate_dinner` not found | The peer agent hasn't published it yet. On each laptop's first run, ask the agent to register itself + publish the capability (see "First run" above). |
+| `negotiate_dinner` not found | The peer agent hasn't published it yet. Run `./scripts/register-agent.sh <persona>` on that laptop (see "First run" above). |
+| Bot says "error checking inbox" / `missing field agent_id` | No agent is registered for this account, so there's no inbox to pull. Run `./scripts/register-agent.sh <persona>`, then restart the agent. |
 | Swiggy browser tab didn't open | The terminal prints the auth URL — open it manually. Headless box? Run the first auth on a machine with a browser; the cached token under `~/.config/voice-agent-demo/` is portable. |
 | Swiggy token expired (>5 days) | Delete `~/.config/voice-agent-demo/swiggy_token_<persona>.json` and re-run — it re-auths. Swiggy v1.0 has no refresh, so the 5-day token is the whole session. |
 | Swiggy MCP errors mid-call | The agent catches it and falls back to a verbal suggestion. (Live-only by request; add a curated fallback list in `swiggy_mcp.py` if you want belt-and-suspenders.) |

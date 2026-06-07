@@ -12,11 +12,13 @@ with it; we call `relay.chakramcp.com/mcp` with it.
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -125,3 +127,46 @@ def build_chakra_mcp_server(
         # span per *call*, not per call + an extra list-tools poke.
         cache_tools_list=True,
     )
+
+
+def _calltool_payload(result: Any) -> Any:
+    """Extract the JSON body from an MCP CallToolResult.
+
+    Prefers `structuredContent`; falls back to parsing the first text
+    content block (the relay returns its JSON as text). Returns None if
+    nothing parseable is present.
+    """
+    sc = getattr(result, "structuredContent", None)
+    if sc not in (None, {}, []):
+        return sc
+    for block in getattr(result, "content", []) or []:
+        text = getattr(block, "text", None)
+        if text:
+            try:
+                return json.loads(text)
+            except (json.JSONDecodeError, TypeError):
+                return text
+    return None
+
+
+async def resolve_agent_id(server: MCPServerStreamableHttp, slug: str) -> str | None:
+    """Look up the caller's own agent id by slug via `list_my_agents`.
+
+    Every interaction tool the agent needs — `pull_inbox`, `respond`,
+    `invoke` — requires the agent's own id, which the LLM has no way to
+    know. We resolve it once at startup (the server must already be
+    connected) and bake it into the system prompt. Returns None when the
+    account has no agent with this slug (i.e. it hasn't been registered
+    yet — see scripts/register-agent.sh).
+    """
+    result = await server.call_tool("list_my_agents", {})
+    payload = _calltool_payload(result)
+    if not isinstance(payload, list):
+        return None
+    for agent in payload:
+        if not isinstance(agent, dict):
+            continue
+        if agent.get("slug") == slug:
+            # Field name has varied across relay versions; accept either.
+            return agent.get("id") or agent.get("agent_id")
+    return None
