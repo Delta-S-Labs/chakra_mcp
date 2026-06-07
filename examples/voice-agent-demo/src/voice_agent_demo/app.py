@@ -97,8 +97,12 @@ class LogsView(Vertical):
         yield self._tree
 
     # --- public API used by the App ---
+    # NB: must NOT be named `on_event` — that's Textual's built-in event
+    # dispatcher, which the framework calls with its own Event objects
+    # (Compose, Mount, …). Overriding it routed framework events into
+    # this dict-handling code → `'Compose' object has no attribute 'get'`.
 
-    def on_event(self, msg: dict[str, Any]) -> None:
+    def handle_log(self, msg: dict[str, Any]) -> None:
         t = msg.get("type")
         if t == "trace_start":
             n = self._tree.root.add(f"▶ trace: {msg['name']}", expand=True)
@@ -246,7 +250,7 @@ class VoiceAgentApp(App):
         while True:
             msg = await self.log_queue.get()
             try:
-                self._logs.on_event(msg)
+                self._logs.handle_log(msg)
             except Exception as e:  # never let a render bug crash the app
                 self._logs._tree.root.add(f"[red]log render error: {e}[/red]")
 
