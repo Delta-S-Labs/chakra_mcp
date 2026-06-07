@@ -89,7 +89,9 @@ class LogsView(Vertical):
 
     def __init__(self) -> None:
         super().__init__()
-        self._nodes: dict[str, Any] = {}  # span_id → TreeNode
+        # NB: must NOT be named `_nodes` — that's Textual's internal child
+        # NodeList. Our span_id→TreeNode map needs a private name of its own.
+        self._span_nodes: dict[str, Any] = {}  # span_id → TreeNode
         self._tree = Tree("Run log", id="run-log")
         self._tree.root.expand()
 
@@ -108,20 +110,20 @@ class LogsView(Vertical):
             n = self._tree.root.add(f"▶ trace: {msg['name']}", expand=True)
             # We use the trace name as a synthetic id so children whose
             # parent_id is the trace_id can still find a home.
-            self._nodes[f"trace:{msg['name']}"] = n
+            self._span_nodes[f"trace:{msg['name']}"] = n
         elif t == "trace_end":
-            n = self._nodes.pop(f"trace:{msg['name']}", None)
+            n = self._span_nodes.pop(f"trace:{msg['name']}", None)
             if n is not None:
                 n.label = f"✓ trace: {msg['name']}"
         elif t == "span_start":
             ev: LogEvent = msg["event"]
-            parent = self._nodes.get(ev.parent_id or "", self._tree.root)
+            parent = self._span_nodes.get(ev.parent_id or "", self._tree.root)
             label = f"{_kind_emoji(ev.kind)}  {ev.label}  [dim](starting…)[/dim]"
             node = parent.add(label, expand=False)
-            self._nodes[ev.span_id] = node
+            self._span_nodes[ev.span_id] = node
         elif t == "span_end":
             ev = msg["event"]
-            node = self._nodes.get(ev.span_id)
+            node = self._span_nodes.get(ev.span_id)
             if node is None:
                 return
             dur = f"{ev.duration_ms} ms" if ev.duration_ms is not None else "?"
