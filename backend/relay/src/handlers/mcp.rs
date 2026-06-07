@@ -173,10 +173,11 @@ fn initialize_result() -> Value {
             "version": SERVER_VERSION,
         },
         "instructions":
-            "ChakraMCP relay. Use list_my_agents to see your agents, list_grants \
-             to see what you can call, invoke + poll_invocation to call a friend's \
-             capability, and pull_inbox + respond to serve requests directed at \
-             your own agents."
+            "ChakraMCP relay. Use create_agent + publish_capability to register \
+             yourself and the RPCs you expose. Use list_my_agents to see your \
+             agents, list_grants to see what you can call, invoke + poll_invocation \
+             to call a friend's capability, and pull_inbox + respond to serve \
+             requests directed at your own agents."
     })
 }
 
@@ -185,6 +186,9 @@ fn initialize_result() -> Value {
 fn tools_list_result() -> Value {
     json!({
         "tools": [
+            tool("list_my_accounts",
+                "List the accounts you belong to (with your role). Use an account's id as the account_id for create_agent.",
+                json!({ "type": "object", "properties": {} })),
             tool("list_my_agents",
                 "List the agents you own (across all your accounts).",
                 json!({ "type": "object", "properties": {} })),
@@ -261,6 +265,34 @@ fn tools_list_result() -> Value {
                         "proposer_message":  { "type": "string" }
                     }
                 })),
+            tool("create_agent",
+                "Register a new agent under one of your accounts (pull mode — runs against the relay inbox). Returns the new agent's id. Use list_my_agents first to get an account_id.",
+                json!({
+                    "type": "object",
+                    "required": ["account_id", "slug", "display_name"],
+                    "properties": {
+                        "account_id":   { "type": "string", "format": "uuid", "description": "One of your account ids (see list_my_agents → account_id)." },
+                        "slug":         { "type": "string", "description": "3-32 chars of [a-z0-9-], no leading/trailing or double hyphens. Unique within the account." },
+                        "display_name": { "type": "string" },
+                        "description":  { "type": "string" },
+                        "visibility":   { "type": "string", "enum": ["private", "org", "network"], "description": "Defaults to the account's default visibility. Use 'network' to make the agent discoverable by peers." }
+                    }
+                })),
+            tool("publish_capability",
+                "Publish a capability (typed RPC surface) on one of your agents. Peers can invoke it once they have a friendship + grant.",
+                json!({
+                    "type": "object",
+                    "required": ["agent_id", "name"],
+                    "properties": {
+                        "agent_id":      { "type": "string", "format": "uuid" },
+                        "name":          { "type": "string", "description": "ascii alphanumeric, underscore, or dot. Unique per agent." },
+                        "description":   { "type": "string" },
+                        "input_schema":  { "type": "object", "description": "JSON Schema for the input. Defaults to an open object." },
+                        "output_schema": { "type": "object", "description": "JSON Schema for the output. Defaults to an open object." },
+                        "visibility":    { "type": "string", "enum": ["private", "network"], "description": "Defaults to 'network'." },
+                        "semantics":     { "type": "string", "enum": ["autonomous", "human_in_loop"], "description": "Defaults to 'autonomous'." }
+                    }
+                })),
         ]
     })
 }
@@ -287,6 +319,7 @@ async fn call_tool(state: &RelayState, user: &AuthUser, params: Value) -> Result
         .map_err(|e| rpc_err(ERR_INVALID_PARAMS, format!("malformed call params: {e}")))?;
 
     let result = match p.name.as_str() {
+        "list_my_accounts" => list_my_accounts(&state.db, user).await,
         "list_my_agents" => list_my_agents(&state.db, user).await,
         "list_network_agents" => list_network_agents(&state.db, user).await,
         "list_grants" => list_grants(&state.db, user, p.arguments).await,
@@ -296,6 +329,8 @@ async fn call_tool(state: &RelayState, user: &AuthUser, params: Value) -> Result
         "pull_inbox" => pull_inbox(&state.db, user, p.arguments).await,
         "respond" => respond(&state.db, user, p.arguments).await,
         "propose_friendship" => propose_friendship(&state.db, user, p.arguments).await,
+        "create_agent" => create_agent(&state.db, user, p.arguments).await,
+        "publish_capability" => publish_capability(&state.db, user, p.arguments).await,
         other => {
             return Err(rpc_err(
                 ERR_INVALID_PARAMS,
@@ -328,6 +363,32 @@ async fn call_tool(state: &RelayState, user: &AuthUser, params: Value) -> Result
 }
 
 // ─── Tool implementations ────────────────────────────────
+
+async fn list_my_accounts(db: &PgPool, user: &AuthUser) -> Result<Value, ApiError> {
+    let rows = sqlx::query!(
+        r#"
+        SELECT acc.id, acc.slug, acc.display_name, acc.account_type, m.role
+        FROM account_memberships m
+        JOIN accounts acc ON acc.id = m.account_id
+        WHERE m.user_id = $1 AND acc.tombstoned_at IS NULL
+        ORDER BY acc.created_at ASC
+        "#,
+        user.user_id,
+    )
+    .fetch_all(db)
+    .await?;
+
+    Ok(json!(rows
+        .into_iter()
+        .map(|r| json!({
+            "id": r.id,
+            "slug": r.slug,
+            "display_name": r.display_name,
+            "account_type": r.account_type,
+            "role": r.role,
+        }))
+        .collect::<Vec<_>>()))
+}
 
 async fn list_my_agents(db: &PgPool, user: &AuthUser) -> Result<Value, ApiError> {
     let rows = sqlx::query!(
@@ -826,6 +887,196 @@ async fn propose_friendship(db: &PgPool, user: &AuthUser, args: Value) -> Result
     Ok(json!({ "friendship_id": id, "status": "proposed" }))
 }
 
+/// Slug rules mirrored from `handlers::agents::is_valid_slug` (kept
+/// private there). 3-32 chars of [a-z0-9-], no leading/trailing or
+/// double hyphens.
+fn mcp_slug_ok(s: &str) -> bool {
+    let len = s.chars().count();
+    (3..=32).contains(&len)
+        && !s.starts_with('-')
+        && !s.ends_with('-')
+        && !s.contains("--")
+        && s.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+async fn create_agent(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
+    #[derive(Deserialize)]
+    struct A {
+        account_id: Uuid,
+        slug: String,
+        display_name: String,
+        description: Option<String>,
+        visibility: Option<String>,
+    }
+    let a: A = serde_json::from_value(args)
+        .map_err(|e| ApiError::InvalidRequest(format!("bad create_agent args: {e}")))?;
+
+    let slug = a.slug.trim().to_string();
+    if !mcp_slug_ok(&slug) {
+        return Err(ApiError::InvalidRequest(
+            "slug must be 3-32 chars of [a-z0-9-], no leading/trailing or double hyphens".into(),
+        ));
+    }
+    let display_name = a.display_name.trim().to_string();
+    if display_name.is_empty() {
+        return Err(ApiError::InvalidRequest("display_name is required".into()));
+    }
+    if !user_is_member(db, user.user_id, a.account_id).await? {
+        return Err(ApiError::Forbidden);
+    }
+
+    // Resolve visibility: validate if supplied, else fall back to the
+    // account's default (matches POST /v1/agents).
+    let visibility = match a.visibility.as_deref() {
+        Some(v) => {
+            if !matches!(v, "private" | "org" | "network") {
+                return Err(ApiError::InvalidRequest(
+                    "visibility must be private|org|network".into(),
+                ));
+            }
+            v.to_string()
+        }
+        None => {
+            sqlx::query_scalar!(
+                r#"SELECT default_agent_visibility FROM accounts WHERE id = $1"#,
+                a.account_id
+            )
+            .fetch_one(db)
+            .await?
+        }
+    };
+
+    // Pull mode only over MCP — laptop / sandboxed agents serve the
+    // relay inbox and have no public A2A endpoint.
+    let id = Uuid::now_v7();
+    let inserted = sqlx::query!(
+        r#"
+        INSERT INTO agents
+            (id, account_id, created_by_user_id, slug, display_name, description,
+             visibility, mode)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pull')
+        ON CONFLICT (account_id, slug) WHERE tombstoned_at IS NULL DO NOTHING
+        RETURNING id, account_id, slug, display_name, description, visibility, created_at
+        "#,
+        id,
+        a.account_id,
+        user.user_id,
+        slug,
+        display_name,
+        a.description.unwrap_or_default(), // column is NOT NULL DEFAULT ''
+        visibility,
+    )
+    .fetch_optional(db)
+    .await?
+    .ok_or_else(|| {
+        ApiError::Conflict(format!(
+            "agent slug '{slug}' already exists in this account"
+        ))
+    })?;
+
+    Ok(json!({
+        "id": inserted.id,
+        "account_id": inserted.account_id,
+        "slug": inserted.slug,
+        "display_name": inserted.display_name,
+        "description": inserted.description,
+        "visibility": inserted.visibility,
+        "created_at": inserted.created_at,
+    }))
+}
+
+async fn publish_capability(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
+    #[derive(Deserialize)]
+    struct A {
+        agent_id: Uuid,
+        name: String,
+        description: Option<String>,
+        input_schema: Option<Value>,
+        output_schema: Option<Value>,
+        visibility: Option<String>,
+        semantics: Option<String>,
+    }
+    let a: A = serde_json::from_value(args)
+        .map_err(|e| ApiError::InvalidRequest(format!("bad publish_capability args: {e}")))?;
+
+    // Ownership: the caller must be a member of the agent's account.
+    let agent_account =
+        sqlx::query_scalar!(r#"SELECT account_id FROM agents WHERE id = $1"#, a.agent_id)
+            .fetch_optional(db)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+    if !user_is_member(db, user.user_id, agent_account).await? {
+        return Err(ApiError::Forbidden);
+    }
+
+    let name = a.name.trim().to_string();
+    if name.is_empty() {
+        return Err(ApiError::InvalidRequest("name is required".into()));
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
+    {
+        return Err(ApiError::InvalidRequest(
+            "name must be ascii alphanumeric, underscore, or dot".into(),
+        ));
+    }
+    let visibility = a.visibility.as_deref().unwrap_or("network");
+    if !matches!(visibility, "private" | "network") {
+        return Err(ApiError::InvalidRequest(
+            "visibility must be private|network".into(),
+        ));
+    }
+    let semantics = a.semantics.as_deref().unwrap_or("autonomous");
+    if !matches!(semantics, "autonomous" | "human_in_loop") {
+        return Err(ApiError::InvalidRequest(
+            "semantics must be autonomous|human_in_loop".into(),
+        ));
+    }
+    let input_schema = a
+        .input_schema
+        .unwrap_or_else(|| json!({ "type": "object" }));
+    let output_schema = a
+        .output_schema
+        .unwrap_or_else(|| json!({ "type": "object" }));
+
+    let id = Uuid::now_v7();
+    let inserted = sqlx::query!(
+        r#"
+        INSERT INTO agent_capabilities
+            (id, agent_id, name, description, input_schema, output_schema,
+             visibility, semantics, created_by_user_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ON CONFLICT (agent_id, name) DO NOTHING
+        RETURNING id, agent_id, name, description, visibility, created_at
+        "#,
+        id,
+        a.agent_id,
+        name,
+        a.description.unwrap_or_default(), // column is NOT NULL DEFAULT ''
+        input_schema,
+        output_schema,
+        visibility,
+        semantics,
+        user.user_id,
+    )
+    .fetch_optional(db)
+    .await?
+    .ok_or_else(|| {
+        ApiError::Conflict(format!("capability '{name}' already exists for this agent"))
+    })?;
+
+    Ok(json!({
+        "id": inserted.id,
+        "agent_id": inserted.agent_id,
+        "name": inserted.name,
+        "description": inserted.description,
+        "visibility": inserted.visibility,
+        "created_at": inserted.created_at,
+    }))
+}
+
 // ─── /.well-known/oauth-protected-resource ───────────────
 //
 // Tells MCP clients where to discover the auth server.
@@ -836,4 +1087,275 @@ pub async fn protected_resource_metadata(State(state): State<RelayState>) -> Jso
         "scopes_supported": ["relay.full"],
         "bearer_methods_supported": ["header"],
     }))
+}
+
+#[cfg(test)]
+mod manage_agents_tests {
+    //! Coverage for the agent-management MCP tools (`create_agent`,
+    //! `publish_capability`) added so an agent can self-register over
+    //! /mcp instead of requiring out-of-band CLI setup. We drive the
+    //! real /mcp JSON-RPC endpoint end-to-end with a Bearer JWT.
+    use axum::body::Body;
+    use axum::http::{header, Request};
+    use chakramcp_shared::config::SharedConfig;
+    use chakramcp_shared::jwt;
+    use http_body_util::BodyExt;
+    use serde_json::{json, Value};
+    use sqlx::PgPool;
+    use tower::ServiceExt;
+    use uuid::Uuid;
+
+    fn config() -> SharedConfig {
+        SharedConfig {
+            database_url: "ignored".into(),
+            jwt_secret: "test-secret-test-secret-test-secret-test-secret".into(),
+            admin_email: None,
+            survey_enabled: false,
+            frontend_base_url: "http://localhost:3000".into(),
+            app_base_url: "http://localhost:8080".into(),
+            relay_base_url: "http://localhost:8090".into(),
+            discovery_v2_enabled: false,
+            log_filter: "warn".into(),
+        }
+    }
+
+    async fn seed_user_with_jwt(pool: &PgPool) -> (Uuid, Uuid, String) {
+        let user_id = Uuid::now_v7();
+        sqlx::query!(
+            r#"INSERT INTO users (id, email, display_name, password_hash)
+               VALUES ($1, $2, 'Test User', 'x')"#,
+            user_id,
+            format!("{user_id}@t.local"),
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        let account_id = Uuid::now_v7();
+        sqlx::query!(
+            r#"INSERT INTO accounts (id, slug, display_name, account_type, owner_user_id)
+               VALUES ($1, $2, 'Acct', 'individual', $3)"#,
+            account_id,
+            format!("acct-{account_id}"),
+            user_id,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            r#"INSERT INTO account_memberships (id, account_id, user_id, role)
+               VALUES ($1, $2, $3, 'owner')"#,
+            Uuid::now_v7(),
+            account_id,
+            user_id,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        let token = jwt::encode_jwt(
+            &jwt::UserClaims::new(user_id, format!("{user_id}@t.local"), false, 1),
+            "test-secret-test-secret-test-secret-test-secret",
+        )
+        .unwrap();
+        (user_id, account_id, token)
+    }
+
+    /// POST a tools/call to /mcp and return the parsed JSON-RPC `result`.
+    async fn call(pool: &PgPool, token: &str, name: &str, arguments: Value) -> Value {
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/mcp")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                    .body(Body::from(
+                        serde_json::to_vec(&json!({
+                            "jsonrpc": "2.0",
+                            "id": 1,
+                            "method": "tools/call",
+                            "params": { "name": name, "arguments": arguments },
+                        }))
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(res.status().is_success(), "http {}", res.status());
+        let body: Value =
+            serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        body["result"].clone()
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn create_agent_then_publish_capability(pool: PgPool) {
+        let (_uid, account_id, token) = seed_user_with_jwt(&pool).await;
+
+        // 1. create_agent → returns a fresh id, persisted in pull mode.
+        let result = call(
+            &pool,
+            &token,
+            "create_agent",
+            json!({
+                "account_id": account_id,
+                "slug": "self-reg-bot",
+                "display_name": "Self Reg Bot",
+                "description": "registered over MCP",
+                "visibility": "network",
+            }),
+        )
+        .await;
+        assert_eq!(result["isError"], json!(false), "result: {result}");
+        let agent_id: Uuid = result["structuredContent"]["id"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+
+        let row = sqlx::query!(
+            "SELECT slug, visibility, mode FROM agents WHERE id = $1",
+            agent_id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row.slug, "self-reg-bot");
+        assert_eq!(row.visibility, "network");
+        assert_eq!(row.mode, "pull");
+
+        // 2. publish_capability on that agent.
+        let result = call(
+            &pool,
+            &token,
+            "publish_capability",
+            json!({
+                "agent_id": agent_id,
+                "name": "negotiate_dinner",
+                "description": "negotiate cuisine + drink",
+                "input_schema": { "type": "object" },
+                "output_schema": { "type": "object" },
+            }),
+        )
+        .await;
+        assert_eq!(result["isError"], json!(false), "result: {result}");
+
+        let cap = sqlx::query!(
+            "SELECT name, visibility, semantics FROM agent_capabilities WHERE agent_id = $1",
+            agent_id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(cap.name, "negotiate_dinner");
+        assert_eq!(cap.visibility, "network"); // defaulted
+        assert_eq!(cap.semantics, "autonomous"); // defaulted
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn create_agent_rejects_bad_slug(pool: PgPool) {
+        let (_uid, account_id, token) = seed_user_with_jwt(&pool).await;
+        let result = call(
+            &pool,
+            &token,
+            "create_agent",
+            json!({ "account_id": account_id, "slug": "Bad Slug!", "display_name": "X" }),
+        )
+        .await;
+        // Tool errors surface as isError=true (not protocol errors).
+        assert_eq!(result["isError"], json!(true), "result: {result}");
+        let count = sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM agents WHERE account_id = $1",
+            account_id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(count, Some(0));
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn create_agent_forbidden_for_non_member(pool: PgPool) {
+        // Account belongs to user A; user B (different JWT) may not create.
+        let (_a, account_id, _token_a) = seed_user_with_jwt(&pool).await;
+        let (_b, _acct_b, token_b) = seed_user_with_jwt(&pool).await;
+        let result = call(
+            &pool,
+            &token_b,
+            "create_agent",
+            json!({ "account_id": account_id, "slug": "intruder-bot", "display_name": "X" }),
+        )
+        .await;
+        assert_eq!(result["isError"], json!(true), "result: {result}");
+        let count = sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM agents WHERE account_id = $1",
+            account_id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(count, Some(0));
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn create_agent_duplicate_slug_conflicts(pool: PgPool) {
+        let (_uid, account_id, token) = seed_user_with_jwt(&pool).await;
+        let args = json!({ "account_id": account_id, "slug": "dupe-bot", "display_name": "X" });
+        let first = call(&pool, &token, "create_agent", args.clone()).await;
+        assert_eq!(first["isError"], json!(false), "first: {first}");
+        let second = call(&pool, &token, "create_agent", args).await;
+        assert_eq!(second["isError"], json!(true), "result: {second}");
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn publish_capability_forbidden_on_foreign_agent(pool: PgPool) {
+        // Agent owned by A; B tries to publish a capability on it.
+        let (_a, account_id, token_a) = seed_user_with_jwt(&pool).await;
+        let (_b, _acct_b, token_b) = seed_user_with_jwt(&pool).await;
+        let made = call(
+            &pool,
+            &token_a,
+            "create_agent",
+            json!({ "account_id": account_id, "slug": "owned-bot", "display_name": "X" }),
+        )
+        .await;
+        let agent_id = made["structuredContent"]["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        let result = call(
+            &pool,
+            &token_b,
+            "publish_capability",
+            json!({ "agent_id": agent_id, "name": "sneaky" }),
+        )
+        .await;
+        assert_eq!(result["isError"], json!(true), "result: {result}");
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn list_my_accounts_returns_membership(pool: PgPool) {
+        let (_uid, account_id, token) = seed_user_with_jwt(&pool).await;
+        let result = call(&pool, &token, "list_my_accounts", json!({})).await;
+        assert_eq!(result["isError"], json!(false), "result: {result}");
+        let accounts = result["structuredContent"].as_array().unwrap();
+        assert_eq!(accounts.len(), 1);
+        assert_eq!(accounts[0]["id"].as_str().unwrap(), account_id.to_string());
+        assert_eq!(accounts[0]["role"], json!("owner"));
+    }
+
+    #[test]
+    fn new_tools_are_advertised() {
+        let listed = super::tools_list_result();
+        let names: Vec<&str> = listed["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["name"].as_str().unwrap())
+            .collect();
+        assert!(names.contains(&"list_my_accounts"));
+        assert!(names.contains(&"create_agent"));
+        assert!(names.contains(&"publish_capability"));
+    }
 }

@@ -44,12 +44,18 @@ def _system_prompt(persona: Persona, agent_id: str | None) -> str:
 `pull_inbox` and `respond`. Never call those tools without it."""
     else:
         identity = f"""You do NOT yet have a registered agent on the relay
-(no agent with slug `{persona.agent_slug}` exists for this account). You
-cannot pull an inbox, accept friendships, or be invoked until
-{persona.display_name} registers you via the CLI
-(`scripts/register-agent.sh`). If asked to check your inbox or act on the
-relay, briefly tell {persona.display_name} you need to be registered
-first, and do not call relay tools that require an agent id."""
+(no agent with slug `{persona.agent_slug}` exists for this account). Until
+you register, you can't pull an inbox, accept friendships, or be invoked.
+
+You CAN register yourself when {persona.display_name} asks you to. To do so:
+  1. Call `list_my_accounts` and pick the individual account (or the first).
+  2. Call `create_agent` with account_id=<that id>, slug="{persona.agent_slug}",
+     display_name="{persona.agent_display_name}", visibility="network".
+  3. Call `publish_capability` with agent_id=<new id>, name="negotiate_dinner",
+     a short description, and open object input/output schemas.
+Then confirm to {persona.display_name} that you're registered. Don't register
+unprompted — wait until they ask. If they ask you to check your inbox before
+you're registered, tell them you need to register first."""
 
     return f"""You are {persona.agent_display_name}, the agent representing
 {persona.display_name}. You run on their laptop and act on their behalf

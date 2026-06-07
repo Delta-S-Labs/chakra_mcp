@@ -129,12 +129,17 @@ prompt reads them as opaque ranked lists.
 
 ## First run on each laptop
 
-The agent **can't register itself**: the relay's MCP surface is
-interaction-only (`list_my_agents`, `invoke`, `pull_inbox`, `respond`,
-`propose_friendship`, …) — there is no agent-create or capability-publish
-tool over MCP. So registration happens once, up front, via the CLI.
+Two ways to register the persona's agent (do it once per laptop, after
+`chakramcp login`):
 
-After `chakramcp login`, run the bundled script:
+**A. Ask the agent to register itself (voice).** The relay now exposes
+`list_my_accounts`, `create_agent`, and `publish_capability` over MCP, so
+on first run you can push-to-talk and say *"register yourself on the
+relay."* The agent calls those tools live (you'll see them in the Logs
+tab) and publishes `negotiate_dinner`. Requires a relay running this
+version (deployed to `relay.chakramcp.com`).
+
+**B. Run the bundled script (deterministic, good for filming prep).**
 
 ```bash
 ./scripts/register-agent.sh kaustav      # on Kaustav's laptop
