@@ -678,6 +678,19 @@ pub async fn create(
         }
     }
 
+    crate::events::record_audit(
+        &state.db,
+        &user,
+        Some(inserted.account_id),
+        "agent.create",
+        "agent",
+        Some(inserted.id),
+        None,
+        &format!("registered agent {}", inserted.slug),
+        serde_json::json!({ "slug": inserted.slug, "visibility": inserted.visibility }),
+    )
+    .await;
+
     Ok(Json(AgentDto {
         id: inserted.id,
         account_id: inserted.account_id,
@@ -869,6 +882,19 @@ pub async fn update(
     .fetch_one(&state.db)
     .await?;
 
+    crate::events::record_audit(
+        &state.db,
+        &user,
+        Some(r.account_id),
+        "agent.update",
+        "agent",
+        Some(r.id),
+        None,
+        &format!("updated agent {}", r.slug),
+        serde_json::json!({ "slug": r.slug, "visibility": r.visibility }),
+    )
+    .await;
+
     Ok(Json(AgentDto {
         id: r.id,
         account_id: r.account_id,
@@ -926,6 +952,19 @@ pub async fn delete(
     )
     .execute(&state.db)
     .await?;
+
+    crate::events::record_audit(
+        &state.db,
+        &user,
+        Some(row.account_id),
+        "agent.delete",
+        "agent",
+        Some(id),
+        None,
+        "tombstoned agent",
+        serde_json::json!({}),
+    )
+    .await;
 
     Ok(axum::http::StatusCode::NO_CONTENT)
 }

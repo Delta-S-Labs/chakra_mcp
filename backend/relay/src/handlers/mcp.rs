@@ -476,6 +476,7 @@ async fn call_tool(state: &RelayState, user: &AuthUser, params: Value) -> Result
     let p: CallParams = serde_json::from_value(params)
         .map_err(|e| rpc_err(ERR_INVALID_PARAMS, format!("malformed call params: {e}")))?;
 
+    let tool = p.name.clone();
     let result = match p.name.as_str() {
         "list_my_accounts" => list_my_accounts(&state.db, user).await,
         "list_my_agents" => list_my_agents(&state.db, user).await,
@@ -518,7 +519,7 @@ async fn call_tool(state: &RelayState, user: &AuthUser, params: Value) -> Result
         }
     };
 
-    match result {
+    let (envelope, ok) = match result {
         Ok(value) => {
             // The full JSON always travels in `content` text. We ALSO set
             // `structuredContent`, but only when the value is a JSON object:
@@ -535,21 +536,40 @@ async fn call_tool(state: &RelayState, user: &AuthUser, params: Value) -> Result
             if value.is_object() {
                 envelope["structuredContent"] = value;
             }
-            Ok(envelope)
+            (envelope, true)
         }
         Err(api_err) => {
             // Per MCP, tool errors come back as a successful response
             // with isError=true so the LLM can read them, *not* as a
             // protocol-level RPC error.
             let rpc = api_err_to_rpc(api_err);
-            Ok(json!({
-                "content": [
-                    { "type": "text", "text": format!("Error: {}", rpc.message) }
-                ],
-                "isError": true,
-            }))
+            (
+                json!({
+                    "content": [
+                        { "type": "text", "text": format!("Error: {}", rpc.message) }
+                    ],
+                    "isError": true,
+                }),
+                false,
+            )
         }
-    }
+    };
+
+    // Meter every MCP tool call (reads + writes) for billing. Audit for
+    // write tools is recorded inside each tool impl / bridged REST handler.
+    crate::events::record_usage(
+        &state.db,
+        Some(user),
+        None,
+        "mcp",
+        &format!("mcp:{tool}"),
+        "MCP",
+        &tool,
+        if ok { 200 } else { 400 },
+    )
+    .await;
+
+    Ok(envelope)
 }
 
 // ─── Tool implementations ────────────────────────────────
@@ -1074,6 +1094,19 @@ async fn propose_friendship(db: &PgPool, user: &AuthUser, args: Value) -> Result
         other => other.into(),
     })?;
 
+    crate::events::record_audit(
+        db,
+        user,
+        Some(proposer_account),
+        "friendship.propose",
+        "friendship",
+        Some(id),
+        Some(a.target_agent_id),
+        "proposed a friendship",
+        json!({}),
+    )
+    .await;
+
     Ok(json!({ "friendship_id": id, "status": "proposed" }))
 }
 
@@ -1164,6 +1197,19 @@ async fn create_agent(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value
             "agent slug '{slug}' already exists in this account"
         ))
     })?;
+
+    crate::events::record_audit(
+        db,
+        user,
+        Some(inserted.account_id),
+        "agent.create",
+        "agent",
+        Some(inserted.id),
+        None,
+        &format!("registered agent {}", inserted.slug),
+        json!({ "slug": inserted.slug, "visibility": inserted.visibility }),
+    )
+    .await;
 
     Ok(json!({
         "id": inserted.id,
@@ -1256,6 +1302,19 @@ async fn publish_capability(db: &PgPool, user: &AuthUser, args: Value) -> Result
     .ok_or_else(|| {
         ApiError::Conflict(format!("capability '{name}' already exists for this agent"))
     })?;
+
+    crate::events::record_audit(
+        db,
+        user,
+        Some(agent_account),
+        "capability.create",
+        "capability",
+        Some(inserted.id),
+        Some(a.agent_id),
+        &format!("published capability {}", inserted.name),
+        json!({ "name": inserted.name, "visibility": inserted.visibility }),
+    )
+    .await;
 
     Ok(json!({
         "id": inserted.id,
@@ -1712,6 +1771,53 @@ mod manage_agents_tests {
         )
         .await;
         assert_eq!(result["isError"], json!(true), "result: {result}");
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn writes_record_audit_and_usage_events(pool: PgPool) {
+        let (_uid, account_id, token) = seed_user_with_jwt(&pool).await;
+
+        // A write tool: create_agent → audit row + usage row.
+        let made = call(
+            &pool,
+            &token,
+            "create_agent",
+            json!({ "account_id": account_id, "slug": "evt-bot", "display_name": "E", "visibility": "network" }),
+        )
+        .await;
+        assert_eq!(made["isError"], json!(false), "{made}");
+
+        // A read tool: list_my_agents → usage row, but NO audit row.
+        call(&pool, &token, "list_my_agents", json!({})).await;
+
+        let audit_actions: Vec<String> =
+            sqlx::query_scalar!("SELECT action FROM audit_events ORDER BY created_at")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert!(
+            audit_actions.contains(&"agent.create".to_string()),
+            "expected agent.create audit, got {audit_actions:?}"
+        );
+        // Reads must NOT be audited.
+        assert!(
+            !audit_actions.iter().any(|a| a.contains("list")),
+            "reads should not be audited: {audit_actions:?}"
+        );
+
+        let usage_actions: Vec<String> =
+            sqlx::query_scalar!("SELECT action FROM usage_events ORDER BY created_at")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert!(
+            usage_actions.contains(&"mcp:create_agent".to_string()),
+            "expected mcp:create_agent usage, got {usage_actions:?}"
+        );
+        assert!(
+            usage_actions.contains(&"mcp:list_my_agents".to_string()),
+            "expected mcp:list_my_agents usage (reads ARE metered): {usage_actions:?}"
+        );
     }
 
     #[sqlx::test(migrations = "../migrations")]

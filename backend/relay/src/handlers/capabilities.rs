@@ -194,7 +194,7 @@ pub async fn create(
     Path(agent_id): Path<Uuid>,
     Json(req): Json<CreateRequest>,
 ) -> ApiResult<Json<CapabilityDto>> {
-    agent_account_for_member(&state, user.user_id, agent_id).await?;
+    let acct = agent_account_for_member(&state, user.user_id, agent_id).await?;
 
     let name = req.name.trim().to_string();
     if name.is_empty() {
@@ -270,6 +270,19 @@ pub async fn create(
         ApiError::Conflict(format!("capability '{name}' already exists for this agent"))
     })?;
 
+    crate::events::record_audit(
+        &state.db,
+        &user,
+        Some(acct),
+        "capability.create",
+        "capability",
+        Some(inserted.id),
+        Some(agent_id),
+        &format!("published capability {}", inserted.name),
+        serde_json::json!({ "name": inserted.name, "visibility": inserted.visibility }),
+    )
+    .await;
+
     Ok(Json(CapabilityDto {
         id: inserted.id,
         agent_id: inserted.agent_id,
@@ -292,7 +305,7 @@ pub async fn update(
     Path((agent_id, cap_id)): Path<(Uuid, Uuid)>,
     Json(req): Json<UpdateRequest>,
 ) -> ApiResult<Json<CapabilityDto>> {
-    agent_account_for_member(&state, user.user_id, agent_id).await?;
+    let acct = agent_account_for_member(&state, user.user_id, agent_id).await?;
 
     if let Some(v) = req.visibility.as_deref() {
         if !matches!(v, "private" | "network") {
@@ -367,6 +380,19 @@ pub async fn update(
     .await?
     .ok_or(ApiError::NotFound)?;
 
+    crate::events::record_audit(
+        &state.db,
+        &user,
+        Some(acct),
+        "capability.update",
+        "capability",
+        Some(updated.id),
+        Some(agent_id),
+        &format!("updated capability {}", updated.name),
+        serde_json::json!({ "name": updated.name, "visibility": updated.visibility }),
+    )
+    .await;
+
     Ok(Json(CapabilityDto {
         id: updated.id,
         agent_id: updated.agent_id,
@@ -388,7 +414,7 @@ pub async fn delete(
     user: AuthUser,
     Path((agent_id, cap_id)): Path<(Uuid, Uuid)>,
 ) -> ApiResult<axum::http::StatusCode> {
-    agent_account_for_member(&state, user.user_id, agent_id).await?;
+    let acct = agent_account_for_member(&state, user.user_id, agent_id).await?;
 
     let res = sqlx::query!(
         r#"DELETE FROM agent_capabilities WHERE id = $1 AND agent_id = $2"#,
@@ -401,5 +427,19 @@ pub async fn delete(
     if res.rows_affected() == 0 {
         return Err(ApiError::NotFound);
     }
+
+    crate::events::record_audit(
+        &state.db,
+        &user,
+        Some(acct),
+        "capability.delete",
+        "capability",
+        Some(cap_id),
+        Some(agent_id),
+        "deleted capability",
+        serde_json::json!({}),
+    )
+    .await;
+
     Ok(axum::http::StatusCode::NO_CONTENT)
 }

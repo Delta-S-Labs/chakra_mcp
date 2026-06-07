@@ -310,6 +310,19 @@ pub async fn write(
     .await?;
     tx.commit().await?;
 
+    crate::events::record_audit(
+        &state.db,
+        &user,
+        None,
+        "review.write",
+        "review",
+        Some(review_id),
+        Some(target_agent_id),
+        "wrote a review",
+        serde_json::json!({ "rating": req.rating }),
+    )
+    .await;
+
     let dto = fetch_review(&state.db, user.user_id, review_id).await?;
     Ok(Json(dto))
 }
@@ -549,6 +562,27 @@ async fn set_hidden(
     .fetch_optional(&state.db)
     .await?
     .ok_or(ApiError::NotFound)?;
+
+    crate::events::record_audit(
+        &state.db,
+        user,
+        Some(target_account),
+        if hide_it {
+            "review.hide"
+        } else {
+            "review.unhide"
+        },
+        "review",
+        Some(updated.id),
+        Some(target_agent_id),
+        if hide_it {
+            "hid a review"
+        } else {
+            "un-hid a review"
+        },
+        serde_json::json!({}),
+    )
+    .await;
 
     Ok(Json(
         fetch_review(&state.db, user.user_id, updated.id).await?,

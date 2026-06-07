@@ -345,6 +345,19 @@ pub async fn create(
     })?
     .ok_or_else(|| ApiError::Internal(anyhow::anyhow!("insert returned no row")))?;
 
+    crate::events::record_audit(
+        &state.db,
+        &user,
+        Some(cap.granter_account_id),
+        "grant.create",
+        "grant",
+        Some(inserted.id),
+        Some(req.grantee_agent_id),
+        "granted capability access",
+        serde_json::json!({ "capability_id": req.capability_id }),
+    )
+    .await;
+
     Ok(Json(
         fetch_grant(&state.db, user.user_id, inserted.id).await?,
     ))
@@ -416,6 +429,19 @@ pub async fn revoke(
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
+
+    crate::events::record_audit(
+        &state.db,
+        &user,
+        Some(row.granter_account_id),
+        "grant.revoke",
+        "grant",
+        Some(id),
+        None,
+        "revoked a grant",
+        serde_json::json!({ "reason": req.reason }),
+    )
+    .await;
 
     Ok(Json(fetch_grant(&state.db, user.user_id, id).await?))
 }

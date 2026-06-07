@@ -2,6 +2,10 @@
 //! library so the supervisor binary (`chakramcp-server`) can mount its
 //! router into the same process as the app.
 
+use axum::extract::{MatchedPath, Request, State};
+use axum::http::header::AUTHORIZATION;
+use axum::middleware::{from_fn_with_state, Next};
+use axum::response::Response;
 use axum::routing::{get, patch, post};
 use axum::Router;
 use tower_http::cors::{Any, CorsLayer};
@@ -9,6 +13,7 @@ use tower_http::trace::TraceLayer;
 
 pub mod agent_card;
 pub mod auth;
+pub mod events;
 pub mod forwarder;
 pub mod handlers;
 pub mod inbox_bridge;
@@ -17,6 +22,49 @@ pub mod policy;
 pub mod state;
 
 pub use state::RelayState;
+
+/// Usage-metering middleware: records one `usage_events` row per REST
+/// request (every GET/POST/PATCH/DELETE), attributed to the caller. The
+/// `/mcp` endpoint meters per-tool inside its dispatcher instead, and
+/// health/well-known probes are skipped as noise.
+async fn usage_middleware(State(state): State<RelayState>, req: Request, next: Next) -> Response {
+    let method = req.method().as_str().to_owned();
+    let route = req
+        .extensions()
+        .get::<MatchedPath>()
+        .map(|m| m.as_str().to_owned())
+        .unwrap_or_else(|| req.uri().path().to_owned());
+    let actor = {
+        let header = req
+            .headers()
+            .get(AUTHORIZATION)
+            .and_then(|v| v.to_str().ok());
+        auth::authenticate(&state, header).await
+    };
+
+    let resp = next.run(req).await;
+
+    let skip = route == "/mcp"
+        || route.starts_with("/healthz")
+        || route.starts_with("/readyz")
+        || route.starts_with("/.well-known");
+    if !skip {
+        let status = resp.status().as_u16() as i32;
+        let action = format!("{method} {route}");
+        events::record_usage(
+            &state.db,
+            actor.as_ref(),
+            None,
+            "rest",
+            &action,
+            &method,
+            &route,
+            status,
+        )
+        .await;
+    }
+    resp
+}
 
 pub fn router(state: RelayState) -> Router {
     let cors = CorsLayer::new()
@@ -129,6 +177,7 @@ pub fn router(state: RelayState) -> Router {
             "/agents/{account_slug}/{agent_slug}/a2a/stream",
             post(handlers::a2a::stream_stub),
         )
+        .layer(from_fn_with_state(state.clone(), usage_middleware))
         .with_state(state)
         .layer(cors)
         .layer(TraceLayer::new_for_http())
