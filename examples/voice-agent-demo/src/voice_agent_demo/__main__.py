@@ -173,7 +173,21 @@ async def _run(persona: Persona) -> None:
         try:
             await app.run_async()
         finally:
-            await sarvam.aclose()
+            # Watchdog: once the TUI has closed, GUARANTEE the process
+            # dies even if an MCP server's or HTTP client's async cleanup
+            # hangs (which left the old process unkillable). Fires only if
+            # graceful teardown — including the AsyncExitStack closing the
+            # MCP servers after this block — doesn't finish in time.
+            import os
+            import threading
+
+            watchdog = threading.Timer(6.0, lambda: os._exit(0))
+            watchdog.daemon = True
+            watchdog.start()
+            try:
+                await asyncio.wait_for(sarvam.aclose(), timeout=5.0)
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":

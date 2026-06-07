@@ -31,6 +31,7 @@ from textual.reactive import reactive
 from textual.widgets import Footer, Header, Label, Static, TabbedContent, TabPane, Tree
 
 from .agent import AgentStack
+from .chakra_mcp import call_tool_json
 from .logs import LogEvent
 from .voice import Recorder, SarvamClient, play_wav_bytes_async
 
@@ -260,7 +261,11 @@ class VoiceAgentApp(App):
 
     BINDINGS = [
         Binding("space", "ptt_toggle", "Talk / send", show=True, priority=True),
-        Binding("q", "quit", "Quit", show=True),
+        Binding("q", "quit", "Quit", show=True, priority=True),
+        # Make Ctrl-C / Ctrl-Q reliably quit too (Textual captures the
+        # terminal, so a bare ^C is a key event, not SIGINT).
+        Binding("ctrl+c", "quit", "Quit", show=False, priority=True),
+        Binding("ctrl+q", "quit", "Quit", show=False, priority=True),
     ]
 
     status: reactive[str] = reactive("ready · press space to talk")
@@ -277,7 +282,8 @@ class VoiceAgentApp(App):
         self.log_queue = log_queue
         self.recorder = Recorder()
         self._recording = False
-        self._busy = False  # blocks recursive ptt while a turn is in flight
+        self._busy = False  # a turn (user or inbox) is in flight
+        self._inbox_tick = 0
         self._transcript: TranscriptView | None = None
         self._logs: LogsView | None = None
         self._ptt: PttIndicator | None = None
@@ -325,6 +331,15 @@ class VoiceAgentApp(App):
         # friend requests + invocations without the user pressing space.
         self.run_worker(self._inbox_loop(), exclusive=False, name="inbox")
 
+    def on_unmount(self) -> None:
+        # Make sure the mic stream is released on quit so PortAudio
+        # doesn't keep the process alive.
+        try:
+            if self._recording:
+                self.recorder.stop()
+        except Exception:
+            pass
+
     async def _drain_logs(self) -> None:
         assert self._logs is not None
         while True:
@@ -342,35 +357,66 @@ class VoiceAgentApp(App):
         either resolving them (e.g. running an invocation) or
         notifying its owner via update_owner_status.
         """
-        await asyncio.sleep(2)  # let startup settle
+        await asyncio.sleep(3)  # let startup settle
         while True:
-            # Re-check every tick: agent_id is dynamic — it becomes set the
-            # moment the agent self-registers mid-session, at which point
-            # polling kicks in automatically. While unregistered we stay
-            # quiet (no agent id → pull_inbox can't run).
+            await asyncio.sleep(12)
+            # The user ALWAYS has priority: never run a background turn
+            # while they're recording or a turn is already in flight.
+            # (This is what kept push-to-talk dead — the old loop held
+            # _busy for seconds every 8s, swallowing space presses.)
+            if self._recording or self._busy:
+                continue
             agent_id = self.stack.agent_id
-            if agent_id is not None and not self._busy:
-                try:
-                    self._busy = True
-                    self.status = "checking inbox…"
-                    reply = await self.stack.run_turn(
-                        f'Check your relay inbox by calling pull_inbox with '
-                        f'agent_id="{agent_id}". If a friendship '
-                        "was proposed and the owner hasn't approved it yet, "
-                        "notify the owner via update_owner_status with the "
-                        "proposer's agent + display name + the capability "
-                        "they're asking for. If an autonomous invocation is "
-                        "pending, handle it directly (respond with the same "
-                        f'agent_id="{agent_id}"). If nothing\'s '
-                        "new, reply with an empty string."
-                    )
-                    if reply:
-                        await self._on_agent_reply(reply, speak=True)
-                except Exception as e:
-                    self.status = f"inbox error: {e}"
-                finally:
-                    self._busy = False
-            await asyncio.sleep(8)
+            if agent_id is None:
+                continue  # not registered yet — nothing to poll
+
+            # Cheap pre-check (no LLM): is there a pending inbound friend
+            # request? If so, handle this tick. Otherwise only run a full
+            # serve-turn occasionally (~every 60s) to catch invocations,
+            # so we don't burn an LLM call (and block the user) each tick.
+            self._inbox_tick += 1
+            try:
+                pending_friend = await self._has_pending_friend(agent_id)
+            except Exception as e:
+                self.status = f"inbox poll error: {e}"
+                continue
+            if not (pending_friend or self._inbox_tick % 5 == 0):
+                continue
+            # Re-check the user didn't just start talking.
+            if self._recording or self._busy:
+                continue
+
+            try:
+                self._busy = True
+                self.status = "checking inbox…"
+                reply = await self.stack.run_turn(
+                    f'Check your relay inbox by calling pull_inbox with '
+                    f'agent_id="{agent_id}". If a friendship was proposed and '
+                    "the owner hasn't approved it yet, notify the owner via "
+                    "update_owner_status with the proposer's agent + display "
+                    "name + the capability they're asking for. If an "
+                    "autonomous invocation is pending, handle it directly "
+                    f'(respond with the same agent_id="{agent_id}"). If '
+                    "nothing's new, reply with an empty string."
+                )
+                if reply:
+                    await self._on_agent_reply(reply, speak=True)
+            except Exception as e:
+                self.status = f"inbox error: {e}"
+            finally:
+                self._busy = False
+                if not self._recording:
+                    self._set_phase("idle")
+                    self.status = "ready · press space to talk"
+
+    async def _has_pending_friend(self, agent_id: str) -> bool:
+        """Cheap, no-LLM, no-claim check for an inbound proposed friendship."""
+        fr = await call_tool_json(
+            self.stack.chakra_mcp,
+            "list_friendships",
+            {"direction": "inbound", "status": "proposed"},
+        )
+        return bool(isinstance(fr, list) and fr)
 
     # ---- Push-to-talk -------------------------------------------------
 
@@ -394,12 +440,10 @@ class VoiceAgentApp(App):
         app's `on_key` never sees it. So the same action handles both the
         start press and the send press.
         """
-        # A turn is mid-flight (transcribe/think/speak): ignore.
-        if self._busy:
-            return
-
         if self._recording:
-            # Second press → stop + send.
+            # Second press → stop + send. ALWAYS allowed, even if a
+            # background turn is busy — otherwise a recording can get
+            # stuck "on" when the inbox loop flips _busy mid-utterance.
             self._recording = False
             try:
                 wav = self.recorder.stop()
@@ -410,7 +454,10 @@ class VoiceAgentApp(App):
             asyncio.create_task(self._handle_utterance(wav))
             return
 
-        # First press → start recording.
+        # First press → start. Blocked only while a turn is in flight.
+        if self._busy:
+            self.status = "busy — one moment…"
+            return
         try:
             self.recorder.start()
         except Exception as e:
@@ -422,12 +469,17 @@ class VoiceAgentApp(App):
         self.status = "🎙 recording — press space again to send"
 
     async def _handle_utterance(self, wav: bytes) -> None:
-        if self._busy:
-            return
         if not wav:
             self._set_phase("idle")
             self.status = "(nothing recorded — press space and speak)"
             return
+        # A background inbox turn may be running; wait briefly for it to
+        # finish rather than dropping the user's speech.
+        waited = 0.0
+        while self._busy and waited < 30.0:
+            self.status = "finishing previous task…"
+            await asyncio.sleep(0.2)
+            waited += 0.2
         self._busy = True
         try:
             self._set_phase("transcribing")
