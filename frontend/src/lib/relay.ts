@@ -692,4 +692,74 @@ export function unhideReview(
   );
 }
 
+// ─── Audit + usage events (migration 0025) ───────────────
+
+export interface AuditEvent {
+  id: string;
+  created_at: string;
+  actor_user_id: string | null;
+  account_id: string | null;
+  action: string;
+  resource_type: string;
+  resource_id: string | null;
+  target_id: string | null;
+  summary: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface AuditListResponse {
+  events: AuditEvent[];
+  next_cursor?: string;
+}
+
+export function listAuditEvents(
+  token: string,
+  opts: { limit?: number; resource_type?: string; action?: string; cursor?: string } = {},
+) {
+  const qs = new URLSearchParams();
+  if (opts.limit) qs.set("limit", String(opts.limit));
+  if (opts.resource_type) qs.set("resource_type", opts.resource_type);
+  if (opts.action) qs.set("action", opts.action);
+  if (opts.cursor) qs.set("cursor", opts.cursor);
+  const q = qs.toString();
+  return request<AuditListResponse>(`/v1/audit${q ? `?${q}` : ""}`, { token });
+}
+
+export interface UsageEvent {
+  id: string;
+  created_at: string;
+  actor_user_id: string | null;
+  account_id: string | null;
+  surface: string;
+  action: string;
+  method: string;
+  route: string;
+  status_code: number;
+  ok: boolean;
+}
+
+export interface UsageActionCount {
+  action: string;
+  count: number;
+}
+
+export interface UsageEventsResponse {
+  events: UsageEvent[];
+  totals_by_action: UsageActionCount[];
+  total: number;
+  next_cursor?: string;
+}
+
+export function listUsageEvents(
+  token: string,
+  opts: { limit?: number; surface?: string; cursor?: string } = {},
+) {
+  const qs = new URLSearchParams();
+  if (opts.limit) qs.set("limit", String(opts.limit));
+  if (opts.surface) qs.set("surface", opts.surface);
+  if (opts.cursor) qs.set("cursor", opts.cursor);
+  const q = qs.toString();
+  return request<UsageEventsResponse>(`/v1/usage/events${q ? `?${q}` : ""}`, { token });
+}
+
 export const relayBaseUrl = BASE;

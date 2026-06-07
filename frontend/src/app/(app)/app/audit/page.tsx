@@ -1,5 +1,5 @@
 import { auth } from "@/auth";
-import { listMyAgents, listInvocations } from "@/lib/relay";
+import { listMyAgents, listInvocations, listAuditEvents, type AuditEvent } from "@/lib/relay";
 import { AuditList } from "./AuditList";
 import styles from "./audit.module.css";
 
@@ -21,13 +21,18 @@ export default async function AuditPage() {
 
   let invocations: Awaited<ReturnType<typeof listInvocations>> = [];
   let agents: Awaited<ReturnType<typeof listMyAgents>> = [];
+  let writeTrail: AuditEvent[] = [];
   let backendError: string | null = null;
   if (token) {
     try {
-      [invocations, agents] = await Promise.all([
+      const [inv, ag, audit] = await Promise.all([
         listInvocations(token, { direction: "all" }),
         listMyAgents(token),
+        listAuditEvents(token, { limit: 50 }),
       ]);
+      invocations = inv;
+      agents = ag;
+      writeTrail = audit.events;
     } catch (err) {
       backendError = err instanceof Error ? err.message : "Relay unavailable.";
     }
@@ -48,6 +53,30 @@ export default async function AuditPage() {
       {backendError && <div className={styles.error}>{backendError}</div>}
 
       <AuditList items={invocations} agents={agents} />
+
+      <section className={styles.section}>
+        <h2 className={styles.sectionTitle}>Write trail</h2>
+        <p className={styles.body}>
+          Every create, update, delete, and state change across your agents,
+          capabilities, friendships, grants, and reviews — whoever did it,
+          whenever. Read-only actions aren&apos;t logged here (see Usage).
+        </p>
+        {writeTrail.length === 0 ? (
+          <div className={styles.empty}>No write events yet.</div>
+        ) : (
+          <ul className={styles.evtList}>
+            {writeTrail.map((e) => (
+              <li key={e.id} className={styles.evt}>
+                <span className={styles.evtAction}>{e.action}</span>
+                <span className={styles.evtSummary}>{e.summary}</span>
+                <span className={styles.evtTime}>
+                  {new Date(e.created_at).toLocaleString()}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }

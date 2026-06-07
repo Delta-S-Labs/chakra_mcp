@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { auth } from "@/auth";
 import { getUsageSummary, type UsageSummary } from "@/lib/api";
+import { listUsageEvents, type UsageActionCount } from "@/lib/relay";
 import { computeRange, readRangeParam, readScopeParam } from "./range";
 import { UsageView } from "./UsageView";
 import styles from "./usage.module.css";
@@ -34,6 +35,8 @@ export default async function UsagePage({
   const token = session?.backendToken;
 
   let initial: UsageSummary | null = null;
+  let meterTotals: UsageActionCount[] = [];
+  let meterGrand = 0;
   let backendError: string | null = null;
 
   if (token) {
@@ -45,6 +48,15 @@ export default async function UsagePage({
     } catch (err) {
       backendError =
         err instanceof Error ? err.message : "Couldn't load usage data.";
+    }
+    // Metered request events (migration 0025) — best-effort; an older
+    // relay without the endpoint shouldn't break the page.
+    try {
+      const ev = await listUsageEvents(token, { limit: 1 });
+      meterTotals = ev.totals_by_action;
+      meterGrand = ev.total;
+    } catch {
+      /* no-op: section just won't render */
     }
   }
 
@@ -75,6 +87,30 @@ export default async function UsagePage({
         <div className={styles.error}>
           You aren&apos;t signed in. Try refreshing.
         </div>
+      )}
+
+      {token && meterTotals.length > 0 && (
+        <section className={styles.meter}>
+          <h2 className={styles.meterTitle}>Metered requests</h2>
+          <p className={styles.body}>
+            Every API request you make — REST routes and individual MCP tool
+            calls, reads included — counted by action. This is the substrate
+            future billing draws from.
+          </p>
+          <ul className={styles.totals}>
+            {meterTotals.map((t) => (
+              <li key={t.action} className={styles.totalRow}>
+                <span className={styles.totalAction}>{t.action}</span>
+                <span className={styles.totalCount}>
+                  {t.count.toLocaleString()}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className={styles.meterGrand}>
+            {meterGrand.toLocaleString()} requests total
+          </div>
+        </section>
       )}
     </div>
   );
