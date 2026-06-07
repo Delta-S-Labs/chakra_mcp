@@ -519,13 +519,24 @@ async fn call_tool(state: &RelayState, user: &AuthUser, params: Value) -> Result
     };
 
     match result {
-        Ok(value) => Ok(json!({
-            "content": [
-                { "type": "text", "text": serde_json::to_string_pretty(&value).unwrap_or_default() }
-            ],
-            "structuredContent": value,
-            "isError": false,
-        })),
+        Ok(value) => {
+            // The full JSON always travels in `content` text. We ALSO set
+            // `structuredContent`, but only when the value is a JSON object:
+            // the MCP spec types `structuredContent` as an object, and strict
+            // clients (e.g. the OpenAI Agents SDK's pydantic CallToolResult)
+            // reject a top-level array. List tools return arrays, so for those
+            // we omit `structuredContent` and clients parse `content` text.
+            let mut envelope = json!({
+                "content": [
+                    { "type": "text", "text": serde_json::to_string_pretty(&value).unwrap_or_default() }
+                ],
+                "isError": false,
+            });
+            if value.is_object() {
+                envelope["structuredContent"] = value;
+            }
+            Ok(envelope)
+        }
         Err(api_err) => {
             // Per MCP, tool errors come back as a successful response
             // with isError=true so the LLM can read them, *not* as a
@@ -1707,14 +1718,32 @@ mod manage_agents_tests {
     async fn list_my_accounts_returns_membership(pool: PgPool) {
         let (_uid, account_id, token) = seed_user_with_jwt(&pool).await;
         let result = call(&pool, &token, "list_my_accounts", json!({})).await;
-        assert_eq!(result["isError"], json!(false), "result: {result}");
-        let accounts = result["structuredContent"].as_array().unwrap();
+        // Spec compliance: array-returning tools MUST omit structuredContent
+        // (it's typed as an object; strict clients reject a top-level array).
+        assert!(
+            result.get("structuredContent").is_none(),
+            "array tool must not set structuredContent: {result}"
+        );
+        let body = payload(&result);
+        let accounts = body.as_array().unwrap();
         assert_eq!(accounts.len(), 1);
         assert_eq!(accounts[0]["id"].as_str().unwrap(), account_id.to_string());
         assert_eq!(accounts[0]["role"], json!("owner"));
     }
 
-    /// Extract `structuredContent` from a non-error tool result.
+    /// Decode a non-error tool result the way a spec-compliant client does:
+    /// prefer `structuredContent` (object tools), else parse the JSON in the
+    /// first `content` text block (array tools omit `structuredContent`).
+    fn payload(result: &Value) -> Value {
+        assert_eq!(result["isError"], json!(false), "tool errored: {result}");
+        if let Some(sc) = result.get("structuredContent") {
+            return sc.clone();
+        }
+        let text = result["content"][0]["text"].as_str().unwrap();
+        serde_json::from_str(text).unwrap()
+    }
+
+    /// Extract `structuredContent` from a non-error object-returning tool.
     fn ok(result: &Value) -> &Value {
         assert_eq!(result["isError"], json!(false), "tool errored: {result}");
         &result["structuredContent"]
@@ -1753,8 +1782,7 @@ mod manage_agents_tests {
 
         // list_capabilities sees it.
         let caps = call(&pool, &token, "list_capabilities", json!({ "agent_id": b })).await;
-        assert_eq!(caps["isError"], json!(false));
-        assert_eq!(caps["structuredContent"].as_array().unwrap().len(), 1);
+        assert_eq!(payload(&caps).as_array().unwrap().len(), 1);
 
         // A proposes friendship to B; B accepts.
         let fr = ok(&call(
@@ -1802,8 +1830,7 @@ mod manage_agents_tests {
             .to_string();
 
         let pulled = call(&pool, &token, "pull_inbox", json!({ "agent_id": b })).await;
-        assert_eq!(pulled["isError"], json!(false), "pull: {pulled}");
-        assert_eq!(pulled["structuredContent"].as_array().unwrap().len(), 1);
+        assert_eq!(payload(&pulled).as_array().unwrap().len(), 1);
 
         let responded = call(
             &pool,
