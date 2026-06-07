@@ -23,6 +23,7 @@ import asyncio
 import json
 from typing import Any
 
+from rich.markup import escape
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
@@ -171,21 +172,42 @@ class LogsView(Vertical):
                 return
             dur = f"{ev.duration_ms} ms" if ev.duration_ms is not None else "?"
             node.label = f"{_kind_emoji(ev.kind)}  {ev.label}  [dim]{dur}[/dim]"
-            # Detail children: input, output, anything else worth showing.
+            # Render EVERY meaningful detail, not a fixed allowlist — the
+            # LLM `output_text`/`response` and list_tools `result` are the
+            # interesting bits. Preferred keys first, then any extras.
             details = ev.details or {}
-            for key in ("input", "output", "usage", "name", "model"):
-                if key in details and details[key] not in (None, "", [], {}):
-                    pretty = _pretty_json(details[key])
-                    head = f"[bold]{key}[/bold]"
-                    child = node.add(head, expand=False)
-                    # Long bodies → second-level leaf; short ones inline.
-                    if len(pretty.splitlines()) > 1 or len(pretty) > 80:
-                        child.add_leaf(pretty)
-                    else:
-                        child.label = f"{head}: {pretty}"
+            preferred = ["output_text", "input", "output", "result", "usage", "name", "model"]
+            ordered = [k for k in preferred if k in details]
+            ordered += [k for k in details if k not in preferred]
+            for key in ordered:
+                value = details[key]
+                if value in (None, "", [], {}):
+                    continue
+                self._add_detail(node, key, value)
             # Auto-scroll to the latest end event so the camera always
             # sees the freshest action.
             self._tree.scroll_end(animate=False)
+
+    def _add_detail(self, node: Any, key: str, value: Any) -> None:
+        """Attach one detail to a span node. Short scalars render inline;
+        multi-line JSON is expanded to one leaf PER LINE, because a
+        Textual Tree node label is single-line — dumping a whole blob in
+        one leaf only ever shows its first character (`[` or `{`)."""
+        pretty = _pretty_json(value)
+        lines = pretty.splitlines() or [pretty]
+        head = f"[bold]{key}[/bold]"
+        if len(lines) == 1 and len(pretty) <= 80:
+            # Escape the value — JSON contains [ ] { } which Rich would
+            # otherwise try to parse as console markup.
+            node.add_leaf(f"{head}: {escape(pretty)}")
+            return
+        branch = node.add(head, expand=False)
+        MAX_LINES = 400  # guard against a giant message-history dump
+        for line in lines[:MAX_LINES]:
+            # Tree leaves need a non-empty label; keep indentation intact.
+            branch.add_leaf(escape(line) if line.strip() else " ")
+        if len(lines) > MAX_LINES:
+            branch.add_leaf(f"[dim]… ({len(lines) - MAX_LINES} more lines)[/dim]")
 
 
 # ─── The App ────────────────────────────────────────────────────

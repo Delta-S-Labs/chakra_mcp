@@ -41,6 +41,54 @@ class LogEvent:
         return int((self.ended_at - self.started_at) * 1000)
 
 
+def _jsonable(v: Any) -> Any:
+    """Coerce SDK values (pydantic models, nested objects) into plain
+    JSON-serializable structures so the Logs tab can pretty-print the
+    *real* content instead of an opaque `<Object ...>` repr.
+    """
+    if v is None or isinstance(v, (str, int, float, bool)):
+        return v
+    # pydantic v2 models (Response, Usage, message items, …)
+    if hasattr(v, "model_dump"):
+        try:
+            return _jsonable(v.model_dump(exclude_none=True))
+        except Exception:
+            return str(v)
+    if isinstance(v, dict):
+        return {k: _jsonable(x) for k, x in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [_jsonable(x) for x in v]
+    # dataclass-ish / arbitrary objects → best-effort dict, else str.
+    if hasattr(v, "__dict__") and vars(v):
+        return {k: _jsonable(x) for k, x in vars(v).items() if not k.startswith("_")}
+    return str(v)
+
+
+def _response_output_text(resp: Any) -> str | None:
+    """Best-effort extraction of the assistant's visible text from a
+    Responses-API Response object, so the Logs tab shows what the model
+    actually said without the operator hunting through the full dump."""
+    if resp is None:
+        return None
+    # SDK convenience attribute, when present.
+    txt = getattr(resp, "output_text", None)
+    if isinstance(txt, str) and txt.strip():
+        return txt
+    # Otherwise walk output items → content → text.
+    out = getattr(resp, "output", None)
+    if not out:
+        return None
+    chunks: list[str] = []
+    for item in out:
+        content = getattr(item, "content", None) or []
+        for c in content:
+            t = getattr(c, "text", None)
+            if isinstance(t, str):
+                chunks.append(t)
+    joined = "\n".join(chunks).strip()
+    return joined or None
+
+
 def _classify(span: Span[Any]) -> tuple[str, str, dict[str, Any]]:
     """Map a span to (kind, label, details).
 
@@ -73,20 +121,16 @@ def _classify(span: Span[Any]) -> tuple[str, str, dict[str, Any]]:
                 "mcp",
                 f"{server} · {name}",
                 {
-                    "server": server,
-                    "name": name,
-                    "input": getattr(sd_, "input", None),
-                    "output": getattr(sd_, "output", None),
-                    "mcp_data": mcp_data,
+                    "input": _jsonable(getattr(sd_, "input", None)),
+                    "output": _jsonable(getattr(sd_, "output", None)),
                 },
             )
         return (
             "function",
             f"tool · {name}",
             {
-                "name": name,
-                "input": getattr(sd_, "input", None),
-                "output": getattr(sd_, "output", None),
+                "input": _jsonable(getattr(sd_, "input", None)),
+                "output": _jsonable(getattr(sd_, "output", None)),
             },
         )
 
@@ -96,19 +140,21 @@ def _classify(span: Span[Any]) -> tuple[str, str, dict[str, Any]]:
         return (
             "mcp",
             f"{server} · list_tools",
-            {"server": server, "result": getattr(sd_, "result", None)},
+            {"result": _jsonable(getattr(sd_, "result", None))},
         )
 
     # ---- LLM hop (Responses API path — what the SDK actually emits) ---
     if cls == "ResponseSpanData":
-        usage = getattr(sd_, "usage", None) or {}
+        resp = getattr(sd_, "response", None)
         return (
             "llm",
             "LLM · response",
             {
-                "input": getattr(sd_, "input", None),
-                "response": getattr(sd_, "response", None),
-                "usage": usage,
+                # Lead with the human-readable answer, then the structured bits.
+                "output_text": _response_output_text(resp),
+                "input": _jsonable(getattr(sd_, "input", None)),
+                "usage": _jsonable(getattr(resp, "usage", None)),
+                "response": _jsonable(resp),
             },
         )
 
@@ -120,9 +166,9 @@ def _classify(span: Span[Any]) -> tuple[str, str, dict[str, Any]]:
             f"LLM · {model}",
             {
                 "model": model,
-                "input": getattr(sd_, "input", None),
-                "output": getattr(sd_, "output", None),
-                "usage": getattr(sd_, "usage", None) or {},
+                "input": _jsonable(getattr(sd_, "input", None)),
+                "output": _jsonable(getattr(sd_, "output", None)),
+                "usage": _jsonable(getattr(sd_, "usage", None)),
             },
         )
 
@@ -132,8 +178,7 @@ def _classify(span: Span[Any]) -> tuple[str, str, dict[str, Any]]:
             "agent",
             f"agent · {getattr(sd_, 'name', 'agent')}",
             {
-                "name": getattr(sd_, "name", None),
-                "tools": getattr(sd_, "tools", None),
+                "tools": _jsonable(getattr(sd_, "tools", None)),
             },
         )
 
