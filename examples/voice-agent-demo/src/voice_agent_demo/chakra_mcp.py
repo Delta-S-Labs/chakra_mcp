@@ -129,6 +129,27 @@ def build_chakra_mcp_server(
     )
 
 
+async def call_tool_json(
+    server: MCPServerStreamableHttp, name: str, arguments: dict[str, Any] | None = None
+) -> Any:
+    """Call an MCP tool and return its decoded JSON payload.
+
+    Convenience wrapper over `server.call_tool` + `_calltool_payload`
+    used by the in-app registration flow. Raises RuntimeError if the
+    tool reported an error (isError=true) so callers can surface it.
+    """
+    result = await server.call_tool(name, arguments or {})
+    if getattr(result, "isError", False):
+        # Surface the relay's error text (content[0].text).
+        msg = "tool error"
+        for block in getattr(result, "content", []) or []:
+            if getattr(block, "text", None):
+                msg = block.text
+                break
+        raise RuntimeError(msg)
+    return _calltool_payload(result)
+
+
 def _calltool_payload(result: Any) -> Any:
     """Extract the JSON body from an MCP CallToolResult.
 
