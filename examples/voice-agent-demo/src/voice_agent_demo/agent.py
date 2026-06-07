@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from agents import Agent, Runner, function_tool
@@ -291,21 +291,34 @@ class AgentStack:
     swiggy_mcp: MCPServerStreamableHttp | None
     notifier: OwnerNotifier
     identity: Identity
+    # Rolling conversation history for the USER dialogue, so the agent
+    # remembers context across turns ("yes, send it" → which agent?). The
+    # background inbox poll runs with remember=False so it never pollutes
+    # this thread.
+    history: list = field(default_factory=list)
 
     @property
     def agent_id(self) -> str | None:
         """Current relay agent id — updates live after self-registration."""
         return self.identity.agent_id
 
-    async def run_turn(self, user_text: str) -> str:
+    async def run_turn(self, user_text: str, *, remember: bool = True) -> str:
         """One full agent turn — returns a non-empty spoken reply string.
 
-        The model sometimes ends a turn on tool calls without emitting a
-        final assistant sentence, which left the UI silent. We fall back
-        to the concatenated message text, then to a summary of the tools
-        it ran, so a turn that DID work always says something.
+        With remember=True the turn is threaded onto the rolling history so
+        the agent has conversational memory. The model sometimes ends a
+        turn on tool calls without a final sentence, so we fall back to the
+        concatenated message text, then to a tool-call summary.
         """
-        result = await Runner.run(self.agent, user_text, max_turns=12)
+        if remember:
+            agent_input: Any = [*self.history, {"role": "user", "content": user_text}]
+        else:
+            agent_input = user_text
+        result = await Runner.run(self.agent, agent_input, max_turns=12)
+        if remember:
+            # Persist the full thread (incl. tool calls/results), capped so
+            # a long session doesn't grow unbounded.
+            self.history = result.to_input_list()[-60:]
 
         out = result.final_output
         text = out.strip() if isinstance(out, str) else ("" if out is None else str(out).strip())

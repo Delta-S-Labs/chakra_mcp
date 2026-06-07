@@ -429,7 +429,8 @@ class VoiceAgentApp(App):
                     "name + the capability they're asking for. If an "
                     "autonomous invocation is pending, handle it directly "
                     f'(respond with the same agent_id="{agent_id}"). If '
-                    "nothing's new, reply with an empty string."
+                    "nothing's new, reply with an empty string.",
+                    remember=False,  # keep inbox polls out of user dialogue
                 )
                 if reply:
                     await self._on_agent_reply(reply, speak=True)
@@ -500,13 +501,15 @@ class VoiceAgentApp(App):
         self._set_phase("listening")
         self.status = "🎙 recording — press space again to send"
 
-    async def _guarded_turn(self, prompt: str) -> str:
+    async def _guarded_turn(self, prompt: str, *, remember: bool = True) -> str:
         """Run ONE agent turn, serialized against the inbox loop and
-        time-bounded so a hung LLM/MCP call can't freeze the TUI forever."""
+        time-bounded so a hung LLM/MCP call can't freeze the TUI forever.
+        `remember=False` (inbox poll) keeps it out of the user dialogue."""
         async with self._turn_lock:
             try:
                 return await asyncio.wait_for(
-                    self.stack.run_turn(prompt), timeout=TURN_TIMEOUT_S
+                    self.stack.run_turn(prompt, remember=remember),
+                    timeout=TURN_TIMEOUT_S,
                 )
             except asyncio.TimeoutError:
                 return "Sorry, that took too long — let's try again."
