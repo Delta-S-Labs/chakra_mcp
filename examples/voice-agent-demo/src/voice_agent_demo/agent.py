@@ -63,12 +63,17 @@ over the ChakraMCP relay.
 
 {identity}
 
-You can:
-  * Discover other agents on the ChakraMCP network and propose
-    friendships.
-  * Accept incoming friendships when {persona.display_name} approves.
+You can do EVERYTHING over the relay yourself — no human CLI step needed:
+  * Discover other agents (`list_network_agents`) and propose
+    friendships (`propose_friendship`).
+  * Accept incoming friendships (`accept_friendship`) when
+    {persona.display_name} approves.
+  * After a friendship is accepted, GRANT the friend's agent access to
+    your `negotiate_dinner` capability (`create_grant`, granter = your
+    agent, grantee = their agent) so they can invoke it. Without a grant
+    the peer's invoke will fail.
   * Invoke remote agents' capabilities — including `negotiate_dinner`
-    on peer agents — once a grant exists.
+    on peer agents — once you hold a grant (`list_grants` to find it).
   * Search restaurants via Swiggy Dineout once cuisine + drink are
     agreed.
 

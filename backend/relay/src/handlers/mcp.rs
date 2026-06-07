@@ -15,7 +15,7 @@
 //! than refactoring the REST handlers to share — keeps the diff small;
 //! refactor when a third caller appears.
 
-use axum::extract::State;
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
@@ -293,6 +293,164 @@ fn tools_list_result() -> Value {
                         "semantics":     { "type": "string", "enum": ["autonomous", "human_in_loop"], "description": "Defaults to 'autonomous'." }
                     }
                 })),
+            tool("get_agent",
+                "Fetch one agent by id (yours, or any network-visible agent).",
+                json!({
+                    "type": "object",
+                    "required": ["agent_id"],
+                    "properties": { "agent_id": { "type": "string", "format": "uuid" } }
+                })),
+            tool("update_agent",
+                "Patch one of your agents' metadata (display_name, description, visibility, endpoint_url, agent_card_url).",
+                json!({
+                    "type": "object",
+                    "required": ["agent_id"],
+                    "properties": {
+                        "agent_id":     { "type": "string", "format": "uuid" },
+                        "display_name": { "type": "string" },
+                        "description":  { "type": "string" },
+                        "visibility":   { "type": "string", "enum": ["private", "org", "network"] },
+                        "endpoint_url": { "type": "string" },
+                        "agent_card_url": { "type": "string" }
+                    }
+                })),
+            tool("delete_agent",
+                "Soft-delete (tombstone) one of your agents. Its grants are revoked.",
+                json!({
+                    "type": "object",
+                    "required": ["agent_id"],
+                    "properties": { "agent_id": { "type": "string", "format": "uuid" } }
+                })),
+            tool("list_capabilities",
+                "List the capabilities published by an agent (yours, or network-visible ones).",
+                json!({
+                    "type": "object",
+                    "required": ["agent_id"],
+                    "properties": { "agent_id": { "type": "string", "format": "uuid" } }
+                })),
+            tool("delete_capability",
+                "Soft-delete a capability on one of your agents. Existing grants are revoked.",
+                json!({
+                    "type": "object",
+                    "required": ["agent_id", "capability_id"],
+                    "properties": {
+                        "agent_id":      { "type": "string", "format": "uuid" },
+                        "capability_id": { "type": "string", "format": "uuid" }
+                    }
+                })),
+            tool("accept_friendship",
+                "Accept a friendship proposed to one of your agents.",
+                json!({
+                    "type": "object",
+                    "required": ["friendship_id"],
+                    "properties": {
+                        "friendship_id":    { "type": "string", "format": "uuid" },
+                        "response_message": { "type": "string" }
+                    }
+                })),
+            tool("reject_friendship",
+                "Reject a friendship proposed to one of your agents.",
+                json!({
+                    "type": "object",
+                    "required": ["friendship_id"],
+                    "properties": {
+                        "friendship_id":    { "type": "string", "format": "uuid" },
+                        "response_message": { "type": "string" }
+                    }
+                })),
+            tool("counter_friendship",
+                "Counter a proposed friendship (flips proposer/target and re-proposes).",
+                json!({
+                    "type": "object",
+                    "required": ["friendship_id"],
+                    "properties": {
+                        "friendship_id":    { "type": "string", "format": "uuid" },
+                        "proposer_message": { "type": "string" },
+                        "response_message": { "type": "string" }
+                    }
+                })),
+            tool("cancel_friendship",
+                "Cancel a friendship you proposed (while still pending).",
+                json!({
+                    "type": "object",
+                    "required": ["friendship_id"],
+                    "properties": { "friendship_id": { "type": "string", "format": "uuid" } }
+                })),
+            tool("create_grant",
+                "Grant a friend's agent access to a capability on one of your agents (requires an accepted friendship).",
+                json!({
+                    "type": "object",
+                    "required": ["granter_agent_id", "grantee_agent_id", "capability_id"],
+                    "properties": {
+                        "granter_agent_id": { "type": "string", "format": "uuid", "description": "Your agent that owns the capability." },
+                        "grantee_agent_id": { "type": "string", "format": "uuid", "description": "The friend's agent being granted access." },
+                        "capability_id":    { "type": "string", "format": "uuid" },
+                        "expires_at":       { "type": "string", "format": "date-time", "description": "Optional RFC3339 expiry." }
+                    }
+                })),
+            tool("revoke_grant",
+                "Revoke a grant you issued. Pending invocations against it are cancelled.",
+                json!({
+                    "type": "object",
+                    "required": ["grant_id"],
+                    "properties": {
+                        "grant_id": { "type": "string", "format": "uuid" },
+                        "reason":   { "type": "string" }
+                    }
+                })),
+            tool("list_reviews",
+                "List ratings & reviews for an agent (friend-tier + public).",
+                json!({
+                    "type": "object",
+                    "required": ["target_agent_id"],
+                    "properties": {
+                        "target_agent_id": { "type": "string", "format": "uuid" },
+                        "tier":            { "type": "string", "enum": ["friend", "public"] },
+                        "include_hidden":  { "type": "boolean" },
+                        "limit":           { "type": "integer" },
+                        "cursor":          { "type": "string" }
+                    }
+                })),
+            tool("write_review",
+                "Write (or update) a rating + review of an agent from one of your agents.",
+                json!({
+                    "type": "object",
+                    "required": ["target_agent_id", "reviewer_agent_id", "rating"],
+                    "properties": {
+                        "target_agent_id":      { "type": "string", "format": "uuid" },
+                        "reviewer_agent_id":    { "type": "string", "format": "uuid", "description": "One of your agents." },
+                        "rating":               { "type": "integer", "minimum": 1, "maximum": 5 },
+                        "comment":              { "type": "string" },
+                        "tagged_capability_ids":{ "type": "array", "items": { "type": "string", "format": "uuid" } }
+                    }
+                })),
+            tool("review_eligibility",
+                "Check which of your agents may review a target agent (and at which tier).",
+                json!({
+                    "type": "object",
+                    "required": ["target_agent_id"],
+                    "properties": { "target_agent_id": { "type": "string", "format": "uuid" } }
+                })),
+            tool("hide_review",
+                "Hide a review on one of your agents (owner moderation).",
+                json!({
+                    "type": "object",
+                    "required": ["target_agent_id", "review_id"],
+                    "properties": {
+                        "target_agent_id": { "type": "string", "format": "uuid" },
+                        "review_id":       { "type": "string", "format": "uuid" }
+                    }
+                })),
+            tool("unhide_review",
+                "Un-hide a previously hidden review on one of your agents.",
+                json!({
+                    "type": "object",
+                    "required": ["target_agent_id", "review_id"],
+                    "properties": {
+                        "target_agent_id": { "type": "string", "format": "uuid" },
+                        "review_id":       { "type": "string", "format": "uuid" }
+                    }
+                })),
         ]
     })
 }
@@ -331,6 +489,27 @@ async fn call_tool(state: &RelayState, user: &AuthUser, params: Value) -> Result
         "propose_friendship" => propose_friendship(&state.db, user, p.arguments).await,
         "create_agent" => create_agent(&state.db, user, p.arguments).await,
         "publish_capability" => publish_capability(&state.db, user, p.arguments).await,
+        // ── REST-handler bridges (full parity with CLI/SDKs) ──
+        "get_agent" => bridge_get_agent(state, user, p.arguments).await,
+        "update_agent" => bridge_update_agent(state, user, p.arguments).await,
+        "delete_agent" => bridge_delete_agent(state, user, p.arguments).await,
+        "list_capabilities" => bridge_list_capabilities(state, user, p.arguments).await,
+        "delete_capability" => bridge_delete_capability(state, user, p.arguments).await,
+        "accept_friendship" => {
+            bridge_friendship_response(state, user, p.arguments, Fr::Accept).await
+        }
+        "reject_friendship" => {
+            bridge_friendship_response(state, user, p.arguments, Fr::Reject).await
+        }
+        "counter_friendship" => bridge_counter_friendship(state, user, p.arguments).await,
+        "cancel_friendship" => bridge_cancel_friendship(state, user, p.arguments).await,
+        "create_grant" => bridge_create_grant(state, user, p.arguments).await,
+        "revoke_grant" => bridge_revoke_grant(state, user, p.arguments).await,
+        "list_reviews" => bridge_list_reviews(state, user, p.arguments).await,
+        "write_review" => bridge_write_review(state, user, p.arguments).await,
+        "review_eligibility" => bridge_review_eligibility(state, user, p.arguments).await,
+        "hide_review" => bridge_hide_review(state, user, p.arguments, true).await,
+        "unhide_review" => bridge_hide_review(state, user, p.arguments, false).await,
         other => {
             return Err(rpc_err(
                 ERR_INVALID_PARAMS,
@@ -1077,6 +1256,196 @@ async fn publish_capability(db: &PgPool, user: &AuthUser, args: Value) -> Result
     }))
 }
 
+// ─── REST-handler bridges ────────────────────────────────
+//
+// These tools reuse the v1 REST handlers verbatim (same validation,
+// auth, and SQL) so the MCP surface stays at parity with the CLI/SDKs
+// without duplicating logic. We just translate the flat MCP `arguments`
+// object into the handlers' extractor types and serialize their DTO
+// back into the MCP result envelope.
+
+use crate::handlers::{agents, capabilities, friendships, grants, reviews};
+
+/// Pull a required UUID field out of the MCP `arguments` object.
+fn arg_uuid(args: &Value, key: &str) -> Result<Uuid, ApiError> {
+    args.get(key)
+        .and_then(|v| v.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok())
+        .ok_or_else(|| ApiError::InvalidRequest(format!("`{key}` (uuid) is required")))
+}
+
+/// Deserialize the `arguments` object into a handler request/query type.
+/// Unknown fields (e.g. the id we also read via `arg_uuid`) are ignored.
+fn from_args<T: serde::de::DeserializeOwned>(args: Value) -> Result<T, ApiError> {
+    serde_json::from_value(args).map_err(|e| ApiError::InvalidRequest(format!("bad args: {e}")))
+}
+
+/// Map a REST handler's `Result<Json<Dto>, ApiError>` into the MCP
+/// `Result<Value, ApiError>` the dispatcher expects.
+fn dto_value<T: Serialize>(r: Result<Json<T>, ApiError>) -> Result<Value, ApiError> {
+    r.map(|Json(v)| serde_json::to_value(v).unwrap_or(Value::Null))
+}
+
+/// Friendship accept vs reject share a signature; this selects which.
+enum Fr {
+    Accept,
+    Reject,
+}
+
+async fn bridge_get_agent(
+    state: &RelayState,
+    user: &AuthUser,
+    args: Value,
+) -> Result<Value, ApiError> {
+    let id = arg_uuid(&args, "agent_id")?;
+    dto_value(agents::get_one(State(state.clone()), user.clone(), Path(id)).await)
+}
+
+async fn bridge_update_agent(
+    state: &RelayState,
+    user: &AuthUser,
+    args: Value,
+) -> Result<Value, ApiError> {
+    let id = arg_uuid(&args, "agent_id")?;
+    let req: agents::UpdateRequest = from_args(args)?;
+    dto_value(agents::update(State(state.clone()), user.clone(), Path(id), Json(req)).await)
+}
+
+async fn bridge_delete_agent(
+    state: &RelayState,
+    user: &AuthUser,
+    args: Value,
+) -> Result<Value, ApiError> {
+    let id = arg_uuid(&args, "agent_id")?;
+    agents::delete(State(state.clone()), user.clone(), Path(id))
+        .await
+        .map(|_| json!({ "deleted": true }))
+}
+
+async fn bridge_list_capabilities(
+    state: &RelayState,
+    user: &AuthUser,
+    args: Value,
+) -> Result<Value, ApiError> {
+    let agent_id = arg_uuid(&args, "agent_id")?;
+    dto_value(capabilities::list(State(state.clone()), user.clone(), Path(agent_id)).await)
+}
+
+async fn bridge_delete_capability(
+    state: &RelayState,
+    user: &AuthUser,
+    args: Value,
+) -> Result<Value, ApiError> {
+    let agent_id = arg_uuid(&args, "agent_id")?;
+    let cap_id = arg_uuid(&args, "capability_id")?;
+    capabilities::delete(State(state.clone()), user.clone(), Path((agent_id, cap_id)))
+        .await
+        .map(|_| json!({ "deleted": true }))
+}
+
+async fn bridge_friendship_response(
+    state: &RelayState,
+    user: &AuthUser,
+    args: Value,
+    which: Fr,
+) -> Result<Value, ApiError> {
+    let id = arg_uuid(&args, "friendship_id")?;
+    let req: friendships::ResponseRequest = from_args(args)?;
+    let r = match which {
+        Fr::Accept => {
+            friendships::accept(State(state.clone()), user.clone(), Path(id), Json(req)).await
+        }
+        Fr::Reject => {
+            friendships::reject(State(state.clone()), user.clone(), Path(id), Json(req)).await
+        }
+    };
+    dto_value(r)
+}
+
+async fn bridge_counter_friendship(
+    state: &RelayState,
+    user: &AuthUser,
+    args: Value,
+) -> Result<Value, ApiError> {
+    let id = arg_uuid(&args, "friendship_id")?;
+    let req: friendships::CounterRequest = from_args(args)?;
+    dto_value(friendships::counter(State(state.clone()), user.clone(), Path(id), Json(req)).await)
+}
+
+async fn bridge_cancel_friendship(
+    state: &RelayState,
+    user: &AuthUser,
+    args: Value,
+) -> Result<Value, ApiError> {
+    let id = arg_uuid(&args, "friendship_id")?;
+    dto_value(friendships::cancel(State(state.clone()), user.clone(), Path(id)).await)
+}
+
+async fn bridge_create_grant(
+    state: &RelayState,
+    user: &AuthUser,
+    args: Value,
+) -> Result<Value, ApiError> {
+    let req: grants::CreateRequest = from_args(args)?;
+    dto_value(grants::create(State(state.clone()), user.clone(), Json(req)).await)
+}
+
+async fn bridge_revoke_grant(
+    state: &RelayState,
+    user: &AuthUser,
+    args: Value,
+) -> Result<Value, ApiError> {
+    let id = arg_uuid(&args, "grant_id")?;
+    let req: grants::RevokeRequest = from_args(args)?;
+    dto_value(grants::revoke(State(state.clone()), user.clone(), Path(id), Json(req)).await)
+}
+
+async fn bridge_list_reviews(
+    state: &RelayState,
+    user: &AuthUser,
+    args: Value,
+) -> Result<Value, ApiError> {
+    let target = arg_uuid(&args, "target_agent_id")?;
+    let q: reviews::ListQuery = from_args(args)?;
+    dto_value(reviews::list(State(state.clone()), user.clone(), Path(target), Query(q)).await)
+}
+
+async fn bridge_write_review(
+    state: &RelayState,
+    user: &AuthUser,
+    args: Value,
+) -> Result<Value, ApiError> {
+    let target = arg_uuid(&args, "target_agent_id")?;
+    let req: reviews::WriteReviewRequest = from_args(args)?;
+    dto_value(reviews::write(State(state.clone()), user.clone(), Path(target), Json(req)).await)
+}
+
+async fn bridge_review_eligibility(
+    state: &RelayState,
+    user: &AuthUser,
+    args: Value,
+) -> Result<Value, ApiError> {
+    let target = arg_uuid(&args, "target_agent_id")?;
+    dto_value(reviews::eligibility(State(state.clone()), user.clone(), Path(target)).await)
+}
+
+async fn bridge_hide_review(
+    state: &RelayState,
+    user: &AuthUser,
+    args: Value,
+    hide: bool,
+) -> Result<Value, ApiError> {
+    let target = arg_uuid(&args, "target_agent_id")?;
+    let review_id = arg_uuid(&args, "review_id")?;
+    let path = Path((target, review_id));
+    let r = if hide {
+        reviews::hide(State(state.clone()), user.clone(), path).await
+    } else {
+        reviews::unhide(State(state.clone()), user.clone(), path).await
+    };
+    dto_value(r)
+}
+
 // ─── /.well-known/oauth-protected-resource ───────────────
 //
 // Tells MCP clients where to discover the auth server.
@@ -1345,6 +1714,150 @@ mod manage_agents_tests {
         assert_eq!(accounts[0]["role"], json!("owner"));
     }
 
+    /// Extract `structuredContent` from a non-error tool result.
+    fn ok(result: &Value) -> &Value {
+        assert_eq!(result["isError"], json!(false), "tool errored: {result}");
+        &result["structuredContent"]
+    }
+
+    /// End-to-end: an agent drives the WHOLE social loop over /mcp alone —
+    /// register two agents, publish a capability, propose + accept a
+    /// friendship, grant access, invoke, claim the inbox, and respond.
+    /// This is the parity that lets the voice demo run without CLI/web.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn full_agent_flow_over_mcp(pool: PgPool) {
+        let (_uid, account_id, token) = seed_user_with_jwt(&pool).await;
+        let mk = |slug: &str, name: &str| json!({ "account_id": account_id, "slug": slug, "display_name": name, "visibility": "network" });
+
+        // Two agents under the same owner (A = caller, B = capability owner).
+        let a = ok(&call(&pool, &token, "create_agent", mk("agent-a", "A")).await)["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let b = ok(&call(&pool, &token, "create_agent", mk("agent-b", "B")).await)["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        // B publishes negotiate_dinner.
+        let cap = ok(&call(
+            &pool,
+            &token,
+            "publish_capability",
+            json!({ "agent_id": b, "name": "negotiate_dinner" }),
+        )
+        .await)["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        // list_capabilities sees it.
+        let caps = call(&pool, &token, "list_capabilities", json!({ "agent_id": b })).await;
+        assert_eq!(caps["isError"], json!(false));
+        assert_eq!(caps["structuredContent"].as_array().unwrap().len(), 1);
+
+        // A proposes friendship to B; B accepts.
+        let fr = ok(&call(
+            &pool,
+            &token,
+            "propose_friendship",
+            json!({ "proposer_agent_id": a, "target_agent_id": b }),
+        )
+        .await)["friendship_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let accepted = call(
+            &pool,
+            &token,
+            "accept_friendship",
+            json!({ "friendship_id": fr }),
+        )
+        .await;
+        assert_eq!(accepted["isError"], json!(false), "accept: {accepted}");
+        assert_eq!(accepted["structuredContent"]["status"], json!("accepted"));
+
+        // B grants A access to negotiate_dinner.
+        let grant = ok(&call(
+            &pool,
+            &token,
+            "create_grant",
+            json!({ "granter_agent_id": b, "grantee_agent_id": a, "capability_id": cap }),
+        )
+        .await)["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        // A invokes; B claims via inbox; B responds.
+        let inv = ok(&call(
+            &pool,
+            &token,
+            "invoke",
+            json!({ "grant_id": grant, "grantee_agent_id": a, "input": { "round": 1 } }),
+        )
+        .await)["invocation_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        let pulled = call(&pool, &token, "pull_inbox", json!({ "agent_id": b })).await;
+        assert_eq!(pulled["isError"], json!(false), "pull: {pulled}");
+        assert_eq!(pulled["structuredContent"].as_array().unwrap().len(), 1);
+
+        let responded = call(
+            &pool,
+            &token,
+            "respond",
+            json!({ "invocation_id": inv, "status": "succeeded", "output": { "cuisine": "thai" } }),
+        )
+        .await;
+        assert_eq!(responded["isError"], json!(false), "respond: {responded}");
+
+        // poll confirms terminal state.
+        let polled = call(
+            &pool,
+            &token,
+            "poll_invocation",
+            json!({ "invocation_id": inv }),
+        )
+        .await;
+        assert_eq!(polled["structuredContent"]["status"], json!("succeeded"));
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn create_grant_requires_friendship(pool: PgPool) {
+        // No friendship → grant must be rejected.
+        let (_uid, account_id, token) = seed_user_with_jwt(&pool).await;
+        let mk = |slug: &str| json!({ "account_id": account_id, "slug": slug, "display_name": slug, "visibility": "network" });
+        let a = ok(&call(&pool, &token, "create_agent", mk("grant-a")).await)["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let b = ok(&call(&pool, &token, "create_agent", mk("grant-b")).await)["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let cap = ok(&call(
+            &pool,
+            &token,
+            "publish_capability",
+            json!({ "agent_id": b, "name": "x" }),
+        )
+        .await)["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let grant = call(
+            &pool,
+            &token,
+            "create_grant",
+            json!({ "granter_agent_id": b, "grantee_agent_id": a, "capability_id": cap }),
+        )
+        .await;
+        assert_eq!(grant["isError"], json!(true), "grant: {grant}");
+    }
+
     #[test]
     fn new_tools_are_advertised() {
         let listed = super::tools_list_result();
@@ -1354,8 +1867,28 @@ mod manage_agents_tests {
             .iter()
             .map(|t| t["name"].as_str().unwrap())
             .collect();
-        assert!(names.contains(&"list_my_accounts"));
-        assert!(names.contains(&"create_agent"));
-        assert!(names.contains(&"publish_capability"));
+        for expected in [
+            "list_my_accounts",
+            "create_agent",
+            "publish_capability",
+            "get_agent",
+            "update_agent",
+            "delete_agent",
+            "list_capabilities",
+            "delete_capability",
+            "accept_friendship",
+            "reject_friendship",
+            "counter_friendship",
+            "cancel_friendship",
+            "create_grant",
+            "revoke_grant",
+            "list_reviews",
+            "write_review",
+            "review_eligibility",
+            "hide_review",
+            "unhide_review",
+        ] {
+            assert!(names.contains(&expected), "missing tool: {expected}");
+        }
     }
 }
