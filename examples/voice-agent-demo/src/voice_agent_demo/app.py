@@ -34,7 +34,7 @@ from textual.widgets import Footer, Header, Label, Static, TabbedContent, TabPan
 from .agent import AgentStack
 from .chakra_mcp import call_tool_json
 from .logs import LogEvent
-from .voice import Recorder, SarvamClient, play_wav_bytes_async
+from .voice import Recorder, SarvamClient, play_wav_bytes_async, stop_playback
 
 def _env_int(name: str, default: int) -> int:
     try:
@@ -157,7 +157,10 @@ class PttIndicator(Static):
             dots = "." * (1 + self.frame % 3)
             return f"[b cyan]🤔 thinking{dots}[/b cyan]"
         if p == "speaking":
-            return f"[b magenta]🔊 speaking[/b magenta]  [magenta]{self._eq(2)}[/magenta]"
+            return (
+                f"[b magenta]🔊 speaking[/b magenta]  [magenta]{self._eq(2)}[/magenta]"
+                "   [dim]press [b]SPACE[/b] to stop[/dim]"
+            )
         return "[dim]●[/dim] [b]ready[/b] — press [b green]SPACE[/b green] to talk, [b]SPACE[/b] again to send"
 
 
@@ -328,6 +331,8 @@ class VoiceAgentApp(App):
         # never run Runner.run concurrently — they share one MCP session,
         # and concurrent calls on a Streamable-HTTP MCP session deadlock.
         self._turn_lock = asyncio.Lock()
+        self._speaking = False  # True while TTS audio is playing
+        self._stop_speech = False  # set when the user interrupts playback
         # State so we announce each pending friend request exactly ONCE and
         # don't nag until it's resolved (then a brand-new one re-announces).
         self._announced_friendships: set[str] = set()
@@ -496,16 +501,22 @@ class VoiceAgentApp(App):
                 self.status = "ready · press space to talk"
 
     async def _speak(self, text: str) -> None:
-        """Speak a line via TTS without adding a transcript entry."""
+        """Speak a line via TTS without adding a transcript entry.
+        Interruptible: see `_stop_speech` / action_ptt_toggle."""
         if not text:
             return
         self._set_phase("speaking")
+        self._speaking = True
+        self._stop_speech = False
         try:
             audio = await self.sarvam.synthesize(text)
-            await play_wav_bytes_async(audio)
+            if not self._stop_speech:
+                await play_wav_bytes_async(audio)
         except Exception:
             pass
         finally:
+            self._speaking = False
+            self._stop_speech = False
             if not self._recording and not self._busy:
                 self._set_phase("idle")
 
@@ -531,6 +542,17 @@ class VoiceAgentApp(App):
         app's `on_key` never sees it. So the same action handles both the
         start press and the send press.
         """
+        # Interrupt the agent mid-speech: stop playback so the user doesn't
+        # have to sit through a long reply. The speaking turn then unwinds
+        # and the NEXT space press records normally.
+        if self._speaking:
+            self._stop_speech = True
+            stop_playback()
+            self._speaking = False
+            self._set_phase("idle")
+            self.status = "stopped speaking · press space to talk"
+            return
+
         if self._recording:
             # Second press → stop + send. ALWAYS allowed, even if a
             # background turn is busy — otherwise a recording can get
@@ -616,9 +638,17 @@ class VoiceAgentApp(App):
         )
         if speak:
             self._set_phase("speaking")
-            self.status = "speaking…"
-            audio = await self.sarvam.synthesize(text)
-            await play_wav_bytes_async(audio)
+            self.status = "🔊 speaking — press space to stop"
+            self._speaking = True
+            self._stop_speech = False
+            try:
+                audio = await self.sarvam.synthesize(text)
+                # If the user hit space during synthesis, don't start playing.
+                if not self._stop_speech:
+                    await play_wav_bytes_async(audio)
+            finally:
+                self._speaking = False
+                self._stop_speech = False
 
     def notifier_sync(self, text: str) -> None:
         """The sync entry point passed to make_local_tools.

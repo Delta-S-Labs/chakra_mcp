@@ -173,3 +173,14 @@ def play_wav_bytes(wav_bytes: bytes) -> None:
 async def play_wav_bytes_async(wav_bytes: bytes) -> None:
     """Async wrapper so TTS playback doesn't block the Textual event loop."""
     await asyncio.to_thread(play_wav_bytes, wav_bytes)
+
+
+def stop_playback() -> None:
+    """Interrupt any in-progress playback. Safe to call from the event
+    loop (sounddevice's stop is non-blocking); it makes the `sd.wait()`
+    inside `play_wav_bytes` return immediately so the speaking turn
+    unwinds and the user can talk again."""
+    try:
+        sd.stop()
+    except Exception:
+        pass
