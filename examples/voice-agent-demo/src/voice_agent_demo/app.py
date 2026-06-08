@@ -603,7 +603,9 @@ class VoiceAgentApp(App):
         try:
             audio = await self.sarvam.synthesize(text)
             if not self._stop_speech:
-                await play_wav_bytes_async(audio)
+                await play_wav_bytes_async(
+                    audio, should_stop=lambda: self._stop_speech
+                )
         except Exception:
             pass
         finally:
@@ -757,7 +759,9 @@ class VoiceAgentApp(App):
                 audio = await self.sarvam.synthesize(text)
                 # If the user hit space during synthesis, don't start playing.
                 if not self._stop_speech:
-                    await play_wav_bytes_async(audio)
+                    await play_wav_bytes_async(
+                        audio, should_stop=lambda: self._stop_speech
+                    )
             finally:
                 self._speaking = False
                 self._stop_speech = False
