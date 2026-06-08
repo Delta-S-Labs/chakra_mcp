@@ -58,7 +58,7 @@ Push-to-talk: hold **space** while you speak, release to send.
 
 | Piece | Choice |
 |---|---|
-| Agent loop | [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/) — OpenAI (gpt-5-mini) or Groq, via `LLM_PROVIDER` |
+| Agent loop | [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/) — OpenAI / Groq / OpenRouter, via `LLM_PROVIDER` |
 | Voice STT | Sarvam `POST /speech-to-text` |
 | Voice TTS | Sarvam `POST /text-to-speech` (`bulbul:v3`) |
 | ChakraMCP access | Reads the JWT minted by `chakramcp login`, opens an MCP client to `https://relay.chakramcp.com/mcp` |

@@ -29,24 +29,45 @@ from agents.mcp import MCPServerStreamableHttp
 from .chakra_mcp import call_tool_json
 from .persona import Persona
 
-# Provider selection via .env: LLM_PROVIDER = "openai" (default) | "groq".
-# Defaults per provider, overridable with OPENAI_MODEL / GROQ_MODEL.
+# Provider selection via .env: LLM_PROVIDER = "openai" (default) | "groq"
+# | "openrouter". Each model id is overridable with <PROVIDER>_MODEL.
 DEFAULT_OPENAI_MODEL = "gpt-5-mini"
-DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
-GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+
+# OpenAI-API-compatible providers (everything except native "openai"):
+# (env_key, base_url, default_model). We point an AsyncOpenAI client at the
+# base URL and use a Chat-Completions model (these don't implement the
+# Responses API).
+_COMPAT_PROVIDERS = {
+    "groq": (
+        "GROQ_API_KEY",
+        "https://api.groq.com/openai/v1",
+        "llama-3.3-70b-versatile",
+    ),
+    "openrouter": (
+        "OPENROUTER_API_KEY",
+        "https://openrouter.ai/api/v1",
+        "nvidia/nemotron-3-super-120b-a12b:free",
+    ),
+}
 
 
 def _provider() -> str:
     return (os.environ.get("LLM_PROVIDER") or "openai").strip().lower()
 
 
+def _model_for(provider: str) -> str:
+    if provider in _COMPAT_PROVIDERS:
+        default = _COMPAT_PROVIDERS[provider][2]
+    else:
+        default = DEFAULT_OPENAI_MODEL
+    env_key = f"{provider.upper()}_MODEL" if provider != "openai" else "OPENAI_MODEL"
+    return os.environ.get(env_key, default).strip() or default
+
+
 def llm_label() -> str:
     """Human-readable provider/model, for the startup banner."""
-    if _provider() == "groq":
-        model = os.environ.get("GROQ_MODEL", DEFAULT_GROQ_MODEL).strip() or DEFAULT_GROQ_MODEL
-        return f"groq / {model}"
-    model = os.environ.get("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip() or DEFAULT_OPENAI_MODEL
-    return f"openai / {model}"
+    p = _provider()
+    return f"{p} / {_model_for(p)}"
 
 
 def _build_model():
@@ -54,23 +75,26 @@ def _build_model():
 
     - openai: return the model id as a string; the SDK uses its default
       OpenAI client (OPENAI_API_KEY).
-    - groq: Groq is OpenAI-API-compatible, so we point an AsyncOpenAI
-      client at Groq's base URL with GROQ_API_KEY and wrap it in a
-      Chat-Completions model (Groq doesn't implement the Responses API).
+    - groq / openrouter: OpenAI-API-compatible — point an AsyncOpenAI
+      client at the provider's base URL with its API key, wrapped in a
+      Chat-Completions model.
     """
-    if _provider() == "groq":
-        # Imported lazily so the openai client is only constructed when
-        # groq is actually selected.
-        from openai import AsyncOpenAI
+    provider = _provider()
+    if provider in _COMPAT_PROVIDERS:
+        from openai import AsyncOpenAI  # lazy: only when a compat provider is used
 
-        key = os.environ.get("GROQ_API_KEY")
+        env_key, base_url, _ = _COMPAT_PROVIDERS[provider]
+        key = os.environ.get(env_key)
         if not key:
-            raise RuntimeError("LLM_PROVIDER=groq but GROQ_API_KEY is not set")
-        model = os.environ.get("GROQ_MODEL", DEFAULT_GROQ_MODEL).strip() or DEFAULT_GROQ_MODEL
-        client = AsyncOpenAI(base_url=GROQ_BASE_URL, api_key=key)
-        return OpenAIChatCompletionsModel(model=model, openai_client=client)
+            raise RuntimeError(f"LLM_PROVIDER={provider} but {env_key} is not set")
+        client = AsyncOpenAI(base_url=base_url, api_key=key)
+        return OpenAIChatCompletionsModel(model=_model_for(provider), openai_client=client)
 
-    return os.environ.get("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip() or DEFAULT_OPENAI_MODEL
+    if provider != "openai":
+        raise RuntimeError(
+            f"unknown LLM_PROVIDER={provider!r}; expected openai, groq, or openrouter"
+        )
+    return _model_for("openai")
 
 
 # Sliding-window memory: keep the most recent N conversation TURNS for the
