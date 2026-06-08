@@ -313,6 +313,39 @@
   outline-offset: 1px;
 }
 
+.passwordWrap {
+  position: relative;
+  display: grid;
+}
+
+.passwordWrap input {
+  width: 100%;
+  padding-right: 3.6rem;
+}
+
+.revealBtn {
+  position: absolute;
+  top: 50%;
+  right: 0.4rem;
+  transform: translateY(-50%);
+  padding: 0.3rem 0.55rem;
+  border: none;
+  background: transparent;
+  border-radius: 0.4rem;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.revealBtn:hover {
+  color: var(--ink);
+  background: color-mix(in oklab, var(--ink) 8%, transparent);
+}
+
 .submitBtn {
   padding: 0.85rem 1.1rem;
   border-radius: 0.7rem;

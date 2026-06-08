@@ -8,8 +8,9 @@ import {
   type Pairing,
   type UsagePairRollup,
 } from "@/lib/api";
+import { listMyAgents } from "@/lib/relay";
 import { CodeEntryForm } from "./CodeEntryForm";
-import { ConsentForm } from "./ConsentForm";
+import { ConsentForm, type PairableAgent } from "./ConsentForm";
 import { PairingsList } from "./PairingsList";
 import styles from "./pair.module.css";
 
@@ -119,6 +120,24 @@ export default async function PairPage({
     }
   }
 
+  // Agents the user already owns — offered as "pair an existing agent"
+  // alternatives to creating a fresh record. Soft dependency: if it
+  // fails we just fall back to create-only.
+  let myAgents: PairableAgent[] = [];
+  if (deviceSession && deviceSession.status === "pending") {
+    try {
+      const agents = await listMyAgents(token);
+      myAgents = agents.map((a) => ({
+        id: a.id,
+        slug: a.slug,
+        display_name: a.display_name,
+        account_slug: a.account_slug,
+      }));
+    } catch {
+      /* fall back to create-only */
+    }
+  }
+
   return (
     <div className={styles.page}>
       <header className={styles.head}>
@@ -180,6 +199,7 @@ export default async function PairPage({
             slugHint={deviceSession.agent_slug_hint ?? ""}
             displayNameHint={deviceSession.agent_display_name_hint ?? ""}
             descriptionHint={deviceSession.agent_description_hint ?? ""}
+            existingAgents={myAgents}
           />
         </div>
       )}

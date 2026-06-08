@@ -9,12 +9,25 @@ import {
 } from "@/lib/api";
 import styles from "./pair.module.css";
 
+export interface PairableAgent {
+  id: string;
+  slug: string;
+  display_name: string;
+  account_slug: string;
+}
+
 /**
  * Consent UI for an in-flight device-flow pairing session.
  *
- * On Approve: POST /oauth/device-approve → backend creates the agent
- * record and binds it to the device_code. The agent's next /oauth/token
- * poll returns the access token.
+ * Two modes:
+ *   - "create": POST /oauth/device-approve with slug/display_name →
+ *     backend creates a fresh agent record and binds it to the
+ *     device_code.
+ *   - "existing": POST /oauth/device-approve with existing_agent_id →
+ *     backend binds the device_code to an agent the user already owns
+ *     (re-pairing / authenticating a known agent on a new machine).
+ *
+ * Either way the agent's next /oauth/token poll returns the access token.
  *
  * On Deny: POST /oauth/device-deny → backend marks denied_at. Agent
  * sees access_denied on next poll and stops.
@@ -25,13 +38,19 @@ export function ConsentForm({
   slugHint,
   displayNameHint,
   descriptionHint,
+  existingAgents = [],
 }: {
   token: string;
   userCode: string;
   slugHint: string;
   displayNameHint: string;
   descriptionHint: string;
+  existingAgents?: PairableAgent[];
 }) {
+  const [mode, setMode] = useState<"create" | "existing">("create");
+  const [existingAgentId, setExistingAgentId] = useState<string>(
+    existingAgents[0]?.id ?? "",
+  );
   const [slug, setSlug] = useState(slugHint);
   const [displayName, setDisplayName] = useState(
     displayNameHint || titleCase(slugHint),
@@ -53,26 +72,40 @@ export function ConsentForm({
   async function handleApprove(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!isValidSlug(slug)) {
-      setError(
-        "Slug must be 3-32 chars: lowercase letters, digits, hyphens. No leading/trailing hyphen.",
-      );
-      return;
-    }
-    if (!displayName.trim()) {
-      setError("Display name is required.");
-      return;
+
+    const pairingExisting = mode === "existing";
+    if (pairingExisting) {
+      if (!existingAgentId) {
+        setError("Pick an agent to pair.");
+        return;
+      }
+    } else {
+      if (!isValidSlug(slug)) {
+        setError(
+          "Slug must be 3-32 chars: lowercase letters, digits, hyphens. No leading/trailing hyphen.",
+        );
+        return;
+      }
+      if (!displayName.trim()) {
+        setError("Display name is required.");
+        return;
+      }
     }
 
     setStatus("approving");
     try {
-      const res = await approveDeviceSession(token, {
-        user_code: userCode,
-        agent_slug: slug.trim(),
-        agent_display_name: displayName.trim(),
-        agent_description: description.trim() || undefined,
-        agent_visibility: visibility,
-      });
+      const res = await approveDeviceSession(
+        token,
+        pairingExisting
+          ? { user_code: userCode, existing_agent_id: existingAgentId }
+          : {
+              user_code: userCode,
+              agent_slug: slug.trim(),
+              agent_display_name: displayName.trim(),
+              agent_description: description.trim() || undefined,
+              agent_visibility: visibility,
+            },
+      );
       setApprovedAgent({
         slug: res.agent_slug,
         account_slug: res.account_slug,
@@ -126,57 +159,101 @@ export function ConsentForm({
     );
   }
 
+  const busy = status === "approving" || status === "denying";
+
   return (
     <form onSubmit={handleApprove}>
-      <div className={styles.field}>
-        <label htmlFor="agent-slug">Agent slug</label>
-        <input
-          id="agent-slug"
-          type="text"
-          value={slug}
-          onChange={(e) => setSlug(e.target.value)}
-          placeholder="hermes"
-          autoCapitalize="none"
-          autoCorrect="off"
-          spellCheck={false}
-        />
-      </div>
+      {existingAgents.length > 0 && (
+        <div className={styles.modeToggle} role="radiogroup" aria-label="Pairing target">
+          <button
+            type="button"
+            className={`${styles.modeBtn} ${mode === "create" ? styles.modeBtnActive : ""}`}
+            aria-pressed={mode === "create"}
+            disabled={busy}
+            onClick={() => setMode("create")}
+          >
+            Create new agent
+          </button>
+          <button
+            type="button"
+            className={`${styles.modeBtn} ${mode === "existing" ? styles.modeBtnActive : ""}`}
+            aria-pressed={mode === "existing"}
+            disabled={busy}
+            onClick={() => setMode("existing")}
+          >
+            Pair existing agent
+          </button>
+        </div>
+      )}
 
-      <div className={styles.field}>
-        <label htmlFor="agent-display-name">Display name</label>
-        <input
-          id="agent-display-name"
-          type="text"
-          value={displayName}
-          onChange={(e) => setDisplayName(e.target.value)}
-          placeholder="Hermes"
-        />
-      </div>
+      {mode === "existing" ? (
+        <div className={styles.field}>
+          <label htmlFor="existing-agent">Agent to pair</label>
+          <select
+            id="existing-agent"
+            value={existingAgentId}
+            onChange={(e) => setExistingAgentId(e.target.value)}
+          >
+            {existingAgents.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.display_name} ({a.account_slug}/{a.slug})
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : (
+        <>
+          <div className={styles.field}>
+            <label htmlFor="agent-slug">Agent slug</label>
+            <input
+              id="agent-slug"
+              type="text"
+              value={slug}
+              onChange={(e) => setSlug(e.target.value)}
+              placeholder="hermes"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+          </div>
 
-      <div className={styles.field}>
-        <label htmlFor="agent-description">Description (optional)</label>
-        <input
-          id="agent-description"
-          type="text"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="What does this agent do?"
-        />
-      </div>
+          <div className={styles.field}>
+            <label htmlFor="agent-display-name">Display name</label>
+            <input
+              id="agent-display-name"
+              type="text"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              placeholder="Hermes"
+            />
+          </div>
 
-      <div className={styles.field}>
-        <label htmlFor="agent-visibility">Visibility</label>
-        <select
-          id="agent-visibility"
-          value={visibility}
-          onChange={(e) =>
-            setVisibility(e.target.value as "private" | "network")
-          }
-        >
-          <option value="private">Private — only you can see it</option>
-          <option value="network">Network — listed in the directory</option>
-        </select>
-      </div>
+          <div className={styles.field}>
+            <label htmlFor="agent-description">Description (optional)</label>
+            <input
+              id="agent-description"
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="What does this agent do?"
+            />
+          </div>
+
+          <div className={styles.field}>
+            <label htmlFor="agent-visibility">Visibility</label>
+            <select
+              id="agent-visibility"
+              value={visibility}
+              onChange={(e) =>
+                setVisibility(e.target.value as "private" | "network")
+              }
+            >
+              <option value="private">Private — only you can see it</option>
+              <option value="network">Network — listed in the directory</option>
+            </select>
+          </div>
+        </>
+      )}
 
       {error && <div className={styles.error}>{error}</div>}
 
@@ -184,14 +261,18 @@ export function ConsentForm({
         <button
           type="submit"
           className={styles.btnPrimary}
-          disabled={status === "approving" || status === "denying"}
+          disabled={busy}
         >
-          {status === "approving" ? "Approving…" : "Approve & create agent"}
+          {status === "approving"
+            ? "Approving…"
+            : mode === "existing"
+              ? "Approve & pair agent"
+              : "Approve & create agent"}
         </button>
         <button
           type="button"
           className={styles.btnSecondary}
-          disabled={status === "approving" || status === "denying"}
+          disabled={busy}
           onClick={handleDeny}
         >
           {status === "denying" ? "Denying…" : "Deny"}

@@ -648,8 +648,13 @@ export function getDeviceSession(token: string, userCode: string) {
 
 export interface DeviceApproveRequest {
   user_code: string;
-  agent_slug: string;
-  agent_display_name: string;
+  /** Attach the device session to an agent you already own. When set,
+   *  the slug/display_name/visibility fields are ignored — the backend
+   *  binds the device code to this agent instead of creating a new one. */
+  existing_agent_id?: string;
+  /** Required only when creating a new agent (existing_agent_id unset). */
+  agent_slug?: string;
+  agent_display_name?: string;
   agent_description?: string;
   agent_visibility?: "private" | "network";
   account_slug?: string;
