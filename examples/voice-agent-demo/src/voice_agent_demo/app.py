@@ -48,7 +48,7 @@ def _env_int(name: str, default: int) -> int:
 # a slower reasoning model can legitimately run a couple of minutes, so the
 # default is generous; override with AGENT_TURN_TIMEOUT_S. Beyond it we
 # assume the turn is wedged and recover rather than freezing the TUI.
-TURN_TIMEOUT_S = _env_int("AGENT_TURN_TIMEOUT_S", 300)
+TURN_TIMEOUT_S = _env_int("AGENT_TURN_TIMEOUT_S", 900)
 
 # How often the background loop checks the relay for new friend requests
 # and pending invocations. Cheap (one or two MCP list calls), so frequent.
