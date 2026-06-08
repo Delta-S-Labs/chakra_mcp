@@ -405,11 +405,16 @@ class VoiceAgentApp(App):
             if agent_id is None:
                 continue  # not registered yet — nothing to poll
             try:
-                await self._poll_friend_requests()
+                # Hard timeout so a stuck/half-open relay connection can
+                # never freeze the background loop (the MCP client also has
+                # its own per-call timeout; this is belt-and-suspenders).
+                await asyncio.wait_for(self._poll_friend_requests(), timeout=50)
                 # Serving an invocation needs the LLM — only when the user
                 # isn't mid-turn/recording (they always have priority).
                 if not (self._recording or self._busy or self._turn_lock.locked()):
-                    await self._poll_invocations(agent_id)
+                    await asyncio.wait_for(self._poll_invocations(agent_id), timeout=150)
+            except asyncio.TimeoutError:
+                self.status = "· relay slow — will retry"
             except Exception as e:
                 # Quiet log only — never nag the owner about poll failures.
                 self.status = f"· relay poll error: {e}"

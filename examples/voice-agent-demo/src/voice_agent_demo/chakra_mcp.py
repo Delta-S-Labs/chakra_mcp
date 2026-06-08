@@ -122,7 +122,16 @@ def build_chakra_mcp_server(
         params={
             "url": url,
             "headers": session.auth_header(),
+            # Bound the HTTP + SSE reads so a dead/half-open connection
+            # (e.g. the relay was redeployed mid-session) fails fast
+            # instead of blocking the call forever.
+            "timeout": 30,
+            "sse_read_timeout": 60,
         },
+        # Per-tool-call ceiling on the MCP ClientSession read. Without
+        # this a stuck tool call hangs the whole TUI; with it the call
+        # errors and our handlers recover.
+        client_session_timeout_seconds=45,
         # cache_tools_list reduces noise in the logs tab: we want a tool
         # span per *call*, not per call + an extra list-tools poke.
         cache_tools_list=True,
