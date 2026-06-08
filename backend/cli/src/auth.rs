@@ -10,7 +10,7 @@
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail, Context, Result};
 use base64::Engine;
@@ -184,10 +184,35 @@ pub async fn login(cfg: &mut CliConfig, network_name: &str) -> Result<String> {
 }
 
 fn capture_callback(listener: TcpListener, expected_state: &str) -> Result<String> {
+    // Poll for the callback instead of blocking forever on accept(). This
+    // (a) bounds the wait so a never-completed browser flow — e.g. the user
+    // approved in a STALE tab from an earlier login on a different port —
+    // doesn't hang the CLI indefinitely, and (b) keeps Ctrl-C responsive:
+    // the short sleep is interrupted by SIGINT so the process exits
+    // promptly (a blocking accept() can swallow it under the npm shim).
     listener
-        .set_nonblocking(false)
-        .context("setting listener blocking mode")?;
-    let (mut sock, _peer) = listener.accept().context("waiting for OAuth callback")?;
+        .set_nonblocking(true)
+        .context("setting listener non-blocking")?;
+    let deadline = Instant::now() + Duration::from_secs(300);
+    let (mut sock, _peer) = loop {
+        match listener.accept() {
+            Ok(pair) => break pair,
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                if Instant::now() >= deadline {
+                    bail!(
+                        "timed out waiting for browser sign-in (5 min). Re-run \
+                         `chakramcp login` and approve in the page IT opens \
+                         (close any older sign-in tabs first)."
+                    );
+                }
+                std::thread::sleep(Duration::from_millis(200));
+            }
+            Err(e) => return Err(e).context("waiting for OAuth callback"),
+        }
+    };
+    // Back to blocking for the (tiny) request read.
+    sock.set_nonblocking(false)
+        .context("setting callback socket blocking")?;
     sock.set_read_timeout(Some(Duration::from_secs(5)))?;
 
     let mut buf = [0u8; 4096];
