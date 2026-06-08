@@ -338,6 +338,29 @@ def make_local_tools(
     return [register_me, get_my_preferences, update_owner_status]
 
 
+def _make_groq_safe(tools: list) -> list:
+    """Relax local tool schemas for Groq's stricter validator.
+
+    Groq rejects a strict empty-object parameter schema with
+    "'required' present but 'properties' is missing" (our no-arg tools
+    like register_me hit this). Ensure a `properties` key exists, drop an
+    empty `required`, drop `additionalProperties` on empty objects, and
+    turn off strict mode. Only applied when LLM_PROVIDER=groq, so the
+    OpenAI path is unchanged.
+    """
+    for t in tools:
+        schema = dict(getattr(t, "params_json_schema", {}) or {})
+        schema.setdefault("type", "object")
+        schema.setdefault("properties", {})
+        if not schema.get("required"):
+            schema.pop("required", None)
+        if not schema["properties"]:
+            schema.pop("additionalProperties", None)
+        t.params_json_schema = schema
+        t.strict_json_schema = False
+    return tools
+
+
 async def _maybe_await(x) -> None:
     """Tiny helper — notifier may be sync (returns None) or async."""
     if x is None:
@@ -442,12 +465,16 @@ async def build_agent_stack(
     def instructions(_ctx, _agent) -> str:
         return _system_prompt(persona, identity.agent_id)
 
+    local_tools = make_local_tools(persona, notifier, chakra_mcp, identity)
+    if _provider() == "groq":
+        _make_groq_safe(local_tools)
+
     agent = Agent(
         name=persona.agent_display_name,
         instructions=instructions,
         model=_build_model(),
         mcp_servers=mcp_servers,
-        tools=make_local_tools(persona, notifier, chakra_mcp, identity),
+        tools=local_tools,
     )
     return AgentStack(
         persona=persona,
