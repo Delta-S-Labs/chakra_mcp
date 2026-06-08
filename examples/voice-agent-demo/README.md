@@ -45,7 +45,7 @@ Push-to-talk: hold **space** while you speak, release to send.
 4. **You:** *"Ask her agent what cuisine and drinks we should plan
    for tonight."* → your agent invokes `negotiate_dinner` on her
    agent, passing **your ranked food + drink prefs**. Her agent's
-   GPT-4o merges with **her ranked prefs**, counters, your agent
+   LLM merges with **her ranked prefs**, counters, your agent
    counters again. Two to three visible rounds in the Logs tab until
    they converge.
 5. **One agent** (the initiator) queries **Swiggy Dineout MCP** for
@@ -58,7 +58,7 @@ Push-to-talk: hold **space** while you speak, release to send.
 
 | Piece | Choice |
 |---|---|
-| Agent loop | [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/) (GPT-4o) |
+| Agent loop | [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/) — OpenAI (gpt-5-mini) or Groq, via `LLM_PROVIDER` |
 | Voice STT | Sarvam `POST /speech-to-text` |
 | Voice TTS | Sarvam `POST /text-to-speech` (`bulbul:v3`) |
 | ChakraMCP access | Reads the JWT minted by `chakramcp login`, opens an MCP client to `https://relay.chakramcp.com/mcp` |
@@ -78,7 +78,7 @@ Logs tab automatically.
 
 cd examples/voice-agent-demo
 cp .env.example .env
-# Paste your three keys into .env (see file for which)
+# Fill in .env: an LLM key (OpenAI or Groq) + a Sarvam key (see file)
 
 uv sync   # installs the deps locked in pyproject.toml
 
