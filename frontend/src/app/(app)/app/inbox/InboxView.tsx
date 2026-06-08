@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import {
+  listInvocations,
   pullInbox,
   reportResult,
   type Agent,
@@ -12,14 +13,17 @@ import styles from "./inbox.module.css";
 export function InboxView({
   token,
   myAgents,
+  initialItems = [],
 }: {
   token: string | null;
   myAgents: Agent[];
+  initialItems?: Invocation[];
 }) {
   const [agentId, setAgentId] = useState(myAgents[0]?.id ?? "");
-  const [items, setItems] = useState<Invocation[]>([]);
+  const [items, setItems] = useState<Invocation[]>(initialItems);
   const [pulling, setPulling] = useState(false);
   const [pullError, setPullError] = useState<string | null>(null);
+  const [refreshing, startRefresh] = useTransition();
 
   if (myAgents.length === 0) {
     return (
@@ -30,6 +34,34 @@ export function InboxView({
     );
   }
 
+  // Pull the full queue for `id` (every status), no claiming. Used on
+  // agent switch and after a pull/respond so already-claimed in-flight
+  // rows and finished rows stay visible — not just freshly-claimed ones.
+  function refresh(id: string) {
+    if (!token || !id) return;
+    setPullError(null);
+    startRefresh(async () => {
+      try {
+        const rows = await listInvocations(token, {
+          direction: "inbound",
+          agent_id: id,
+        });
+        setItems(rows);
+      } catch (err) {
+        setPullError(
+          err instanceof Error ? err.message : "Couldn't load inbox.",
+        );
+      }
+    });
+  }
+
+  function onPickAgent(next: string) {
+    if (next === agentId) return;
+    setAgentId(next);
+    setItems([]);
+    refresh(next);
+  }
+
   async function handlePull() {
     if (!token) {
       setPullError("Sign in again - no backend token.");
@@ -38,13 +70,10 @@ export function InboxView({
     setPullError(null);
     setPulling(true);
     try {
-      const claimed = await pullInbox(token, agentId);
-      // Merge: drop existing rows that were re-claimed (shouldn't happen),
-      // then prepend new ones.
-      setItems((prev) => {
-        const ids = new Set(claimed.map((c) => c.id));
-        return [...claimed, ...prev.filter((p) => !ids.has(p.id))];
-      });
+      await pullInbox(token, agentId);
+      // Re-list so the just-claimed rows AND any pre-existing in-flight /
+      // finished rows all show with current status.
+      refresh(agentId);
     } catch (err) {
       setPullError(err instanceof Error ? err.message : "Couldn't pull inbox.");
     } finally {
@@ -56,12 +85,17 @@ export function InboxView({
     setItems((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
   }
 
+  const pendingCount = items.filter((i) => i.status === "pending").length;
+
   return (
     <>
       <section className={styles.controls}>
         <label className={styles.field}>
           <span className={styles.fieldLabel}>Agent</span>
-          <select value={agentId} onChange={(e) => setAgentId(e.target.value)}>
+          <select
+            value={agentId}
+            onChange={(e) => onPickAgent(e.target.value)}
+          >
             {myAgents.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.display_name}
@@ -72,10 +106,27 @@ export function InboxView({
         <button
           type="button"
           className={styles.create}
-          disabled={pulling}
+          disabled={pulling || refreshing || pendingCount === 0}
           onClick={handlePull}
+          title={
+            pendingCount === 0
+              ? "No unclaimed pending calls to pull"
+              : undefined
+          }
         >
-          {pulling ? "Pulling…" : "Pull inbox"}
+          {pulling
+            ? "Pulling…"
+            : pendingCount > 0
+            ? `Pull inbox (${pendingCount})`
+            : "Pull inbox"}
+        </button>
+        <button
+          type="button"
+          className={styles.refresh}
+          disabled={refreshing || pulling}
+          onClick={() => refresh(agentId)}
+        >
+          {refreshing ? "Refreshing…" : "Refresh"}
         </button>
       </section>
 
@@ -83,8 +134,9 @@ export function InboxView({
 
       {items.length === 0 ? (
         <p className={styles.empty}>
-          Nothing claimed yet. Hit <strong>Pull inbox</strong> to fetch the
-          oldest pending invocations for this agent.
+          No invocations for this agent yet. When a peer invokes one of its
+          capabilities, the call shows up here — pending, in-flight, or
+          finished.
         </p>
       ) : (
         <ul className={styles.list}>

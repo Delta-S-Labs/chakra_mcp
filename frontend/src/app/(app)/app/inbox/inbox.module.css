@@ -60,7 +60,7 @@
 
 .controls {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr auto auto;
   gap: 0.6rem;
   align-items: end;
   padding: 1rem;
@@ -108,6 +108,25 @@
   white-space: nowrap;
 }
 .create:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.refresh {
+  padding: 0.6rem 1rem;
+  border-radius: 0.55rem;
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.refresh:hover:not(:disabled) {
+  border-color: color-mix(in oklab, var(--ink) 30%, var(--line));
+}
+.refresh:disabled { opacity: 0.55; cursor: not-allowed; }
 
 .dangerBtn {
   padding: 0.6rem 1rem;
@@ -265,6 +284,7 @@
   .row { padding: 0.85rem 0.85rem; }
   .actions { flex-wrap: wrap; }
   .create,
+  .refresh,
   .dangerBtn { padding: 0.7rem 1rem; }
   .rowMeta,
   .rowMeta code { overflow-wrap: anywhere; word-break: break-word; }
