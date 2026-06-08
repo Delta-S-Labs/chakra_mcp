@@ -23,18 +23,54 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from agents import Agent, Runner, function_tool
+from agents import Agent, OpenAIChatCompletionsModel, Runner, function_tool
 from agents.mcp import MCPServerStreamableHttp
 
 from .chakra_mcp import call_tool_json
 from .persona import Persona
 
-# OpenAI model, overridable via .env. Defaults to gpt-5-mini.
-DEFAULT_MODEL = "gpt-5-mini"
+# Provider selection via .env: LLM_PROVIDER = "openai" (default) | "groq".
+# Defaults per provider, overridable with OPENAI_MODEL / GROQ_MODEL.
+DEFAULT_OPENAI_MODEL = "gpt-5-mini"
+DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
+GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 
 
-def _model_from_env() -> str:
-    return os.environ.get("OPENAI_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
+def _provider() -> str:
+    return (os.environ.get("LLM_PROVIDER") or "openai").strip().lower()
+
+
+def llm_label() -> str:
+    """Human-readable provider/model, for the startup banner."""
+    if _provider() == "groq":
+        model = os.environ.get("GROQ_MODEL", DEFAULT_GROQ_MODEL).strip() or DEFAULT_GROQ_MODEL
+        return f"groq / {model}"
+    model = os.environ.get("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip() or DEFAULT_OPENAI_MODEL
+    return f"openai / {model}"
+
+
+def _build_model():
+    """Resolve the Agent's `model`.
+
+    - openai: return the model id as a string; the SDK uses its default
+      OpenAI client (OPENAI_API_KEY).
+    - groq: Groq is OpenAI-API-compatible, so we point an AsyncOpenAI
+      client at Groq's base URL with GROQ_API_KEY and wrap it in a
+      Chat-Completions model (Groq doesn't implement the Responses API).
+    """
+    if _provider() == "groq":
+        # Imported lazily so the openai client is only constructed when
+        # groq is actually selected.
+        from openai import AsyncOpenAI
+
+        key = os.environ.get("GROQ_API_KEY")
+        if not key:
+            raise RuntimeError("LLM_PROVIDER=groq but GROQ_API_KEY is not set")
+        model = os.environ.get("GROQ_MODEL", DEFAULT_GROQ_MODEL).strip() or DEFAULT_GROQ_MODEL
+        client = AsyncOpenAI(base_url=GROQ_BASE_URL, api_key=key)
+        return OpenAIChatCompletionsModel(model=model, openai_client=client)
+
+    return os.environ.get("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip() or DEFAULT_OPENAI_MODEL
 
 
 # Sliding-window memory: keep the most recent N conversation TURNS for the
@@ -409,7 +445,7 @@ async def build_agent_stack(
     agent = Agent(
         name=persona.agent_display_name,
         instructions=instructions,
-        model=_model_from_env(),
+        model=_build_model(),
         mcp_servers=mcp_servers,
         tools=make_local_tools(persona, notifier, chakra_mcp, identity),
     )

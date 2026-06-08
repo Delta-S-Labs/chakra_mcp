@@ -24,9 +24,9 @@ from pathlib import Path
 import click
 from dotenv import load_dotenv
 
-from agents import add_trace_processor
+from agents import set_trace_processors
 
-from .agent import build_agent_stack, ensure_capabilities
+from .agent import build_agent_stack, ensure_capabilities, llm_label
 from .app import VoiceAgentApp
 from .chakra_mcp import build_chakra_mcp_server, load_cli_session, resolve_agent_id
 from .logs import QueueProcessor
@@ -105,11 +105,16 @@ async def _run(persona: Persona) -> None:
     swiggy_mcp = build_swiggy_mcp_server(swiggy_token)
 
     # Tracing — register BEFORE entering the MCP servers so the very
-    # first list_tools call shows up in the Logs tab.
+    # first list_tools call shows up in the Logs tab. We REPLACE the
+    # default processors (set_, not add_) so the SDK's built-in OpenAI
+    # trace exporter is removed: it would otherwise try to upload traces
+    # to OpenAI, which fails/ warns when running on Groq with no
+    # OPENAI_API_KEY. Our local QueueProcessor still feeds the Logs tab.
     log_queue: asyncio.Queue = asyncio.Queue()
     processor = QueueProcessor()
     processor.attach(log_queue, asyncio.get_running_loop())
-    add_trace_processor(processor)
+    set_trace_processors([processor])
+    click.echo(f"  · LLM: {llm_label()}")
 
     # The MCP clients need their connection open before the agent can
     # call tools through them. ChakraMCP is required — a failure there is
