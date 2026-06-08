@@ -824,8 +824,15 @@ pub async fn device_session(
 #[derive(Debug, Deserialize)]
 pub struct DeviceApproveRequest {
     pub user_code: String,
-    pub agent_slug: String,
-    pub agent_display_name: String,
+    /// Attach the device session to an EXISTING agent the user owns
+    /// instead of creating a new one. When set, agent_slug /
+    /// agent_display_name / visibility are ignored.
+    #[serde(default)]
+    pub existing_agent_id: Option<Uuid>,
+    #[serde(default)]
+    pub agent_slug: Option<String>,
+    #[serde(default)]
+    pub agent_display_name: Option<String>,
     #[serde(default)]
     pub agent_description: Option<String>,
     #[serde(default)]
@@ -864,24 +871,39 @@ pub async fn device_approve(
     user: AuthUser,
     Json(req): Json<DeviceApproveRequest>,
 ) -> ApiResult<Json<DeviceApproveResponse>> {
-    let slug = req.agent_slug.trim().to_lowercase();
-    let display_name = req.agent_display_name.trim().to_string();
-    if display_name.is_empty() {
-        return Err(ApiError::InvalidRequest(
-            "agent_display_name is required".into(),
-        ));
-    }
-    if !is_valid_agent_slug(&slug) {
-        return Err(ApiError::InvalidRequest(
-            "agent_slug must be 3-32 chars of [a-z0-9-], no leading/trailing or double hyphens"
-                .into(),
-        ));
-    }
+    // slug / display_name / visibility are only needed when CREATING a new
+    // agent. When attaching an existing one they're ignored.
+    let creating = req.existing_agent_id.is_none();
+    let slug = req
+        .agent_slug
+        .clone()
+        .unwrap_or_default()
+        .trim()
+        .to_lowercase();
+    let display_name = req
+        .agent_display_name
+        .clone()
+        .unwrap_or_default()
+        .trim()
+        .to_string();
     let visibility = req.agent_visibility.as_deref().unwrap_or("private");
-    if !matches!(visibility, "private" | "network") {
-        return Err(ApiError::InvalidRequest(
-            "agent_visibility must be 'private' or 'network'".into(),
-        ));
+    if creating {
+        if display_name.is_empty() {
+            return Err(ApiError::InvalidRequest(
+                "agent_display_name is required".into(),
+            ));
+        }
+        if !is_valid_agent_slug(&slug) {
+            return Err(ApiError::InvalidRequest(
+                "agent_slug must be 3-32 chars of [a-z0-9-], no leading/trailing or double hyphens"
+                    .into(),
+            ));
+        }
+        if !matches!(visibility, "private" | "network") {
+            return Err(ApiError::InvalidRequest(
+                "agent_visibility must be 'private' or 'network'".into(),
+            ));
+        }
     }
 
     let mut tx = state.db.begin().await?;
@@ -908,74 +930,104 @@ pub async fn device_approve(
         return Err(ApiError::Conflict("device session has expired".into()));
     }
 
-    // Resolve account: explicit slug must be one the user is a member of;
-    // otherwise pick their personal (account_type='individual') account.
-    // The two query! macros generate distinct anonymous structs — unify
-    // into a plain (Uuid, String) tuple at the boundary.
-    let (account_id, account_slug) = if let Some(account_slug) = req.account_slug.as_deref() {
-        let acc = sqlx::query!(
+    // Resolve the account + target agent.
+    //
+    // When attaching an existing agent, the account is DERIVED from that
+    // agent (validating the user is a member of its account) — the agent
+    // may live in any account the user belongs to, not just their personal
+    // one. When creating, resolve the account from an explicit slug or
+    // fall back to the user's personal (account_type='individual') account.
+    //
+    // Pull-mode (no endpoint_url / agent_card_url) is the right default for
+    // device-flow agents — they reach the relay via the inbox bridge, not
+    // via an inbound public host.
+    let (account_id, account_slug, final_id, final_slug) = if let Some(existing_id) =
+        req.existing_agent_id
+    {
+        let a = sqlx::query!(
             r#"
-            SELECT a.id, a.slug
-            FROM accounts a
-            JOIN account_memberships m ON m.account_id = a.id
-            WHERE a.slug = $1 AND m.user_id = $2 AND a.tombstoned_at IS NULL
+            SELECT ag.id, ag.slug, acc.id AS account_id, acc.slug AS account_slug
+            FROM agents ag
+            JOIN accounts acc ON acc.id = ag.account_id
+            JOIN account_memberships m ON m.account_id = acc.id
+            WHERE ag.id = $1
+              AND m.user_id = $2
+              AND ag.tombstoned_at IS NULL
+              AND acc.tombstoned_at IS NULL
             "#,
-            account_slug,
-            user.user_id,
-        )
-        .fetch_optional(&mut *tx)
-        .await?
-        .ok_or(ApiError::Forbidden)?;
-        (acc.id, acc.slug)
-    } else {
-        let acc = sqlx::query!(
-            r#"
-            SELECT a.id, a.slug
-            FROM accounts a
-            JOIN account_memberships m ON m.account_id = a.id
-            WHERE m.user_id = $1
-              AND a.account_type = 'individual'
-              AND a.tombstoned_at IS NULL
-            ORDER BY a.created_at ASC
-            LIMIT 1
-            "#,
+            existing_id,
             user.user_id,
         )
         .fetch_optional(&mut *tx)
         .await?
         .ok_or_else(|| {
-            ApiError::Conflict("user has no personal account; pass account_slug explicitly".into())
+            ApiError::InvalidRequest("existing_agent_id is not a live agent you own".into())
         })?;
-        (acc.id, acc.slug)
-    };
+        (a.account_id, a.account_slug, a.id, a.slug)
+    } else {
+        let (account_id, account_slug) = if let Some(account_slug) = req.account_slug.as_deref() {
+            let acc = sqlx::query!(
+                r#"
+                SELECT a.id, a.slug
+                FROM accounts a
+                JOIN account_memberships m ON m.account_id = a.id
+                WHERE a.slug = $1 AND m.user_id = $2 AND a.tombstoned_at IS NULL
+                "#,
+                account_slug,
+                user.user_id,
+            )
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(ApiError::Forbidden)?;
+            (acc.id, acc.slug)
+        } else {
+            let acc = sqlx::query!(
+                r#"
+                SELECT a.id, a.slug
+                FROM accounts a
+                JOIN account_memberships m ON m.account_id = a.id
+                WHERE m.user_id = $1
+                  AND a.account_type = 'individual'
+                  AND a.tombstoned_at IS NULL
+                ORDER BY a.created_at ASC
+                LIMIT 1
+                "#,
+                user.user_id,
+            )
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or_else(|| {
+                ApiError::Conflict(
+                    "user has no personal account; pass account_slug explicitly".into(),
+                )
+            })?;
+            (acc.id, acc.slug)
+        };
 
-    // Insert the agent. Pull-mode (no endpoint_url / agent_card_url) is
-    // the right default for device-flow agents — they reach the relay
-    // via the inbox bridge, not via an inbound public host.
-    let agent_id = Uuid::now_v7();
-    let inserted = sqlx::query!(
-        r#"
-        INSERT INTO agents
-            (id, account_id, created_by_user_id, slug, display_name, description, visibility, mode)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pull')
-        ON CONFLICT (account_id, slug) WHERE tombstoned_at IS NULL DO NOTHING
-        RETURNING id, slug
-        "#,
-        agent_id,
-        account_id,
-        user.user_id,
-        slug,
-        display_name,
-        req.agent_description.clone().unwrap_or_default(),
-        visibility,
-    )
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| {
-        ApiError::Conflict(format!(
-            "agent slug '{slug}' already exists in this account"
-        ))
-    })?;
+        let agent_id = Uuid::now_v7();
+        let inserted = sqlx::query!(
+            r#"
+            INSERT INTO agents
+                (id, account_id, created_by_user_id, slug, display_name, description, visibility, mode)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, 'pull')
+            ON CONFLICT (account_id, slug) WHERE tombstoned_at IS NULL DO NOTHING
+            RETURNING id, slug
+            "#,
+            agent_id,
+            account_id,
+            user.user_id,
+            slug,
+            display_name,
+            req.agent_description.clone().unwrap_or_default(),
+            visibility,
+        )
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| {
+            ApiError::Conflict(format!("agent slug '{slug}' already exists in this account"))
+        })?;
+        (account_id, account_slug, inserted.id, inserted.slug)
+    };
 
     sqlx::query!(
         r#"
@@ -985,7 +1037,35 @@ pub async fn device_approve(
         "#,
         row.id,
         user.user_id,
-        inserted.id,
+        final_id,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    // Audit the pairing (create or attach) so it shows in the write trail
+    // like every other agent change. (The relay owns record_audit; here in
+    // the app crate we insert directly into the shared table.)
+    let (action, summary) = if creating {
+        (
+            "agent.create",
+            format!("registered agent {final_slug} via device pairing"),
+        )
+    } else {
+        ("agent.pair", format!("paired device to agent {final_slug}"))
+    };
+    sqlx::query!(
+        r#"
+        INSERT INTO audit_events
+            (id, actor_user_id, account_id, action, resource_type, resource_id, summary, metadata)
+        VALUES ($1, $2, $3, $4, 'agent', $5, $6, $7)
+        "#,
+        Uuid::now_v7(),
+        user.user_id,
+        account_id,
+        action,
+        final_id,
+        summary,
+        serde_json::json!({ "via": "device_pairing" }),
     )
     .execute(&mut *tx)
     .await?;
@@ -994,8 +1074,8 @@ pub async fn device_approve(
 
     Ok(Json(DeviceApproveResponse {
         status: "approved",
-        agent_id: inserted.id,
-        agent_slug: inserted.slug,
+        agent_id: final_id,
+        agent_slug: final_slug,
         account_slug,
     }))
 }

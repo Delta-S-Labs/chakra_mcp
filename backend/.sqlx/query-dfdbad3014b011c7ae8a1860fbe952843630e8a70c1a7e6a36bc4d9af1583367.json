@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT ag.id, ag.slug, acc.id AS account_id, acc.slug AS account_slug\n            FROM agents ag\n            JOIN accounts acc ON acc.id = ag.account_id\n            JOIN account_memberships m ON m.account_id = acc.id\n            WHERE ag.id = $1\n              AND m.user_id = $2\n              AND ag.tombstoned_at IS NULL\n              AND acc.tombstoned_at IS NULL\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "account_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "account_slug",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "dfdbad3014b011c7ae8a1860fbe952843630e8a70c1a7e6a36bc4d9af1583367"
+}

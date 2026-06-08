@@ -163,6 +163,44 @@
   padding: 0.15rem 0.45rem;
 }
 
+.modeToggle {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+  padding: 0.3rem;
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  background: var(--paper-soft, var(--paper));
+}
+
+.modeBtn {
+  flex: 1;
+  font-family: var(--font-body);
+  font-size: 0.86rem;
+  font-weight: 600;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+
+.modeBtn:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+.modeBtnActive {
+  background: var(--paper);
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+.modeBtn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
 .field {
   display: grid;
   gap: 0.35rem;
