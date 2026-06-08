@@ -55,6 +55,18 @@ def _provider() -> str:
     return (os.environ.get("LLM_PROVIDER") or "openai").strip().lower()
 
 
+def _max_turns() -> int:
+    """Max agentic loop iterations per user message (one LLM call + its
+    tool calls = one). The relay flow (discover → propose → grant → invoke
+    → poll → 3 negotiation rounds → Swiggy → summarize) can be long, so the
+    default is roomy; override with AGENT_MAX_TURNS."""
+    try:
+        v = int(os.environ.get("AGENT_MAX_TURNS", "") or 24)
+        return v if v > 0 else 24
+    except ValueError:
+        return 24
+
+
 def _model_for(provider: str) -> str:
     if provider in _COMPAT_PROVIDERS:
         default = _COMPAT_PROVIDERS[provider][2]
@@ -433,7 +445,7 @@ class AgentStack:
             agent_input: Any = [*self.history, {"role": "user", "content": user_text}]
         else:
             agent_input = user_text
-        result = await Runner.run(self.agent, agent_input, max_turns=12)
+        result = await Runner.run(self.agent, agent_input, max_turns=_max_turns())
         if remember:
             # Keep the full thread (incl. tool calls/results) but window it
             # to the last N turns so the session remembers context without

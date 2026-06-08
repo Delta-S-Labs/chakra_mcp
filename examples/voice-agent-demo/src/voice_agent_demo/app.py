@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from typing import Any
 
 from rich.markup import escape
@@ -35,10 +36,19 @@ from .chakra_mcp import call_tool_json
 from .logs import LogEvent
 from .voice import Recorder, SarvamClient, play_wav_bytes_async
 
-# Hard ceiling on one agent turn. Turns legitimately take 20-45s (many
-# tool calls), but beyond this we assume it's wedged and recover rather
-# than freezing the TUI.
-TURN_TIMEOUT_S = 120
+def _env_int(name: str, default: int) -> int:
+    try:
+        v = int(os.environ.get(name, "") or default)
+        return v if v > 0 else default
+    except ValueError:
+        return default
+
+
+# Wall-clock ceiling on ONE agent turn. The full relay+negotiation flow on
+# a slower reasoning model can legitimately run a couple of minutes, so the
+# default is generous; override with AGENT_TURN_TIMEOUT_S. Beyond it we
+# assume the turn is wedged and recover rather than freezing the TUI.
+TURN_TIMEOUT_S = _env_int("AGENT_TURN_TIMEOUT_S", 300)
 
 # How often the background loop checks the relay for new friend requests
 # and pending invocations. Cheap (one or two MCP list calls), so frequent.
@@ -412,7 +422,11 @@ class VoiceAgentApp(App):
                 # Serving an invocation needs the LLM — only when the user
                 # isn't mid-turn/recording (they always have priority).
                 if not (self._recording or self._busy or self._turn_lock.locked()):
-                    await asyncio.wait_for(self._poll_invocations(agent_id), timeout=150)
+                    # Contains a full guarded turn, so allow it the whole
+                    # turn budget plus a little slack.
+                    await asyncio.wait_for(
+                        self._poll_invocations(agent_id), timeout=TURN_TIMEOUT_S + 30
+                    )
             except asyncio.TimeoutError:
                 self.status = "· relay slow — will retry"
             except Exception as e:
