@@ -85,12 +85,16 @@ pub async fn login(cfg: &mut CliConfig, network_name: &str) -> Result<String> {
 
     let client_id = {
         let net = cfg.network_mut(network_name).unwrap();
-        match (
-            net.oauth_client_id.as_ref(),
-            meta.registration_endpoint.as_ref(),
-        ) {
-            (Some(id), _) => id.clone(),
-            (None, Some(reg_endpoint)) => {
+        // Register a FRESH client for every login when the server supports
+        // DCR. We must NOT reuse a stashed client_id: the loopback callback
+        // binds a new random port each time (RFC 8252 §7.3), so a client
+        // registered with a previous port's redirect_uri fails the
+        // exact-match check ("redirect_uri does not match any URI
+        // registered for this client"). Registering now, with this login's
+        // redirect_uri, guarantees a match. DCR clients are public (no
+        // secret) and cheap, so re-registering is fine.
+        match meta.registration_endpoint.as_ref() {
+            Some(reg_endpoint) => {
                 let resp: RegisterResponse = http
                     .post(reg_endpoint)
                     .json(&RegisterRequest {
@@ -107,9 +111,12 @@ pub async fn login(cfg: &mut CliConfig, network_name: &str) -> Result<String> {
                 net.oauth_client_id = Some(resp.client_id.clone());
                 resp.client_id
             }
-            (None, None) => {
-                bail!("server doesn't advertise registration_endpoint and we have no client_id stashed")
-            }
+            None => match net.oauth_client_id.as_ref() {
+                Some(id) => id.clone(),
+                None => bail!(
+                    "server doesn't advertise registration_endpoint and we have no client_id stashed"
+                ),
+            },
         }
     };
 
