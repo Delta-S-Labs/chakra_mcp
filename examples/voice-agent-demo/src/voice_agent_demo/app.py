@@ -427,6 +427,11 @@ class VoiceAgentApp(App):
                 # never freeze the background loop (the MCP client also has
                 # its own per-call timeout; this is belt-and-suspenders).
                 await asyncio.wait_for(self._poll_friend_requests(), timeout=50)
+                # Results of calls WE issued may land late (a friend's human
+                # answers minutes later). Cheap, no LLM — surface to owner.
+                await asyncio.wait_for(
+                    self._poll_outgoing_results(), timeout=50
+                )
                 # Serving an invocation needs the LLM — only when the user
                 # isn't mid-turn/recording (they always have priority).
                 if not (self._recording or self._busy or self._turn_lock.locked()):
@@ -470,6 +475,61 @@ class VoiceAgentApp(App):
             # user; otherwise it's already visible in the transcript.
             if not self._recording and not self._busy:
                 await self._speak(line)
+
+    async def _poll_outgoing_results(self) -> None:
+        """Poll invocations WE issued for late results and tell the owner.
+
+        The relay's `invoke` is fire-and-forget — it returns `pending`,
+        and the result may land minutes later (e.g. a friend's human
+        answers a message_owner relay). We track issued ids in
+        `stack.pending_outgoing` and poll each until it reaches a terminal
+        state, then announce it exactly once and stop tracking it.
+        """
+        outstanding = self.stack.pending_outgoing
+        if not outstanding:
+            return
+        terminal = {"succeeded", "failed", "rejected", "timeout"}
+        done: list[str] = []
+        for inv_id, meta in list(outstanding.items()):
+            try:
+                row = await call_tool_json(
+                    self.stack.chakra_mcp,
+                    "poll_invocation",
+                    {"invocation_id": inv_id},
+                )
+            except Exception:
+                continue  # transient — try again next tick
+            if not isinstance(row, dict):
+                continue
+            status = row.get("status")
+            if status not in terminal:
+                continue  # still pending / in_progress
+            done.append(inv_id)
+            if meta.get("announced"):
+                continue
+            meta["announced"] = True
+            cap = (
+                row.get("capability_name")
+                or meta.get("capability_name")
+                or "a request"
+            )
+            if status == "succeeded":
+                out = row.get("output_preview") or {}
+                reply = (
+                    (out.get("reply") or out.get("text") or out.get("message"))
+                    if isinstance(out, dict)
+                    else None
+                ) or (json.dumps(out)[:300] if out else "done")
+                line = f"✅ Reply to your “{cap}” request: {reply}"
+            else:
+                err = row.get("error_message") or status
+                line = f"⚠ Your “{cap}” request {status}: {err}"
+            if self._transcript is not None:
+                self._transcript.add_line(f"[b green]· {line}[/b green]")
+            if not self._recording and not self._busy:
+                await self._speak(line)
+        for inv_id in done:
+            outstanding.pop(inv_id, None)
 
     async def _poll_invocations(self, agent_id: str) -> None:
         # pull_inbox CLAIMS pending invocations (→ in_progress), so this is

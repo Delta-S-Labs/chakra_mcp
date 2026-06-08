@@ -19,6 +19,7 @@ stops claiming it's unregistered.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -413,6 +414,46 @@ async def _maybe_await(x) -> None:
 # ─── Agent construction ───────────────────────────────────────────
 
 
+def _candidate_outputs(item: Any) -> list[Any]:
+    """Best-effort extraction of a run item's tool-output payload(s).
+
+    The OpenAI Agents SDK surfaces tool results as `ToolCallOutputItem`s.
+    Depending on version the body lives on `.output` or in the
+    `.raw_item` dict under "output". We try both and let the caller
+    decide what's JSON.
+    """
+    out: list[Any] = []
+    direct = getattr(item, "output", None)
+    if direct is not None:
+        out.append(direct)
+    raw = getattr(item, "raw_item", None)
+    if isinstance(raw, dict) and raw.get("output") is not None:
+        out.append(raw["output"])
+    return out
+
+
+def _coerce_json(payload: Any) -> Any:
+    """Coerce a tool-output payload to a Python object. Relay tools return
+    their JSON as a text string; some SDK paths hand back a dict or a list
+    of content blocks ({"type":"text","text":"..."})."""
+    if isinstance(payload, dict):
+        return payload
+    if isinstance(payload, str):
+        try:
+            return json.loads(payload)
+        except (json.JSONDecodeError, TypeError):
+            return None
+    if isinstance(payload, list):
+        for block in payload:
+            text = block.get("text") if isinstance(block, dict) else None
+            if text:
+                try:
+                    return json.loads(text)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+    return None
+
+
 @dataclass
 class AgentStack:
     """An entered agent + its MCP servers.
@@ -432,11 +473,41 @@ class AgentStack:
     # background inbox poll runs with remember=False so it never pollutes
     # this thread.
     history: list = field(default_factory=list)
+    # Invocations this agent ISSUED (as caller) that may complete later —
+    # e.g. a message_owner relay to a friend's human, answered minutes
+    # later. invocation_id -> {"capability_name", "target", "announced"}.
+    # The background loop in app.py polls these until terminal and tells
+    # the owner the result. Without this, an async reply (the relay's
+    # invoke is fire-and-forget: it returns `pending`) is never seen.
+    pending_outgoing: dict = field(default_factory=dict)
 
     @property
     def agent_id(self) -> str | None:
         """Current relay agent id — updates live after self-registration."""
         return self.identity.agent_id
+
+    def record_outgoing(self, result: Any) -> None:
+        """Scan a finished run for `invoke` tool calls and remember the
+        invocation ids so we can poll for their (possibly late) results.
+
+        The relay's `invoke` returns `{"invocation_id", "status":"pending"}`
+        as JSON text in the tool-output item. We detect any tool output
+        carrying an `invocation_id` and stash it.
+        """
+        for item in getattr(result, "new_items", []) or []:
+            for payload in _candidate_outputs(item):
+                obj = _coerce_json(payload)
+                if not isinstance(obj, dict):
+                    continue
+                inv_id = obj.get("invocation_id")
+                if not inv_id:
+                    continue
+                inv_id = str(inv_id)
+                if inv_id not in self.pending_outgoing:
+                    self.pending_outgoing[inv_id] = {
+                        "capability_name": obj.get("capability_name"),
+                        "announced": False,
+                    }
 
     async def run_turn(self, user_text: str, *, remember: bool = True) -> str:
         """One full agent turn — returns a non-empty spoken reply string.
@@ -451,6 +522,9 @@ class AgentStack:
         else:
             agent_input = user_text
         result = await Runner.run(self.agent, agent_input, max_turns=_max_turns())
+        # Remember any invocations this turn issued so we can poll for
+        # their (possibly late) results even after the turn ends.
+        self.record_outgoing(result)
         if remember:
             # Keep the full thread (incl. tool calls/results) but window it
             # to the last N turns so the session remembers context without
