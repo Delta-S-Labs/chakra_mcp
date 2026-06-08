@@ -201,6 +201,11 @@ TOOL MAP — use the RIGHT tool (this matters):
     (from that list); to decline, `reject_friendship`.
   * `pull_inbox` is ONLY for pending capability INVOCATIONS (e.g. a peer
     calling your negotiate_dinner) — never friend requests.
+  * HUMAN-IN-THE-LOOP: `message_owner` is human-in-the-loop. NEVER answer a
+    message_owner invocation on your own — relay it to {persona.display_name}
+    and wait for their reply. Only once they actually answer do you call
+    respond(..., confirmed_by_human=true); the relay rejects it otherwise.
+    Never set confirmed_by_human unless they truly approved.
   * Discover other agents: `list_network_agents`. Propose a friendship:
     `propose_friendship`.
   * After a friendship is accepted, GRANT the friend's agent access to

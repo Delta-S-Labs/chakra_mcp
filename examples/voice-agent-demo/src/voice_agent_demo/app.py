@@ -333,6 +333,9 @@ class VoiceAgentApp(App):
         self._turn_lock = asyncio.Lock()
         self._speaking = False  # True while TTS audio is playing
         self._stop_speech = False  # set when the user interrupts playback
+        # Pending human-in-the-loop (message_owner) invocations claimed from
+        # the inbox, surfaced to the owner and awaiting their spoken reply.
+        self._pending_owner_msgs: list[dict] = []
         # State so we announce each pending friend request exactly ONCE and
         # don't nag until it's resolved (then a brand-new one re-announces).
         self._announced_friendships: set[str] = set()
@@ -478,18 +481,47 @@ class VoiceAgentApp(App):
         inbox = inbox if isinstance(inbox, list) else []
         if not inbox:
             return
+
+        # Partition: message_owner is human-in-the-loop — surface it to the
+        # owner and DON'T let the LLM answer it. Everything else is
+        # autonomous and gets served by an LLM turn.
+        hitl = [i for i in inbox if i.get("capability_name") == "message_owner"]
+        auto = [i for i in inbox if i.get("capability_name") != "message_owner"]
+
+        for item in hitl:
+            inv_id = item.get("invocation_id")
+            if not inv_id or any(m["invocation_id"] == inv_id for m in self._pending_owner_msgs):
+                continue
+            who = item.get("grantee_display_name") or "a friend's agent"
+            inp = item.get("input") or {}
+            msg = (
+                (inp.get("text") or inp.get("message") or inp.get("reply"))
+                if isinstance(inp, dict)
+                else None
+            ) or (json.dumps(inp) if inp else "(no message)")
+            self._pending_owner_msgs.append(
+                {"invocation_id": inv_id, "from": who, "message": msg}
+            )
+            line = f"📨 {who} asks: {msg} — say your reply and I'll send it."
+            if self._transcript is not None:
+                self._transcript.add_line(f"[b yellow]· {line}[/b yellow]")
+            if not self._recording and not self._busy:
+                await self._speak(line)
+
+        if not auto:
+            return
         self._busy = True
         try:
             self._set_phase("thinking")
             self.status = "serving an incoming request…"
             reply = await self._guarded_turn(
                 "You just CLAIMED these pending invocations from your inbox "
-                f"(do not pull again): {json.dumps(inbox)[:2000]}. For each, "
+                f"(do not pull again): {json.dumps(auto)[:2000]}. For each, "
                 "fulfil the capability — for negotiate_dinner use "
                 "get_my_preferences and converge on a cuisine + drink — then "
-                "call respond(invocation_id=<id>, status=\"succeeded\", "
-                "output=<result object>). Finally tell the owner in one "
-                "sentence what you agreed.",
+                'call respond(invocation_id=<id>, status="succeeded", '
+                "output=<result object>). Then tell the owner in one sentence "
+                "what you agreed.",
                 remember=False,
             )
             if reply:
@@ -618,7 +650,27 @@ class VoiceAgentApp(App):
             )
             self._set_phase("thinking")
             self.status = "thinking… (working on it)"
-            reply = await self._guarded_turn(text)
+            # If a peer's message_owner is awaiting the owner's reply, give
+            # the agent the context + ids so this spoken turn can complete
+            # it (with confirmed_by_human=true) when the owner's words are
+            # the answer.
+            prompt = text
+            if self._pending_owner_msgs:
+                pend = "; ".join(
+                    f'invocation {m["invocation_id"]} from {m["from"]}: "{m["message"]}"'
+                    for m in self._pending_owner_msgs
+                )
+                prompt = (
+                    f"[Pending human-in-the-loop messages awaiting your owner's "
+                    f"reply: {pend}. If the owner's message below is their reply "
+                    f"to one, send it: respond(invocation_id=<id>, "
+                    f'status="succeeded", output={{"reply": <owner words>}}, '
+                    f"confirmed_by_human=true).]\n\n{text}"
+                )
+            reply = await self._guarded_turn(prompt)
+            # The owner has now had a chance to address them; drop so we
+            # don't keep re-injecting stale ids.
+            self._pending_owner_msgs.clear()
             await self._on_agent_reply(reply, speak=True)
         except Exception as e:
             self.status = f"error: {e}"
