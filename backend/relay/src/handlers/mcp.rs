@@ -243,7 +243,7 @@ fn tools_list_result() -> Value {
                     }
                 })),
             tool("respond",
-                "Post the result for an in_progress invocation you claimed via pull_inbox.",
+                "Post the result for an in_progress invocation you claimed via pull_inbox. For a human-in-the-loop capability (e.g. message_owner) you MUST relay the request to your owner and only respond after they answer, with confirmed_by_human=true.",
                 json!({
                     "type": "object",
                     "required": ["invocation_id", "status"],
@@ -251,7 +251,8 @@ fn tools_list_result() -> Value {
                         "invocation_id": { "type": "string", "format": "uuid" },
                         "status": { "type": "string", "enum": ["succeeded", "failed"] },
                         "output": { "type": "object", "description": "Required if status='succeeded'." },
-                        "error":  { "type": "string", "description": "Required if status='failed'." }
+                        "error":  { "type": "string", "description": "Required if status='failed'." },
+                        "confirmed_by_human": { "type": "boolean", "description": "Set true ONLY after a human actually approved the response. Required for human_in_loop capabilities." }
                     }
                 })),
             tool("propose_friendship",
@@ -981,6 +982,11 @@ async fn respond(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, Api
         status: String,
         output: Option<Value>,
         error: Option<String>,
+        /// Required to complete a `human_in_loop` capability (e.g.
+        /// message_owner): the relay refuses the result unless a human
+        /// actually approved it. Mirrors POST /v1/invocations/{id}/result.
+        #[serde(default)]
+        confirmed_by_human: Option<bool>,
     }
     let a: A = serde_json::from_value(args)
         .map_err(|e| ApiError::InvalidRequest(format!("bad respond args: {e}")))?;
@@ -993,9 +999,11 @@ async fn respond(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, Api
     let row = sqlx::query!(
         r#"
         SELECT i.status, i.created_at,
-               ga.account_id as "granter_account_id?"
+               ga.account_id as "granter_account_id?",
+               c.semantics as "capability_semantics?"
         FROM relay_invocations i
         LEFT JOIN agents ga ON ga.id = i.granter_agent_id
+        LEFT JOIN agent_capabilities c ON c.id = i.capability_id
         WHERE i.id = $1
         "#,
         a.invocation_id,
@@ -1013,6 +1021,20 @@ async fn respond(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, Api
     let granter_account = row.granter_account_id.ok_or(ApiError::Forbidden)?;
     if !user_is_member(db, user.user_id, granter_account).await? {
         return Err(ApiError::Forbidden);
+    }
+
+    // HITL gate (parity with POST /v1/invocations/{id}/result): a
+    // human_in_loop capability (e.g. message_owner) cannot be completed
+    // by the agent alone — refuse unless a human approved.
+    if row.capability_semantics.as_deref() == Some("human_in_loop")
+        && a.status == "succeeded"
+        && !a.confirmed_by_human.unwrap_or(false)
+    {
+        return Err(ApiError::InvalidRequest(
+            "this capability is human-in-the-loop: relay the message to your \
+             owner, get their answer, then respond with confirmed_by_human=true"
+                .into(),
+        ));
     }
 
     let elapsed_ms = (Utc::now() - row.created_at)
@@ -2006,6 +2028,96 @@ mod manage_agents_tests {
         )
         .await;
         assert_eq!(polled["structuredContent"]["status"], json!("succeeded"));
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn respond_enforces_human_in_loop(pool: PgPool) {
+        // A human_in_loop capability (message_owner) cannot be completed
+        // over MCP without confirmed_by_human=true — the agent must not
+        // auto-answer it.
+        let (_uid, account_id, token) = seed_user_with_jwt(&pool).await;
+        let mk = |slug: &str| json!({ "account_id": account_id, "slug": slug, "display_name": slug, "visibility": "network" });
+        let a = ok(&call(&pool, &token, "create_agent", mk("hitl-a")).await)["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let b = ok(&call(&pool, &token, "create_agent", mk("hitl-b")).await)["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        // B publishes message_owner as human_in_loop.
+        let cap = ok(&call(
+            &pool,
+            &token,
+            "publish_capability",
+            json!({ "agent_id": b, "name": "message_owner", "semantics": "human_in_loop" }),
+        )
+        .await)["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        // friendship + grant + invoke.
+        let fr = ok(&call(
+            &pool,
+            &token,
+            "propose_friendship",
+            json!({ "proposer_agent_id": a, "target_agent_id": b }),
+        )
+        .await)["friendship_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        call(
+            &pool,
+            &token,
+            "accept_friendship",
+            json!({ "friendship_id": fr }),
+        )
+        .await;
+        let grant = ok(&call(
+            &pool,
+            &token,
+            "create_grant",
+            json!({ "granter_agent_id": b, "grantee_agent_id": a, "capability_id": cap }),
+        )
+        .await)["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let inv = ok(&call(
+            &pool,
+            &token,
+            "invoke",
+            json!({ "grant_id": grant, "grantee_agent_id": a, "input": { "text": "dinner?" } }),
+        )
+        .await)["invocation_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        call(&pool, &token, "pull_inbox", json!({ "agent_id": b })).await;
+
+        // Auto-respond WITHOUT human confirmation → rejected.
+        let bad = call(
+            &pool,
+            &token,
+            "respond",
+            json!({ "invocation_id": inv, "status": "succeeded", "output": { "reply": "yes" } }),
+        )
+        .await;
+        assert_eq!(
+            bad["isError"],
+            json!(true),
+            "HITL respond must be rejected: {bad}"
+        );
+
+        // After human approval → confirmed_by_human=true succeeds.
+        let good = call(&pool, &token, "respond",
+            json!({ "invocation_id": inv, "status": "succeeded", "output": { "reply": "yes 8pm" }, "confirmed_by_human": true })).await;
+        assert_eq!(
+            good["isError"],
+            json!(false),
+            "confirmed HITL respond should succeed: {good}"
+        );
     }
 
     #[sqlx::test(migrations = "../migrations")]
