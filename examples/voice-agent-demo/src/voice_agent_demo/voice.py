@@ -25,6 +25,7 @@ import io
 import os
 import wave
 from dataclasses import dataclass
+from typing import Callable
 
 import httpx
 import numpy as np
@@ -157,29 +158,69 @@ class SarvamClient:
 
 # ─── Playback ────────────────────────────────────────────────────
 
-def play_wav_bytes(wav_bytes: bytes) -> None:
-    """Synchronously play a WAV. Blocks until playback finishes."""
+# Block size for cooperative playback — we re-check the stop flag once
+# per block, so an interrupt lands within ~this many ms.
+_PLAYBACK_BLOCK_MS = 80
+
+
+def play_wav_bytes(
+    wav_bytes: bytes, should_stop: Callable[[], bool] | None = None
+) -> None:
+    """Play a WAV synchronously (blocks until done or interrupted).
+
+    When `should_stop` is given we stream the audio in small blocks and
+    check the flag between each, so the user can cut a long reply short
+    almost instantly. This is the reliable path — it does NOT depend on a
+    cross-thread `sd.stop()` aborting a single blocking `sd.wait()`
+    (which is flaky on some platforms / when `play` runs in a worker
+    thread). With no `should_stop` we fall back to the simple one-shot.
+    """
     if not wav_bytes:
         return
     with wave.open(io.BytesIO(wav_bytes), "rb") as w:
         rate = w.getframerate()
-        n = w.getnframes()
-        frames = w.readframes(n)
+        channels = w.getnchannels()
+        frames = w.readframes(w.getnframes())
     audio = np.frombuffer(frames, dtype=np.int16)
-    sd.play(audio, rate)
-    sd.wait()
+    if channels > 1:
+        audio = audio.reshape(-1, channels)
+
+    if should_stop is None:
+        sd.play(audio, rate)
+        sd.wait()
+        return
+
+    block = max(1, int(rate * _PLAYBACK_BLOCK_MS / 1000))
+    stream = sd.OutputStream(samplerate=rate, channels=channels, dtype="int16")
+    stream.start()
+    try:
+        for start in range(0, len(audio), block):
+            if should_stop():
+                break
+            stream.write(audio[start : start + block])
+    finally:
+        try:
+            stream.stop()
+            stream.close()
+        except Exception:
+            pass
 
 
-async def play_wav_bytes_async(wav_bytes: bytes) -> None:
-    """Async wrapper so TTS playback doesn't block the Textual event loop."""
-    await asyncio.to_thread(play_wav_bytes, wav_bytes)
+async def play_wav_bytes_async(
+    wav_bytes: bytes, should_stop: Callable[[], bool] | None = None
+) -> None:
+    """Async wrapper so TTS playback doesn't block the Textual event loop.
+
+    Pass `should_stop` (a cheap, thread-safe flag reader) to make the
+    playback interruptible — see `play_wav_bytes`.
+    """
+    await asyncio.to_thread(play_wav_bytes, wav_bytes, should_stop)
 
 
 def stop_playback() -> None:
-    """Interrupt any in-progress playback. Safe to call from the event
-    loop (sounddevice's stop is non-blocking); it makes the `sd.wait()`
-    inside `play_wav_bytes` return immediately so the speaking turn
-    unwinds and the user can talk again."""
+    """Belt-and-suspenders interrupt for the simple (non-cooperative)
+    path: aborts any global `sd.play` stream. The cooperative
+    `should_stop` loop in `play_wav_bytes` is the primary mechanism."""
     try:
         sd.stop()
     except Exception:
