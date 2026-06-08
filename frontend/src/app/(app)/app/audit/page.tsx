@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { listMyAgents, listInvocations, listAuditEvents, type AuditEvent } from "@/lib/relay";
 import { AuditList } from "./AuditList";
+import { LocalTime } from "./LocalTime";
 import styles from "./audit.module.css";
 
 /**
@@ -70,7 +71,7 @@ export default async function AuditPage() {
                 <span className={styles.evtAction}>{e.action}</span>
                 <span className={styles.evtSummary}>{e.summary}</span>
                 <span className={styles.evtTime}>
-                  {new Date(e.created_at).toLocaleString()}
+                  <LocalTime iso={e.created_at} />
                 </span>
               </li>
             ))}

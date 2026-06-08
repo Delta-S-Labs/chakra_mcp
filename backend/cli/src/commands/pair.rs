@@ -217,9 +217,21 @@ pub async fn run(args: Args, cfg: &mut CliConfig) -> Result<()> {
             break body;
         }
 
-        // Per RFC 8628, errors during polling are application/json with
-        // a flat `{ "error": "..." }` body. Decode and branch.
-        let err: PollError = resp.json().await.context("decoding /oauth/token error")?;
+        // Transient gateway/server hiccup (e.g. the relay restarting
+        // during a deploy returns a 502 with a non-JSON body) — don't
+        // crash the login; just keep polling.
+        if status.is_server_error() {
+            continue;
+        }
+
+        // Per RFC 8628, errors during polling are application/json with a
+        // flat `{ "error": "..." }` body. If the body isn't that JSON (a
+        // proxy error page, etc.), treat it as transient and keep polling
+        // rather than aborting the whole flow.
+        let err: PollError = match resp.json().await {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
         match err.error.as_str() {
             "authorization_pending" => {
                 // keep polling at the current interval
