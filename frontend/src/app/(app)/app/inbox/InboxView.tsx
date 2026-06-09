@@ -20,6 +20,7 @@ export function InboxView({
   initialItems?: Invocation[];
 }) {
   const [agentId, setAgentId] = useState(myAgents[0]?.id ?? "");
+  const [direction, setDirection] = useState<"inbound" | "outbound">("inbound");
   const [items, setItems] = useState<Invocation[]>(initialItems);
   const [pulling, setPulling] = useState(false);
   const [pullError, setPullError] = useState<string | null>(null);
@@ -34,22 +35,20 @@ export function InboxView({
     );
   }
 
-  // Pull the full queue for `id` (every status), no claiming. Used on
-  // agent switch and after a pull/respond so already-claimed in-flight
-  // rows and finished rows stay visible — not just freshly-claimed ones.
-  function refresh(id: string) {
+  // List the full queue for `id` in `dir` (every status), no claiming.
+  // inbound = calls served BY this agent; outbound = calls it issued.
+  // Used on agent/tab switch and after a pull so already-claimed
+  // in-flight rows and finished rows stay visible.
+  function refresh(id: string, dir: "inbound" | "outbound") {
     if (!token || !id) return;
     setPullError(null);
     startRefresh(async () => {
       try {
-        const rows = await listInvocations(token, {
-          direction: "inbound",
-          agent_id: id,
-        });
+        const rows = await listInvocations(token, { direction: dir, agent_id: id });
         setItems(rows);
       } catch (err) {
         setPullError(
-          err instanceof Error ? err.message : "Couldn't load inbox.",
+          err instanceof Error ? err.message : "Couldn't load invocations.",
         );
       }
     });
@@ -59,7 +58,14 @@ export function InboxView({
     if (next === agentId) return;
     setAgentId(next);
     setItems([]);
-    refresh(next);
+    refresh(next, direction);
+  }
+
+  function onPickDirection(next: "inbound" | "outbound") {
+    if (next === direction) return;
+    setDirection(next);
+    setItems([]);
+    refresh(agentId, next);
   }
 
   async function handlePull() {
@@ -73,7 +79,7 @@ export function InboxView({
       await pullInbox(token, agentId);
       // Re-list so the just-claimed rows AND any pre-existing in-flight /
       // finished rows all show with current status.
-      refresh(agentId);
+      refresh(agentId, direction);
     } catch (err) {
       setPullError(err instanceof Error ? err.message : "Couldn't pull inbox.");
     } finally {
@@ -85,10 +91,32 @@ export function InboxView({
     setItems((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
   }
 
+  const isInbound = direction === "inbound";
   const pendingCount = items.filter((i) => i.status === "pending").length;
 
   return (
     <>
+      <div className={styles.tabs} role="tablist" aria-label="Direction">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={isInbound}
+          className={`${styles.tab} ${isInbound ? styles.tabActive : ""}`}
+          onClick={() => onPickDirection("inbound")}
+        >
+          Inbound — work for this agent
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={!isInbound}
+          className={`${styles.tab} ${!isInbound ? styles.tabActive : ""}`}
+          onClick={() => onPickDirection("outbound")}
+        >
+          Outbound — calls it made
+        </button>
+      </div>
+
       <section className={styles.controls}>
         <label className={styles.field}>
           <span className={styles.fieldLabel}>Agent</span>
@@ -103,28 +131,30 @@ export function InboxView({
             ))}
           </select>
         </label>
-        <button
-          type="button"
-          className={styles.create}
-          disabled={pulling || refreshing || pendingCount === 0}
-          onClick={handlePull}
-          title={
-            pendingCount === 0
-              ? "No unclaimed pending calls to pull"
-              : undefined
-          }
-        >
-          {pulling
-            ? "Pulling…"
-            : pendingCount > 0
-            ? `Pull inbox (${pendingCount})`
-            : "Pull inbox"}
-        </button>
+        {isInbound && (
+          <button
+            type="button"
+            className={styles.create}
+            disabled={pulling || refreshing || pendingCount === 0}
+            onClick={handlePull}
+            title={
+              pendingCount === 0
+                ? "No unclaimed pending calls to pull"
+                : undefined
+            }
+          >
+            {pulling
+              ? "Pulling…"
+              : pendingCount > 0
+              ? `Pull inbox (${pendingCount})`
+              : "Pull inbox"}
+          </button>
+        )}
         <button
           type="button"
           className={styles.refresh}
           disabled={refreshing || pulling}
-          onClick={() => refresh(agentId)}
+          onClick={() => refresh(agentId, direction)}
         >
           {refreshing ? "Refreshing…" : "Refresh"}
         </button>
@@ -134,14 +164,30 @@ export function InboxView({
 
       {items.length === 0 ? (
         <p className={styles.empty}>
-          No invocations for this agent yet. When a peer invokes one of its
-          capabilities, the call shows up here — pending, in-flight, or
-          finished.
+          {isInbound ? (
+            <>
+              No invocations for this agent yet. When a peer invokes one of
+              its capabilities, the call shows up here — pending, in-flight,
+              or finished.
+            </>
+          ) : (
+            <>
+              This agent hasn&apos;t made any calls yet. Capabilities it
+              invokes on other agents show up here — including ones still
+              waiting on a reply.
+            </>
+          )}
         </p>
       ) : (
         <ul className={styles.list}>
           {items.map((i) => (
-            <Row key={i.id} token={token} item={i} onResolved={onResolved} />
+            <Row
+              key={i.id}
+              token={token}
+              item={i}
+              direction={direction}
+              onResolved={onResolved}
+            />
           ))}
         </ul>
       )}
@@ -152,10 +198,12 @@ export function InboxView({
 function Row({
   token,
   item,
+  direction,
   onResolved,
 }: {
   token: string | null;
   item: Invocation;
+  direction: "inbound" | "outbound";
   onResolved: (i: Invocation) => void;
 }) {
   const [output, setOutput] = useState("{}");
@@ -163,7 +211,10 @@ function Row({
   const [pending, setPending] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const isOpen = item.status === "in_progress";
+  // The respond form only applies INBOUND (work you serve). For outbound
+  // calls you're the caller — you can't (and shouldn't) post a result;
+  // just watch the status until the other side answers.
+  const isOpen = direction === "inbound" && item.status === "in_progress";
 
   async function submit(status: "succeeded" | "failed") {
     if (!token) {
@@ -203,8 +254,17 @@ function Row({
       <div className={styles.rowHead}>
         <div className={styles.rowName}>
           <code className={styles.capCode}>{item.capability_name}</code>
-          <span className={styles.arrow}>←</span>
-          <strong>{item.grantee_display_name ?? "deleted agent"}</strong>
+          {direction === "inbound" ? (
+            <>
+              <span className={styles.arrow}>←</span>
+              <strong>{item.grantee_display_name ?? "deleted agent"}</strong>
+            </>
+          ) : (
+            <>
+              <span className={styles.arrow}>→</span>
+              <strong>{item.granter_display_name ?? "deleted agent"}</strong>
+            </>
+          )}
           <StatusBadge status={item.status} />
         </div>
         <div className={styles.rowMeta}>

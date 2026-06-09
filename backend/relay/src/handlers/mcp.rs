@@ -242,6 +242,17 @@ fn tools_list_result() -> Value {
                         "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 25 }
                     }
                 })),
+            tool("list_invocations",
+                "List invocations WITHOUT claiming them — read-only. Unlike pull_inbox (which only returns unclaimed 'pending' rows and claims them), this returns rows in ANY status, so use it to re-check work you already claimed but haven't answered (status='in_progress'), or to follow up on calls you issued (direction='outbound'). Filter by direction, agent, and status.",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "direction": { "type": "string", "enum": ["all", "outbound", "inbound"], "description": "inbound = calls served BY your agents (you are the granter); outbound = calls your agents issued (you are the caller). Defaults to 'all'." },
+                        "agent_id": { "type": "string", "format": "uuid", "description": "Restrict to invocations where this agent is the granter or grantee." },
+                        "status": { "type": "string", "enum": ["pending", "in_progress", "rejected", "succeeded", "failed", "timeout"], "description": "e.g. 'in_progress' for claimed-but-unanswered work." },
+                        "limit": { "type": "integer", "minimum": 1, "maximum": 200, "default": 50 }
+                    }
+                })),
             tool("respond",
                 "Post the result for an in_progress invocation you claimed via pull_inbox. For a human-in-the-loop capability (e.g. message_owner) you MUST relay the request to your owner and only respond after they answer, with confirmed_by_human=true.",
                 json!({
@@ -487,6 +498,7 @@ async fn call_tool(state: &RelayState, user: &AuthUser, params: Value) -> Result
         "invoke" => invoke(&state.db, user, p.arguments).await,
         "poll_invocation" => poll_invocation(&state.db, user, p.arguments).await,
         "pull_inbox" => pull_inbox(&state.db, user, p.arguments).await,
+        "list_invocations" => list_invocations(&state.db, user, p.arguments).await,
         "respond" => respond(&state.db, user, p.arguments).await,
         "propose_friendship" => propose_friendship(&state.db, user, p.arguments).await,
         "create_agent" => create_agent(&state.db, user, p.arguments).await,
@@ -669,6 +681,86 @@ async fn list_network_agents(db: &PgPool, user: &AuthUser) -> Result<Value, ApiE
             "description": r.description,
             "capability_count": r.capability_count,
             "is_mine": r.is_mine,
+        }))
+        .collect::<Vec<_>>()))
+}
+
+async fn list_invocations(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
+    #[derive(Deserialize, Default)]
+    struct A {
+        direction: Option<String>,
+        agent_id: Option<Uuid>,
+        status: Option<String>,
+        limit: Option<i64>,
+    }
+    let a: A = serde_json::from_value(args).unwrap_or_default();
+    let direction = a.direction.as_deref().unwrap_or("all");
+    if !matches!(direction, "all" | "outbound" | "inbound") {
+        return Err(ApiError::InvalidRequest(
+            "direction must be all|outbound|inbound".into(),
+        ));
+    }
+    if let Some(s) = a.status.as_deref() {
+        if !matches!(
+            s,
+            "pending" | "in_progress" | "rejected" | "succeeded" | "failed" | "timeout"
+        ) {
+            return Err(ApiError::InvalidRequest("invalid status".into()));
+        }
+    }
+    // outbound = I'm the grantee (caller); inbound = I'm the granter (server).
+    let want_grantee_is_me = matches!(direction, "all" | "outbound");
+    let want_granter_is_me = matches!(direction, "all" | "inbound");
+    let limit = a.limit.unwrap_or(50).clamp(1, 200);
+
+    let rows = sqlx::query!(
+        r#"
+        SELECT i.id, i.status, i.capability_name,
+               i.granter_agent_id, ga.display_name as "granter_display_name?",
+               i.grantee_agent_id, ea.display_name as "grantee_display_name?",
+               i.input_preview, i.output_preview, i.error_message,
+               i.elapsed_ms, i.created_at, i.claimed_at
+        FROM relay_invocations i
+        LEFT JOIN agents ga ON ga.id = i.granter_agent_id
+        LEFT JOIN agents ea ON ea.id = i.grantee_agent_id
+        WHERE
+            (
+                ($2::boolean AND ea.account_id IN (
+                    SELECT account_id FROM account_memberships WHERE user_id = $1))
+             OR ($3::boolean AND ga.account_id IN (
+                    SELECT account_id FROM account_memberships WHERE user_id = $1))
+            )
+            AND ($4::uuid IS NULL OR i.granter_agent_id = $4 OR i.grantee_agent_id = $4)
+            AND ($5::text IS NULL OR i.status = $5)
+        ORDER BY i.created_at DESC
+        LIMIT $6
+        "#,
+        user.user_id,
+        want_grantee_is_me,
+        want_granter_is_me,
+        a.agent_id,
+        a.status,
+        limit,
+    )
+    .fetch_all(db)
+    .await?;
+
+    Ok(json!(rows
+        .into_iter()
+        .map(|r| json!({
+            "id": r.id,
+            "status": r.status,
+            "capability_name": r.capability_name,
+            "granter_agent_id": r.granter_agent_id,
+            "granter_display_name": r.granter_display_name,
+            "grantee_agent_id": r.grantee_agent_id,
+            "grantee_display_name": r.grantee_display_name,
+            "input_preview": r.input_preview,
+            "output_preview": r.output_preview,
+            "error_message": r.error_message,
+            "elapsed_ms": r.elapsed_ms,
+            "created_at": r.created_at,
+            "claimed_at": r.claimed_at,
         }))
         .collect::<Vec<_>>()))
 }
@@ -2118,6 +2210,118 @@ mod manage_agents_tests {
             json!(false),
             "confirmed HITL respond should succeed: {good}"
         );
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn list_invocations_shows_claimed_and_outbound(pool: PgPool) {
+        // list_invocations is read-only and, unlike pull_inbox, must keep
+        // returning a row after it's been claimed (in_progress) and must
+        // surface calls the caller issued (direction=outbound).
+        let (_uid, account_id, token) = seed_user_with_jwt(&pool).await;
+        let mk = |slug: &str| json!({ "account_id": account_id, "slug": slug, "display_name": slug, "visibility": "network" });
+        let a = ok(&call(&pool, &token, "create_agent", mk("li-a")).await)["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let b = ok(&call(&pool, &token, "create_agent", mk("li-b")).await)["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let cap = ok(&call(
+            &pool,
+            &token,
+            "publish_capability",
+            json!({ "agent_id": b, "name": "negotiate_dinner" }),
+        )
+        .await)["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let fr = ok(&call(
+            &pool,
+            &token,
+            "propose_friendship",
+            json!({ "proposer_agent_id": a, "target_agent_id": b }),
+        )
+        .await)["friendship_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        call(
+            &pool,
+            &token,
+            "accept_friendship",
+            json!({ "friendship_id": fr }),
+        )
+        .await;
+        let grant = ok(&call(
+            &pool,
+            &token,
+            "create_grant",
+            json!({ "granter_agent_id": b, "grantee_agent_id": a, "capability_id": cap }),
+        )
+        .await)["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        call(
+            &pool,
+            &token,
+            "invoke",
+            json!({ "grant_id": grant, "grantee_agent_id": a, "input": { "text": "dinner?" } }),
+        )
+        .await;
+
+        // Inbound for B: one pending row before claiming.
+        let pending = payload(
+            &call(
+                &pool,
+                &token,
+                "list_invocations",
+                json!({ "direction": "inbound", "agent_id": b, "status": "pending" }),
+            )
+            .await,
+        );
+        assert_eq!(pending.as_array().unwrap().len(), 1);
+
+        // Claim it → in_progress. pull_inbox is self-deduping…
+        call(&pool, &token, "pull_inbox", json!({ "agent_id": b })).await;
+        let pulled_again =
+            payload(&call(&pool, &token, "pull_inbox", json!({ "agent_id": b })).await);
+        assert_eq!(
+            pulled_again.as_array().unwrap().len(),
+            0,
+            "pull_inbox must NOT re-return a claimed row"
+        );
+
+        // …but list_invocations still shows the claimed-but-unanswered row.
+        let in_prog = payload(
+            &call(
+                &pool,
+                &token,
+                "list_invocations",
+                json!({ "direction": "inbound", "agent_id": b, "status": "in_progress" }),
+            )
+            .await,
+        );
+        assert_eq!(
+            in_prog.as_array().unwrap().len(),
+            1,
+            "list_invocations must surface claimed in_progress work"
+        );
+
+        // Outbound view from A (the caller) sees the same call.
+        let outbound = payload(
+            &call(
+                &pool,
+                &token,
+                "list_invocations",
+                json!({ "direction": "outbound", "agent_id": a }),
+            )
+            .await,
+        );
+        assert_eq!(outbound.as_array().unwrap().len(), 1);
+        assert_eq!(outbound[0]["grantee_agent_id"], json!(a));
     }
 
     #[sqlx::test(migrations = "../migrations")]
