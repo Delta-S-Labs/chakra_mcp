@@ -6,6 +6,7 @@ pub mod discover;
 pub mod friendships;
 pub mod grants;
 pub mod inbox;
+pub mod invocations;
 pub mod invoke;
 pub mod message;
 pub mod networks;
