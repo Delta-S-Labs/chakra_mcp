@@ -124,6 +124,11 @@ enum Cmd {
     #[command(subcommand)]
     Inbox(commands::inbox::Cmd),
 
+    /// List invocations with filters (read-only, no claiming). See both
+    /// inbound work and outbound calls, in any status.
+    #[command(subcommand)]
+    Invocations(commands::invocations::Cmd),
+
     /// Search the public agent directory by query, capability, tags, mode.
     /// Wraps `/v1/discovery/agents` (D10a). Bearer is optional —
     /// the endpoint is public, but auth lets the relay audit who
@@ -249,6 +254,7 @@ async fn run() -> Result<()> {
         Cmd::Grants(cmd) => commands::grants::run(cmd, ApiClient::new(cfg)?).await?,
         Cmd::Invoke(args) => commands::invoke::run(args, ApiClient::new(cfg)?).await?,
         Cmd::Inbox(cmd) => commands::inbox::run(cmd, ApiClient::new(cfg)?).await?,
+        Cmd::Invocations(cmd) => commands::invocations::run(cmd, ApiClient::new(cfg)?).await?,
         Cmd::Discover(args) => commands::discover::run(args, ApiClient::new(cfg)?).await?,
         Cmd::Capabilities(cmd) => commands::capabilities::run(cmd, ApiClient::new(cfg)?).await?,
         Cmd::Message(args) => commands::message::run(args, ApiClient::new(cfg)?).await?,
