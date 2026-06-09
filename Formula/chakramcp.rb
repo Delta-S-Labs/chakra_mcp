@@ -12,28 +12,28 @@
 class Chakramcp < Formula
   desc "Command-line client for the ChakraMCP relay"
   homepage "https://chakramcp.com"
-  version "0.1.8"
+  version "0.1.9"
   license "MIT"
 
   on_macos do
     on_arm do
-      url "https://github.com/Delta-S-Labs/chakra_mcp/releases/download/cli-v0.1.8/chakramcp-0.1.8-aarch64-apple-darwin.tar.gz"
-      sha256 "31180427d692b6474c139f342591318b0f67933f870fbe62b788ed0c57a0befb"
+      url "https://github.com/Delta-S-Labs/chakra_mcp/releases/download/cli-v0.1.9/chakramcp-0.1.9-aarch64-apple-darwin.tar.gz"
+      sha256 "1711c0762e8b01a5f697988492645d825312a0562d1fa67d82055aec029e4f04"
     end
     on_intel do
-      url "https://github.com/Delta-S-Labs/chakra_mcp/releases/download/cli-v0.1.8/chakramcp-0.1.8-x86_64-apple-darwin.tar.gz"
-      sha256 "dc2d30d5a4bc27816915146430c96e4f03e8336306a415a8e892e9dc07fcd037"
+      url "https://github.com/Delta-S-Labs/chakra_mcp/releases/download/cli-v0.1.9/chakramcp-0.1.9-x86_64-apple-darwin.tar.gz"
+      sha256 "0bfbf6c9e58317908a1d36daa53db5eff5010276d2d711b3bd745414b8fb553f"
     end
   end
 
   on_linux do
     on_arm do
-      url "https://github.com/Delta-S-Labs/chakra_mcp/releases/download/cli-v0.1.8/chakramcp-0.1.8-aarch64-unknown-linux-gnu.tar.gz"
-      sha256 "6944b5cf44c5bb15bffb87a3e1bbcb29fe9260a490eb91d0f4c9b4108e292ec6"
+      url "https://github.com/Delta-S-Labs/chakra_mcp/releases/download/cli-v0.1.9/chakramcp-0.1.9-aarch64-unknown-linux-gnu.tar.gz"
+      sha256 "60c7dcdf45d0eb5f5eb80afe6b7670bcdd0c24972f756bfe2418a21d020d7076"
     end
     on_intel do
-      url "https://github.com/Delta-S-Labs/chakra_mcp/releases/download/cli-v0.1.8/chakramcp-0.1.8-x86_64-unknown-linux-gnu.tar.gz"
-      sha256 "ca7353277bd9fefd9601292a2acd7f5ce6347e6d9eafd4fd8d7a790176640f63"
+      url "https://github.com/Delta-S-Labs/chakra_mcp/releases/download/cli-v0.1.9/chakramcp-0.1.9-x86_64-unknown-linux-gnu.tar.gz"
+      sha256 "1298334f30bed8b289a9d608d5fed669e5688f25185a33981f2120ec2adcadec"
     end
   end
 
