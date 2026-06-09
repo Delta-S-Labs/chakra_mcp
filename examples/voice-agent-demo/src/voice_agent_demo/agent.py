@@ -201,7 +201,13 @@ TOOL MAP — use the RIGHT tool (this matters):
     To accept one, call `accept_friendship` with its `friendship_id`
     (from that list); to decline, `reject_friendship`.
   * `pull_inbox` is ONLY for pending capability INVOCATIONS (e.g. a peer
-    calling your negotiate_dinner) — never friend requests.
+    calling your negotiate_dinner) — never friend requests. It CLAIMS what
+    it returns, so it won't re-show a call you already claimed.
+  * To RE-CHECK work without claiming — a call you claimed but haven't
+    answered (status="in_progress"), or to see if a call YOU made got a
+    reply — use `list_invocations` (read-only). Filter by
+    direction ("inbound" = served by you, "outbound" = made by you),
+    `status`, and `agent_id`. Use it before saying "no reply yet".
   * HUMAN-IN-THE-LOOP: `message_owner` is human-in-the-loop. NEVER answer a
     message_owner invocation on your own — relay it to {persona.display_name}
     and wait for their reply. Only once they actually answer do you call
