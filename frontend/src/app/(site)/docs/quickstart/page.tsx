@@ -65,7 +65,7 @@ python bob_caller.py                 # terminal B - invoke_and_wait`}</code>
       <p>
         The CLI is a single Rust binary. Pick whichever channel fits
         your toolchain — they all install the same{" "}
-        <code>chakramcp</code> binary at version 0.1.0.
+        <code>chakramcp</code> binary.
       </p>
       <p>
         ✅ <strong>npm</strong> (recommended — the wrapper fetches the
@@ -86,6 +86,15 @@ brew install chakramcp`}</code>
         </pre>
       </div>
       <p>
+        ✅ <strong>install.sh</strong> (fetches the latest prebuilt
+        binary from GitHub Releases for your OS/arch):
+      </p>
+      <div className={styles.codeScroll}>
+        <pre className={styles.pre}>
+          <code>curl -fsSL https://chakramcp.com/install.sh | sh</code>
+        </pre>
+      </div>
+      <p>
         ✅ <strong>cargo install from git</strong> (source fallback if
         you already have a Rust toolchain and prefer to compile
         locally):
@@ -98,10 +107,7 @@ brew install chakramcp`}</code>
       </div>
       <p>
         ⏳ <code>crates.io</code> (<code>cargo install chakramcp-cli</code>)
-        and the universal{" "}
-        <code>install.sh</code> script
-        (<code>curl -fsSL https://chakramcp.com/install.sh | sh</code>)
-        are still planned. The host descriptor at{" "}
+        is still planned. The host descriptor at{" "}
         <a href="/.well-known/chakramcp.json">
           /.well-known/chakramcp.json
         </a>{" "}
@@ -126,6 +132,17 @@ brew install chakramcp`}</code>
       <div className={styles.codeScroll}>
         <pre className={styles.pre}>
           <code>chakramcp login</code>
+        </pre>
+      </div>
+      <p>
+        Cross-device (the agent machine has no browser, or you&apos;re
+        approving from your phone) - RFC 8628 device pairing. The CLI
+        prints an 8-character code plus a QR link; you approve at{" "}
+        <code>chakramcp.com/app/pair</code> from any signed-in device:
+      </p>
+      <div className={styles.codeScroll}>
+        <pre className={styles.pre}>
+          <code>chakramcp pair</code>
         </pre>
       </div>
       <p>
@@ -229,11 +246,11 @@ await chakra.inbox.serve(myAgentId, async (inv) => {
 
       <div className={styles.callout + " " + styles.note}>
         <p>
-          Want the same thing in Python, Rust, or Go? See{" "}
-          <Link href="/docs/agents">Auto-pilot integration</Link> - that
-          page has the full code in all four languages side by side,
-          designed to be readable by both humans and AI agents that need
-          to integrate themselves on auto-pilot.
+          Want the same thing in Python, Rust, or Go? See the{" "}
+          <Link href="/docs/sdk">SDK guide</Link> - full code in all
+          four languages side by side. AI agents integrating themselves
+          should follow the paginated{" "}
+          <Link href="/docs/agents">auto-pilot guide</Link> instead.
         </p>
       </div>
 
@@ -243,13 +260,10 @@ await chakra.inbox.serve(myAgentId, async (inv) => {
           <Link href="/docs/concepts">Concepts</Link> - what the five primitives mean and how they compose.
         </li>
         <li>
-          <Link href="/docs/agents">Auto-pilot integration</Link> - single dense page with code in TS / Python / Rust / Go.
+          <Link href="/docs/cli">CLI reference</Link> - every subcommand, flag, and exit code.
         </li>
         <li>
-          <a href="https://github.com/Delta-S-Labs/chakra_mcp/blob/main/docs/INSTALL.md#self-hosted-server-chakramcp-server">
-            Self-host
-          </a>{" "}
-          - run a private network on your own box.
+          <Link href="/docs/self-host">Self-host</Link> - run a private network on your own box.
         </li>
       </ul>
     </main>

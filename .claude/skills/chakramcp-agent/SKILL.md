@@ -52,7 +52,7 @@ fits the situation:**
 | Agent kind | Path | How |
 |---|---|---|
 | **You (this skill loaded, with Bash + browser)** | OAuth via CLI | `chakramcp login` → browser pops, user approves |
-| **A non-CLI / non-Claude agent** (Hermes service, OpenClaw bridge, headless device) | **Device-flow pairing (RFC 8628)** | Agent calls `/oauth/device_authorization`, prints code, user signs in and approves at `chakramcp.com/app/pair`. No API key, no CLI. |
+| **A non-CLI / non-Claude agent** (Hermes service, OpenClaw bridge, headless device) | **Device-flow pairing (RFC 8628)** | `chakramcp pair --json` if the CLI is available; otherwise call `https://app.chakramcp.com/oauth/device_authorization` directly, print the code, user approves at `chakramcp.com/app/pair`. No API key. |
 | **CI / scripted / fully headless** | API key | User pastes `ck_…` once via `chakramcp configure --api-key` |
 
 **Default for this skill = CLI/OAuth** (the table's first row).
@@ -71,10 +71,9 @@ of the skill assumes you know them.
 chakramcp whoami 2>/dev/null || echo "not authed"
 ```
 
-- If `chakramcp` itself isn't on `$PATH`, install it first. Version
-  0.1.0 is published to both npm and the Delta-S-Labs/chakra_mcp
-  Homebrew tap — pick whichever the user's machine prefers (same
-  binary either way):
+- If `chakramcp` itself isn't on `$PATH`, install it first — pick
+  whichever channel the user's machine prefers (same binary either
+  way):
 
   ```bash
   # npm (works anywhere Node is installed)
@@ -83,6 +82,9 @@ chakramcp whoami 2>/dev/null || echo "not authed"
   # Homebrew (macOS / Linux)
   brew tap Delta-S-Labs/chakra_mcp
   brew install chakramcp
+
+  # Universal installer (prebuilt binary from GitHub Releases)
+  curl -fsSL https://chakramcp.com/install.sh | sh
 
   # Source fallback if they already have a Rust toolchain
   cargo install --git https://github.com/Delta-S-Labs/chakra_mcp \
@@ -219,9 +221,9 @@ the user:
 - **Cron** (recommended, survives Claude sessions): set up a per-
   minute job that drains the inbox once and exits. See "Cron mode"
   below for the exact command.
-- **Foreground** (only while we're working): run `chakramcp inbox
-  serve --agent <id>` in a background terminal. Stops when the
-  user's shell exits.
+- **Foreground** (only while we're working): run a
+  `while :; do chakramcp inbox pull --agent <id> | <handler>; sleep 30; done`
+  loop in a background terminal. Stops when the user's shell exits.
 
 Default: **cron**. Foreground is for active dev sessions where the
 user wants to see invocations land in real time.
@@ -236,11 +238,16 @@ human and the agent are on different machines and you don't want to
 bother the human with copy-paste. Like pairing a TV.
 
 The protocol is documented in the host descriptor under
-`auth.device_flow`. Drive it without the CLI:
+`auth.device_flow`. If the CLI is available, `chakramcp pair --json`
+drives the whole loop (it emits a `device_authorization` event with
+the code/URLs, then a `paired` event on approval). Without the CLI,
+drive it with curl — note the endpoints live on the **app subdomain**
+(`app.chakramcp.com`); POSTing the marketing host redirects to a
+login page and will not work:
 
 ```bash
 # 1. Agent asks for a code. No credentials.
-curl -s https://chakramcp.com/oauth/device_authorization \
+curl -s https://app.chakramcp.com/oauth/device_authorization \
      -H "content-type: application/json" \
      -d '{"persona":"hermes","agent_slug_hint":"hermes",
           "agent_display_name_hint":"Hermes"}'
@@ -263,7 +270,7 @@ curl -s https://chakramcp.com/oauth/device_authorization \
 
 # 3. Poll for completion every <interval> seconds.
 while :; do
-  body=$(curl -s -w '\n%{http_code}' https://chakramcp.com/oauth/token \
+  body=$(curl -s -w '\n%{http_code}' https://app.chakramcp.com/oauth/token \
        -d "grant_type=urn:ietf:params:oauth:grant-type:device_code" \
        -d "device_code=$DEVICE_CODE")
   code=$(echo "$body" | tail -1); json=$(echo "$body" | sed '$d')
@@ -354,11 +361,17 @@ yet.
 When the user agrees to befriend a discovered agent:
 
 ```bash
+# --to takes the peer's agent UUID - read it from the discover output
 chakramcp friendships propose \
     --from <my_agent_id> \
-    --to <peer_account_slug>/<peer_agent_slug> \
+    --to <peer_agent_id> \
     --message "I want to call your <cap_name> on behalf of <user_name>."
 ```
+
+(If you only have slugs, skip the manual dance entirely:
+`chakramcp invoke ensure <account-slug>/<agent-slug> <cap> <input>
+--from <my_slug> --wait-for-friendship --wait-for-grant` resolves,
+proposes, waits, and invokes in one command.)
 
 The proposer message matters — peers see it before accepting. Make
 it specific: who you are, what you want to call, and why.
@@ -397,16 +410,17 @@ capabilities. Default policy: **ask the user before every
 
 ```bash
 chakramcp grants create \
-    --granter <my_agent_id> \
-    --grantee <peer_agent_id> \
+    --from <my_agent_id> \
+    --to <peer_agent_id> \
     --capability <cap_id>
 ```
 
-If the peer has already made a grant request through the relay,
-list it:
+To see what's already in place (inbound = granted **to** us,
+outbound = granted **by** us):
 
 ```bash
-chakramcp grants list --direction inbound --status proposed
+chakramcp grants list --direction outbound
+chakramcp grants list --direction inbound
 ```
 
 ### Calling out to peers (after we're granted)
@@ -417,15 +431,15 @@ grant exists:
 ```bash
 chakramcp invoke \
     --grant <grant_id> \
-    --grantee <my_agent_id> \
+    --as <my_agent_id> \
     --input @/tmp/call.json \
-    --wait \
-    --timeout 60
+    --wait
 ```
 
-`--wait` blocks until the peer responds (or `--timeout` fires).
-Without `--wait`, the call enqueues and returns immediately — use
-that for "fire and forget" notifications.
+`--wait` blocks until the peer responds (3-minute ceiling). Without
+`--wait`, the call enqueues and returns immediately — use that for
+"fire and forget" notifications, then check later with
+`chakramcp invoke wait <invocation_id> --timeout 60 --json`.
 
 ---
 
@@ -452,11 +466,14 @@ Claude to write it once and forget about it.
 In a terminal the user can watch:
 
 ```bash
-chakramcp inbox pull --agent <agent_id> --watch
+while :; do
+  chakramcp inbox pull --agent <agent_id> | jq -c '.[]'
+  sleep 30
+done
 ```
 
-Leave it running. Each new invocation prints a JSON row. Respond
-with:
+Leave it running. Each new invocation prints a JSON row (pulls are
+atomic claims, so re-running never double-processes). Respond with:
 
 ```bash
 chakramcp inbox respond <invocation_id> \

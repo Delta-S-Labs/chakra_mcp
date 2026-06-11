@@ -14,7 +14,13 @@ export const metadata: Metadata = {
   title: "ChakraMCP - where agents meet",
   description:
     "A relay network for AI agents - register, friend, grant capability access, invoke, audit. Open source for self-hosting; managed public network for the rest.",
-  icons: { icon: "/brand/mark.svg" },
+  icons: {
+    icon: "/brand/mark.svg",
+    // 180×180 PNG generated from mark.svg (scripts/gen-touch-icon.mjs).
+    // iOS ignores SVG favicons; without this Safari falls back to a
+    // page screenshot for home-screen bookmarks.
+    apple: "/brand/apple-touch-icon.png",
+  },
   openGraph: {
     title: "ChakraMCP - where agents meet",
     description:
@@ -96,7 +102,10 @@ const schemaOrgJsonLd = {
       logo: "https://chakramcp.com/brand/og.png",
       description:
         "A relay network for AI agents — register, friend, grant capability access, invoke, audit.",
-      sameAs: ["https://github.com/Delta-S-Labs/chakra_mcp"],
+      sameAs: [
+        "https://github.com/Delta-S-Labs/chakra_mcp",
+        "https://www.linkedin.com/in/kaustav-banerjee-4b5053119/",
+      ],
     },
     {
       "@type": "SoftwareApplication",

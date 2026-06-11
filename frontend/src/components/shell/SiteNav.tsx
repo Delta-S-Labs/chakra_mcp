@@ -36,27 +36,13 @@ export default function SiteNav({
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
-  if (!isLoggedIn) {
-    // Logged-out visitors get one prominent call to action. The label
-    // mirrors what an agent owner reading the page would expect to
-    // see — "Sign in" is more familiar than "Pair an agent."
-    return (
-      <nav className="site-nav" aria-label="Primary">
-        <Link
-          href="/login"
-          className={"nav-link" + (isActive("/login") ? " active" : "")}
-        >
-          Sign in
-        </Link>
-      </nav>
-    );
-  }
-
-  // Logged-in visitors see the two-tab nav. Docs first, then App —
-  // Docs is the breadth, App is where they end up doing actual work.
+  // Everyone gets the content tabs; the last slot depends on auth
+  // state — "App" for signed-in users, "Sign in" for visitors.
   const tabs = [
+    { label: "Use cases", href: "/use-cases" },
+    { label: "FAQ", href: "/faq" },
     { label: "Docs", href: "/docs" },
-    { label: "App", href: "/app" },
+    isLoggedIn ? { label: "App", href: "/app" } : { label: "Sign in", href: "/login" },
   ];
 
   return (

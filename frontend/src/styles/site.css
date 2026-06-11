@@ -38,6 +38,16 @@ body::before {
 
 .site-main { display: grid; gap: 6rem; padding: 2rem 0 6rem; position: relative; z-index: 1; }
 
+/* Narrow screens: the four-tab nav (Use cases / FAQ / Docs / App)
+   no longer fits beside the brand lockup on a phone. Let the header
+   wrap onto two rows, drop the kicker line, and tighten the pills. */
+@media (max-width: 720px) {
+  .site-header { flex-wrap: wrap; gap: 0.5rem 1rem; padding: 0.7rem 0.85rem; }
+  .brand-kicker { display: none; }
+  .site-nav { flex-wrap: wrap; }
+  .nav-link { min-height: 2.2rem; padding: 0.34rem 0.7rem; font-size: 0.66rem; letter-spacing: 0.06em; }
+}
+
 .hero-block { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 2rem; align-items: start; padding-top: 3rem; }
 .hero-copy { display: grid; gap: 1.5rem; align-content: start; }
 .eyebrow { font-family: var(--font-display); font-weight: 700; font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-soft); }
