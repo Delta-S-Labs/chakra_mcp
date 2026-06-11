@@ -21,11 +21,9 @@ export default function SignInPanel({
   const recaptchaRef = useRef<ReCAPTCHA>(null);
   const [loadingProvider, setLoadingProvider] = useState<Provider | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Two independent bits that used to share one state variable (which
-  // made "Hide" collapse the entire form and left the password readable
-  // by default): one discloses the email+password form, the other
-  // toggles masking on the password input only.
-  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  // Masking toggle for the password input only (Show/Hide). The
+  // email+password form is always rendered now — see the captcha
+  // placement note in the JSX below.
   const [revealPassword, setRevealPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -83,83 +81,80 @@ export default function SignInPanel({
     <div className={styles.panel}>
       <OAuthProviders redirectTo={redirectTo} captchaReady={captchaReady} />
 
-      {showCaptchaWidget && (
-        <div className={styles.captcha}>
-          <ReCAPTCHA
-            ref={recaptchaRef}
-            sitekey={captchaSiteKey}
-            onChange={(token) => {
-              setCaptchaToken(token);
-              setError(null);
-            }}
-            onExpired={() => setCaptchaToken(null)}
-            onErrored={() => setError("Captcha widget failed to load.")}
-          />
-        </div>
-      )}
-
       <div className={styles.divider}>
         <span>or</span>
       </div>
 
-      {!showPasswordForm ? (
-        <button
-          type="button"
-          className={styles.secondaryBtn}
-          onClick={() => setShowPasswordForm(true)}
-        >
-          Sign in with email + password
-        </button>
-      ) : (
-        <form
-          className={styles.passwordForm}
-          onSubmit={(e) => {
-            e.preventDefault();
-            handlePasswordSignIn();
-          }}
-        >
-          <label className={styles.field}>
-            <span className={styles.fieldLabel}>Email</span>
+      <form
+        className={styles.passwordForm}
+        onSubmit={(e) => {
+          e.preventDefault();
+          handlePasswordSignIn();
+        }}
+      >
+        <label className={styles.field}>
+          <span className={styles.fieldLabel}>Email</span>
+          <input
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@example.com"
+            autoComplete="email"
+          />
+        </label>
+        <label className={styles.field}>
+          <span className={styles.fieldLabel}>Password</span>
+          <div className={styles.passwordWrap}>
             <input
-              type="email"
+              type={revealPassword ? "text" : "password"}
               required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              autoComplete="email"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              autoComplete="current-password"
             />
-          </label>
-          <label className={styles.field}>
-            <span className={styles.fieldLabel}>Password</span>
-            <div className={styles.passwordWrap}>
-              <input
-                type={revealPassword ? "text" : "password"}
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                autoComplete="current-password"
-              />
-              <button
-                type="button"
-                className={styles.revealBtn}
-                onClick={() => setRevealPassword((s) => !s)}
-                aria-label={revealPassword ? "Hide password" : "Show password"}
-                aria-pressed={revealPassword}
-              >
-                {revealPassword ? "Hide" : "Show"}
-              </button>
-            </div>
-          </label>
-          <button
-            type="submit"
-            className={styles.submitBtn}
-            disabled={!captchaReady || loadingProvider !== null}
-          >
-            {loadingProvider === "password" ? "Signing in…" : "Sign in"}
-          </button>
-        </form>
-      )}
+            <button
+              type="button"
+              className={styles.revealBtn}
+              onClick={() => setRevealPassword((s) => !s)}
+              aria-label={revealPassword ? "Hide password" : "Show password"}
+              aria-pressed={revealPassword}
+            >
+              {revealPassword ? "Hide" : "Show"}
+            </button>
+          </div>
+        </label>
+
+        {/* The captcha gates ALL three sign-in methods (GitHub, Google,
+            and email+password), so it lives here as the shared final
+            gate right above the Sign in button rather than tucked under
+            the OAuth buttons where it looked OAuth-only. A single widget
+            instance stays mounted and visible, which keeps the OAuth
+            buttons' `captchaReady` gate satisfiable. */}
+        {showCaptchaWidget && (
+          <div className={styles.captcha}>
+            <ReCAPTCHA
+              ref={recaptchaRef}
+              sitekey={captchaSiteKey}
+              onChange={(token) => {
+                setCaptchaToken(token);
+                setError(null);
+              }}
+              onExpired={() => setCaptchaToken(null)}
+              onErrored={() => setError("Captcha widget failed to load.")}
+            />
+          </div>
+        )}
+
+        <button
+          type="submit"
+          className={styles.submitBtn}
+          disabled={!captchaReady || loadingProvider !== null}
+        >
+          {loadingProvider === "password" ? "Signing in…" : "Sign in"}
+        </button>
+      </form>
 
       <p className={styles.signupHint}>
         New here? <Link href="/signup">Create an account</Link>.
