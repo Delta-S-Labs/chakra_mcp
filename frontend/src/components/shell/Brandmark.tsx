@@ -6,7 +6,7 @@ export default function Brandmark() {
       <div className="brand-mark">
         <Image
           src="/brand/mark.svg"
-          alt=""
+          alt="ChakraMCP logo"
           width={22}
           height={22}
           className="brand-mark-icon"

@@ -21,16 +21,25 @@ function Example({ caption, children }: ExampleProps) {
 
 type ExamplesProps = {
   children: ReactNode;
+  /** Eyebrow label above the headline. */
+  eyebrow?: string;
+  /**
+   * Heading element for the section headline. The landing page used to
+   * mount this under its own h1, so it defaulted to h2; the standalone
+   * /use-cases page passes "h1" to make the headline the page title.
+   */
+  headingAs?: "h1" | "h2";
 };
 
-export default function Examples({ children }: ExamplesProps) {
+export default function Examples({ children, eyebrow = "Examples", headingAs = "h2" }: ExamplesProps) {
+  const Heading = headingAs;
   return (
     <section className={styles.section} aria-labelledby="examples-heading">
       <header className={styles.sectionHead}>
-        <div className={styles.sectionEyebrow}>Examples</div>
-        <h2 id="examples-heading" className={styles.sectionHeadline}>
+        <div className={styles.sectionEyebrow}>{eyebrow}</div>
+        <Heading id="examples-heading" className={styles.sectionHeadline}>
           What this looks like in practice.
-        </h2>
+        </Heading>
         <p className={styles.sectionLead}>
           A few stories from the network. Some are routine. Some are the kind of thing that used
           to need a human in the loop at 3am.

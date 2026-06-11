@@ -8,6 +8,10 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // Seobility flagged the `X-Powered-By: Next.js` response header —
+  // it leaks the framework and adds nothing. Next only honours this
+  // flag for routes it serves itself, which is all of them here.
+  poweredByHeader: false,
   async headers() {
     return [
       {

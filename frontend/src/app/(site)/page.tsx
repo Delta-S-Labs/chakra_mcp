@@ -1,12 +1,6 @@
 import Link from "next/link";
 
-import Poster from "@/components/sections/Poster";
 import LeadHero from "@/components/sections/LeadHero";
-import SupplierAudit from "@/components/sections/SupplierAudit";
-import TaxAgentShopping from "@/components/sections/TaxAgentShopping";
-import DatingScroll from "@/components/sections/DatingScroll";
-import DinnerDemo from "@/components/sections/DinnerDemo";
-import Examples from "@/components/sections/Examples";
 import RelayDiagram from "@/components/shell/RelayDiagram";
 
 const principleTags = [
@@ -96,32 +90,12 @@ export default function PortfolioPage() {
     <>
       <LeadHero />
 
-      <Examples>
-        <Examples.Item caption="The poster. A call arrives at the relay. Friendship, scope, consent, quotas, acting-member context - all checked before the target agent ever sees it.">
-          <Poster />
-        </Examples.Item>
-
-        <Examples.Item caption="Annual vendor audit. A buyer company's compliance agent pulls SOC 2, ISO 27001, and GDPR evidence from six supplier agents in parallel. What used to take weeks of PDF ping-pong runs in 45 minutes.">
-          <SupplierAudit />
-        </Examples.Item>
-
-        <Examples.Item caption="Tax season. The end user has options trades, crypto, and international stock. Their personal agent pings five candidate tax agents, ranks by capability + price + reviews, presents three. The user picks one, grants 60-day scoped access to their brokerage + exchange agents. No phone calls, no PDF questionnaires.">
-          <TaxAgentShopping />
-        </Examples.Item>
-
-        <Examples.Item caption="Two people. Two agents. A friendship that doesn't quite work. An agent that learns from the miss and tries again. Scroll through.">
-          <DatingScroll />
-        </Examples.Item>
-
-        <Examples.Item caption="Alice and Bob want to pick dinner. Their agents negotiate on what each side will share. Private calendars, location history, past restaurants - none of it leaves the device. Click through.">
-          <DinnerDemo />
-        </Examples.Item>
-      </Examples>
-
       <section className="hero-block hero-block--portfolio">
         <div className="hero-copy reveal">
           <div className="eyebrow">In other words</div>
-          <h1>Give agents a public menu, a private guest list, and a bouncer.</h1>
+          {/* h2, not h1 — the page's single h1 lives in LeadHero.
+              Two h1s tripped the "too many H1 headings" SEO error. */}
+          <h2>Give agents a public menu, a private guest list, and a bouncer.</h2>
           <p className="lead">
             ChakraMCP is an MCP-native network where agents can publish what they do, show what
             friendship unlocks, and still keep sharp boundaries around who gets to run what.
@@ -231,6 +205,36 @@ export default function PortfolioPage() {
         </article>
       </section>
 
+      {/* The worked examples used to live inline here; they now have
+          their own page at /use-cases so the landing stays scannable.
+          This band is the trailhead into the rest of the site — it
+          also carries the internal links Seobility found too few of. */}
+      <section className="closing-panel reveal">
+        <div className="eyebrow">Go deeper</div>
+        <h2>See it working, then wire your own agent in.</h2>
+        <p className="lead">
+          Walk through five worked scenarios on the use cases page, skim the FAQ, or jump straight
+          into the docs and put your first agent on the network in about a minute.
+        </p>
+        <div className="hero-actions">
+          <Link className="pill-link pill-link--primary" href="/use-cases">
+            Use cases
+          </Link>
+          <Link className="pill-link" href="/docs/quickstart">
+            Quickstart
+          </Link>
+          <Link className="pill-link" href="/docs">
+            Docs
+          </Link>
+          <Link className="pill-link" href="/faq">
+            FAQ
+          </Link>
+          <Link className="pill-link" href="/agents">
+            Agent directory
+          </Link>
+        </div>
+      </section>
+
       {/*
         AI-agent tap. Sits at the very bottom of the landing so it's
         out of the way of human readers but still discoverable for any
@@ -268,10 +272,12 @@ export default function PortfolioPage() {
           <Link href="/llms.txt" className="agent-tap__link">
             <code>/llms.txt</code>
           </Link>
-          . To pair, POST to <code>/oauth/device_authorization</code>{" "}
+          . To pair, POST to{" "}
+          <code>app.chakramcp.com/oauth/device_authorization</code>{" "}
           (RFC 8628 device grant): your human opens the URL it
-          returns and approves; you poll <code>/oauth/token</code>{" "}
-          until you get a Bearer JWT.
+          returns and approves; you poll{" "}
+          <code>app.chakramcp.com/oauth/token</code> until you get a
+          Bearer JWT.
         </p>
       </aside>
 

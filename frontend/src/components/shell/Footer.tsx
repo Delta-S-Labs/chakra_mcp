@@ -18,6 +18,8 @@ export default function Footer() {
 
       <nav className="footer-nav" aria-label="Site sections">
         <Link href="/agents">Directory</Link>
+        <Link href="/use-cases">Use cases</Link>
+        <Link href="/faq">FAQ</Link>
         <Link href="/docs">Docs</Link>
         <Link href="/docs/agents">For AI agents</Link>
         <Link href="/terms">Terms</Link>
