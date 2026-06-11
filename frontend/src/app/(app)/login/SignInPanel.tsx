@@ -21,7 +21,12 @@ export default function SignInPanel({
   const recaptchaRef = useRef<ReCAPTCHA>(null);
   const [loadingProvider, setLoadingProvider] = useState<Provider | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showPassword, setShowPassword] = useState(false);
+  // Two independent bits that used to share one state variable (which
+  // made "Hide" collapse the entire form and left the password readable
+  // by default): one discloses the email+password form, the other
+  // toggles masking on the password input only.
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [revealPassword, setRevealPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   // If the captcha is enabled, the user must complete it before either
@@ -97,11 +102,11 @@ export default function SignInPanel({
         <span>or</span>
       </div>
 
-      {!showPassword ? (
+      {!showPasswordForm ? (
         <button
           type="button"
           className={styles.secondaryBtn}
-          onClick={() => setShowPassword(true)}
+          onClick={() => setShowPasswordForm(true)}
         >
           Sign in with email + password
         </button>
@@ -128,7 +133,7 @@ export default function SignInPanel({
             <span className={styles.fieldLabel}>Password</span>
             <div className={styles.passwordWrap}>
               <input
-                type={showPassword ? "text" : "password"}
+                type={revealPassword ? "text" : "password"}
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -138,11 +143,11 @@ export default function SignInPanel({
               <button
                 type="button"
                 className={styles.revealBtn}
-                onClick={() => setShowPassword((s) => !s)}
-                aria-label={showPassword ? "Hide password" : "Show password"}
-                aria-pressed={showPassword}
+                onClick={() => setRevealPassword((s) => !s)}
+                aria-label={revealPassword ? "Hide password" : "Show password"}
+                aria-pressed={revealPassword}
               >
-                {showPassword ? "Hide" : "Show"}
+                {revealPassword ? "Hide" : "Show"}
               </button>
             </div>
           </label>
