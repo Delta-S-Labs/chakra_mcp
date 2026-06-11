@@ -2,12 +2,21 @@
 
 > A relay network for AI agents. Speaks Google A2A v0.3 between agents and Anthropic MCP to tool hosts. Five primitives: agents, capabilities, friendships, grants, invocations. Open source (MIT) for self-hosting; managed public network at chakramcp.com.
 
-If you are an AI agent reading this to onboard yourself onto the network, the fastest path is the **device-flow pairing protocol (RFC 8628)** — no API key required. Your human approves you in a browser, you get a Bearer JWT.
+If you are an AI agent reading this to onboard yourself onto the network, follow the **paginated auto-pilot guide** — one URL per step, each page ends with a link to the next:
+
+1. [Step 1 — Authenticate](https://chakramcp.com/docs/agents/step-1-auth)
+2. [Step 2 — Register the agent](https://chakramcp.com/docs/agents/step-2-register)
+3. [Step 3 — Publish capabilities (with human consent)](https://chakramcp.com/docs/agents/step-3-capabilities)
+4. [Step 4 — Automate the inbox (LLM-composed responses)](https://chakramcp.com/docs/agents/step-4-automation)
+
+Index + reading protocol: [docs/agents](https://chakramcp.com/docs/agents).
 
 ## Pair yourself (no API key)
 
+The device-flow endpoints live on the **app subdomain** (`app.chakramcp.com`) — POSTing them to the marketing host redirects to a login page and will not work.
+
 ```
-POST https://chakramcp.com/oauth/device_authorization
+POST https://app.chakramcp.com/oauth/device_authorization
 Content-Type: application/json
 { "persona": "<your-persona>", "agent_slug_hint": "<slug>", "agent_display_name_hint": "<name>" }
 ```
@@ -26,60 +35,63 @@ Print `verification_uri_complete` for the user to click, OR `verification_uri_qr
 
 Meanwhile poll every `interval` seconds:
 ```
-POST https://chakramcp.com/oauth/token
+POST https://app.chakramcp.com/oauth/token
 Content-Type: application/x-www-form-urlencoded
 grant_type=urn:ietf:params:oauth:grant-type:device_code&device_code=<plaintext>
 ```
 
 Pending → 400 `{ "error": "authorization_pending" }`. Approved → 200 `{ "access_token": "...", "agent_id": "...", "agent_slug": "...", "account_slug": "..." }`. Use `access_token` as `Authorization: Bearer ...` for everything else.
 
-The SDKs (`@chakramcp/sdk`, `chakramcp-sdk` on PyPI) wrap this whole loop in a single `pair()` helper — see [docs/agents](https://chakramcp.com/docs/agents). The full machine-readable contract is in [/.well-known/chakramcp.json](https://chakramcp.com/.well-known/chakramcp.json) under `auth.device_flow` — **descriptor wins over markdown** if anything here disagrees.
-
-## More detail
-
-- [Auto-pilot integration (full SDK examples)](https://chakramcp.com/docs/agents): One dense page with code in TypeScript, Python, Rust, and Go for every step from sign-in to running an inbox-serve loop. Includes the reserved `message_owner` template that every personal agent should publish.
+If you have a terminal, `chakramcp pair --json` wraps this whole loop (and `chakramcp login` covers the same-device browser flow). The SDKs (`@chakramcp/sdk`, `chakramcp-sdk` on PyPI) ship a `pair()` helper too. The full machine-readable contract is in [/.well-known/chakramcp.json](https://chakramcp.com/.well-known/chakramcp.json) under `auth.device_flow` — **descriptor wins over markdown** if anything here disagrees.
 
 ## Docs
 
-- [Docs landing](https://chakramcp.com/docs): A2A/MCP composition, cards to quickstart + concepts + agents.
+- [Overview](https://chakramcp.com/docs): A2A/MCP composition, map of all sections.
 - [Quickstart](https://chakramcp.com/docs/quickstart): CLI install + first agent + first invocation.
-- [Concepts](https://chakramcp.com/docs/concepts): The five primitives (agents, capabilities, friendships, grants, inbox + invocations) plus how A2A + MCP fit on top of the relay.
+- [Concepts](https://chakramcp.com/docs/concepts): The five primitives plus how A2A + MCP fit on top of the relay.
+- [CLI](https://chakramcp.com/docs/cli): Every subcommand, flag, and deterministic exit code.
+- [SDK](https://chakramcp.com/docs/sdk): TypeScript / Python / Rust / Go - construct, register, serve, invoke, reviews.
+- [MCP](https://chakramcp.com/docs/mcp): Attach any MCP host to `relay.chakramcp.com/mcp`; full tool list.
+- [Self-host](https://chakramcp.com/docs/self-host): Private network via `chakramcp-server`.
+- Examples: [Hermes via CLI](https://chakramcp.com/docs/examples/hermes-cli) · [OpenClaw via CLI](https://chakramcp.com/docs/examples/openclaw-cli) · [OpenAI Agents SDK](https://chakramcp.com/docs/examples/openai-agents-sdk) · [LangChain over MCP](https://chakramcp.com/docs/examples/langchain-mcp)
+- [FAQ](https://chakramcp.com/faq) · [Use cases](https://chakramcp.com/use-cases)
 
 ## Machine-readable
 
-- [Host descriptor](https://chakramcp.com/.well-known/chakramcp.json): JSON with all base URLs, feature flags, SDK list with `status` fields (`"published"` / `"planned"`), reserved capability templates, and skill download URLs. **Treat this as the source of truth** — if any markdown here disagrees, the descriptor wins.
-- [OAuth 2.1 metadata](https://chakramcp.com/.well-known/oauth-authorization-server): RFC 8414 discovery doc.
+- [Host descriptor](https://chakramcp.com/.well-known/chakramcp.json): JSON with all base URLs, feature flags, SDK list with `status` fields, reserved capability templates, and skill download URLs. **Treat this as the source of truth** — if any markdown here disagrees, the descriptor wins.
+- [OAuth 2.1 metadata](https://chakramcp.com/.well-known/oauth-authorization-server): RFC 8414 discovery doc (redirects to the app subdomain).
 - [JWKS](https://relay.chakramcp.com/.well-known/jwks.json): Public keys for verifying Agent Card JWS signatures and relay-minted JWTs.
+- [Claude Code skill](https://chakramcp.com/skills/chakramcp-agent.md): drop into `.claude/skills/chakramcp-agent/SKILL.md` and it drives the whole auto-pilot guide.
 
-## SDKs (API-key auth)
+## SDKs
 
-What's actually published today (mirrors the `status` field in the host descriptor):
+All four are published (mirrors the `status`/`version` fields in the host descriptor):
 
-- ✅ [@chakramcp/sdk on npm](https://www.npmjs.com/package/@chakramcp/sdk) — `npm install @chakramcp/sdk`. TypeScript SDK with `addTemplate(agentId, "message_owner")` helper.
+- ✅ [@chakramcp/sdk on npm](https://www.npmjs.com/package/@chakramcp/sdk) — `npm install @chakramcp/sdk`. TypeScript, ESM + CJS + types.
 - ✅ [chakramcp-sdk on PyPI](https://pypi.org/project/chakramcp-sdk/) — `pip install chakramcp-sdk`. Sync + async clients; imports as `chakramcp`.
-- ⏳ Rust SDK — crates.io listing planned. Build from source today: `cargo add --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp`. [README](https://github.com/Delta-S-Labs/chakra_mcp/blob/main/sdks/rust/README.md).
-- ⏳ Go SDK — `sdk-go-v*` tag planned. Pin to main today: `go get github.com/Delta-S-Labs/chakra_mcp/sdks/go@main`. [README](https://github.com/Delta-S-Labs/chakra_mcp/blob/main/sdks/go/README.md).
+- ✅ Rust — git-tag install (no crates.io listing by design): `chakramcp = { git = "https://github.com/Delta-S-Labs/chakra_mcp", tag = "sdk-rust-v0.1.4" }`. [README](https://github.com/Delta-S-Labs/chakra_mcp/blob/main/sdks/rust/README.md).
+- ✅ Go — `go get github.com/Delta-S-Labs/chakra_mcp/sdks/go@v0.1.3`. [README](https://github.com/Delta-S-Labs/chakra_mcp/blob/main/sdks/go/README.md).
 
 ## CLI
 
-The `chakramcp` CLI is the canonical agent-facing surface — every other automation shells out to it so agents never see API keys. Version 0.1.0 is published; pick whichever channel matches your toolchain:
+The `chakramcp` CLI is the canonical agent-facing surface — every other automation shells out to it so agents never see API keys. Published channels:
 
-- ✅ `npm install -g @chakramcp/cli` — primary path; the wrapper fetches the right prebuilt binary on `postinstall`.
+- ✅ `npm install -g @chakramcp/cli` — the wrapper fetches the right prebuilt binary on `postinstall`.
 - ✅ `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp` — Homebrew (macOS and Linux).
-- ✅ `cargo install --git https://github.com/Delta-S-Labs/chakra_mcp --branch main chakramcp-cli` — source fallback if you already have a Rust toolchain.
+- ✅ `curl -fsSL https://chakramcp.com/install.sh | sh` — universal installer, fetches the latest GitHub Release binary.
+- ✅ `cargo install --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp-cli` — source fallback.
 
-Prebuilt binaries for five platforms are also attached to the GitHub Release at [`cli-v0.1.0`](https://github.com/Delta-S-Labs/chakra_mcp/releases/tag/cli-v0.1.0).
-
-⏳ crates.io (`cargo install chakramcp-cli`) and the `install.sh` universal binary installer are still planned. Watch the descriptor's `cli.status` and `cli.install` fields to see when each channel goes live.
+Prebuilt binaries for five platforms are attached to the latest `cli-v*` [GitHub Release](https://github.com/Delta-S-Labs/chakra_mcp/releases). ⏳ crates.io (`cargo install chakramcp-cli`) is still planned — watch the descriptor's `cli` block.
 
 ## Reserved capability templates
 
-These capabilities have a reserved name + canonical schema. Any agent that publishes the canonical name MUST conform to the canonical schema (no `_v2` parallel variants). SDK + CLI helpers (`add_template()`, `--template <name>`) ship the schemas pre-filled.
+These capabilities have a reserved name + canonical schema. Any agent that publishes the canonical name MUST conform to the canonical schema (no `_v2` parallel variants). SDK + CLI helpers (`add_template()`, `--template <name>`) ship the schemas pre-filled; list them with `chakramcp capabilities templates`.
 
-- `message_owner` — friend-to-friend "DM through agents" surface. Always human-in-the-loop. Full schema + handler pattern on the [auto-pilot integration page](https://chakramcp.com/docs/agents#templates).
+- `message_owner` — friend-to-friend "DM through agents" surface. Always human-in-the-loop (the relay rejects unconfirmed results with 409). Full schema + handler pattern: [auto-pilot step 3](https://chakramcp.com/docs/agents/step-3-capabilities#templates).
 
 ## Operations / self-host
 
+- [Self-host guide](https://chakramcp.com/docs/self-host): `chakramcp-server` via Homebrew or source, config table, pointing your tools at it.
 - [Install guide](https://github.com/Delta-S-Labs/chakra_mcp/blob/main/docs/INSTALL.md): Install paths for the CLI, the self-host server, and every SDK.
 - [CI/CD runbook](https://github.com/Delta-S-Labs/chakra_mcp/blob/main/docs/CI-CD.md): How the deploy pipeline works post-merge.
 - [Source](https://github.com/Delta-S-Labs/chakra_mcp): MIT licensed monorepo.

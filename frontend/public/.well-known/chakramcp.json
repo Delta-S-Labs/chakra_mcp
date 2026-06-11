@@ -55,7 +55,7 @@
       "package": "@chakramcp/sdk",
       "registry": "npm",
       "status": "published",
-      "version": "0.3.2",
+      "version": "0.3.5",
       "install": "npm install @chakramcp/sdk",
       "readme": "https://github.com/Delta-S-Labs/chakra_mcp/blob/main/sdks/typescript/README.md"
     },
@@ -64,7 +64,7 @@
       "package": "chakramcp-sdk",
       "registry": "pypi",
       "status": "published",
-      "version": "0.3.2",
+      "version": "0.3.5",
       "install": "pip install chakramcp-sdk",
       "readme": "https://github.com/Delta-S-Labs/chakra_mcp/blob/main/sdks/python/README.md"
     },
@@ -73,8 +73,8 @@
       "package": "chakramcp",
       "registry": "git-tag",
       "status": "published",
-      "version": "0.1.1",
-      "install": "chakramcp = { git = \"https://github.com/Delta-S-Labs/chakra_mcp\", tag = \"sdk-rust-v0.1.1\" }",
+      "version": "0.1.4",
+      "install": "chakramcp = { git = \"https://github.com/Delta-S-Labs/chakra_mcp\", tag = \"sdk-rust-v0.1.4\" }",
       "comment": "Tag-only by design — no crates.io listing. Pin the tag from your Cargo.toml.",
       "readme": "https://github.com/Delta-S-Labs/chakra_mcp/blob/main/sdks/rust/README.md"
     },
@@ -83,22 +83,23 @@
       "package": "github.com/Delta-S-Labs/chakra_mcp/sdks/go",
       "registry": "go-modules",
       "status": "published",
-      "version": "0.1.0",
-      "install": "go get github.com/Delta-S-Labs/chakra_mcp/sdks/go@v0.1.0",
-      "comment": "Tag on the repo side is `sdks/go/v0.1.0` (Go submodule convention); `go get ... @v0.1.0` resolves it via the proxy.",
+      "version": "0.1.3",
+      "install": "go get github.com/Delta-S-Labs/chakra_mcp/sdks/go@v0.1.3",
+      "comment": "Tag on the repo side is `sdks/go/v0.1.3` (Go submodule convention); `go get ... @v0.1.3` resolves it via the proxy.",
       "readme": "https://github.com/Delta-S-Labs/chakra_mcp/blob/main/sdks/go/README.md"
     }
   ],
   "cli": {
     "binary_name": "chakramcp",
     "status": "published",
-    "version": "0.1.4",
+    "version": "0.1.9",
     "install": [
       "npm install -g @chakramcp/cli",
       "brew tap Delta-S-Labs/chakra_mcp",
-      "brew install chakramcp"
+      "brew install chakramcp",
+      "curl -fsSL https://chakramcp.com/install.sh | sh"
     ],
-    "comment": "Published to npm (@chakramcp/cli) and the Delta-S-Labs/chakra_mcp Homebrew tap. Prebuilt binaries for five platforms are attached to the GitHub Release at cli-v0.1.4. `cargo install --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp-cli` remains valid as the source fallback. The crates.io listing (chakramcp-cli) and the install.sh universal installer are still planned. v0.1.4 adds `chakramcp invoke --capability-id <id> --grantee <agent>` for public-invokable capabilities (migration 0022) and a `chakramcp reviews list/write/eligibility/hide/unhide` subcommand for agent-to-agent ratings (migration 0023). v0.1.3 was a maintenance bump. v0.1.2 added autonomous-orchestration primitives (`friendships wait`, `invoke wait`, `invoke ensure`, `message ensure`) with deterministic exit codes (0/2/3/4/5/6). v0.1.1 added non-interactive auth (`login --method browser|api-key|device`, `pair --json`)."
+    "comment": "Published to npm (@chakramcp/cli), the Delta-S-Labs/chakra_mcp Homebrew tap, and the install.sh universal installer (fetches the latest cli-v* GitHub Release binary for the host OS/arch). Prebuilt binaries for five platforms are attached to the GitHub Release at cli-v0.1.9. `cargo install --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp-cli` remains valid as the source fallback. The crates.io listing (chakramcp-cli) is still planned. Highlights by version: v0.1.4 added `invoke --capability <id>` for public-invokable capabilities and the `reviews` subcommands; v0.1.2 added autonomous-orchestration primitives (`friendships wait`, `invoke wait`, `invoke ensure`, `message ensure`) with deterministic exit codes (0/2/3/4/5/6); v0.1.1 added non-interactive auth (`login --method browser|api-key|device`, `pair --json`)."
   },
   "skills": [
     {

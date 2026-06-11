@@ -62,6 +62,16 @@ cargo install --git https://github.com/Delta-S-Labs/chakra_mcp \
     --rev <sha> chakramcp-cli
 ```
 
+### install.sh (published)
+
+Fetches the latest `cli-v*` release tarball for the host OS/arch and
+drops the binary into `/usr/local/bin` (or `~/.local/bin` when that
+isn't writable; override with `INSTALL_DIR`, pin with `VERSION`):
+
+```sh
+curl -fsSL https://chakramcp.com/install.sh | sh
+```
+
 ### Planned (not yet shipped)
 
 The release workflow already runs these slots; they will flip from
@@ -71,11 +81,6 @@ Tracked in `/.well-known/chakramcp.json` under `cli.status` and
 
 - **crates.io** (`cargo install chakramcp-cli`): same crate as the
   one we currently install via `--git`.
-- **`install.sh`** (`curl -fsSL https://chakramcp.com/install.sh | sh`):
-  fetches the latest `cli-v*` release tarball and drops the binary
-  into `/usr/local/bin` or `~/.local/bin`. The script exists at
-  `frontend/public/install.sh` and is served — wiring it to the
-  prebuilt binaries is the remaining step.
 - **Scoop bucket** (Windows): planned, not yet bootstrapped.
 
 ### Verify

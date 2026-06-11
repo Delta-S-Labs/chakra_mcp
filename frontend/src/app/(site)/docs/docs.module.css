@@ -308,6 +308,183 @@
   border-color: color-mix(in oklab, var(--accent-coral) 70%, var(--ink));
 }
 
+/* ─── Docs shell: left nav sidebar + content column ─────────
+ * Owned by docs/layout.tsx + DocsSidebar.tsx. Desktop gets a sticky
+ * 250px rail; below 960px the rail collapses behind the .menuToggle
+ * disclosure button (mobile-friendly, no horizontal squeeze). */
+
+.docsLayout {
+  width: min(1240px, calc(100% - 1.5rem));
+  margin: 0 auto;
+  /* .docsLayout is itself a grid item of `.site-main` (display: grid).
+   * Grid items default to `min-width: auto`, so a wide <pre> inside the
+   * prose column inflates the implicit track past the viewport and the
+   * body's overflow-x: hidden clips every line — same trap documented
+   * on `.shell` above. min-width: 0 lets the track stay at viewport
+   * width and the inner code blocks scroll instead. */
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.docsContent {
+  min-width: 0;
+}
+
+.sidebar {
+  display: none; /* mobile default: closed */
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: color-mix(in oklab, var(--paper-soft) 92%, white 8%);
+  padding: 1rem;
+  margin: 0 0 1rem;
+}
+
+.sidebarOpen {
+  display: block;
+}
+
+.menuToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 1rem 0 0.75rem;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--paper-soft) 88%, white 12%);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.tabRow {
+  display: flex;
+  gap: 0.4rem;
+  margin: 0 0 0.75rem;
+}
+
+.tabBtn {
+  flex: 1;
+  text-align: center;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.45rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--line) !important;
+  color: var(--ink-muted) !important;
+  text-decoration: none !important;
+  background: transparent;
+}
+
+.tabBtnActive {
+  background: var(--accent-coral);
+  color: var(--paper-soft) !important;
+  border-color: color-mix(in oklab, var(--accent-coral) 70%, var(--ink)) !important;
+}
+
+.search {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  background: var(--paper);
+  color: var(--ink);
+  margin: 0 0 0.9rem;
+}
+
+.search:focus {
+  outline: 2px solid color-mix(in oklab, var(--accent-coral) 55%, transparent);
+  outline-offset: 1px;
+}
+
+.searchEmpty {
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+  margin: 0.25rem 0 0.75rem;
+}
+
+.group {
+  margin: 0 0 1rem;
+}
+
+.groupLabel {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.64rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin: 0 0 0.4rem;
+}
+
+.navList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.navList li {
+  margin: 0;
+}
+
+.navLink {
+  display: block;
+  padding: 0.32rem 0.6rem;
+  border-radius: 0.5rem;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: var(--ink-soft) !important;
+  text-decoration: none !important;
+  border-bottom: none !important;
+}
+
+.navLink:hover {
+  background: color-mix(in oklab, var(--accent-butter) 30%, transparent);
+  color: var(--ink) !important;
+}
+
+.navLinkActive {
+  background: var(--accent-butter);
+  color: var(--ink) !important;
+  font-weight: 600;
+}
+
+@media (min-width: 960px) {
+  .docsLayout {
+    display: grid;
+    grid-template-columns: 250px minmax(0, 1fr);
+    gap: 2rem;
+    align-items: start;
+  }
+  .menuToggle {
+    display: none;
+  }
+  .sidebar {
+    display: block;
+    position: sticky;
+    top: 5.2rem; /* clears the floating site header */
+    max-height: calc(100vh - 6.2rem);
+    overflow-y: auto;
+    margin: 1rem 0 0;
+  }
+  /* Inside the two-column frame the prose column hugs the rail
+   * instead of centering in the remaining space. */
+  .docsContent .shell {
+    margin: 0;
+  }
+}
+
 /* TOC sidebar at >960px */
 
 @media (min-width: 960px) {

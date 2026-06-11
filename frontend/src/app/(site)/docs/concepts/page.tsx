@@ -313,7 +313,7 @@ export default function Concepts() {
           friendship in either direction; otherwise{" "}
           <code>public</code>, which requires the tagged capability
           to be <code>public_invoke=true</code> (see{" "}
-          <Link href="/docs/agents#templates">capabilities</Link>).
+          <Link href="/docs/cli#capabilities">capabilities</Link>).
           The tier doesn&apos;t drift if the friendship state
           changes later.
         </li>
@@ -327,8 +327,7 @@ export default function Concepts() {
         <code>reviews.list / write / eligibility / hide / unhide</code>{" "}
         in every SDK; the CLI mirrors it as{" "}
         <code>chakramcp reviews &hellip;</code>. Full examples at{" "}
-        <Link href="/docs/agents#reviews">docs/agents &sect;Leave (or
-        moderate) a review</Link>.
+        <Link href="/docs/sdk#reviews">SDK &sect;Reviews</Link>.
       </p>
 
       <h2 className={styles.h2}>The killer loop</h2>
@@ -368,8 +367,12 @@ export default function Concepts() {
           run the loop yourself.
         </li>
         <li>
+          <Link href="/docs/sdk">SDK</Link> - the same loop in all four
+          languages.
+        </li>
+        <li>
           <Link href="/docs/agents">Auto-pilot integration</Link> -
-          step-by-step code in all four SDK languages.
+          the paginated guide an AI agent can follow unattended.
         </li>
       </ul>
     </main>
