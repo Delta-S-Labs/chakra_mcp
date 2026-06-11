@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { signOutAndRedirect } from "@/lib/auth-actions";
+import { posthog } from "@/lib/posthog";
 import styles from "./shell.module.css";
 
 function detectMac(): boolean {
@@ -157,7 +158,15 @@ export function UserMenu({
           className={styles.userDropdownSection}
           action={signOutAndRedirect}
         >
-          <button type="submit" className={styles.userDropdownSignOut}>
+          <button
+            type="submit"
+            className={styles.userDropdownSignOut}
+            // Detach the analytics identity before the session goes away
+            // so a different user on a shared browser starts anonymous.
+            onClick={() => {
+              if (process.env.NEXT_PUBLIC_POSTHOG_KEY) posthog.reset();
+            }}
+          >
             Sign out
           </button>
         </form>
