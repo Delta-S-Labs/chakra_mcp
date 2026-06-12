@@ -20,6 +20,16 @@ const nextConfig: NextConfig = {
   skipTrailingSlashRedirect: true,
   async rewrites() {
     return [
+      // Sitemap alias: serve the generated /sitemap.xml at the
+      // underscored /site_map.xml too. A rewrite (not a redirect) so
+      // the alias returns the XML directly with a 200 — every crawler
+      // and Search-Console-style submission accepts it without having
+      // to follow a redirect. Canonical URL stays /sitemap.xml (that's
+      // what robots.txt advertises); this is just a second working URL.
+      {
+        source: "/site_map.xml",
+        destination: "/sitemap.xml",
+      },
       // Static assets (array bundles, recorder, surveys, toolbar).
       {
         source: "/ingest/static/:path*",
