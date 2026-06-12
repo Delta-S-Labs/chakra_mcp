@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { PostHogProvider } from "@/components/analytics/PostHogProvider";
 
 export const metadata: Metadata = {
   // metadataBase is the absolute origin every relative URL in this
@@ -148,7 +149,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
       </head>
-      <body>{children}</body>
+      <body>
+        <PostHogProvider>{children}</PostHogProvider>
+      </body>
     </html>
   );
 }

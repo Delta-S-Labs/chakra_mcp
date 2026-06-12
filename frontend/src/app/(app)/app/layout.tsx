@@ -6,6 +6,7 @@ import { AppNav } from "./AppNav";
 import { BottomTabBar } from "./BottomTabBar";
 import { CommandPalette } from "./CommandPalette";
 import { UserMenu } from "./UserMenu";
+import { PostHogIdentify } from "@/components/analytics/PostHogIdentify";
 import styles from "./shell.module.css";
 
 /**
@@ -35,10 +36,13 @@ export default async function AppShellLayout({ children }: { children: ReactNode
     redirect("/login?from=%2Fapp");
   }
 
-  const { name, email, image, is_admin } = session.user;
+  const { id, name, email, image, is_admin } = session.user;
 
   return (
     <div className={styles.page}>
+      {/* Identify the signed-in user to PostHog. Scoped to /app so the
+          marketing site stays fully anonymous. */}
+      <PostHogIdentify userId={id} email={email} name={name} />
       <div className={styles.shell}>
         <header className={styles.header}>
           <Link href="/" className={styles.brandmark} aria-label="ChakraMCP home">

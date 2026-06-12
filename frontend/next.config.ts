@@ -12,6 +12,27 @@ const nextConfig: NextConfig = {
   // it leaks the framework and adds nothing. Next only honours this
   // flag for routes it serves itself, which is all of them here.
   poweredByHeader: false,
+  // PostHog ingestion is reverse-proxied through our own origin (see
+  // the `/ingest` rewrites below): events stay first-party and survive
+  // ad-blockers. `skipTrailingSlashRedirect` keeps Next from 308-ing
+  // PostHog's trailing-slash API paths (e.g. /decide) before the
+  // rewrite runs.
+  skipTrailingSlashRedirect: true,
+  async rewrites() {
+    return [
+      // Static assets (array bundles, recorder, surveys, toolbar).
+      {
+        source: "/ingest/static/:path*",
+        destination: "https://us-assets.i.posthog.com/static/:path*",
+      },
+      // Event capture, /decide, /flags, etc. Keep this AFTER the static
+      // rule so /ingest/static/* doesn't fall through to the API host.
+      {
+        source: "/ingest/:path*",
+        destination: "https://us.i.posthog.com/:path*",
+      },
+    ];
+  },
   async headers() {
     return [
       {
