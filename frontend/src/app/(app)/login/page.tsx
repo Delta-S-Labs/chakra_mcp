@@ -42,7 +42,13 @@ export default async function LoginPage({
         </header>
 
         <div className={styles.card}>
-          <AlreadySignedIn />
+          {/* When we arrived here *because* the backend rejected the
+              token (session_expired), we know the session is dead even
+              if its embedded JWT exp is still nominally in the future
+              (e.g. revoked). Suppress the "Signed in as / Continue"
+              banner outright so the user just sees the login form,
+              never a Continue button that loops straight back here. */}
+          {!sessionExpired && <AlreadySignedIn />}
 
           {sessionExpired && (
             <div className={styles.notice} role="status">
