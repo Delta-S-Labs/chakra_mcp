@@ -29,7 +29,7 @@ export function initPostHog(): void {
   const key = process.env.NEXT_PUBLIC_POSTHOG_KEY;
   if (!key) return;
 
-  posthog.init(key, {
+  const config: Parameters<typeof posthog.init>[1] = {
     api_host: "/ingest",
     ui_host: "https://us.posthog.com",
     // App Router has no built-in route-change event; we capture
@@ -38,7 +38,18 @@ export function initPostHog(): void {
     capture_pageview: false,
     capture_pageleave: true,
     person_profiles: "identified_only",
-  });
+  };
+
+  // Send events as plain JSON, NOT gzip. Our `/ingest` reverse-proxy
+  // (Next.js rewrite on Netlify) corrupts gzipped request bodies in
+  // transit, so PostHog rejects every captured event with
+  // `400 failed to decode request: invalid GZIP data`. Proven with
+  // curl: the same gzip blob is `400` through /ingest but `200` sent
+  // straight to PostHog, and plain JSON is `200` through /ingest. This
+  // is why nothing showed up despite the SDK loading + firing.
+  // `disable_compression` is runtime-supported but missing from
+  // posthog-js's trimmed .d.ts, hence the spread + cast.
+  posthog.init(key, { ...config, disable_compression: true } as typeof config);
   initialized = true;
 }
 
