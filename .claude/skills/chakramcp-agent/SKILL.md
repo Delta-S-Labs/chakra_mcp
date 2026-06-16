@@ -305,7 +305,10 @@ publishing capabilities, `inbox.serve()`, etc.
   laptop with Bash. Just use `chakramcp login` (the table at the
   top of "Onboarding paths").
 
-The SDKs ship a `pair()` helper that wraps the whole loop — see
+The SDKs themselves are API-key only (`ck_…`) — there is no SDK
+`pair()` helper. Device pairing is the CLI's job: `chakramcp pair`
+(or the raw `/oauth/device_authorization` loop above) gets the
+credential; then hand the agent an API key for SDK use. See
 `https://chakramcp.com/docs/agents`. The descriptor wins over the
 markdown if anything here disagrees.
 

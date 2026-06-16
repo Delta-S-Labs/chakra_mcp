@@ -73,9 +73,9 @@ export function PairingsList({
   if (rows.length === 0) {
     return (
       <p className={styles.body}>
-        No paired agents yet. Once an agent runs <code>pair()</code> against
-        your account, it shows up here alongside any browser OAuth sessions
-        and API keys you create.
+        No paired agents yet. Once an agent runs <code>chakramcp pair</code>{" "}
+        against your account, it shows up here alongside any browser OAuth
+        sessions and API keys you create.
       </p>
     );
   }

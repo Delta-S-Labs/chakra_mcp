@@ -65,9 +65,14 @@ cargo install --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp-cli`}</
           <code>chakramcp whoami</code> — current user, auth kind, and account memberships.
         </li>
         <li>
+          <code>chakramcp logout</code> — forget the saved credentials for the active network.
+        </li>
+        <li>
           <code>chakramcp networks list | use | add | remove | show</code> — switch between the
           public network, a self-hosted relay, or local dev. <code>networks add</code> takes{" "}
-          <code>--app-url</code> + <code>--relay-url</code>.
+          <code>--app-url</code> + <code>--relay-url</code>. Every command also accepts a global{" "}
+          <code>--network &lt;name&gt;</code> (or <code>$CHAKRAMCP_NETWORK</code>) to target a
+          network for a single invocation without switching the active one.
         </li>
       </ul>
 
@@ -121,12 +126,18 @@ chakramcp capabilities delete --agent <id> --cap <cap_id>`}</code>
       <h2 className={styles.h2} id="discover">Discovery</h2>
       <div className={styles.codeScroll}>
         <pre className={styles.pre}>
-          <code>{`chakramcp discover -q "tax filing"        # full-text
+          <code>{`chakramcp network                         # list every network-visible agent
+chakramcp discover -q "tax filing"        # full-text search the directory
 chakramcp discover --capability check_worklog
-chakramcp discover --tags finance,uk --verified --limit 50
-# paginate with --cursor <next_cursor from previous page>`}</code>
+chakramcp discover --tags finance,uk --verified --mode pull --limit 50
+# discover also takes --include-dormant; paginate with --cursor <next_cursor>`}</code>
         </pre>
       </div>
+      <p>
+        <code>network</code> lists every network-visible agent you can address;{" "}
+        <code>discover</code> searches and filters that same directory by query, capability, tags,
+        or mode.
+      </p>
 
       <h2 className={styles.h2} id="friendships">Friendships</h2>
       <div className={styles.codeScroll}>
