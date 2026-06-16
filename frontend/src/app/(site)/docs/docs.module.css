@@ -234,6 +234,15 @@
    * — i.e. a single column at narrow widths instead of two cards
    * burst-cropped against the right edge of the viewport. */
   min-width: 0;
+  /* The grid is a <ul>; kill the list markers (the stray bullet dots
+   * that floated above each card). The global `ul { list-style-position:
+   * inside }` rendered the <li> markers as dots at the top of each grid
+   * cell. */
+  list-style: none;
+  padding: 0;
+}
+.cardGrid > li {
+  list-style: none;
 }
 .card { min-width: 0; }
 
@@ -252,6 +261,29 @@
 .card:hover {
   border-color: color-mix(in oklab, var(--accent-coral) 60%, var(--line)) !important;
   transform: translate3d(0, -1px, 0);
+}
+
+/* Icon chip at the top of each card — a rounded square in a soft coral
+ * tint with a line icon centered in it. Replaces the stray list bullet
+ * as the card's visual anchor. */
+.cardIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  margin: 0 0 0.9rem;
+  border-radius: 0.7rem;
+  background: color-mix(in oklab, var(--accent-coral) 12%, var(--paper-warm));
+  border: 1px solid color-mix(in oklab, var(--accent-coral) 22%, var(--line));
+  color: var(--accent-coral);
+}
+.cardIcon svg {
+  display: block;
+}
+.card:hover .cardIcon {
+  background: color-mix(in oklab, var(--accent-coral) 20%, var(--paper-warm));
+  border-color: color-mix(in oklab, var(--accent-coral) 45%, var(--line));
 }
 
 .cardLabel {

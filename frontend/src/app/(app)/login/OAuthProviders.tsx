@@ -5,9 +5,13 @@
 // Google buttons, signup didn't, even though signup's body copy
 // promised them. Centralizing here keeps the surfaces consistent.
 //
-// The captcha gate is the parent's job: it passes `captchaReady=true`
-// once the user has solved the v2 widget (or the captcha is disabled
-// outright).
+// NB: these buttons are deliberately NOT captcha-gated. The captcha
+// only protects the email/password endpoint (where its token is
+// actually verified server-side); for OAuth the token is never sent,
+// and authentication happens entirely at github.com / accounts.google.com,
+// which run their own bot defenses. Greying these out behind the
+// captcha was pure friction with zero security value, so the gate now
+// lives only on the email/password submit in the parent.
 
 import { useState } from "react";
 import { signIn } from "next-auth/react";
@@ -17,11 +21,9 @@ type Provider = "github" | "google";
 
 export function OAuthProviders({
   redirectTo,
-  captchaReady,
   showSwitchAccountHint = false,
 }: {
   redirectTo: string;
-  captchaReady: boolean;
   /** Show a one-line hint that OAuth always re-uses the existing
    *  github.com / accounts.google.com session, so "create new account"
    *  expectations don't match reality. Default off; turn on for
@@ -42,7 +44,7 @@ export function OAuthProviders({
           type="button"
           className={`${styles.provider} ${styles.providerGithub}`}
           onClick={() => go("github")}
-          disabled={!captchaReady || loading !== null}
+          disabled={loading !== null}
           aria-label="Continue with GitHub"
         >
           <GithubIcon />
@@ -53,7 +55,7 @@ export function OAuthProviders({
           type="button"
           className={`${styles.provider} ${styles.providerGoogle}`}
           onClick={() => go("google")}
-          disabled={!captchaReady || loading !== null}
+          disabled={loading !== null}
           aria-label="Continue with Google"
         >
           <GoogleIcon />

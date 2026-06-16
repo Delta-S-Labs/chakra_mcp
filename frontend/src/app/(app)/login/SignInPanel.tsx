@@ -79,7 +79,7 @@ export default function SignInPanel({
 
   return (
     <div className={styles.panel}>
-      <OAuthProviders redirectTo={redirectTo} captchaReady={captchaReady} />
+      <OAuthProviders redirectTo={redirectTo} />
 
       <div className={styles.divider}>
         <span>or</span>
@@ -126,12 +126,12 @@ export default function SignInPanel({
           </div>
         </label>
 
-        {/* The captcha gates ALL three sign-in methods (GitHub, Google,
-            and email+password), so it lives here as the shared final
-            gate right above the Sign in button rather than tucked under
-            the OAuth buttons where it looked OAuth-only. A single widget
-            instance stays mounted and visible, which keeps the OAuth
-            buttons' `captchaReady` gate satisfiable. */}
+        {/* The captcha gates ONLY the email/password sign-in — that's
+            the endpoint whose token we actually verify server-side.
+            GitHub/Google aren't gated (their auth happens at the
+            provider). It sits right above the Sign in button it
+            protects, rather than under the OAuth buttons where it
+            misleadingly looked like it gated those too. */}
         {showCaptchaWidget && (
           <div className={styles.captcha}>
             <ReCAPTCHA
