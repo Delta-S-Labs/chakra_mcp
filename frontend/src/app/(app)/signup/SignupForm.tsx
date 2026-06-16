@@ -82,11 +82,7 @@ export function SignupForm({
 
   return (
     <div className={styles.panel}>
-      <OAuthProviders
-        redirectTo={redirectTo}
-        captchaReady={captchaReady}
-        showSwitchAccountHint
-      />
+      <OAuthProviders redirectTo={redirectTo} showSwitchAccountHint />
 
       <div className={styles.divider}>
         <span>or with email + password</span>
