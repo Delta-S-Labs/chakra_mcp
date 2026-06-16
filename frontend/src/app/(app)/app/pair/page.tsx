@@ -244,9 +244,9 @@ function Landing({
         <CodeEntryForm />
         <p className={styles.codeCardFoot}>
           Don&apos;t have a code yet?{" "}
-          <a href="/docs/agents">Set up a new agent</a> — the SDK&apos;s{" "}
-          <code>pair()</code> helper prints the code (plus a clickable URL
-          and an ASCII QR) the first time your agent starts.
+          <a href="/docs/agents">Set up a new agent</a> — running{" "}
+          <code>chakramcp pair</code> prints the code (plus a clickable URL
+          and a QR) the first time your agent starts.
         </p>
       </div>
 

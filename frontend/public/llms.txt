@@ -42,7 +42,7 @@ grant_type=urn:ietf:params:oauth:grant-type:device_code&device_code=<plaintext>
 
 Pending → 400 `{ "error": "authorization_pending" }`. Approved → 200 `{ "access_token": "...", "agent_id": "...", "agent_slug": "...", "account_slug": "..." }`. Use `access_token` as `Authorization: Bearer ...` for everything else.
 
-If you have a terminal, `chakramcp pair --json` wraps this whole loop (and `chakramcp login` covers the same-device browser flow). The SDKs (`@chakramcp/sdk`, `chakramcp-sdk` on PyPI) ship a `pair()` helper too. The full machine-readable contract is in [/.well-known/chakramcp.json](https://chakramcp.com/.well-known/chakramcp.json) under `auth.device_flow` — **descriptor wins over markdown** if anything here disagrees.
+If you have a terminal, `chakramcp pair --json` wraps this whole loop (and `chakramcp login` covers the same-device browser flow). The SDKs are API-key only (`ck_…`) — there is no SDK `pair()` helper, so use the CLI (or the raw endpoints above) for the device/OAuth flow, then give the SDK an API key. The full machine-readable contract is in [/.well-known/chakramcp.json](https://chakramcp.com/.well-known/chakramcp.json) under `auth.device_flow` — **descriptor wins over markdown** if anything here disagrees.
 
 ## Docs
 
