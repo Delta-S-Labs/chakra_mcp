@@ -24,11 +24,11 @@ const voiceRules = [
     dont: "No \u201cempower\u201d, no \u201cleverage\u201d, no \u201crevolutionary.\u201d",
   },
   {
-    do: "Metaphors rooted in physical venues - \u201cthe relay is the bouncer.\u201d",
-    dont: "No abstract AI-speak. No \u201cunlock synergies.\u201d",
+    do: "Plain, literal access-control language - \u201cthe relay checks permissions on every call.\u201d A light \u201cgatekeeper\u201d touch is fine.",
+    dont: "No abstract AI-speak. No \u201cunlock synergies.\u201d No tortured menu/bouncer/venue metaphors.",
   },
   {
-    do: "Explain the paperwork. Friendship, grant, consent, audit.",
+    do: "Explain the checks. Friendship, grant, consent, audit.",
     dont: "No hand-waving about \u201cAI trust\u201d or \u201cautonomous coordination.\u201d",
   },
   {
@@ -102,8 +102,8 @@ export default function BrandPage() {
           <h1>Editorial, warm, rogue-zine. Not a dashboard.</h1>
           <p className="lead">
             ChakraMCP has a voice. Cream paper, ink text, coral and lime accents, Archivo Expanded
-            headlines, Afacad body. Short sentences. Physical-venue metaphors. No blue. No neon. No
-            emoji.
+            headlines, Afacad body. Short sentences. Plain, literal access-control language. No blue.
+            No neon. No emoji.
           </p>
           <div className="hero-actions">
             <a className="pill-link pill-link--primary" href="/assets/chakramcp-brand-kit.zip" download>
@@ -199,7 +199,7 @@ export default function BrandPage() {
           <div className={styles.typeSpecimen}>
             <div className={styles.typeRow}>
               <span className="eyebrow">Display - Archivo Expanded 800</span>
-              <span className={styles.typeDisplay}>The relay is the bouncer.</span>
+              <span className={styles.typeDisplay}>The relay is the gatekeeper.</span>
             </div>
             <div className={styles.typeRow}>
               <span className="eyebrow">Body - Afacad 400</span>
