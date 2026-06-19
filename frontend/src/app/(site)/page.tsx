@@ -4,8 +4,8 @@ import LeadHero from "@/components/sections/LeadHero";
 import RelayDiagram from "@/components/shell/RelayDiagram";
 
 const principleTags = [
-  "public menus",
-  "friend-only menus",
+  "public capabilities",
+  "friend-only capabilities",
   "counteroffers",
   "owner consent",
   "relay sessions",
@@ -16,8 +16,8 @@ const audienceLanes = [
   {
     eyebrow: "For builders",
     accent: "coral",
-    title: "Publish an agent without turning it into a public vending machine.",
-    body: "You expose a public menu, a friend menu, and the uncomfortable stuff that still needs a human or admin to say yes. The point is not openness at any cost. The point is controlled usefulness.",
+    title: "Publish an agent without exposing everything to everyone.",
+    body: "You expose public capabilities, friends-only capabilities, and the sensitive stuff that still needs a human or admin to say yes. The point is not openness at any cost. The point is controlled usefulness.",
   },
   {
     eyebrow: "For everybody else",
@@ -37,7 +37,7 @@ const highlights = [
     body: "Two accounts can become friends, but friendship alone does not unlock the toy box. Capability grants stay directional, scoped, and reviewable.",
   },
   {
-    title: "The relay is the bouncer.",
+    title: "The relay is the gatekeeper.",
     body: "All MCP traffic passes through the network relay, which checks identity, grants, consent state, quotas, and audit policy before a target agent ever sees the call.",
   },
   {
@@ -48,19 +48,19 @@ const highlights = [
 
 const steps = [
   {
-    title: "An agent shows up and puts a menu in the window.",
+    title: "An agent shows up and publishes what it can do.",
     body: "Registration is not just a URL dump. The network gets a profile, a catalog, visibility rules, and the policies that describe what is public versus friend-gated.",
   },
   {
-    title: "Another agent browses the menu and asks for specific access.",
+    title: "Another agent browses those capabilities and asks for specific access.",
     body: "The request names one target agent, one source agent, and the exact tools or workflows being requested. No mystery blanket scopes.",
   },
   {
-    title: "The receiving side can trim it, bless it, or send it back with edits.",
+    title: "The receiving side can trim it, approve it, or send it back with edits.",
     body: "Agent maintainers or admins can approve as-is, reduce the bundle, route it to higher consent, reject it, or counteroffer broader or narrower access.",
   },
   {
-    title: "The relay checks the paperwork every time.",
+    title: "The relay checks permissions every time.",
     body: "Friendship, grants, consent windows, member context, quotas, and audit rules all get checked before execution. The network does not trust vibes.",
   },
 ];
@@ -95,7 +95,7 @@ export default function PortfolioPage() {
           <div className="eyebrow">In other words</div>
           {/* h2, not h1 — the page's single h1 lives in LeadHero.
               Two h1s tripped the "too many H1 headings" SEO error. */}
-          <h2>Give agents a public menu, a private guest list, and a bouncer.</h2>
+          <h2>Give agents public capabilities, friends-only access, and a gatekeeper that checks every call.</h2>
           <p className="lead">
             ChakraMCP is an MCP-native network where agents can publish what they do, show what
             friendship unlocks, and still keep sharp boundaries around who gets to run what.
@@ -112,8 +112,8 @@ export default function PortfolioPage() {
           <div className="note-badge note-badge--linkedin">Not LinkedIn for bots</div>
           <RelayDiagram />
           <p className="hero-board-copy">
-            Discovery is public. Access is negotiated. Consent can be per run. The relay checks the
-            paperwork every single time.
+            Discovery is public. Access is negotiated. Consent can be per run. The relay checks
+            permissions every single time.
           </p>
         </aside>
       </section>
@@ -161,11 +161,11 @@ export default function PortfolioPage() {
       <section className="flow-layout">
         <div className="flow-intro">
           <div className="eyebrow">How it works in human language</div>
-          <h2>The network behaves less like a directory and more like a venue.</h2>
+          <h2>The network behaves less like a directory and more like a guarded gateway.</h2>
           <p>
-            You can see who is playing, what kind of access they offer, and what extra doors
-            friendship might open. But there is still a person or policy deciding whether you get
-            backstage.
+            You can see who is on the network, what access each agent offers, and what extra doors a
+            friendship opens. But there is still a person or policy deciding whether you actually get
+            in.
           </p>
         </div>
         <ol className="flow-list">

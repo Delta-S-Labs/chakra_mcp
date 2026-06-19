@@ -1,0 +1,143 @@
+/* Use-cases page motion. Keyframes are ported verbatim from the
+ * ChakraMCP "Use Cases" Claude Design file; each is exposed as a class
+ * (CSS Modules scope/rewrite keyframe names, so animations must be
+ * referenced through a class in this same file, not via inline
+ * `animation:` — the name wouldn't resolve). Static layout lives inline
+ * in page.tsx; only motion + reveal + the reduced-motion guard live here.
+ */
+
+/* Page wrapper: stacks hero + the five sections with the design's
+ * rhythm, and scopes the reduced-motion guard below. */
+.page {
+  display: grid;
+  /* minmax(0,1fr) caps the implicit track at the container width — without
+   * it a fixed-width child (the 380px consent card) inflates the track on
+   * narrow phones and the right edge of every section gets clipped. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4.5rem;
+  padding-top: 1rem;
+}
+
+/* ─── hero word-rise ─────────────────────────────────────── */
+@keyframes wordRise {
+  0% { opacity: 0; transform: translateY(0.5em); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.wordRise { animation: wordRise 0.6s var(--ease-out-quart) both; }
+
+/* ─── scroll reveal — pure CSS, no JS ────────────────────────
+ * Default state is VISIBLE, so any engine without scroll-driven
+ * animations (or with JS off) just shows the content — no risk of a
+ * blank page. Where `animation-timeline: view()` is supported (and the
+ * user hasn't asked to reduce motion), the element fades/rises in as it
+ * scrolls into view. */
+@keyframes revealIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: none; }
+}
+.reveal { opacity: 1; }
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal {
+      animation: revealIn linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 55%;
+    }
+  }
+}
+
+/* ─── 01 Dinner — looping agent chat (20s) ───────────────── */
+@keyframes cb1 { 0%,3%{ opacity:0; transform:translateY(12px);} 8%,95%{ opacity:1; transform:none;} 100%{ opacity:0;} }
+@keyframes cb2 { 0%,13%{ opacity:0; transform:translateY(12px);} 18%,95%{ opacity:1; transform:none;} 100%{ opacity:0;} }
+@keyframes cb3 { 0%,25%{ opacity:0; transform:translateY(12px);} 30%,95%{ opacity:1; transform:none;} 100%{ opacity:0;} }
+@keyframes cb4 { 0%,37%{ opacity:0; transform:translateY(12px);} 42%,95%{ opacity:1; transform:none;} 100%{ opacity:0;} }
+@keyframes cb6 { 0%,59%{ opacity:0; transform:translateY(12px);} 64%,95%{ opacity:1; transform:none;} 100%{ opacity:0;} }
+@keyframes cb7 { 0%,71%{ opacity:0; transform:translateY(12px);} 76%,95%{ opacity:1; transform:none;} 100%{ opacity:0;} }
+@keyframes consentState { 0%,43%{ border-color:color-mix(in oklab, var(--accent-coral) 55%, var(--line)); background:var(--tint-coral);} 47%{ border-color:var(--accent-coral);} 51%{ border-color:color-mix(in oklab, var(--accent-coral) 55%, var(--line));} 55%,95%{ border-color:color-mix(in oklab, var(--accent-lime) 70%, var(--ink)); background:var(--tint-lime);} 100%{ border-color:color-mix(in oklab, var(--accent-coral) 55%, var(--line)); background:var(--tint-coral);} }
+@keyframes tapRipple { 0%,48%{ opacity:0; transform:translate(-50%,-50%) scale(.4);} 51%{ opacity:.8; transform:translate(-50%,-50%) scale(1);} 57%{ opacity:0; transform:translate(-50%,-50%) scale(2.2);} 100%{ opacity:0;} }
+@keyframes approvePress { 0%,48%{ transform:scale(1);} 51%{ transform:scale(.9);} 55%,100%{ transform:scale(1);} }
+@keyframes approvedBadge { 0%,53%{ opacity:0; transform:scale(.8);} 57%{ opacity:1; transform:scale(1.06);} 62%,95%{ opacity:1; transform:scale(1);} 100%{ opacity:0;} }
+@keyframes cursorTap { 0%,43%{ opacity:0; transform:translateY(10px);} 47%{ opacity:1; transform:translateY(8px);} 51%{ opacity:1; transform:translateY(-2px);} 56%{ opacity:1; transform:translateY(8px);} 61%{ opacity:0;} 100%{ opacity:0;} }
+.cb1 { animation: cb1 20s ease-in-out infinite; }
+.cb2 { animation: cb2 20s ease-in-out infinite; }
+.cb3 { animation: cb3 20s ease-in-out infinite; }
+.cb4 { animation: cb4 20s ease-in-out infinite; }
+.cb6 { animation: cb6 20s ease-in-out infinite; }
+.cb7 { animation: cb7 20s ease-in-out infinite; }
+.consentState { animation: consentState 20s ease-in-out infinite; }
+.tapRipple { animation: tapRipple 20s ease-in-out infinite; }
+.approvePress { animation: approvePress 20s ease-in-out infinite; }
+.approvedBadge { animation: approvedBadge 20s ease-in-out infinite; }
+.cursorTap { animation: cursorTap 20s ease-in-out infinite; }
+
+/* ─── 02 Matchmaking (11s) ───────────────────────────────── */
+@keyframes mmA { 0%,4%{ opacity:0; transform:translateY(12px);} 9%,92%{ opacity:1; transform:none;} 100%{ opacity:0;} }
+@keyframes mmB { 0%,24%{ opacity:0; transform:translateY(12px);} 29%,92%{ opacity:1; transform:none;} 100%{ opacity:0;} }
+@keyframes mmC { 0%,46%{ opacity:0; transform:translateY(12px);} 51%,92%{ opacity:1; transform:none;} 100%{ opacity:0;} }
+@keyframes mmD { 0%,68%{ opacity:0; transform:scale(.8);} 73%{ opacity:1; transform:scale(1.06);} 78%,92%{ opacity:1; transform:scale(1);} 100%{ opacity:0;} }
+.mmA { animation: mmA 11s ease-in-out infinite; }
+.mmB { animation: mmB 11s ease-in-out infinite; }
+.mmC { animation: mmC 11s ease-in-out infinite; }
+.mmD { animation: mmD 11s ease-in-out infinite; }
+
+/* ─── 03 Vendor audit (12s) ──────────────────────────────── */
+@keyframes vn1 { 0%,12%{ opacity:.32; } 18%,92%{ opacity:1; } 100%{ opacity:.32; } }
+@keyframes vn2 { 0%,20%{ opacity:.32; } 26%,92%{ opacity:1; } 100%{ opacity:.32; } }
+@keyframes vn3 { 0%,28%{ opacity:.32; } 34%,92%{ opacity:1; } 100%{ opacity:.32; } }
+@keyframes vn4 { 0%,36%{ opacity:.32; } 42%,92%{ opacity:1; } 100%{ opacity:.32; } }
+@keyframes vn5 { 0%,44%{ opacity:.32; } 50%,92%{ opacity:1; } 100%{ opacity:.32; } }
+@keyframes vn6 { 0%,52%{ opacity:.32; } 58%,92%{ opacity:1; } 100%{ opacity:.32; } }
+@keyframes vaBar { 0%{ width:0%; } 58%,92%{ width:100%; } 100%{ width:0%; } }
+@keyframes vaStamp { 0%,62%{ opacity:0; transform:scale(1.4) rotate(-8deg);} 68%{ opacity:1; transform:scale(.96) rotate(-8deg);} 73%,92%{ opacity:1; transform:scale(1) rotate(-8deg);} 100%{ opacity:0;} }
+.vn1 { animation: vn1 12s ease-in-out infinite; }
+.vn2 { animation: vn2 12s ease-in-out infinite; }
+.vn3 { animation: vn3 12s ease-in-out infinite; }
+.vn4 { animation: vn4 12s ease-in-out infinite; }
+.vn5 { animation: vn5 12s ease-in-out infinite; }
+.vn6 { animation: vn6 12s ease-in-out infinite; }
+.vaBar { animation: vaBar 12s ease-in-out infinite; }
+.vaStamp { animation: vaStamp 12s ease-in-out infinite; }
+
+/* ─── 04 Tax-agent shopping (12s) ────────────────────────── */
+@keyframes tw1 { 0%,28%{ opacity:0; transform:translateX(-6px);} 34%,92%{ opacity:1; transform:none;} 100%{ opacity:0;} }
+@keyframes tw2 { 0%,34%{ opacity:0; transform:translateX(-6px);} 40%,92%{ opacity:1; transform:none;} 100%{ opacity:0;} }
+@keyframes tw3 { 0%,40%{ opacity:0; transform:translateX(-6px);} 46%,92%{ opacity:1; transform:none;} 100%{ opacity:0;} }
+@keyframes txDim { 0%,30%{ opacity:1; } 38%,92%{ opacity:.38; } 100%{ opacity:1; } }
+@keyframes txGrant { 0%,60%{ opacity:0; transform:scale(.8) rotate(-6deg);} 66%{ opacity:1; transform:scale(1.05) rotate(-6deg);} 71%,92%{ opacity:1; transform:scale(1) rotate(-6deg);} 100%{ opacity:0;} }
+.tw1 { animation: tw1 12s ease-in-out infinite; }
+.tw2 { animation: tw2 12s ease-in-out infinite; }
+.tw3 { animation: tw3 12s ease-in-out infinite; }
+.txDim { animation: txDim 12s ease-in-out infinite; }
+.txGrant { animation: txGrant 12s ease-in-out infinite; }
+
+/* ─── 05 The relay — policy gate (8s) ────────────────────── */
+@keyframes chk1 { 0%,15%{ opacity:.3; } 21%,94%{ opacity:1; } 100%{ opacity:.3; } }
+@keyframes chk2 { 0%,24%{ opacity:.3; } 30%,94%{ opacity:1; } 100%{ opacity:.3; } }
+@keyframes chk3 { 0%,33%{ opacity:.3; } 39%,94%{ opacity:1; } 100%{ opacity:.3; } }
+@keyframes chk4 { 0%,42%{ opacity:.3; } 48%,94%{ opacity:1; } 100%{ opacity:.3; } }
+@keyframes chk5 { 0%,51%{ opacity:.3; } 57%,94%{ opacity:1; } 100%{ opacity:.3; } }
+@keyframes reqRun { 0%{ left:4%; opacity:0;} 6%{ opacity:1;} 16%{ left:38%; opacity:1;} 21%{ left:42%; opacity:0;} 100%{ left:42%; opacity:0;} }
+@keyframes allowRun { 0%,72%{ left:58%; opacity:0;} 78%{ left:60%; opacity:1;} 94%{ left:92%; opacity:1;} 100%{ left:92%; opacity:0;} }
+@keyframes stampPop { 0%,62%{ opacity:0; transform:scale(1.5) rotate(-9deg);} 70%{ opacity:1; transform:scale(.94) rotate(-9deg);} 75%,94%{ opacity:1; transform:scale(1) rotate(-9deg);} 100%{ opacity:0;} }
+@keyframes gateThrob { 0%,12%{ box-shadow:var(--shadow-soft);} 55%{ box-shadow:0 0 0 3px color-mix(in oklab, var(--accent-coral) 28%, transparent), var(--shadow-soft);} 80%,100%{ box-shadow:var(--shadow-soft);} }
+.chk1 { animation: chk1 8s ease-in-out infinite; }
+.chk2 { animation: chk2 8s ease-in-out infinite; }
+.chk3 { animation: chk3 8s ease-in-out infinite; }
+.chk4 { animation: chk4 8s ease-in-out infinite; }
+.chk5 { animation: chk5 8s ease-in-out infinite; }
+.reqRun { animation: reqRun 8s ease-in-out infinite; }
+.allowRun { animation: allowRun 8s ease-in-out infinite; }
+.stampPop { animation: stampPop 8s ease-in-out infinite; }
+.gateThrob { animation: gateThrob 8s ease-in-out infinite; }
+
+/* ─── reduced motion: freeze every loop + reveal ─────────── */
+@media (prefers-reduced-motion: reduce) {
+  .page *,
+  .page *::before,
+  .page *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .reveal { opacity: 1; transform: none; }
+}

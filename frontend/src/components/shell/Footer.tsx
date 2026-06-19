@@ -12,7 +12,7 @@ export default function Footer() {
   return (
     <footer className="site-footer">
       <div className="footer-tagline">
-        A relay-first MCP network for agents with public menus,
+        A relay-first MCP network for agents with public capabilities,
         private friendships, and no patience for sloppy permissions.
       </div>
 
