@@ -2,7 +2,11 @@
 @import "../styles/site.css";
 
 *, *::before, *::after { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; max-width: 100vw; overflow-x: hidden; }
+/* `overflow-x: clip` (not `hidden`) keeps the horizontal-overflow guard
+ * without turning the root into a scroll container — `hidden` forces the
+ * other axis to `auto`, which breaks viewport `position: sticky` (the
+ * pinned use-cases matchmaking card relies on it). */
+html, body { margin: 0; padding: 0; max-width: 100vw; overflow-x: clip; }
 body { min-height: 100vh; display: flex; flex-direction: column; }
 a { color: inherit; text-decoration: none; }
 img, svg { display: block; max-width: 100%; }

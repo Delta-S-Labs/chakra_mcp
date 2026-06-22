@@ -150,6 +150,87 @@ function Bullet({ children }: { children: ReactNode }) {
   );
 }
 
+/* ─── 02 matchmaking helpers (the scroll-scrubbed dating journey) ─── */
+
+/** Caption line atop each dating beat. */
+function Cap({ dot, children }: { dot: string; children: ReactNode }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: ".5rem", fontFamily: "var(--font-body)", fontSize: ".92rem", color: "var(--ink-soft)" }}>
+      <span style={{ width: ".55rem", height: ".55rem", borderRadius: "999px", background: dot, flex: "0 0 auto" }} />
+      {children}
+    </div>
+  );
+}
+
+/** A discovery candidate card (used in the discover / re-discover beats). */
+function Cand({
+  name,
+  tags,
+  hot,
+  dim,
+  badge,
+  style,
+}: {
+  name: string;
+  tags: string;
+  hot?: boolean;
+  dim?: boolean;
+  badge?: string;
+  style?: CSSProperties;
+}) {
+  return (
+    <div
+      style={{
+        flex: "1 1 0",
+        minWidth: 0,
+        background: "var(--paper)",
+        border: `1px solid ${hot ? "var(--accent-coral)" : "var(--line)"}`,
+        boxShadow: hot ? "0 0 0 3px var(--tint-coral)" : "none",
+        borderRadius: "var(--radius-lg)",
+        padding: ".65rem .8rem",
+        display: "flex",
+        flexDirection: "column",
+        gap: ".15rem",
+        opacity: dim ? 0.5 : 1,
+        ...style,
+      }}
+    >
+      <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: ".95rem" }}>{name}</span>
+      <span style={{ fontFamily: "var(--font-body)", fontSize: ".82rem", color: "var(--ink-muted)" }}>{tags}</span>
+      {badge && (
+        <span style={{ marginTop: ".15rem", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: ".66rem", letterSpacing: ".05em", textTransform: "uppercase", color: "color-mix(in oklab, var(--accent-lime) 55%, var(--ink))" }}>
+          {badge}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Lightweight agent-chat bubble for the dating beats (no per-bubble
+ *  label — the card header already says who's who; colour carries it). */
+function Bub({ tone, side, children }: { tone: keyof typeof TONES; side: "left" | "right"; children: ReactNode }) {
+  const left = side === "left";
+  return (
+    <div
+      style={{
+        alignSelf: left ? "flex-start" : "flex-end",
+        maxWidth: "85%",
+        padding: ".6rem .85rem",
+        borderRadius: left ? "1.1rem 1.1rem 1.1rem .3rem" : "1.1rem 1.1rem .3rem 1.1rem",
+        background: TONES[tone].bg,
+        border: `1px solid ${TONES[tone].border}`,
+        fontFamily: "var(--font-body)",
+        fontSize: ".92rem",
+        lineHeight: 1.4,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+const matchBeats = ["Discover", "Small talk", "Pass", "Re-discover", "Match", "Book"] as const;
+
 const auditNodes = [
   ["Supplier A", "SOC 2", styles.vn1],
   ["Supplier B", "ISO 27001", styles.vn2],
@@ -160,6 +241,9 @@ const auditNodes = [
 ] as const;
 
 export default function UseCasesPage() {
+  // Per-beat classes carry the scroll-driven `animation-range` window for
+  // the matchmaking card; indexed so the tracker + scenes stay in step.
+  const beatClass = [styles.mbeat1, styles.mbeat2, styles.mbeat3, styles.mbeat4, styles.mbeat5, styles.mbeat6];
   return (
     <div className={styles.page}>
       {/* Hero */}
@@ -381,32 +465,38 @@ export default function UseCasesPage() {
         </Reveal>
       </section>
 
-      {/* 02 — Matchmaking */}
+      {/* 02 — Matchmaking: a scroll-scrubbed dating journey. The intro
+          scrolls normally; then the card pins and the six beats advance
+          with the scroll (CSS scroll-timeline). On phones / reduced-motion
+          / engines without scroll-driven animations it degrades to the
+          same six beats stacked statically inside the card. */}
       <section id="uc-match" className="hero-block" style={{ display: "block" }}>
-        <SectionHeader num="02" numColor={LIME_NUM} eyebrow="Everyday · a friendship that learns" title="A miss, then a better offer." />
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "clamp(1.5rem, 4vw, 3rem)", alignItems: "center" }}>
-          <Reveal delayMs={60} style={{ flex: "1 1 300px", minWidth: "280px" }}>
-            <p className="lead" style={{ marginBottom: "1.2rem" }}>
-              Two people, two agents, and a plan that doesn&apos;t quite land the first time. The
-              agent reads the decline, keeps what it learned, and counters with something that
-              actually works.
-            </p>
-            <div style={{ display: "grid", gap: ".7rem" }}>
-              <Bullet>The first proposal is a real offer, not a calendar dump.</Bullet>
-              <Bullet>A decline comes back as a counteroffer, not a dead end.</Bullet>
-              <Bullet>Nobody&apos;s raw availability ever leaves their device.</Bullet>
-            </div>
-          </Reveal>
-          <Reveal delayMs={120} style={{ flex: "1 1 360px", minWidth: "300px" }}>
-            <div style={{ ...PANEL, padding: "1.4rem" }}>
+        <SectionHeader num="02" numColor={LIME_NUM} eyebrow="Everyday · a friendship that learns" title="A miss, then the right one." />
+        <Reveal delayMs={60}>
+          <p className="lead" style={{ marginBottom: "1.1rem", maxWidth: "62ch" }}>
+            Two people who&apos;ve never met, and two agents doing the awkward part. Alice&apos;s
+            agent goes out, makes small talk, reads a pass, keeps what it learned &mdash; and comes
+            back with someone who actually fits. Then it books the table.
+          </p>
+          <div style={{ display: "grid", gap: ".7rem", maxWidth: "62ch" }}>
+            <Bullet>Discovery and small talk happen agent-to-agent &mdash; no contact details change hands.</Bullet>
+            <Bullet>A pass isn&apos;t a dead end: the agent keeps what it learned and searches smarter.</Bullet>
+            <Bullet>Only the final match, once both humans approve, becomes a real plan.</Bullet>
+          </div>
+        </Reveal>
+
+        <div className={styles.matchTrack}>
+          <div className={styles.matchSticky}>
+            <div style={{ ...PANEL, padding: "1.4rem", width: "100%", maxWidth: "440px", margin: "0 auto" }}>
+              {/* agent-pair header */}
               <div
                 style={{
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   gap: ".6rem",
-                  paddingBottom: ".9rem",
-                  marginBottom: "1.1rem",
+                  paddingBottom: ".85rem",
+                  marginBottom: "1rem",
                   borderBottom: "1px solid var(--line)",
                   fontFamily: "var(--font-display)",
                   fontWeight: 700,
@@ -418,92 +508,144 @@ export default function UseCasesPage() {
               >
                 <span style={{ display: "inline-flex", alignItems: "center", gap: ".4rem" }}>
                   <span style={{ width: ".5rem", height: ".5rem", borderRadius: "999px", background: "var(--accent-coral)" }} />
-                  Ada&apos;s agent
+                  Alice&apos;s agent
                 </span>
-                <span style={{ color: "var(--ink-muted)" }}>&#8644;</span>
+                <span style={{ color: "var(--ink-muted)" }}>&#8644; relay &#8644;</span>
                 <span style={{ display: "inline-flex", alignItems: "center", gap: ".4rem" }}>
                   <span style={{ width: ".5rem", height: ".5rem", borderRadius: "999px", background: "var(--accent-lime)" }} />
-                  Ben&apos;s agent
+                  the network
                 </span>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: ".7rem", minHeight: "230px" }}>
-                <div
-                  className={styles.mmA}
-                  style={{
-                    alignSelf: "flex-start",
-                    maxWidth: "84%",
-                    padding: ".65rem .9rem",
-                    borderRadius: "1.1rem 1.1rem 1.1rem .3rem",
-                    background: "var(--tint-coral)",
-                    border: "1px solid color-mix(in oklab, var(--accent-coral) 40%, var(--line))",
-                    fontFamily: "var(--font-body)",
-                    fontSize: ".95rem",
-                    lineHeight: 1.4,
-                  }}
-                >
-                  Coffee Saturday? Ada&apos;s into specialty roasters.
-                </div>
-                <div
-                  className={styles.mmB}
-                  style={{
-                    alignSelf: "flex-end",
-                    maxWidth: "84%",
-                    padding: ".65rem .9rem",
-                    borderRadius: "1.1rem 1.1rem .3rem 1.1rem",
-                    background: "var(--paper-warm)",
-                    border: "1px dashed color-mix(in oklab, var(--accent-coral) 45%, var(--line))",
-                    fontFamily: "var(--font-body)",
-                    fontSize: ".95rem",
-                    lineHeight: 1.4,
-                  }}
-                >
-                  <span style={{ fontFamily: "var(--font-display)", fontSize: ".6rem", letterSpacing: ".1em", textTransform: "uppercase", color: "var(--ink-muted)", display: "block", marginBottom: ".2rem" }}>
-                    Not quite &mdash; counteroffer
+
+              {/* beat tracker */}
+              <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: ".8rem", paddingBottom: ".9rem", marginBottom: "1rem", borderBottom: "1px dashed var(--line)" }}>
+                {matchBeats.map((b, i) => (
+                  <span key={b} className={`${styles.mbeat} ${beatClass[i]}`} style={{ alignItems: "center", gap: ".35rem", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: ".64rem", letterSpacing: ".05em", textTransform: "uppercase" }}>
+                    <span style={{ width: ".4rem", height: ".4rem", borderRadius: "999px", background: "var(--accent-coral)" }} />
+                    {b}
                   </span>
-                  Ben&apos;s slammed Saturday. He&apos;s free Sunday morning, though.
+                ))}
+              </div>
+
+              {/* stage: six beats */}
+              <div className={styles.matchStage}>
+                {/* 1 — discover */}
+                <div className={`${styles.mscene} ${styles.ms1}`}>
+                  <Cap dot="var(--accent-coral)">Alice&apos;s agent scans the network</Cap>
+                  <div style={{ alignSelf: "flex-start", margin: ".7rem 0", padding: ".5rem .85rem", borderRadius: "999px", background: "var(--tint-butter)", border: "1px solid color-mix(in oklab, var(--accent-butter) 60%, var(--line))", fontFamily: "var(--font-body)", fontSize: ".88rem" }}>
+                    outdoorsy &middot; low-key &middot; live music
+                  </div>
+                  <div style={{ display: "flex", gap: ".6rem" }}>
+                    <Cand name="Cam, 31" tags="crypto · poker" />
+                    <Cand name="Devon, 29" tags="trails · jazz" />
+                    <Cand name="Priya, 30" tags="climbing · film" />
+                  </div>
                 </div>
-                <div
-                  className={styles.mmC}
-                  style={{
-                    alignSelf: "flex-start",
-                    maxWidth: "84%",
-                    padding: ".65rem .9rem",
-                    borderRadius: "1.1rem 1.1rem 1.1rem .3rem",
-                    background: "var(--tint-coral)",
-                    border: "1px solid color-mix(in oklab, var(--accent-coral) 40%, var(--line))",
-                    fontFamily: "var(--font-body)",
-                    fontSize: ".95rem",
-                    lineHeight: 1.4,
-                  }}
-                >
-                  Sunday 10am, the new roaster on 5th?
+
+                {/* 2 — small talk */}
+                <div className={`${styles.mscene} ${styles.ms2}`}>
+                  <Cap dot="var(--accent-butter)">Agents make small talk &mdash; no contact shared yet</Cap>
+                  <div style={{ display: "flex", flexDirection: "column", gap: ".5rem", marginTop: ".6rem" }}>
+                    <Bub tone="coral" side="left">Free this weekend? She loves live music.</Bub>
+                    <Bub tone="butter" side="right">Mostly crypto meetups, honestly.</Bub>
+                    <Bub tone="coral" side="left">Into hiking at all?</Bub>
+                  </div>
                 </div>
-                <div
-                  className={styles.mmD}
-                  style={{
-                    alignSelf: "center",
-                    marginTop: ".2rem",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: ".45rem",
-                    padding: ".5rem .9rem",
-                    borderRadius: "999px",
-                    background: "var(--tint-lime)",
-                    border: "1px solid color-mix(in oklab, var(--accent-lime) 60%, var(--ink))",
-                    fontFamily: "var(--font-display)",
-                    fontWeight: 800,
-                    fontSize: ".72rem",
-                    letterSpacing: ".06em",
-                    textTransform: "uppercase",
-                    boxShadow: "var(--shadow-xs)",
-                  }}
-                >
-                  <span style={{ width: ".5rem", height: ".5rem", borderRadius: "999px", background: "var(--accent-coral)" }} />
-                  &#10003; It&apos;s a match
+
+                {/* 3 — pass */}
+                <div className={`${styles.mscene} ${styles.ms3}`}>
+                  <Cap dot="var(--accent-coral)">Alice taps no &mdash; nothing personal leaves</Cap>
+                  <div style={{ position: "relative", alignSelf: "flex-start", margin: ".6rem 0 .7rem" }}>
+                    <div style={{ maxWidth: "15rem" }}>
+                      <Cand name="Cam, 31" tags="crypto · poker" dim />
+                    </div>
+                    <span
+                      className={styles.mstamp}
+                      style={{
+                        position: "absolute",
+                        top: "-.7rem",
+                        left: "3.5rem",
+                        transform: "rotate(-10deg)",
+                        background: "var(--accent-coral)",
+                        color: "var(--paper-soft)",
+                        fontFamily: "var(--font-display)",
+                        fontWeight: 800,
+                        fontSize: ".74rem",
+                        letterSpacing: ".05em",
+                        textTransform: "uppercase",
+                        padding: ".3rem .8rem",
+                        borderRadius: ".5rem",
+                        boxShadow: "var(--shadow-sm)",
+                      }}
+                    >
+                      Pass
+                    </span>
+                  </div>
+                  <div style={{ alignSelf: "flex-start", border: "1px dashed var(--line)", borderRadius: "var(--radius-lg)", padding: ".6rem .85rem", fontFamily: "var(--font-body)", fontSize: ".88rem", color: "var(--ink-soft)" }}>
+                    Agent learned &rarr; skip crypto-heavy; she wants outdoorsy and low-key.
+                  </div>
+                </div>
+
+                {/* 4 — re-discover */}
+                <div className={`${styles.mscene} ${styles.ms4}`}>
+                  <Cap dot="var(--accent-coral)">Smarter second pass, weighted by what it learned</Cap>
+                  <div style={{ alignSelf: "flex-start", margin: ".7rem 0", padding: ".5rem .85rem", borderRadius: "999px", background: "var(--tint-butter)", border: "1px solid color-mix(in oklab, var(--accent-butter) 60%, var(--line))", fontFamily: "var(--font-body)", fontSize: ".88rem" }}>
+                    outdoorsy &middot; low-key &middot; live music &middot; <s style={{ opacity: 0.55 }}>crypto</s>
+                  </div>
+                  <div style={{ display: "flex" }}>
+                    <Cand name="River, 30" tags="trail running · vinyl · architecture" hot badge="&#9650; strong match" style={{ flex: "0 1 20rem" }} />
+                  </div>
+                </div>
+
+                {/* 5 — match */}
+                <div className={`${styles.mscene} ${styles.ms5}`}>
+                  <Cap dot="var(--accent-lime)">This one clicks &mdash; both humans approve</Cap>
+                  <div style={{ display: "flex", flexDirection: "column", gap: ".5rem", marginTop: ".6rem" }}>
+                    <Bub tone="coral" side="left">Trail run Saturday, then live jazz?</Bub>
+                    <Bub tone="lime" side="right">Yes. Tacos after?</Bub>
+                  </div>
+                  <span
+                    className={styles.mbadge}
+                    style={{
+                      alignSelf: "flex-start",
+                      marginTop: ".7rem",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: ".4rem",
+                      padding: ".5rem .9rem",
+                      borderRadius: "999px",
+                      background: "var(--tint-lime)",
+                      border: "1px solid color-mix(in oklab, var(--accent-lime) 60%, var(--ink))",
+                      fontFamily: "var(--font-display)",
+                      fontWeight: 800,
+                      fontSize: ".72rem",
+                      letterSpacing: ".06em",
+                      textTransform: "uppercase",
+                      boxShadow: "var(--shadow-xs)",
+                    }}
+                  >
+                    <span style={{ width: ".5rem", height: ".5rem", borderRadius: "999px", background: "var(--accent-coral)" }} />
+                    &#10003; It&apos;s a match
+                  </span>
+                </div>
+
+                {/* 6 — book */}
+                <div className={`${styles.mscene} ${styles.ms6}`}>
+                  <Cap dot="var(--accent-lime)">Your agent even books the table</Cap>
+                  <div style={{ alignSelf: "flex-start", marginTop: ".6rem", display: "inline-flex", alignItems: "center", gap: ".5rem", padding: ".45rem .8rem", borderRadius: "999px", background: "var(--paper-warm)", border: "1px solid var(--line)", fontFamily: "var(--font-body)", fontSize: ".86rem", color: "var(--ink-soft)" }}>
+                    River&apos;s agent <span style={{ color: "var(--accent-coral)" }}>&rarr;</span> restaurant agent
+                  </div>
+                  <div style={{ marginTop: ".7rem", display: "flex", alignItems: "center", gap: ".75rem", background: "var(--tint-lime)", border: "1px solid color-mix(in oklab, var(--accent-lime) 55%, var(--line))", borderRadius: "var(--radius-lg)", padding: ".8rem .95rem" }}>
+                    <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "1.3rem", color: "color-mix(in oklab, var(--accent-lime) 60%, var(--ink))" }}>&#10003;</span>
+                    <div>
+                      <strong style={{ display: "block", fontFamily: "var(--font-display)", fontSize: ".95rem" }}>Saturday &middot; 7:00 PM</strong>
+                      <span style={{ fontFamily: "var(--font-body)", fontSize: ".82rem", color: "var(--ink-soft)" }}>Verdant Table &middot; 2 seats &middot; both approved</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-          </Reveal>
+          </div>
         </div>
       </section>
 
