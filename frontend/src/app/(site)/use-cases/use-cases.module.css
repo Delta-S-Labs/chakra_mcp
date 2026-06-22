@@ -70,15 +70,25 @@
 .approvedBadge { animation: approvedBadge 20s ease-in-out infinite; }
 .cursorTap { animation: cursorTap 20s ease-in-out infinite; }
 
-/* ─── 02 Matchmaking (11s) ───────────────────────────────── */
-@keyframes mmA { 0%,4%{ opacity:0; transform:translateY(12px);} 9%,92%{ opacity:1; transform:none;} 100%{ opacity:0;} }
-@keyframes mmB { 0%,24%{ opacity:0; transform:translateY(12px);} 29%,92%{ opacity:1; transform:none;} 100%{ opacity:0;} }
-@keyframes mmC { 0%,46%{ opacity:0; transform:translateY(12px);} 51%,92%{ opacity:1; transform:none;} 100%{ opacity:0;} }
-@keyframes mmD { 0%,68%{ opacity:0; transform:scale(.8);} 73%{ opacity:1; transform:scale(1.06);} 78%,92%{ opacity:1; transform:scale(1);} 100%{ opacity:0;} }
-.mmA { animation: mmA 11s ease-in-out infinite; }
-.mmB { animation: mmB 11s ease-in-out infinite; }
-.mmC { animation: mmC 11s ease-in-out infinite; }
-.mmD { animation: mmD 11s ease-in-out infinite; }
+/* ─── 02 Matchmaking — scroll-scrubbed dating journey ──────
+ * Six beats (discover → small talk → pass → re-discover → match →
+ * book) cross-fade as the card scrubs past, pinned in place. The
+ * DEFAULT here is a static stacked storyboard inside the same card —
+ * every beat visible, no pin, plain scroll. The pinned scrub is an
+ * enhancement layered on below, gated on `animation-timeline` support
+ * + motion-ok + a wide enough viewport, so phones / reduced-motion /
+ * older engines all get the readable fallback and nothing is ever
+ * hidden behind an animation that may not run. */
+@keyframes mfade { 0%{ opacity:0; transform:translateY(10px);} 14%{ opacity:1; transform:none;} 86%{ opacity:1; transform:none;} 100%{ opacity:0; transform:translateY(-10px);} }
+@keyframes mbeatfade { 0%{ opacity:.3;} 16%{ opacity:1;} 84%{ opacity:1;} 100%{ opacity:.3;} }
+@keyframes mstampPop { 0%{ opacity:0; transform:rotate(-10deg) scale(1.5);} 40%{ opacity:1; transform:rotate(-10deg) scale(1);} 100%{ opacity:1; transform:rotate(-10deg) scale(1);} }
+@keyframes mbadgePop { 0%{ opacity:0; transform:scale(.6);} 30%{ opacity:1; transform:scale(1.12);} 45%{ transform:scale(1);} 100%{ opacity:1; transform:scale(1);} }
+
+/* base = static stacked fallback (no pin, all beats shown) */
+.matchStage { display: flex; flex-direction: column; gap: 1.2rem; }
+.mscene { display: flex; flex-direction: column; gap: 0.55rem; }
+.mscene + .mscene { border-top: 1px dashed var(--line); padding-top: 1.2rem; }
+.mbeat { display: inline-flex; opacity: 1; }
 
 /* ─── 03 Vendor audit (12s) ──────────────────────────────── */
 @keyframes vn1 { 0%,12%{ opacity:.32; } 18%,92%{ opacity:1; } 100%{ opacity:.32; } }
@@ -129,6 +139,71 @@
 .allowRun { animation: allowRun 8s ease-in-out infinite; }
 .stampPop { animation: stampPop 8s ease-in-out infinite; }
 .gateThrob { animation: gateThrob 8s ease-in-out infinite; }
+
+/* ─── 02 enhancement: pin the card + scrub beats with scroll ─
+ * A tall `.matchTrack` owns a view-timeline; the card inside sticks to
+ * the viewport while the track scrolls past, and each beat's opacity is
+ * driven by how far through the track you've scrolled (no JS, no
+ * autoplay). Gated to wide viewports + motion-ok so phones keep the
+ * stacked fallback above (pinning a tall card on a short screen is
+ * janky and the scrub would eat ~5 screens of scroll). The 6 equal
+ * `cover` windows line up so beats 2–5 cross-fade while the card is
+ * pinned; beat 1 shows on the way in, beat 6 on the way out. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) and (min-width: 641px) {
+    .matchTrack {
+      position: relative;
+      height: calc(6 * 78vh);
+      view-timeline-name: --matchdt;
+      view-timeline-axis: block;
+    }
+    .matchSticky {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      display: grid;
+      place-items: center;
+    }
+    .matchStage { position: relative; height: 14rem; display: block; }
+    .mscene {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      animation: mfade linear both;
+      animation-timeline: --matchdt;
+    }
+    .mscene + .mscene { border-top: none; padding-top: 0; }
+    /* All six beats are packed into the PINNED window (cover ~20%–80%)
+     * so every beat is fully on-screen while the card is stuck; beat 1 is
+     * held through the entry slide (cover 0%) and beat 6 through the exit
+     * slide (→100%), so neither gets clipped half off-screen. Core windows
+     * are 10% each and overlap neighbours by 2% to cross-dissolve. */
+    .ms1 { animation-range: cover 0% cover 32%; }
+    .ms2 { animation-range: cover 28% cover 42%; }
+    .ms3 { animation-range: cover 38% cover 52%; }
+    .ms4 { animation-range: cover 48% cover 62%; }
+    .ms5 { animation-range: cover 58% cover 72%; }
+    .ms6 { animation-range: cover 68% cover 100%; }
+    /* tracker highlights track the same windows as the scenes */
+    .mbeat { animation: mbeatfade linear both; animation-timeline: --matchdt; }
+    .mbeat1 { animation-range: cover 0% cover 32%; }
+    .mbeat2 { animation-range: cover 28% cover 42%; }
+    .mbeat3 { animation-range: cover 38% cover 52%; }
+    .mbeat4 { animation-range: cover 48% cover 62%; }
+    .mbeat5 { animation-range: cover 58% cover 72%; }
+    .mbeat6 { animation-range: cover 68% cover 100%; }
+    .mstamp {
+      animation: mstampPop linear both;
+      animation-timeline: --matchdt;
+      animation-range: cover 41% cover 52%;
+    }
+    .mbadge {
+      animation: mbadgePop linear both;
+      animation-timeline: --matchdt;
+      animation-range: cover 61% cover 72%;
+    }
+  }
+}
 
 /* ─── reduced motion: freeze every loop + reveal ─────────── */
 @media (prefers-reduced-motion: reduce) {
