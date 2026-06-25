@@ -57,7 +57,7 @@ jobs:
       migrations: ${{ steps.f.outputs.migrations }}
       force_which: ${{ github.event.inputs.which || 'auto' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 2  # need previous commit for diff
       - id: f
@@ -114,7 +114,7 @@ jobs:
       ECR_REPO: chakramcp-server
       LIGHTSAIL_HOST: 54.84.88.246
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-unknown-linux-gnu

@@ -38,7 +38,7 @@ jobs:
     name: cargo audit (Rust deps)
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -68,7 +68,7 @@ jobs:
     name: pnpm audit (frontend + TS SDK)
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
         with: { version: 9 }
       - uses: actions/setup-node@v6
@@ -89,7 +89,7 @@ jobs:
     name: pip-audit (Python deps)
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with: { python-version: "3.12" }
       - name: Install pip-audit
@@ -120,7 +120,7 @@ jobs:
     name: gitleaks (secret scan)
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # full history so dimensions match the action
       - name: Install gitleaks
@@ -156,7 +156,7 @@ jobs:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: ZAP Baseline Scan
         uses: zaproxy/action-baseline@v0.15.0
         with:
