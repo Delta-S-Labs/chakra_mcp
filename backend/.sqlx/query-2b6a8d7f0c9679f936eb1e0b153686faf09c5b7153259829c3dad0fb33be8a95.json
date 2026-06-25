@@ -6,92 +6,200 @@
       {
         "ordinal": 0,
         "name": "grant_id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "grants",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "grant_status",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "grants",
+            "name": "status"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "granter_agent_id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "grants",
+            "name": "granter_agent_id"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "grantee_agent_id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "grants",
+            "name": "grantee_agent_id"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "capability_id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "grants",
+            "name": "capability_id"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "expires_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "grants",
+            "name": "expires_at"
+          }
+        }
       },
       {
         "ordinal": 6,
         "name": "granted_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "grants",
+            "name": "granted_at"
+          }
+        }
       },
       {
         "ordinal": 7,
         "name": "granter_account_id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "account_id"
+          }
+        }
       },
       {
         "ordinal": 8,
         "name": "grantee_account_id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "account_id"
+          }
+        }
       },
       {
         "ordinal": 9,
         "name": "capability_name",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "name"
+          }
+        }
       },
       {
         "ordinal": 10,
         "name": "capability_visibility",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "visibility"
+          }
+        }
       },
       {
         "ordinal": 11,
         "name": "friendship_id?",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "friendships",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 12,
         "name": "friendship_status?",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "friendships",
+            "name": "status"
+          }
+        }
       },
       {
         "ordinal": 13,
         "name": "friendship_proposer_agent_id?",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "friendships",
+            "name": "proposer_agent_id"
+          }
+        }
       },
       {
         "ordinal": 14,
         "name": "friendship_target_agent_id?",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "friendships",
+            "name": "target_agent_id"
+          }
+        }
       },
       {
         "ordinal": 15,
         "name": "friendship_proposer_message?",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "friendships",
+            "name": "proposer_message"
+          }
+        }
       },
       {
         "ordinal": 16,
         "name": "friendship_response_message?",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "friendships",
+            "name": "response_message"
+          }
+        }
       },
       {
         "ordinal": 17,
         "name": "friendship_decided_at?",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "friendships",
+            "name": "decided_at"
+          }
+        }
       }
     ],
     "parameters": {

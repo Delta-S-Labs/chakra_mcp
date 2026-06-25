@@ -6,32 +6,68 @@
       {
         "ordinal": 0,
         "name": "use_case",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "surveys",
+            "name": "use_case"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "agent_types",
-        "type_info": "TextArray"
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "surveys",
+            "name": "agent_types"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "frameworks",
-        "type_info": "TextArray"
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "surveys",
+            "name": "frameworks"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "scale",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "surveys",
+            "name": "scale"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "notes",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "surveys",
+            "name": "notes"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "completed_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "surveys",
+            "name": "completed_at"
+          }
+        }
       }
     ],
     "parameters": {

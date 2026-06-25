@@ -6,127 +6,262 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "friendships",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "status",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "friendships",
+            "name": "status"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "proposer_message",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "friendships",
+            "name": "proposer_message"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "response_message",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "friendships",
+            "name": "response_message"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "counter_of_id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "friendships",
+            "name": "counter_of_id"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "created_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "friendships",
+            "name": "created_at"
+          }
+        }
       },
       {
         "ordinal": 6,
         "name": "updated_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "friendships",
+            "name": "updated_at"
+          }
+        }
       },
       {
         "ordinal": 7,
         "name": "decided_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "friendships",
+            "name": "decided_at"
+          }
+        }
       },
       {
         "ordinal": 8,
         "name": "p_agent_id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 9,
         "name": "p_agent_slug",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "slug"
+          }
+        }
       },
       {
         "ordinal": 10,
         "name": "p_agent_display_name",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "display_name"
+          }
+        }
       },
       {
         "ordinal": 11,
         "name": "p_acct_id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 12,
         "name": "p_acct_slug",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "slug"
+          }
+        }
       },
       {
         "ordinal": 13,
         "name": "p_acct_display_name",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "display_name"
+          }
+        }
       },
       {
         "ordinal": 14,
         "name": "t_agent_id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 15,
         "name": "t_agent_slug",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "slug"
+          }
+        }
       },
       {
         "ordinal": 16,
         "name": "t_agent_display_name",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "display_name"
+          }
+        }
       },
       {
         "ordinal": 17,
         "name": "t_acct_id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 18,
         "name": "t_acct_slug",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "slug"
+          }
+        }
       },
       {
         "ordinal": 19,
         "name": "t_acct_display_name",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "display_name"
+          }
+        }
       },
       {
         "ordinal": 20,
         "name": "i_proposed!",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": "Expression"
       },
       {
         "ordinal": 21,
         "name": "i_received!",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": "Expression"
       },
       {
         "ordinal": 22,
         "name": "af_org_id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": "Expression"
       },
       {
         "ordinal": 23,
         "name": "af_org_slug?",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "slug"
+          }
+        }
       },
       {
         "ordinal": 24,
         "name": "af_org_display_name?",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "display_name"
+          }
+        }
       }
     ],
     "parameters": {

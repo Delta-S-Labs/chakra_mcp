@@ -6,22 +6,46 @@
       {
         "ordinal": 0,
         "name": "status",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "status"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "created_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "created_at"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "granter_account_id?",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "account_id"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "capability_semantics?",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "semantics"
+          }
+        }
       }
     ],
     "parameters": {
@@ -32,8 +56,8 @@
     "nullable": [
       false,
       false,
-      false,
-      false
+      true,
+      true
     ]
   },
   "hash": "2ba9594181228349f27a26d8ff3b6940887acf6dbd9e37212821707347f09cfe"

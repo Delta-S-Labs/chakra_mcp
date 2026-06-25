@@ -6,57 +6,123 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "oauth_device_codes",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "scope",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "oauth_device_codes",
+            "name": "scope"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "approved_user_id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "oauth_device_codes",
+            "name": "approved_user_id"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "approved_agent_id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "oauth_device_codes",
+            "name": "approved_agent_id"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "approved_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "oauth_device_codes",
+            "name": "approved_at"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "denied_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "oauth_device_codes",
+            "name": "denied_at"
+          }
+        }
       },
       {
         "ordinal": 6,
         "name": "expires_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "oauth_device_codes",
+            "name": "expires_at"
+          }
+        }
       },
       {
         "ordinal": 7,
         "name": "poll_interval_seconds",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "oauth_device_codes",
+            "name": "poll_interval_seconds"
+          }
+        }
       },
       {
         "ordinal": 8,
         "name": "last_polled_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "oauth_device_codes",
+            "name": "last_polled_at"
+          }
+        }
       },
       {
         "ordinal": 9,
         "name": "consumed_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "oauth_device_codes",
+            "name": "consumed_at"
+          }
+        }
       },
       {
         "ordinal": 10,
         "name": "revoked_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "oauth_device_codes",
+            "name": "revoked_at"
+          }
+        }
       }
     ],
     "parameters": {

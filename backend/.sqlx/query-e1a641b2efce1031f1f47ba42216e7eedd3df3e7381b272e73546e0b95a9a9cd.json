@@ -6,32 +6,68 @@
       {
         "ordinal": 0,
         "name": "email",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "account_invites",
+            "name": "email"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "role",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "account_invites",
+            "name": "role"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "expires_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "account_invites",
+            "name": "expires_at"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "accepted_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "account_invites",
+            "name": "accepted_at"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "slug",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "slug"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "display_name",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "display_name"
+          }
+        }
       }
     ],
     "parameters": {

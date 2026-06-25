@@ -6,32 +6,68 @@
       {
         "ordinal": 0,
         "name": "status",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "status"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "capability_name",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "capability_name"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "input_preview",
-        "type_info": "Jsonb"
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "input_preview"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "granter_agent_id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "granter_agent_id"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "grantee_agent_id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "grantee_agent_id"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "capability_id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "capability_id"
+          }
+        }
       }
     ],
     "parameters": {
