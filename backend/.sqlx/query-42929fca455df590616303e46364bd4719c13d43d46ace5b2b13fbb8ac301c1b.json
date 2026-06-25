@@ -6,12 +6,24 @@
       {
         "ordinal": 0,
         "name": "mode",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "mode"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "display_name",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "display_name"
+          }
+        }
       }
     ],
     "parameters": {

@@ -6,152 +6,332 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "grant_id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "grant_id"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "granter_agent_id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "granter_agent_id"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "grantee_agent_id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "grantee_agent_id"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "capability_id",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "capability_id"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "capability_name",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "capability_name"
+          }
+        }
       },
       {
         "ordinal": 6,
         "name": "status",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "status"
+          }
+        }
       },
       {
         "ordinal": 7,
         "name": "elapsed_ms",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "elapsed_ms"
+          }
+        }
       },
       {
         "ordinal": 8,
         "name": "error_message",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "error_message"
+          }
+        }
       },
       {
         "ordinal": 9,
         "name": "input_preview",
-        "type_info": "Jsonb"
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "input_preview"
+          }
+        }
       },
       {
         "ordinal": 10,
         "name": "output_preview",
-        "type_info": "Jsonb"
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "output_preview"
+          }
+        }
       },
       {
         "ordinal": 11,
         "name": "created_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "created_at"
+          }
+        }
       },
       {
         "ordinal": 12,
         "name": "claimed_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "claimed_at"
+          }
+        }
       },
       {
         "ordinal": 13,
         "name": "granter_display_name?",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "display_name"
+          }
+        }
       },
       {
         "ordinal": 14,
         "name": "grantee_display_name?",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "display_name"
+          }
+        }
       },
       {
         "ordinal": 15,
         "name": "g_status?",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "grants",
+            "name": "status"
+          }
+        }
       },
       {
         "ordinal": 16,
         "name": "g_granter_agent_id?",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "grants",
+            "name": "granter_agent_id"
+          }
+        }
       },
       {
         "ordinal": 17,
         "name": "g_grantee_agent_id?",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "grants",
+            "name": "grantee_agent_id"
+          }
+        }
       },
       {
         "ordinal": 18,
         "name": "g_capability_id?",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "grants",
+            "name": "capability_id"
+          }
+        }
       },
       {
         "ordinal": 19,
         "name": "g_capability_visibility?",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "visibility"
+          }
+        }
       },
       {
         "ordinal": 20,
         "name": "capability_semantics?",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "semantics"
+          }
+        }
       },
       {
         "ordinal": 21,
         "name": "g_granted_at?",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "grants",
+            "name": "granted_at"
+          }
+        }
       },
       {
         "ordinal": 22,
         "name": "g_expires_at?",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "grants",
+            "name": "expires_at"
+          }
+        }
       },
       {
         "ordinal": 23,
         "name": "f_id?",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "friendships",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 24,
         "name": "f_status?",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "friendships",
+            "name": "status"
+          }
+        }
       },
       {
         "ordinal": 25,
         "name": "f_proposer_agent_id?",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "friendships",
+            "name": "proposer_agent_id"
+          }
+        }
       },
       {
         "ordinal": 26,
         "name": "f_target_agent_id?",
-        "type_info": "Uuid"
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "friendships",
+            "name": "target_agent_id"
+          }
+        }
       },
       {
         "ordinal": 27,
         "name": "f_proposer_message?",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "friendships",
+            "name": "proposer_message"
+          }
+        }
       },
       {
         "ordinal": 28,
         "name": "f_response_message?",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "friendships",
+            "name": "response_message"
+          }
+        }
       },
       {
         "ordinal": 29,
         "name": "f_decided_at?",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "friendships",
+            "name": "decided_at"
+          }
+        }
       }
     ],
     "parameters": {

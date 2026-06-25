@@ -6,17 +6,30 @@
       {
         "ordinal": 0,
         "name": "agent_card_fetched_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "agent_card_fetched_at"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "agent_card_last_attempted_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "agent_card_last_attempted_at"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "cached!",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": "Expression"
       }
     ],
     "parameters": {
