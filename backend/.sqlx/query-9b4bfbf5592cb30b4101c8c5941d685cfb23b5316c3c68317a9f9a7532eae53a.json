@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, expires_at, approved_at, denied_at, consumed_at\n        FROM oauth_device_codes\n        WHERE user_code = $1\n        FOR UPDATE\n        ",
+  "query": "\n        SELECT id, expires_at, approved_at, denied_at, consumed_at, client_id\n        FROM oauth_device_codes\n        WHERE user_code = $1\n        FOR UPDATE\n        ",
   "describe": {
     "columns": [
       {
@@ -57,6 +57,17 @@
             "name": "consumed_at"
           }
         }
+      },
+      {
+        "ordinal": 5,
+        "name": "client_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "oauth_device_codes",
+            "name": "client_id"
+          }
+        }
       }
     ],
     "parameters": {
@@ -69,8 +80,9 @@
       false,
       true,
       true,
+      true,
       true
     ]
   },
-  "hash": "06d8651b9cb760dd3dd9545a35f6cf4e3d5592ab109595a3074dde0fe285a672"
+  "hash": "9b4bfbf5592cb30b4101c8c5941d685cfb23b5316c3c68317a9f9a7532eae53a"
 }

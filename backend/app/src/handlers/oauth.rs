@@ -910,7 +910,7 @@ pub async fn device_approve(
 
     let row = sqlx::query!(
         r#"
-        SELECT id, expires_at, approved_at, denied_at, consumed_at
+        SELECT id, expires_at, approved_at, denied_at, consumed_at, client_id
         FROM oauth_device_codes
         WHERE user_code = $1
         FOR UPDATE
@@ -1008,8 +1008,9 @@ pub async fn device_approve(
         let inserted = sqlx::query!(
             r#"
             INSERT INTO agents
-                (id, account_id, created_by_user_id, slug, display_name, description, visibility, mode)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, 'pull')
+                (id, account_id, created_by_user_id, slug, display_name, description, visibility, mode,
+                 created_by_client_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, 'pull', $8)
             ON CONFLICT (account_id, slug) WHERE tombstoned_at IS NULL DO NOTHING
             RETURNING id, slug
             "#,
@@ -1020,6 +1021,10 @@ pub async fn device_approve(
             display_name,
             req.agent_description.clone().unwrap_or_default(),
             visibility,
+            // Attribute the agent to the client that paired via this device
+            // session (migration 0026) — this is the canonical "app created
+            // an agent through the device flow" case for the 'own' scope.
+            row.client_id.as_deref(),
         )
         .fetch_optional(&mut *tx)
         .await?
