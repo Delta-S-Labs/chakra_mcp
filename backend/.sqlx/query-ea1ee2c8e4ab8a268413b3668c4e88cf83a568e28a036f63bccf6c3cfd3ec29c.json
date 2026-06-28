@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT 1 as one FROM credential_scope_agents\n                WHERE credential_scope_id = $1 AND agent_id = $2\n                LIMIT 1\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "one",
+        "type_info": "Int4",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "ea1ee2c8e4ab8a268413b3668c4e88cf83a568e28a036f63bccf6c3cfd3ec29c"
+}

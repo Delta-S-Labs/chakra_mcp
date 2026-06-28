@@ -632,6 +632,24 @@ pub async fn create(
     .await?
     .ok_or_else(|| ApiError::Conflict(format!("agent slug '{slug}' already exists in this account")))?;
 
+    // If the caller holds a 'selected' grant, fold the agent it just created
+    // into that grant's allow-list so it can keep managing it (migration
+    // 0027). 'own' grants need no bookkeeping — the agent is already
+    // attributed to the creating client/key on the INSERT above.
+    let grant = crate::auth::resolve_grant(&state.db, &user).await?;
+    if grant.mode == crate::auth::AgentScopeMode::Selected {
+        if let Some(scope_id) = grant.scope_id {
+            sqlx::query!(
+                r#"INSERT INTO credential_scope_agents (credential_scope_id, agent_id)
+                   VALUES ($1, $2) ON CONFLICT DO NOTHING"#,
+                scope_id,
+                inserted.id,
+            )
+            .execute(&state.db)
+            .await?;
+        }
+    }
+
     let acc = sqlx::query!(
         r#"SELECT slug, display_name FROM accounts WHERE id = $1"#,
         inserted.account_id
@@ -735,6 +753,14 @@ pub async fn update(
     .ok_or(ApiError::NotFound)?;
 
     if !user_is_member(&state.db, user.user_id, row.account_id).await? {
+        return Err(ApiError::Forbidden);
+    }
+
+    // Scope gate (migration 0027): membership in the agent's account is
+    // necessary but not sufficient — the caller's credential must also be
+    // permitted to manage THIS specific agent (all / own / selected).
+    let grant = crate::auth::resolve_grant(&state.db, &user).await?;
+    if !crate::auth::grant_allows_agent(&state.db, &grant, id).await? {
         return Err(ApiError::Forbidden);
     }
 
@@ -947,6 +973,14 @@ pub async fn delete(
     .ok_or(ApiError::NotFound)?;
 
     if !user_can_admin_account(&state.db, user.user_id, row.account_id).await? {
+        return Err(ApiError::Forbidden);
+    }
+
+    // Scope gate (migration 0027): even an account admin acting through a
+    // scoped credential may only delete agents that credential is allowed
+    // to manage (all / own / selected).
+    let grant = crate::auth::resolve_grant(&state.db, &user).await?;
+    if !crate::auth::grant_allows_agent(&state.db, &grant, id).await? {
         return Err(ApiError::Forbidden);
     }
 
