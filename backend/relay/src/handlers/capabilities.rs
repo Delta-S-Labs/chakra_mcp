@@ -110,7 +110,7 @@ fn validate_public_invoke_combo(
 
 async fn agent_account_for_member(
     state: &RelayState,
-    user_id: Uuid,
+    user: &AuthUser,
     agent_id: Uuid,
 ) -> Result<Uuid, ApiError> {
     let row = sqlx::query!(
@@ -121,11 +121,19 @@ async fn agent_account_for_member(
     .await?
     .ok_or(ApiError::NotFound)?;
 
-    if !user_is_member(&state.db, user_id, row.account_id).await? {
+    if !user_is_member(&state.db, user.user_id, row.account_id).await? {
         // Hide existence from non-members of private agents.
         if row.visibility != "network" {
             return Err(ApiError::NotFound);
         }
+        return Err(ApiError::Forbidden);
+    }
+    // Scope gate (migration 0027): the credential must be allowed to manage
+    // this agent, not merely belong to its account. Capability create /
+    // update / delete all funnel through here, so this one check covers
+    // every capability write.
+    let grant = crate::auth::resolve_grant(&state.db, user).await?;
+    if !crate::auth::grant_allows_agent(&state.db, &grant, agent_id).await? {
         return Err(ApiError::Forbidden);
     }
     Ok(row.account_id)
@@ -194,7 +202,7 @@ pub async fn create(
     Path(agent_id): Path<Uuid>,
     Json(req): Json<CreateRequest>,
 ) -> ApiResult<Json<CapabilityDto>> {
-    let acct = agent_account_for_member(&state, user.user_id, agent_id).await?;
+    let acct = agent_account_for_member(&state, &user, agent_id).await?;
 
     let name = req.name.trim().to_string();
     if name.is_empty() {
@@ -305,7 +313,7 @@ pub async fn update(
     Path((agent_id, cap_id)): Path<(Uuid, Uuid)>,
     Json(req): Json<UpdateRequest>,
 ) -> ApiResult<Json<CapabilityDto>> {
-    let acct = agent_account_for_member(&state, user.user_id, agent_id).await?;
+    let acct = agent_account_for_member(&state, &user, agent_id).await?;
 
     if let Some(v) = req.visibility.as_deref() {
         if !matches!(v, "private" | "network") {
@@ -414,7 +422,7 @@ pub async fn delete(
     user: AuthUser,
     Path((agent_id, cap_id)): Path<(Uuid, Uuid)>,
 ) -> ApiResult<axum::http::StatusCode> {
-    let acct = agent_account_for_member(&state, user.user_id, agent_id).await?;
+    let acct = agent_account_for_member(&state, &user, agent_id).await?;
 
     let res = sqlx::query!(
         r#"DELETE FROM agent_capabilities WHERE id = $1 AND agent_id = $2"#,

@@ -204,3 +204,323 @@ pub async fn user_can_admin_account(
     .await?;
     Ok(matches!(row.map(|r| r.role), Some(ref r) if r == "owner" || r == "admin"))
 }
+
+// ─── Per-credential agent-management scope (migration 0027) ──────────
+//
+// Layered ON TOP of account membership: a scope only ever NARROWS what a
+// credential may manage, never widens it. Absence of a `credential_scopes`
+// row means `All` (the pre-feature default), so credentials minted before
+// this feature — and plain web sessions — are unaffected.
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentScopeMode {
+    /// Manage any agent in accounts the caller is a member of.
+    All,
+    /// Manage only agents this credential's issuer created.
+    Own,
+    /// Manage only the agents enumerated in `credential_scope_agents`.
+    Selected,
+}
+
+#[derive(Debug, Clone)]
+pub struct GrantScope {
+    /// `credential_scopes.id` when a scope is bound — needed for the
+    /// 'selected' allow-list lookup and for adding freshly-created agents
+    /// to it. `None` ⇒ no row ⇒ implicit `All`.
+    pub scope_id: Option<Uuid>,
+    pub mode: AgentScopeMode,
+    /// OAuth client behind the credential (for 'own' over a JWT). `None`
+    /// for API-key callers.
+    pub client_id: Option<String>,
+    /// API key id behind the credential (for 'own' over an API key).
+    pub api_key_id: Option<Uuid>,
+}
+
+impl GrantScope {
+    fn unrestricted(api_key_id: Option<Uuid>) -> Self {
+        Self {
+            scope_id: None,
+            mode: AgentScopeMode::All,
+            client_id: None,
+            api_key_id,
+        }
+    }
+}
+
+/// Resolve the agent-management scope bound to the caller's credential.
+/// Returns `All` when no `credential_scopes` row exists — so any credential
+/// minted before this feature (or any plain web session) is unrestricted.
+///
+/// Call only on management endpoints; it's an extra query, not worth paying
+/// on the invocation hot path.
+pub async fn resolve_grant(db: &PgPool, user: &AuthUser) -> Result<GrantScope, ApiError> {
+    let (cred_kind, cred_ref) = if let Some(jti) = user.minted_jti {
+        ("jwt", jti.to_string())
+    } else if let Some(key) = user.api_key_id {
+        ("api_key", key.to_string())
+    } else {
+        return Ok(GrantScope::unrestricted(user.api_key_id));
+    };
+
+    let row = sqlx::query!(
+        r#"
+        SELECT id, agent_scope, client_id
+        FROM credential_scopes
+        WHERE cred_kind = $1 AND cred_ref = $2
+        LIMIT 1
+        "#,
+        cred_kind,
+        cred_ref,
+    )
+    .fetch_optional(db)
+    .await?;
+
+    let Some(r) = row else {
+        return Ok(GrantScope::unrestricted(user.api_key_id));
+    };
+
+    let mode = match r.agent_scope.as_str() {
+        "own" => AgentScopeMode::Own,
+        "selected" => AgentScopeMode::Selected,
+        _ => AgentScopeMode::All,
+    };
+    Ok(GrantScope {
+        scope_id: Some(r.id),
+        mode,
+        client_id: r.client_id,
+        api_key_id: user.api_key_id,
+    })
+}
+
+/// Whether `grant` permits MANAGING `agent_id`. Call only after the caller
+/// is confirmed a member of the agent's account — this is the extra,
+/// scope-level gate that sits on top of membership.
+pub async fn grant_allows_agent(
+    db: &PgPool,
+    grant: &GrantScope,
+    agent_id: Uuid,
+) -> Result<bool, ApiError> {
+    match grant.mode {
+        AgentScopeMode::All => Ok(true),
+        AgentScopeMode::Own => {
+            let row = sqlx::query!(
+                r#"SELECT created_by_client_id, created_by_api_key_id FROM agents WHERE id = $1"#,
+                agent_id,
+            )
+            .fetch_optional(db)
+            .await?;
+            let Some(r) = row else {
+                return Ok(false);
+            };
+            let by_client = matches!(
+                (&grant.client_id, &r.created_by_client_id),
+                (Some(g), Some(a)) if g == a
+            );
+            let by_key = matches!(
+                (grant.api_key_id, r.created_by_api_key_id),
+                (Some(g), Some(a)) if g == a
+            );
+            Ok(by_client || by_key)
+        }
+        AgentScopeMode::Selected => {
+            let Some(scope_id) = grant.scope_id else {
+                return Ok(false);
+            };
+            let row = sqlx::query!(
+                r#"
+                SELECT 1 as one FROM credential_scope_agents
+                WHERE credential_scope_id = $1 AND agent_id = $2
+                LIMIT 1
+                "#,
+                scope_id,
+                agent_id,
+            )
+            .fetch_optional(db)
+            .await?;
+            Ok(row.is_some())
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Seeds a user, account, two OAuth clients (mcp_a / mcp_b), an agent
+    // attributed to each, and a 'selected' scope enrolling agent_b.
+    // Returns (user_id, agent_a, agent_b, selected_scope_id). Fixtures use
+    // the runtime query API so they don't add entries to the .sqlx cache.
+    async fn seed(pool: &PgPool) -> (Uuid, Uuid, Uuid, Uuid) {
+        let user = Uuid::now_v7();
+        sqlx::query("INSERT INTO users (id, email, display_name) VALUES ($1, $2, $3)")
+            .bind(user)
+            .bind(format!("u-{user}@test.test"))
+            .bind("U")
+            .execute(pool)
+            .await
+            .unwrap();
+
+        let account = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO accounts (id, slug, display_name, account_type, owner_user_id) \
+             VALUES ($1, $2, $3, 'individual', $4)",
+        )
+        .bind(account)
+        .bind(format!("a-{account}"))
+        .bind("A")
+        .bind(user)
+        .execute(pool)
+        .await
+        .unwrap();
+
+        for c in ["mcp_a", "mcp_b"] {
+            sqlx::query(
+                "INSERT INTO oauth_clients (id, client_id, client_name, redirect_uris) \
+                 VALUES ($1, $2, $3, $4)",
+            )
+            .bind(Uuid::now_v7())
+            .bind(c)
+            .bind(c)
+            .bind(vec!["https://x.test".to_string()])
+            .execute(pool)
+            .await
+            .unwrap();
+        }
+
+        let mk_agent = |id: Uuid, slug: &'static str, client: &'static str| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query(
+                    "INSERT INTO agents (id, account_id, slug, display_name, mode, created_by_client_id) \
+                     VALUES ($1, $2, $3, $4, 'pull', $5)",
+                )
+                .bind(id)
+                .bind(account)
+                .bind(slug)
+                .bind(slug)
+                .bind(client)
+                .execute(&pool)
+                .await
+                .unwrap();
+            }
+        };
+        let agent_a = Uuid::now_v7();
+        let agent_b = Uuid::now_v7();
+        mk_agent(agent_a, "agent-a", "mcp_a").await;
+        mk_agent(agent_b, "agent-b", "mcp_b").await;
+
+        let scope_id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO credential_scopes (id, cred_kind, cred_ref, user_id, agent_scope) \
+             VALUES ($1, 'jwt', $2, $3, 'selected')",
+        )
+        .bind(scope_id)
+        .bind(format!("sel-{scope_id}"))
+        .bind(user)
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO credential_scope_agents (credential_scope_id, agent_id) VALUES ($1, $2)",
+        )
+        .bind(scope_id)
+        .bind(agent_b)
+        .execute(pool)
+        .await
+        .unwrap();
+
+        (user, agent_a, agent_b, scope_id)
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn all_scope_allows_any_agent(pool: PgPool) {
+        let (_u, agent_a, agent_b, _s) = seed(&pool).await;
+        let grant = GrantScope {
+            scope_id: None,
+            mode: AgentScopeMode::All,
+            client_id: None,
+            api_key_id: None,
+        };
+        assert!(grant_allows_agent(&pool, &grant, agent_a).await.unwrap());
+        assert!(grant_allows_agent(&pool, &grant, agent_b).await.unwrap());
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn own_scope_allows_only_clients_own_agents(pool: PgPool) {
+        let (_u, agent_a, agent_b, _s) = seed(&pool).await;
+        let grant = GrantScope {
+            scope_id: None,
+            mode: AgentScopeMode::Own,
+            client_id: Some("mcp_a".to_string()),
+            api_key_id: None,
+        };
+        assert!(
+            grant_allows_agent(&pool, &grant, agent_a).await.unwrap(),
+            "client A may manage the agent it created"
+        );
+        assert!(
+            !grant_allows_agent(&pool, &grant, agent_b).await.unwrap(),
+            "client A may NOT manage an agent client B created"
+        );
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn selected_scope_allows_only_enrolled_agents(pool: PgPool) {
+        let (_u, agent_a, agent_b, scope_id) = seed(&pool).await;
+        let grant = GrantScope {
+            scope_id: Some(scope_id),
+            mode: AgentScopeMode::Selected,
+            client_id: None,
+            api_key_id: None,
+        };
+        assert!(
+            grant_allows_agent(&pool, &grant, agent_b).await.unwrap(),
+            "enrolled agent is allowed"
+        );
+        assert!(
+            !grant_allows_agent(&pool, &grant, agent_a).await.unwrap(),
+            "non-enrolled agent is denied"
+        );
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn resolve_grant_defaults_to_all_without_row(pool: PgPool) {
+        let user = AuthUser {
+            user_id: Uuid::now_v7(),
+            email: "x@test.test".to_string(),
+            is_admin: false,
+            api_key_id: None,
+            minted_jti: Some(Uuid::now_v7()),
+        };
+        let grant = resolve_grant(&pool, &user).await.unwrap();
+        assert_eq!(grant.mode, AgentScopeMode::All);
+        assert!(grant.scope_id.is_none());
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn resolve_grant_reads_bound_scope(pool: PgPool) {
+        let (user, _a, _b, _s) = seed(&pool).await;
+        let jti = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO credential_scopes (id, cred_kind, cred_ref, client_id, user_id, agent_scope) \
+             VALUES ($1, 'jwt', $2, 'mcp_a', $3, 'own')",
+        )
+        .bind(Uuid::now_v7())
+        .bind(jti.to_string())
+        .bind(user)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let auth = AuthUser {
+            user_id: user,
+            email: "x@test.test".to_string(),
+            is_admin: false,
+            api_key_id: None,
+            minted_jti: Some(jti),
+        };
+        let grant = resolve_grant(&pool, &auth).await.unwrap();
+        assert_eq!(grant.mode, AgentScopeMode::Own);
+        assert_eq!(grant.client_id.as_deref(), Some("mcp_a"));
+    }
+}
