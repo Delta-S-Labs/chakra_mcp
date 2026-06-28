@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT client_id FROM oauth_authorizations WHERE minted_jti = $1\n        UNION\n        SELECT client_id FROM oauth_device_codes   WHERE minted_jti = $1\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "client_id",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "8a556161681ae73533de14b8a6240cab56f2704b424630d7983acd9c254f0afb"
+}

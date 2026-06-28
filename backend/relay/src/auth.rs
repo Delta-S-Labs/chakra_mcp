@@ -155,6 +155,36 @@ pub async fn user_is_member(
     Ok(row.is_some())
 }
 
+/// Resolve the OAuth client that minted the caller's JWT, if any.
+///
+/// Looks the token's `jti` up against the two grant tables that record
+/// `minted_jti` + `client_id` (the auth-code flow's `oauth_authorizations`
+/// and the device flow's `oauth_device_codes`). Returns `None` for API-key
+/// callers, plain web-session tokens, or tokens with no recorded lineage.
+///
+/// This is an extra query, so only call it on management endpoints (agent
+/// create / scope enforcement) — never on the invocation hot path.
+pub async fn caller_client_id(
+    db: &PgPool,
+    minted_jti: Option<Uuid>,
+) -> Result<Option<String>, ApiError> {
+    let Some(jti) = minted_jti else {
+        return Ok(None);
+    };
+    let row = sqlx::query_scalar!(
+        r#"
+        SELECT client_id FROM oauth_authorizations WHERE minted_jti = $1
+        UNION
+        SELECT client_id FROM oauth_device_codes   WHERE minted_jti = $1
+        LIMIT 1
+        "#,
+        jti,
+    )
+    .fetch_optional(db)
+    .await?;
+    Ok(row.flatten())
+}
+
 /// Returns true if the user is an owner or admin of the given account.
 pub async fn user_can_admin_account(
     db: &PgPool,

@@ -599,12 +599,19 @@ pub async fn create(
     } else {
         "pull"
     };
+    // Creator attribution (migration 0026): record which OAuth client /
+    // API key minted the caller's credential, so the upcoming 'own' grant
+    // scope can recognise the agents this app created. NULL for plain
+    // web-session callers. Resolved here (a rare management call), never
+    // on the invocation hot path.
+    let created_by_client_id = crate::auth::caller_client_id(&state.db, user.minted_jti).await?;
     let inserted = sqlx::query!(
         r#"
         INSERT INTO agents
             (id, account_id, created_by_user_id, slug, display_name, description,
-             visibility, endpoint_url, mode, agent_card_url)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+             visibility, endpoint_url, mode, agent_card_url,
+             created_by_client_id, created_by_api_key_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         ON CONFLICT (account_id, slug) WHERE tombstoned_at IS NULL DO NOTHING
         RETURNING id, account_id, slug, display_name, description, visibility, endpoint_url, created_at, updated_at
         "#,
@@ -618,6 +625,8 @@ pub async fn create(
         req.endpoint_url,
         mode,
         agent_card_url,
+        created_by_client_id,
+        user.api_key_id,
     )
     .fetch_optional(&state.db)
     .await?
