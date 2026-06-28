@@ -48,6 +48,58 @@ fn random_token(byte_len: usize) -> String {
     base64::Engine::encode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, &bytes)
 }
 
+/// Materialise a chosen agent-management scope into `credential_scopes`
+/// (migration 0027), bound to a freshly-minted JWT `jti`.
+///
+/// A no-op for the `all` default — `resolve_grant` treats a missing row as
+/// unrestricted, so we persist only genuinely-narrowing grants. Runs inside
+/// the caller's token-mint transaction so the scope and the token's
+/// `minted_jti` commit atomically (a half-written scope would be a security
+/// hole). `selected_agent_ids` are assumed already validated by the consent
+/// endpoint that stashed them.
+async fn write_jwt_agent_scope(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    jti: Uuid,
+    client_id: &str,
+    user_id: Uuid,
+    agent_scope: &str,
+    selected_agent_ids: Option<&[Uuid]>,
+) -> Result<(), ApiError> {
+    if agent_scope == "all" {
+        return Ok(());
+    }
+    let scope_id = Uuid::now_v7();
+    sqlx::query!(
+        r#"
+        INSERT INTO credential_scopes (id, cred_kind, cred_ref, client_id, user_id, agent_scope)
+        VALUES ($1, 'jwt', $2, $3, $4, $5)
+        "#,
+        scope_id,
+        jti.to_string(),
+        client_id,
+        user_id,
+        agent_scope,
+    )
+    .execute(&mut **tx)
+    .await?;
+    if agent_scope == "selected" {
+        for aid in selected_agent_ids.unwrap_or(&[]) {
+            sqlx::query!(
+                r#"
+                INSERT INTO credential_scope_agents (credential_scope_id, agent_id)
+                VALUES ($1, $2)
+                ON CONFLICT DO NOTHING
+                "#,
+                scope_id,
+                aid,
+            )
+            .execute(&mut **tx)
+            .await?;
+        }
+    }
+    Ok(())
+}
+
 // ─── GET /.well-known/oauth-authorization-server ─────────
 pub async fn metadata(State(state): State<AppState>) -> Json<Value> {
     let cfg = &state.config;
@@ -214,6 +266,16 @@ pub struct IssueCodeRequest {
     pub code_challenge_method: String,
     #[serde(default = "default_scope")]
     pub scope: String,
+    /// Agent-management scope the user granted at consent (scoped-agent
+    /// -grants): "all" (default — unrestricted), "own" (only agents this
+    /// client creates), or "selected". Orthogonal to the OAuth `scope`
+    /// above (which stays `relay.full`).
+    #[serde(default)]
+    pub agent_scope: Option<String>,
+    /// Explicit agent allow-list when `agent_scope = "selected"`. Each id
+    /// must be an agent in an account the consenting user belongs to.
+    #[serde(default)]
+    pub selected_agent_ids: Option<Vec<Uuid>>,
 }
 
 fn default_method() -> String {
@@ -250,6 +312,50 @@ pub async fn issue_code(
         ));
     }
 
+    // Agent-management scope (scoped-agent-grants). Validate the mode and,
+    // for 'selected', that every named agent lives in an account the
+    // consenting user belongs to — a grant can only ever narrow within what
+    // the user can already manage. Stashed on the authorization row and
+    // materialised into credential_scopes when the token is minted.
+    let agent_scope = req.agent_scope.as_deref().unwrap_or("all");
+    if !matches!(agent_scope, "all" | "own" | "selected") {
+        return Err(ApiError::InvalidRequest(
+            "agent_scope must be all|own|selected".into(),
+        ));
+    }
+    let mut selected_ids = req.selected_agent_ids.clone().unwrap_or_default();
+    selected_ids.sort();
+    selected_ids.dedup();
+    if agent_scope == "selected" {
+        if selected_ids.is_empty() {
+            return Err(ApiError::InvalidRequest(
+                "selected_agent_ids is required when agent_scope=selected".into(),
+            ));
+        }
+        let in_scope = sqlx::query_scalar!(
+            r#"
+            SELECT count(*) AS "n!"
+            FROM agents a
+            JOIN account_memberships m ON m.account_id = a.account_id
+            WHERE m.user_id = $1 AND a.id = ANY($2)
+            "#,
+            user.user_id,
+            &selected_ids,
+        )
+        .fetch_one(&state.db)
+        .await?;
+        if in_scope as usize != selected_ids.len() {
+            return Err(ApiError::InvalidRequest(
+                "selected_agent_ids must all be agents in your accounts".into(),
+            ));
+        }
+    }
+    let stored_ids: Option<&[Uuid]> = if agent_scope == "selected" {
+        Some(&selected_ids)
+    } else {
+        None
+    };
+
     let client = sqlx::query!(
         r#"SELECT redirect_uris FROM oauth_clients WHERE client_id = $1"#,
         req.client_id,
@@ -272,8 +378,8 @@ pub async fn issue_code(
         r#"
         INSERT INTO oauth_authorizations
             (id, client_id, user_id, code_hash, code_challenge, code_challenge_method,
-             redirect_uri, scope, expires_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             redirect_uri, scope, expires_at, agent_scope, selected_agent_ids)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         "#,
         Uuid::now_v7(),
         req.client_id,
@@ -284,6 +390,8 @@ pub async fn issue_code(
         req.redirect_uri,
         req.scope,
         expires_at,
+        agent_scope,
+        stored_ids,
     )
     .execute(&state.db)
     .await?;
@@ -373,7 +481,7 @@ async fn token_authorization_code(
     let row = sqlx::query!(
         r#"
         SELECT id, client_id, user_id, code_challenge, redirect_uri, scope,
-               expires_at, used_at, revoked_at
+               expires_at, used_at, revoked_at, agent_scope, selected_agent_ids
         FROM oauth_authorizations
         WHERE code_hash = $1
         FOR UPDATE
@@ -440,6 +548,18 @@ async fn token_authorization_code(
         claims.jti,
     )
     .execute(&mut *tx)
+    .await?;
+
+    // Bind the chosen agent-management scope to the token we just minted
+    // (scoped-agent-grants), in the same tx so scope + token are atomic.
+    write_jwt_agent_scope(
+        &mut tx,
+        claims.jti,
+        &row.client_id,
+        row.user_id,
+        &row.agent_scope,
+        row.selected_agent_ids.as_deref(),
+    )
     .await?;
     tx.commit().await?;
 
@@ -1127,4 +1247,117 @@ pub async fn device_deny(
 
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::tests_support::*;
+    use axum::body::Body;
+    use axum::http::{header, Request, StatusCode};
+    use base64::Engine;
+    use http_body_util::BodyExt;
+    use sha2::{Digest, Sha256};
+    use sqlx::PgPool;
+    use tower::ServiceExt;
+    use uuid::Uuid;
+
+    // End-to-end: a 'selected' consent at /oauth/issue-code is carried
+    // through to /oauth/token, which materialises a credential_scopes row
+    // (+ the chosen agent's link) bound to the minted token. Proves the PR3
+    // wiring; PR2 already covers what that row then enforces. Fixtures and
+    // assertions use the runtime query API so they add nothing to the
+    // .sqlx cache.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn issue_code_selected_scope_materialises_credential_scope(pool: PgPool) {
+        let (user, jwt, account) = seed_user_with_personal(&pool, "alice").await;
+        let agent_id = seed_agent(&pool, account, "a1", user.user_id).await;
+
+        sqlx::query(
+            "INSERT INTO oauth_clients (id, client_id, client_name, redirect_uris) \
+             VALUES ($1, 'mcp_test', 'Test', $2)",
+        )
+        .bind(Uuid::now_v7())
+        .bind(vec!["https://app.test/cb".to_string()])
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let state = crate::AppState::new(pool.clone(), test_config());
+
+        // PKCE pair (challenge = base64url-nopad(sha256(verifier))).
+        let verifier = "verifier-0123456789012345678901234567890123456789";
+        let mut h = Sha256::new();
+        h.update(verifier.as_bytes());
+        let challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(h.finalize());
+
+        // 1) Consent → auth code, granting 'selected' over [agent_id].
+        let issue_body = serde_json::json!({
+            "client_id": "mcp_test",
+            "redirect_uri": "https://app.test/cb",
+            "code_challenge": challenge,
+            "agent_scope": "selected",
+            "selected_agent_ids": [agent_id],
+        });
+        let res = crate::router(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/oauth/issue-code")
+                    .header(header::AUTHORIZATION, format!("Bearer {jwt}"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(issue_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK, "issue-code should succeed");
+        let body = res.into_body().collect().await.unwrap().to_bytes();
+        let code = serde_json::from_slice::<serde_json::Value>(&body).unwrap()["code"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        // 2) Redeem the code → token mint, which writes credential_scopes.
+        let form = format!(
+            "grant_type=authorization_code&code={code}\
+             &client_id=mcp_test&redirect_uri=https%3A%2F%2Fapp.test%2Fcb\
+             &code_verifier={verifier}"
+        );
+        let res = crate::router(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/oauth/token")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .body(Body::from(form))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK, "token mint should succeed");
+
+        // 3) The grant was materialised: a 'selected' scope for this client,
+        //    enrolling exactly the chosen agent.
+        let (scope, client): (String, Option<String>) = sqlx::query_as(
+            "SELECT agent_scope, client_id FROM credential_scopes WHERE user_id = $1",
+        )
+        .bind(user.user_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(scope, "selected");
+        assert_eq!(client.as_deref(), Some("mcp_test"));
+
+        let n: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM credential_scope_agents csa \
+             JOIN credential_scopes cs ON cs.id = csa.credential_scope_id \
+             WHERE cs.user_id = $1 AND csa.agent_id = $2",
+        )
+        .bind(user.user_id)
+        .bind(agent_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(n, 1, "the chosen agent is enrolled in the selected scope");
+    }
 }

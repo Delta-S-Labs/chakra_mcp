@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, client_id, user_id, code_challenge, redirect_uri, scope,\n               expires_at, used_at, revoked_at\n        FROM oauth_authorizations\n        WHERE code_hash = $1\n        FOR UPDATE\n        ",
+  "query": "\n        SELECT id, client_id, user_id, code_challenge, redirect_uri, scope,\n               expires_at, used_at, revoked_at, agent_scope, selected_agent_ids\n        FROM oauth_authorizations\n        WHERE code_hash = $1\n        FOR UPDATE\n        ",
   "describe": {
     "columns": [
       {
@@ -101,6 +101,28 @@
             "name": "revoked_at"
           }
         }
+      },
+      {
+        "ordinal": 9,
+        "name": "agent_scope",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "oauth_authorizations",
+            "name": "agent_scope"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "selected_agent_ids",
+        "type_info": "UuidArray",
+        "origin": {
+          "Table": {
+            "table": "oauth_authorizations",
+            "name": "selected_agent_ids"
+          }
+        }
       }
     ],
     "parameters": {
@@ -117,8 +139,10 @@
       false,
       false,
       true,
+      true,
+      false,
       true
     ]
   },
-  "hash": "1b0d35b45542fc230fb326a80011ac779c96ef2157ca16f1980f1f20a6c6fe61"
+  "hash": "4d09eed0a5fa6a61f3af87d8a3f44047f23c64a2a40a247eaafa9342828474aa"
 }

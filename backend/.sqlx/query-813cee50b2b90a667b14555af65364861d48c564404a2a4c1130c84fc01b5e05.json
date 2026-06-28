@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT count(*) AS \"n!\"\n            FROM agents a\n            JOIN account_memberships m ON m.account_id = a.account_id\n            WHERE m.user_id = $1 AND a.id = ANY($2)\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "813cee50b2b90a667b14555af65364861d48c564404a2a4c1130c84fc01b5e05"
+}
