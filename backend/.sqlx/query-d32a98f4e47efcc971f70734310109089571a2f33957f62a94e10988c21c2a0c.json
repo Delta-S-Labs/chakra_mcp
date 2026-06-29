@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, scope, approved_user_id, approved_agent_id, approved_at,\n               denied_at, expires_at, poll_interval_seconds, last_polled_at,\n               consumed_at, revoked_at\n        FROM oauth_device_codes\n        WHERE device_code_hash = $1\n        FOR UPDATE\n        ",
+  "query": "\n        SELECT id, scope, approved_user_id, approved_agent_id, approved_at,\n               denied_at, expires_at, poll_interval_seconds, last_polled_at,\n               consumed_at, revoked_at, client_id, agent_scope, selected_agent_ids\n        FROM oauth_device_codes\n        WHERE device_code_hash = $1\n        FOR UPDATE\n        ",
   "describe": {
     "columns": [
       {
@@ -123,6 +123,39 @@
             "name": "revoked_at"
           }
         }
+      },
+      {
+        "ordinal": 11,
+        "name": "client_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "oauth_device_codes",
+            "name": "client_id"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "agent_scope",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "oauth_device_codes",
+            "name": "agent_scope"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "selected_agent_ids",
+        "type_info": "UuidArray",
+        "origin": {
+          "Table": {
+            "table": "oauth_device_codes",
+            "name": "selected_agent_ids"
+          }
+        }
       }
     ],
     "parameters": {
@@ -141,8 +174,11 @@
       false,
       true,
       true,
+      true,
+      true,
+      false,
       true
     ]
   },
-  "hash": "1fa23eea3b33d31b4595eea6e95987064934b25933d248c4d8b79477481b576e"
+  "hash": "d32a98f4e47efcc971f70734310109089571a2f33957f62a94e10988c21c2a0c"
 }

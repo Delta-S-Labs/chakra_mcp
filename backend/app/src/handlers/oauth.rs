@@ -594,7 +594,7 @@ async fn token_device_code(state: &AppState, req: &TokenRequest) -> axum::respon
         r#"
         SELECT id, scope, approved_user_id, approved_agent_id, approved_at,
                denied_at, expires_at, poll_interval_seconds, last_polled_at,
-               consumed_at, revoked_at
+               consumed_at, revoked_at, client_id, agent_scope, selected_agent_ids
         FROM oauth_device_codes
         WHERE device_code_hash = $1
         FOR UPDATE
@@ -729,6 +729,60 @@ async fn token_device_code(state: &AppState, req: &TokenRequest) -> axum::respon
     {
         return ApiError::Database(e).into_response();
     }
+
+    // Materialise the chosen agent-management scope (scoped-agent-grants),
+    // bound to the token's jti, in the same tx. 'all' writes nothing.
+    // Device nuance: 'own' on an UNregistered session (no client_id) can't
+    // be client-matched, so it falls back to a 'selected' scope over the
+    // agent this pairing produced — device "own" always means "the agent(s)
+    // this pairing created", never nothing.
+    if row.agent_scope.as_str() != "all" {
+        let (eff_scope, eff_ids): (&str, Vec<Uuid>) =
+            if row.agent_scope.as_str() == "own" && row.client_id.is_none() {
+                ("selected", row.approved_agent_id.into_iter().collect())
+            } else if row.agent_scope.as_str() == "selected" {
+                (
+                    "selected",
+                    row.selected_agent_ids.clone().unwrap_or_default(),
+                )
+            } else {
+                ("own", Vec::new())
+            };
+        let scope_id = Uuid::now_v7();
+        if let Err(e) = sqlx::query!(
+            r#"
+            INSERT INTO credential_scopes (id, cred_kind, cred_ref, client_id, user_id, agent_scope)
+            VALUES ($1, 'jwt', $2, $3, $4, $5)
+            "#,
+            scope_id,
+            claims.jti.to_string(),
+            row.client_id.as_deref(),
+            approved_user_id,
+            eff_scope,
+        )
+        .execute(&mut *tx)
+        .await
+        {
+            return ApiError::Database(e).into_response();
+        }
+        for aid in &eff_ids {
+            if let Err(e) = sqlx::query!(
+                r#"
+                INSERT INTO credential_scope_agents (credential_scope_id, agent_id)
+                VALUES ($1, $2)
+                ON CONFLICT DO NOTHING
+                "#,
+                scope_id,
+                aid,
+            )
+            .execute(&mut *tx)
+            .await
+            {
+                return ApiError::Database(e).into_response();
+            }
+        }
+    }
+
     if let Err(e) = tx.commit().await {
         return ApiError::Database(e).into_response();
     }
@@ -959,6 +1013,14 @@ pub struct DeviceApproveRequest {
     pub agent_visibility: Option<String>,
     #[serde(default)]
     pub account_slug: Option<String>,
+    /// Agent-management scope for the token this pairing will mint
+    /// (scoped-agent-grants): "all" (default), "own", or "selected".
+    #[serde(default)]
+    pub agent_scope: Option<String>,
+    /// Agent ids when `agent_scope == "selected"`. Each must be an agent in
+    /// an account the approving user belongs to.
+    #[serde(default)]
+    pub selected_agent_ids: Option<Vec<Uuid>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1154,15 +1216,60 @@ pub async fn device_approve(
         (account_id, account_slug, inserted.id, inserted.slug)
     };
 
+    // Agent-management scope for the token this pairing will mint
+    // (scoped-agent-grants). Validate the mode and, for 'selected', that the
+    // agents are in an account the approver belongs to.
+    let agent_scope = req.agent_scope.as_deref().unwrap_or("all");
+    if !matches!(agent_scope, "all" | "own" | "selected") {
+        return Err(ApiError::InvalidRequest(
+            "agent_scope must be all|own|selected".into(),
+        ));
+    }
+    let mut selected_ids = req.selected_agent_ids.clone().unwrap_or_default();
+    selected_ids.sort();
+    selected_ids.dedup();
+    if agent_scope == "selected" {
+        if selected_ids.is_empty() {
+            return Err(ApiError::InvalidRequest(
+                "selected_agent_ids is required when agent_scope=selected".into(),
+            ));
+        }
+        let in_scope = sqlx::query_scalar!(
+            r#"
+            SELECT count(*) AS "n!"
+            FROM agents a
+            JOIN account_memberships m ON m.account_id = a.account_id
+            WHERE m.user_id = $1 AND a.id = ANY($2)
+            "#,
+            user.user_id,
+            &selected_ids,
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        if in_scope as usize != selected_ids.len() {
+            return Err(ApiError::InvalidRequest(
+                "selected_agent_ids must all be agents in your accounts".into(),
+            ));
+        }
+    }
+    let stored_ids: Option<&[Uuid]> = if agent_scope == "selected" {
+        Some(&selected_ids)
+    } else {
+        None
+    };
+
     sqlx::query!(
         r#"
         UPDATE oauth_device_codes
-        SET approved_user_id = $2, approved_agent_id = $3, approved_at = now()
+        SET approved_user_id = $2, approved_agent_id = $3, approved_at = now(),
+            agent_scope = $4, selected_agent_ids = $5
         WHERE id = $1
         "#,
         row.id,
         user.user_id,
         final_id,
+        agent_scope,
+        stored_ids,
     )
     .execute(&mut *tx)
     .await?;
@@ -1359,5 +1466,80 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(n, 1, "the chosen agent is enrolled in the selected scope");
+    }
+
+    // The device-flow nuance: 'own' on an unregistered session (no
+    // client_id) is rewritten at mint to a 'selected' scope over the agent
+    // the pairing produced, so it manages exactly that agent rather than
+    // nothing.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn device_own_without_client_falls_back_to_paired_agent(pool: PgPool) {
+        let (user, _jwt, account) = seed_user_with_personal(&pool, "alice").await;
+        let agent_id = seed_agent(&pool, account, "paired", user.user_id).await;
+
+        // Approved, unconsumed device session: NULL client_id, scope 'own'.
+        let device_code = "dev-code-0123456789abcdef0123456789abcdef";
+        let mut h = Sha256::new();
+        h.update(device_code.as_bytes());
+        let device_hash = hex::encode(h.finalize());
+        sqlx::query(
+            "INSERT INTO oauth_device_codes \
+             (id, device_code_hash, user_code, scope, expires_at, \
+              approved_user_id, approved_agent_id, approved_at, agent_scope) \
+             VALUES ($1, $2, $3, 'relay.full', now() + interval '10 minutes', \
+                     $4, $5, now(), 'own')",
+        )
+        .bind(Uuid::now_v7())
+        .bind(&device_hash)
+        .bind(format!("UC-{}", &Uuid::now_v7().simple().to_string()[..6]))
+        .bind(user.user_id)
+        .bind(agent_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let state = crate::AppState::new(pool.clone(), test_config());
+        let form = format!(
+            "grant_type=urn:ietf:params:oauth:grant-type:device_code&device_code={device_code}"
+        );
+        let res = crate::router(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/oauth/token")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .body(Body::from(form))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            res.status(),
+            StatusCode::OK,
+            "device token mint should succeed"
+        );
+
+        // 'own' + no client_id became 'selected' over the paired agent.
+        let (scope, client): (String, Option<String>) = sqlx::query_as(
+            "SELECT agent_scope, client_id FROM credential_scopes WHERE user_id = $1",
+        )
+        .bind(user.user_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(scope, "selected");
+        assert!(client.is_none());
+
+        let n: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM credential_scope_agents csa \
+             JOIN credential_scopes cs ON cs.id = csa.credential_scope_id \
+             WHERE cs.user_id = $1 AND csa.agent_id = $2",
+        )
+        .bind(user.user_id)
+        .bind(agent_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(n, 1, "the paired agent is enrolled");
     }
 }
