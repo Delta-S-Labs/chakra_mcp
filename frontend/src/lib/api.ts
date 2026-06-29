@@ -610,6 +610,12 @@ export interface IssueCodeRequest {
   code_challenge: string;
   code_challenge_method?: "S256";
   scope?: string;
+  /** Agent-management scope chosen at consent (scoped-agent-grants):
+   *  "all" (default — unrestricted), "own" (only agents this client
+   *  creates), or "selected". Orthogonal to `scope` above. */
+  agent_scope?: "all" | "own" | "selected";
+  /** Agent ids the user picked when `agent_scope === "selected"`. */
+  selected_agent_ids?: string[];
 }
 
 export interface IssueCodeResponse {
