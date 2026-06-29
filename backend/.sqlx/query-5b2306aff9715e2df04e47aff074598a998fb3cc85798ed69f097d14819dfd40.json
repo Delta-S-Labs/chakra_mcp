@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    INSERT INTO credential_scope_agents (credential_scope_id, agent_id)\n                    VALUES ($1, $2)\n                    ON CONFLICT DO NOTHING\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5b2306aff9715e2df04e47aff074598a998fb3cc85798ed69f097d14819dfd40"
+}
