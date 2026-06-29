@@ -131,3 +131,108 @@
   font-size: 0.88rem;
   color: oklch(38% 0.14 28);
 }
+
+/* ─── Agent-access scope chooser (scoped-agent-grants) ─── */
+.scopeSection { display: grid; gap: 0.45rem; }
+
+.scopeLabel {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin: 0.3rem 0 0;
+}
+
+.reqNote {
+  display: flex;
+  gap: 0.45rem;
+  align-items: flex-start;
+  font-family: var(--font-body);
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: var(--ink-soft);
+  background: color-mix(in oklab, var(--accent-butter) 28%, var(--paper));
+  border: 1px solid color-mix(in oklab, var(--accent-butter) 55%, var(--line));
+  border-radius: 0.55rem;
+  padding: 0.5rem 0.7rem;
+}
+
+.opt {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  background: var(--paper);
+  cursor: pointer;
+}
+.opt:hover { border-color: color-mix(in oklab, var(--accent-coral) 40%, var(--line)); }
+.optSelected {
+  border-color: var(--accent-coral);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent-coral) 30%, transparent);
+}
+.opt input { margin-top: 0.2rem; accent-color: var(--accent-coral); }
+
+.optTitle {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--ink);
+}
+.optDesc {
+  font-family: var(--font-body);
+  font-size: 0.84rem;
+  line-height: 1.4;
+  color: var(--ink-soft);
+  margin-top: 0.1rem;
+}
+
+.pill {
+  display: inline-block;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.58rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--accent-lime) 58%, var(--ink));
+  background: color-mix(in oklab, var(--accent-lime) 22%, var(--paper));
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+  margin-left: 0.4rem;
+  vertical-align: 0.08rem;
+}
+
+.picker {
+  display: grid;
+  gap: 0.05rem;
+  margin: -0.15rem 0 0.15rem 1.7rem;
+  padding-left: 0.8rem;
+  border-left: 2px solid var(--line);
+}
+.agentRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  color: var(--ink);
+  padding: 0.22rem 0;
+  cursor: pointer;
+}
+.agentRow input { accent-color: var(--accent-coral); }
+.agentRow .meta { color: var(--ink-muted); font-size: 0.8rem; }
+.pickerEmpty {
+  font-family: var(--font-body);
+  font-size: 0.84rem;
+  color: var(--ink-muted);
+  padding: 0.22rem 0;
+}
+.hint {
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+  margin: 0.1rem 0 0;
+}

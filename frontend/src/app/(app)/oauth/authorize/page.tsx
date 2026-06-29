@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getOAuthClient, ApiClientError } from "@/lib/api";
-import { ConsentForm } from "./ConsentForm";
+import { listMyAgents } from "@/lib/relay";
+import { ConsentForm, type ConsentAgent } from "./ConsentForm";
 import styles from "./oauth.module.css";
 
 /**
@@ -33,6 +34,14 @@ export default async function OAuthAuthorizePage({
   const codeChallengeMethod = readParam(params, "code_challenge_method") ?? "S256";
   const state = readParam(params, "state") ?? "";
   const scope = readParam(params, "scope") ?? "relay.full";
+  // Optional agent-management scope the client pre-requests (scoped-agent
+  // -grants), so a returning app's consent comes pre-filled. The user still
+  // gets the final say in the consent UI.
+  const requestedAgentScope = readParam(params, "agent_scope");
+  const requestedAgentIds = (readParam(params, "agent_ids") ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 
   const errors: string[] = [];
   if (responseType !== "code") errors.push("response_type must be 'code'.");
@@ -63,6 +72,26 @@ export default async function OAuthAuthorizePage({
   }
   if (client && redirectUri && !client.redirect_uris.includes(redirectUri)) {
     errors.push("redirect_uri does not match any URI registered for this client.");
+  }
+
+  // Load the user's agents for the "Specific agents" picker — but only when
+  // we'll actually render the consent form. Non-fatal: a relay blip just
+  // leaves the picker empty; "own" / "full" still work.
+  const willRender =
+    errors.length === 0 && !!client && !!clientId && !!redirectUri && !!codeChallenge;
+  let agents: ConsentAgent[] = [];
+  if (willRender) {
+    try {
+      agents = (await listMyAgents(token))
+        .filter((a) => a.is_mine)
+        .map((a) => ({
+          id: a.id,
+          label: a.display_name || a.slug,
+          account: a.account_slug,
+        }));
+    } catch {
+      agents = [];
+    }
   }
 
   return (
@@ -104,15 +133,19 @@ export default async function OAuthAuthorizePage({
           <div key={e} className={styles.error}>{e}</div>
         ))}
 
-        {errors.length === 0 && client && clientId && redirectUri && codeChallenge && (
+        {willRender && client && clientId && redirectUri && codeChallenge && (
           <ConsentForm
             token={token}
             clientId={clientId}
+            clientName={client.client_name}
             redirectUri={redirectUri}
             codeChallenge={codeChallenge}
             codeChallengeMethod="S256"
             state={state}
             scope={scope}
+            agents={agents}
+            requestedAgentScope={requestedAgentScope}
+            requestedAgentIds={requestedAgentIds}
           />
         )}
       </div>
@@ -143,6 +176,8 @@ function authorizeReturnUrl(
     "code_challenge_method",
     "state",
     "scope",
+    "agent_scope",
+    "agent_ids",
   ]) {
     const v = readParam(params, k);
     if (v) qs.set(k, v);
