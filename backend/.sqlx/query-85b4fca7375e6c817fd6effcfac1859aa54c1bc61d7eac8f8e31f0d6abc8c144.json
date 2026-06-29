@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO credential_scopes (id, cred_kind, cred_ref, client_id, user_id, agent_scope)\n            VALUES ($1, 'jwt', $2, $3, $4, $5)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "85b4fca7375e6c817fd6effcfac1859aa54c1bc61d7eac8f8e31f0d6abc8c144"
+}
