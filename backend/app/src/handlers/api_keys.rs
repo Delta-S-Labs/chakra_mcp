@@ -28,6 +28,15 @@ pub struct CreateApiKeyRequest {
     pub account_id: Option<Uuid>,
     /// TTL in days. Null = never expires.
     pub expires_in_days: Option<i64>,
+    /// Agent-management scope for this key (scoped-agent-grants): "all"
+    /// (default — unrestricted), "own" (only agents created with this key),
+    /// or "selected".
+    #[serde(default)]
+    pub agent_scope: Option<String>,
+    /// Agent ids when `agent_scope == "selected"`. Each must be an agent in
+    /// an account the key's owner belongs to.
+    #[serde(default)]
+    pub selected_agent_ids: Option<Vec<Uuid>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -106,12 +115,50 @@ pub async fn create(
         }
     }
 
+    // Agent-management scope for this key (scoped-agent-grants). Validate the
+    // mode and, for 'selected', that every named agent is in an account the
+    // key's owner belongs to.
+    let agent_scope = req.agent_scope.as_deref().unwrap_or("all");
+    if !matches!(agent_scope, "all" | "own" | "selected") {
+        return Err(ApiError::InvalidRequest(
+            "agent_scope must be all|own|selected".into(),
+        ));
+    }
+    let mut selected_ids = req.selected_agent_ids.clone().unwrap_or_default();
+    selected_ids.sort();
+    selected_ids.dedup();
+    if agent_scope == "selected" {
+        if selected_ids.is_empty() {
+            return Err(ApiError::InvalidRequest(
+                "selected_agent_ids is required when agent_scope=selected".into(),
+            ));
+        }
+        let in_scope = sqlx::query_scalar!(
+            r#"
+            SELECT count(*) AS "n!"
+            FROM agents a
+            JOIN account_memberships m ON m.account_id = a.account_id
+            WHERE m.user_id = $1 AND a.id = ANY($2)
+            "#,
+            user.user_id,
+            &selected_ids,
+        )
+        .fetch_one(&state.db)
+        .await?;
+        if in_scope as usize != selected_ids.len() {
+            return Err(ApiError::InvalidRequest(
+                "selected_agent_ids must all be agents in your accounts".into(),
+            ));
+        }
+    }
+
     let plaintext = generate_api_key();
     let key_hash = hash_api_key(&plaintext);
     let prefix = key_prefix(&plaintext);
     let id = Uuid::now_v7();
     let expires_at = req.expires_in_days.map(|d| Utc::now() + Duration::days(d));
 
+    let mut tx = state.db.begin().await?;
     let inserted = sqlx::query!(
         r#"
         INSERT INTO api_keys (id, user_id, account_id, name, key_hash, key_prefix, expires_at)
@@ -126,8 +173,43 @@ pub async fn create(
         prefix,
         expires_at,
     )
-    .fetch_one(&state.db)
+    .fetch_one(&mut *tx)
     .await?;
+
+    // Bind the key's agent-management scope (migration 0027), keyed by the
+    // key id. 'all' writes no row — resolve_grant treats a missing row as
+    // unrestricted, matching the relay's api_key path (cred_ref = key id).
+    if agent_scope != "all" {
+        let scope_id = Uuid::now_v7();
+        sqlx::query!(
+            r#"
+            INSERT INTO credential_scopes (id, cred_kind, cred_ref, user_id, agent_scope)
+            VALUES ($1, 'api_key', $2, $3, $4)
+            "#,
+            scope_id,
+            inserted.id.to_string(),
+            user.user_id,
+            agent_scope,
+        )
+        .execute(&mut *tx)
+        .await?;
+        if agent_scope == "selected" {
+            for aid in &selected_ids {
+                sqlx::query!(
+                    r#"
+                    INSERT INTO credential_scope_agents (credential_scope_id, agent_id)
+                    VALUES ($1, $2)
+                    ON CONFLICT DO NOTHING
+                    "#,
+                    scope_id,
+                    aid,
+                )
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
+    }
+    tx.commit().await?;
 
     Ok(Json(CreateApiKeyResponse {
         api_key: ApiKeyDto {
@@ -463,6 +545,60 @@ mod tests {
     use http_body_util::BodyExt;
     use sqlx::PgPool;
     use tower::ServiceExt;
+
+    // Creating a key with a 'selected' agent scope materialises a
+    // credential_scopes row keyed by the key id (+ the agent link), which is
+    // exactly what the relay's api_key path then enforces. Runtime queries
+    // keep this out of the .sqlx cache.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn create_with_selected_scope_writes_credential_scope(pool: PgPool) {
+        let (user, jwt, account) = seed_user_with_personal(&pool, "alice").await;
+        let agent_id = seed_agent(&pool, account, "a1", user.user_id).await;
+        let state = crate::AppState::new(pool.clone(), test_config());
+
+        let body = serde_json::json!({
+            "name": "ci key",
+            "agent_scope": "selected",
+            "selected_agent_ids": [agent_id],
+        });
+        let res = crate::router(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/api-keys")
+                    .header(header::AUTHORIZATION, format!("Bearer {jwt}"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(res.status().is_success(), "create should succeed");
+        let bytes = res.into_body().collect().await.unwrap().to_bytes();
+        let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let key_id = v["api_key"]["id"].as_str().unwrap();
+
+        let (scope,): (String,) = sqlx::query_as(
+            "SELECT agent_scope FROM credential_scopes WHERE cred_kind = 'api_key' AND cred_ref = $1",
+        )
+        .bind(key_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(scope, "selected");
+
+        let n: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM credential_scope_agents csa \
+             JOIN credential_scopes cs ON cs.id = csa.credential_scope_id \
+             WHERE cs.cred_ref = $1 AND csa.agent_id = $2",
+        )
+        .bind(key_id)
+        .bind(agent_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(n, 1);
+    }
 
     #[sqlx::test(migrations = "../migrations")]
     async fn rotate_retires_old_and_returns_new_plaintext(pool: PgPool) {
