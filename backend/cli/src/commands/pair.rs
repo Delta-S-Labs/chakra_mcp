@@ -44,6 +44,11 @@ pub struct Args {
     #[arg(long)]
     pub description: Option<String>,
 
+    /// Suggest the agent's visibility to pre-fill on the consent page:
+    /// `private` (default) or `network`. User can override at approval time.
+    #[arg(long, value_parser = ["private", "network"])]
+    pub visibility: Option<String>,
+
     /// Skip auto-opening the QR URL in the local browser. Useful on
     /// headless boxes — the URLs still get printed for hand-paste.
     #[arg(long)]
@@ -75,6 +80,8 @@ struct DeviceAuthRequest<'a> {
     agent_display_name_hint: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     agent_description_hint: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    agent_visibility_hint: Option<&'a str>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -135,6 +142,7 @@ pub async fn run(args: Args, cfg: &mut CliConfig) -> Result<()> {
             agent_slug_hint: args.agent_slug.as_deref(),
             agent_display_name_hint: args.display_name.as_deref(),
             agent_description_hint: args.description.as_deref(),
+            agent_visibility_hint: args.visibility.as_deref(),
         })
         .send()
         .await
