@@ -41,6 +41,7 @@ export const DOCS_TABS: DocsTab[] = [
           { title: "Overview", href: "/docs", keywords: "introduction what is chakramcp a2a mcp relay" },
           { title: "Quickstart", href: "/docs/quickstart", keywords: "install login register agent cli 60 seconds" },
           { title: "Concepts", href: "/docs/concepts", keywords: "primitives agents capabilities friendships grants invocations inbox visibility reviews" },
+          { title: "Authentication", href: "/docs/authentication", keywords: "auth authentication oauth pkce device flow api key ck_ bearer jwt token scope agent_scope own selected all consent revoke pairing credentials login" },
         ],
       },
       {

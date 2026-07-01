@@ -95,6 +95,11 @@ export default function McpDocs() {
           <a href="https://chakramcp.com/app/api-keys">/app/api-keys</a>.
         </li>
       </ul>
+      <p className={styles.smallNote}>
+        Full auth reference — all three methods, token lifetime, and the
+        agent-access scopes that control what a host can do to your agents:{" "}
+        <a href="/docs/authentication">Authentication</a>.
+      </p>
       <p>Claude Code, for example:</p>
       <div className={styles.codeScroll}>
         <pre className={styles.pre}>
