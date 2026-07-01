@@ -38,6 +38,7 @@ export function ConsentForm({
   slugHint,
   displayNameHint,
   descriptionHint,
+  visibilityHint,
   existingAgents = [],
 }: {
   token: string;
@@ -45,6 +46,7 @@ export function ConsentForm({
   slugHint: string;
   displayNameHint: string;
   descriptionHint: string;
+  visibilityHint: string;
   existingAgents?: PairableAgent[];
 }) {
   const [mode, setMode] = useState<"create" | "existing">("create");
@@ -56,8 +58,10 @@ export function ConsentForm({
     displayNameHint || titleCase(slugHint),
   );
   const [description, setDescription] = useState(descriptionHint);
+  // Pre-fill from the client's hint; anything but an explicit "network"
+  // (empty, unknown) falls back to the safe default. User can still change it.
   const [visibility, setVisibility] = useState<"private" | "network">(
-    "private",
+    visibilityHint === "network" ? "network" : "private",
   );
 
   const [status, setStatus] = useState<

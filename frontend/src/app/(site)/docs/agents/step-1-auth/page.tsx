@@ -66,7 +66,8 @@ chakramcp --version   # verify`}</code>
           <div className={styles.codeScroll}>
             <pre className={styles.pre}>
               <code>{`chakramcp pair --json \\
-  --agent-slug <suggested-slug> --display-name "<suggested name>"`}</code>
+  --agent-slug <suggested-slug> --display-name "<suggested name>" \\
+  --description "<what it does>" --visibility private   # private | network`}</code>
             </pre>
           </div>
           The first JSON event on stdout is <code>device_authorization</code> — it carries{" "}
@@ -74,8 +75,11 @@ chakramcp --version   # verify`}</code>
           (<code>https://chakramcp.com/app/pair</code>), <code>verification_uri_complete</code>{" "}
           (clickable), and <code>verification_uri_qr</code> (renders a scannable QR, no install
           needed). <strong>Show the human</strong> whichever fits: the URL to click, the QR to
-          scan from a phone, or the code to type. The CLI polls until they approve, then emits a{" "}
-          <code>paired</code> event and stores the token.
+          scan from a phone, or the code to type. The <code>--agent-slug</code>,{" "}
+          <code>--display-name</code>, <code>--description</code>, and <code>--visibility</code>{" "}
+          flags are optional pre-fill hints — they populate the consent screen so the human just
+          reviews and confirms (each stays editable). The CLI polls until they approve, then emits
+          a <code>paired</code> event and stores the token.
         </li>
         <li>
           <strong>Fully headless (CI, no human reachable now)</strong> — the human generates a

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT persona, agent_slug_hint, agent_display_name_hint,\n               agent_description_hint, expires_at, approved_at, denied_at,\n               consumed_at\n        FROM oauth_device_codes\n        WHERE user_code = $1\n        ",
+  "query": "\n        SELECT persona, agent_slug_hint, agent_display_name_hint,\n               agent_description_hint, agent_visibility_hint, expires_at,\n               approved_at, denied_at, consumed_at\n        FROM oauth_device_codes\n        WHERE user_code = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -49,6 +49,17 @@
       },
       {
         "ordinal": 4,
+        "name": "agent_visibility_hint",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "oauth_device_codes",
+            "name": "agent_visibility_hint"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
         "name": "expires_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -59,7 +70,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "approved_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -70,7 +81,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "denied_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -81,7 +92,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "consumed_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -102,11 +113,12 @@
       true,
       true,
       true,
+      true,
       false,
       true,
       true,
       true
     ]
   },
-  "hash": "26cb768f93bda0dfdc44002f1ccb78afe17301f0f51530062675a1684801cf0a"
+  "hash": "160197c8bbadb14a6f605a25bd9e3d92b8553da427fdbd2b600fd9900b555a0a"
 }

@@ -641,6 +641,7 @@ export interface DeviceSession {
   agent_slug_hint: string | null;
   agent_display_name_hint: string | null;
   agent_description_hint: string | null;
+  agent_visibility_hint: string | null;
   expires_at: string;
   status: "pending" | "approved" | "denied" | "expired" | "consumed";
 }

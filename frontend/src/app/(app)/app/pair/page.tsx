@@ -225,6 +225,7 @@ export default async function PairPage({
             slugHint={deviceSession.agent_slug_hint ?? ""}
             displayNameHint={deviceSession.agent_display_name_hint ?? ""}
             descriptionHint={deviceSession.agent_description_hint ?? ""}
+            visibilityHint={deviceSession.agent_visibility_hint ?? ""}
             existingAgents={myAgents}
           />
         </div>

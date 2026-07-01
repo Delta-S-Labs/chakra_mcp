@@ -823,6 +823,8 @@ pub struct DeviceAuthRequest {
     #[serde(default)]
     pub agent_description_hint: Option<String>,
     #[serde(default)]
+    pub agent_visibility_hint: Option<String>,
+    #[serde(default)]
     pub client_id: Option<String>,
 }
 
@@ -866,6 +868,17 @@ pub async fn device_authorization(
         ));
     }
 
+    // Optional visibility hint. It's just a pre-fill for the consent form, but
+    // validate it against the set the form + device-approve accept so a bad
+    // hint fails loudly here instead of getting silently dropped at approve.
+    if let Some(v) = req.agent_visibility_hint.as_deref() {
+        if !matches!(v, "private" | "network") {
+            return Err(ApiError::InvalidRequest(
+                "agent_visibility_hint must be 'private' or 'network'".into(),
+            ));
+        }
+    }
+
     let device_code = random_token(32);
     let device_code_hash = sha256_hex(&device_code);
 
@@ -882,8 +895,8 @@ pub async fn device_authorization(
             INSERT INTO oauth_device_codes
                 (id, client_id, device_code_hash, user_code, scope,
                  persona, agent_slug_hint, agent_display_name_hint,
-                 agent_description_hint, expires_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                 agent_description_hint, agent_visibility_hint, expires_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             ON CONFLICT (user_code) DO NOTHING
             RETURNING id
             "#,
@@ -896,6 +909,7 @@ pub async fn device_authorization(
             req.agent_slug_hint,
             req.agent_display_name_hint,
             req.agent_description_hint,
+            req.agent_visibility_hint,
             expires_at,
         )
         .fetch_optional(&state.db)
@@ -943,6 +957,7 @@ pub struct DeviceSessionResponse {
     pub agent_slug_hint: Option<String>,
     pub agent_display_name_hint: Option<String>,
     pub agent_description_hint: Option<String>,
+    pub agent_visibility_hint: Option<String>,
     pub expires_at: DateTime<Utc>,
     pub status: &'static str,
 }
@@ -955,8 +970,8 @@ pub async fn device_session(
     let row = sqlx::query!(
         r#"
         SELECT persona, agent_slug_hint, agent_display_name_hint,
-               agent_description_hint, expires_at, approved_at, denied_at,
-               consumed_at
+               agent_description_hint, agent_visibility_hint, expires_at,
+               approved_at, denied_at, consumed_at
         FROM oauth_device_codes
         WHERE user_code = $1
         "#,
@@ -983,6 +998,7 @@ pub async fn device_session(
         agent_slug_hint: row.agent_slug_hint,
         agent_display_name_hint: row.agent_display_name_hint,
         agent_description_hint: row.agent_description_hint,
+        agent_visibility_hint: row.agent_visibility_hint,
         expires_at: row.expires_at,
         status,
     }))

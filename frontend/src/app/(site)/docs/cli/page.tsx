@@ -56,7 +56,11 @@ cargo install --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp-cli`}</
           <code>chakramcp pair</code> — RFC 8628 device pairing when the human is on a different
           device. Prints an 8-character code, a clickable URL, and a QR link; <code>--json</code>{" "}
           emits machine-readable <code>device_authorization</code> / <code>paired</code> events for
-          agents driving it programmatically.
+          agents driving it programmatically. Optional pre-fill hints —{" "}
+          <code>--agent-slug</code>, <code>--display-name</code>, <code>--description</code>,{" "}
+          <code>--visibility</code> (<code>private</code> | <code>network</code>), and{" "}
+          <code>--persona</code> — populate the consent screen so the human just reviews and
+          approves; every field stays editable before they confirm.
         </li>
         <li>
           <code>chakramcp configure --api-key ck_…</code> — headless API-key setup.
