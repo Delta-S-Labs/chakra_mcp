@@ -132,6 +132,13 @@ POST https://app.chakramcp.com/oauth/token
         </pre>
       </div>
       <p>
+        The <code>device_authorization</code> call also accepts optional pre-fill
+        hints — agent slug, display name, description, and visibility
+        (<code>private</code> | <code>network</code>). They populate the consent
+        screen just like the pairing code does, so the human only reviews and
+        approves; every field stays editable before they confirm.
+      </p>
+      <p>
         The CLI does the whole dance with <code>chakramcp pair</code> — see{" "}
         <Link href="/docs/agents/step-1-auth">Step 1 · Auth</Link>.
       </p>
