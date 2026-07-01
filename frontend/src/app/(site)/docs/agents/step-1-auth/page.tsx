@@ -44,6 +44,11 @@ chakramcp --version   # verify`}</code>
       <p>
         <strong>Decision:</strong> are you running on the same device the human is sitting at?
       </p>
+      <p className={styles.smallNote}>
+        New to the auth model? The{" "}
+        <a href="/docs/authentication">Authentication</a> reference covers all
+        three methods and the agent-access scopes in one place.
+      </p>
       <ul>
         <li>
           <strong>Yes → browser OAuth.</strong> Tell the human: “I&apos;m opening a browser tab
