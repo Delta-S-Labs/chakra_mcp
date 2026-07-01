@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import {
   ApiClientError,
@@ -99,25 +100,50 @@ export default async function PairPage({
     return <Landing badCode />;
   }
 
-  // Defensive: layout already guarantees a session, but the typed
-  // shape allows undefined.
+  // Build the return URL up front so any auth bounce preserves the
+  // pairing code — after sign-in the user resumes here on the approve
+  // screen, not a bare /app/pair (or worse, an "unauthorized" dead-end).
+  const fromUrl = `/app/pair?session=${encodeURIComponent(userCode)}`;
+
+  // No usable token. The NextAuth cookie can outlive the backend JWT it
+  // carries (see auth.ts), so `proxy.ts` + the app layout happily let a
+  // cookie-alive-but-token-dead visitor reach here. Bounce to /login,
+  // preserving the code, instead of rendering a broken screen.
   if (!token) {
-    return <Landing />;
+    redirect(`/login?from=${encodeURIComponent(fromUrl)}`);
   }
 
   // Look up the session. 404 / expired / consumed / denied all render as
-  // a terminal-state card.
+  // a terminal-state card; a 401 means our own token is stale/dead — send
+  // the user through /login (code preserved) rather than showing the raw
+  // "Unauthorized" the backend returns.
   let deviceSession;
   let lookupError: string | null = null;
+  let sessionExpired = false;
   try {
     deviceSession = await getDeviceSession(token, userCode);
   } catch (err) {
     if (err instanceof ApiClientError && err.status === 404) {
       lookupError = "We can't find that pairing code. It may have expired.";
+    } else if (
+      (err instanceof ApiClientError && err.status === 401) ||
+      (err instanceof Error && /\b401\b|unauthoriz/i.test(err.message))
+    ) {
+      // Stale/dead backend token: a valid NextAuth cookie can still carry an
+      // expired JWT (see auth.ts), so we arrive here "logged in" while the
+      // authed device-session lookup 401s. Detect it by status OR message
+      // (mirrors /app/page.tsx's isUnauthorized) and bounce to login with
+      // the code preserved, rather than rendering the raw "unauthorized".
+      sessionExpired = true;
     } else {
       lookupError =
         err instanceof Error ? err.message : "Couldn't reach the auth service.";
     }
+  }
+  // redirect() throws NEXT_REDIRECT, so it must run OUTSIDE the try/catch
+  // above — otherwise the catch would swallow the control-flow throw.
+  if (sessionExpired) {
+    redirect(`/login?from=${encodeURIComponent(fromUrl)}&reason=session_expired`);
   }
 
   // Agents the user already owns — offered as "pair an existing agent"

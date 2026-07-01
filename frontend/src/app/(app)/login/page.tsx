@@ -48,7 +48,7 @@ export default async function LoginPage({
               (e.g. revoked). Suppress the "Signed in as / Continue"
               banner outright so the user just sees the login form,
               never a Continue button that loops straight back here. */}
-          {!sessionExpired && <AlreadySignedIn />}
+          {!sessionExpired && <AlreadySignedIn from={from} />}
 
           {sessionExpired && (
             <div className={styles.notice} role="status">

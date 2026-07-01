@@ -42,7 +42,7 @@ function backendTokenUsable(token: string | undefined): boolean {
   }
 }
 
-export async function AlreadySignedIn() {
+export async function AlreadySignedIn({ from }: { from?: string }) {
   const session = await auth();
   if (!session?.user) return null;
 
@@ -63,7 +63,7 @@ export async function AlreadySignedIn() {
         )}
       </div>
       <div className={styles.alreadyInActions}>
-        <Link href="/app" className={styles.alreadyInContinue}>
+        <Link href={from || "/app"} className={styles.alreadyInContinue}>
           Continue
         </Link>
         <form action={signOutAndRedirect}>
