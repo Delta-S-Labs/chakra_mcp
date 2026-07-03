@@ -11,4 +11,5 @@ pub mod config;
 pub mod db;
 pub mod error;
 pub mod jwt;
+pub mod scope;
 pub mod tracing_init;

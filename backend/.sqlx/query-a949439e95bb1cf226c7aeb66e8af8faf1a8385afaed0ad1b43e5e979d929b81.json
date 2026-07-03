@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE credential_scopes\n        SET cred_ref = $1\n        WHERE cred_kind = 'api_key' AND cred_ref = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a949439e95bb1cf226c7aeb66e8af8faf1a8385afaed0ad1b43e5e979d929b81"
+}

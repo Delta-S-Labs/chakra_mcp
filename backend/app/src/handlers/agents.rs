@@ -70,6 +70,18 @@ pub async fn move_to_personal(
         return Err(ApiError::Forbidden);
     }
 
+    // Scope gate (migration 0027): re-parenting (and possibly renaming) an
+    // agent is a management action, so a scoped credential must be
+    // permitted to manage THIS agent — not merely be a member of its
+    // current account. Resolved through the same shared guard the relay
+    // uses, so a scoped OAuth client / API key can't yank an agent it
+    // didn't create out of a shared org.
+    let grant =
+        chakramcp_shared::scope::resolve_grant(&state.db, user.jti, user.api_key_id).await?;
+    if !chakramcp_shared::scope::grant_allows_agent(&state.db, &grant, agent_id).await? {
+        return Err(ApiError::Forbidden);
+    }
+
     // Resolve the caller's personal account.
     let personal = sqlx::query!(
         r#"
@@ -172,6 +184,84 @@ mod tests {
     use http_body_util::BodyExt;
     use sqlx::PgPool;
     use tower::ServiceExt;
+
+    // Scoped-grants audit (G4): re-parenting is a management action, so a
+    // credential scoped to specific agents must not move an agent outside
+    // its scope — even in an org it co-owns. Exercises the app-side scope
+    // gate end to end, including the api_key_id newly threaded through
+    // AuthUser so an api-key caller resolves its scope.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn move_to_personal_respects_agent_scope(pool: PgPool) {
+        let (user, jwt, _personal) = seed_user_with_personal(&pool, "alice").await;
+        let org = seed_org(&pool, "acme-g4", user.user_id).await;
+        let agent_a = seed_agent(&pool, org, "scoped-a", user.user_id).await;
+        let agent_b = seed_agent(&pool, org, "scoped-b", user.user_id).await;
+        let state = crate::AppState::new(pool.clone(), test_config());
+
+        // Mint an api-key scoped to ONLY agent_a.
+        let res = crate::router(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/api-keys")
+                    .header(header::AUTHORIZATION, format!("Bearer {jwt}"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "name": "scoped",
+                            "agent_scope": "selected",
+                            "selected_agent_ids": [agent_a],
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(
+            res.status().is_success(),
+            "scoped key creation should succeed"
+        );
+        let v: serde_json::Value =
+            serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        let key = v["plaintext"].as_str().unwrap().to_string();
+
+        // DENY: the scoped key must not re-parent agent_b (out of scope).
+        let res = crate::router(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/agents/{agent_b}/move-to-personal"))
+                    .header(header::AUTHORIZATION, format!("Bearer {key}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            res.status(),
+            StatusCode::FORBIDDEN,
+            "scoped key must not re-parent an out-of-scope agent"
+        );
+
+        // ALLOW: it may re-parent agent_a (in scope).
+        let res = crate::router(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/agents/{agent_a}/move-to-personal"))
+                    .header(header::AUTHORIZATION, format!("Bearer {key}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(
+            res.status().is_success(),
+            "scoped key may re-parent its in-scope agent; got {}",
+            res.status()
+        );
+    }
 
     #[sqlx::test(migrations = "../migrations")]
     async fn move_to_personal_happy_path(pool: PgPool) {

@@ -325,6 +325,13 @@ pub async fn propose(
         return Err(ApiError::Forbidden);
     }
 
+    // Scope gate (migration 0027): proposing acts on the proposer agent's
+    // behalf, so a scoped credential must be permitted to manage it.
+    let grant_scope = crate::auth::resolve_grant(&state.db, &user).await?;
+    if !crate::auth::grant_allows_agent(&state.db, &grant_scope, req.proposer_agent_id).await? {
+        return Err(ApiError::Forbidden);
+    }
+
     // Target must exist; the unique partial index will block duplicate
     // active proposals via a 23505 SQLSTATE.
     let _target_account = agent_account(&state.db, req.target_agent_id).await?;
@@ -398,6 +405,13 @@ pub async fn cancel(
         return Err(ApiError::Forbidden);
     }
 
+    // Scope gate (migration 0027): cancelling acts on the proposer agent's
+    // behalf, so require scope to manage it.
+    let grant_scope = crate::auth::resolve_grant(&state.db, &user).await?;
+    if !crate::auth::grant_allows_agent(&state.db, &grant_scope, row.proposer_agent_id).await? {
+        return Err(ApiError::Forbidden);
+    }
+
     sqlx::query!(
         r#"
         UPDATE friendships
@@ -452,6 +466,13 @@ pub async fn accept(
 
     let target_account = agent_account(&state.db, row.target_agent_id).await?;
     if !user_is_member(&state.db, user.user_id, target_account).await? {
+        return Err(ApiError::Forbidden);
+    }
+
+    // Scope gate (migration 0027): accepting acts on the target agent's
+    // behalf, so require scope to manage it.
+    let grant_scope = crate::auth::resolve_grant(&state.db, &user).await?;
+    if !crate::auth::grant_allows_agent(&state.db, &grant_scope, row.target_agent_id).await? {
         return Err(ApiError::Forbidden);
     }
 
@@ -514,6 +535,13 @@ pub async fn reject(
         return Err(ApiError::Forbidden);
     }
 
+    // Scope gate (migration 0027): rejecting acts on the target agent's
+    // behalf, so require scope to manage it.
+    let grant_scope = crate::auth::resolve_grant(&state.db, &user).await?;
+    if !crate::auth::grant_allows_agent(&state.db, &grant_scope, row.target_agent_id).await? {
+        return Err(ApiError::Forbidden);
+    }
+
     sqlx::query!(
         r#"
         UPDATE friendships
@@ -573,6 +601,14 @@ pub async fn counter(
 
     let target_account = agent_account(&state.db, row.target_agent_id).await?;
     if !user_is_member(&state.db, user.user_id, target_account).await? {
+        return Err(ApiError::Forbidden);
+    }
+
+    // Scope gate (migration 0027): countering acts on the target agent's
+    // behalf (it opens a reverse proposal from that agent), so require
+    // scope to manage it.
+    let grant_scope = crate::auth::resolve_grant(&state.db, &user).await?;
+    if !crate::auth::grant_allows_agent(&state.db, &grant_scope, row.target_agent_id).await? {
         return Err(ApiError::Forbidden);
     }
 
