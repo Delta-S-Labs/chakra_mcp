@@ -1176,6 +1176,14 @@ async fn propose_friendship(db: &PgPool, user: &AuthUser, args: Value) -> Result
     if !user_is_member(db, user.user_id, proposer_account).await? {
         return Err(ApiError::Forbidden);
     }
+
+    // Scope gate (migration 0027): mirror the REST friendships::propose
+    // gate — proposing acts on the proposer agent's behalf, so a scoped
+    // credential must be permitted to manage it.
+    let grant = crate::auth::resolve_grant(db, user).await?;
+    if !crate::auth::grant_allows_agent(db, &grant, a.proposer_agent_id).await? {
+        return Err(ApiError::Forbidden);
+    }
     // Confirm target exists.
     let _t = sqlx::query_scalar!(
         r#"SELECT account_id FROM agents WHERE id = $1"#,
@@ -1357,6 +1365,15 @@ async fn publish_capability(db: &PgPool, user: &AuthUser, args: Value) -> Result
             .await?
             .ok_or(ApiError::NotFound)?;
     if !user_is_member(db, user.user_id, agent_account).await? {
+        return Err(ApiError::Forbidden);
+    }
+
+    // Scope gate (migration 0027): the REST twin (capabilities::create)
+    // enforces this, so the MCP path must too — otherwise a scoped
+    // credential could publish a capability on an agent it isn't permitted
+    // to manage by going through /mcp instead of the REST endpoint.
+    let grant = crate::auth::resolve_grant(db, user).await?;
+    if !crate::auth::grant_allows_agent(db, &grant, a.agent_id).await? {
         return Err(ApiError::Forbidden);
     }
 

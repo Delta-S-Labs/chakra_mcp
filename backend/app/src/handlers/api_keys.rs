@@ -316,6 +316,26 @@ pub async fn rotate(
     .fetch_one(&mut *tx)
     .await?;
 
+    // Carry the key's agent-management scope over to the new id. The
+    // scope row (migration 0027) is keyed by the key id in `cred_ref`,
+    // so without this the rotated key would resolve to no row — which
+    // `resolve_grant` treats as unrestricted `all`, silently widening a
+    // deliberately-narrowed `own`/`selected` key back to full access.
+    // Re-pointing (rather than copying) preserves the `selected` set,
+    // which FKs the unchanged scope id. `all` keys have no row, so this
+    // matches zero rows and is a no-op for them.
+    sqlx::query!(
+        r#"
+        UPDATE credential_scopes
+        SET cred_ref = $1
+        WHERE cred_kind = 'api_key' AND cred_ref = $2
+        "#,
+        new_id.to_string(),
+        old.id.to_string(),
+    )
+    .execute(&mut *tx)
+    .await?;
+
     // Retire the predecessor. Once this commits, any in-flight request
     // using the old plaintext starts failing at the auth extractor.
     sqlx::query!(
@@ -650,6 +670,97 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    // Regression (scoped-grants audit, F1): rotating a scoped key must CARRY
+    // its agent-management scope to the new id. The scope row is keyed by the
+    // key id, so minting a new id without moving the row leaves the new key
+    // with no row — which resolve_grant treats as unrestricted `all`,
+    // silently widening a deliberately-narrowed `selected`/`own` key.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn rotate_preserves_agent_scope(pool: PgPool) {
+        let (user, jwt, personal) = seed_user_with_personal(&pool, "alice").await;
+        let agent_id = seed_agent(&pool, personal, "a1", user.user_id).await;
+        let state = crate::AppState::new(pool.clone(), test_config());
+
+        // Create a key scoped to exactly agent_id.
+        let res = crate::router(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/api-keys")
+                    .header(header::AUTHORIZATION, format!("Bearer {jwt}"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "name": "ci key",
+                            "agent_scope": "selected",
+                            "selected_agent_ids": [agent_id],
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(res.status().is_success());
+        let v: serde_json::Value =
+            serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        let old_id = v["api_key"]["id"].as_str().unwrap().to_string();
+
+        // Rotate it.
+        let res = crate::router(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/api-keys/{old_id}/rotate"))
+                    .header(header::AUTHORIZATION, format!("Bearer {jwt}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CREATED);
+        let v: serde_json::Value =
+            serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        let new_id = v["api_key"]["id"].as_str().unwrap().to_string();
+        assert_ne!(new_id, old_id);
+
+        // The scope row moved to the new id; the old id keeps none.
+        let old_rows: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM credential_scopes WHERE cred_kind='api_key' AND cred_ref=$1",
+        )
+        .bind(&old_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(old_rows, 0, "old key id must not keep a scope row");
+
+        let scope: Option<(String,)> = sqlx::query_as(
+            "SELECT agent_scope FROM credential_scopes WHERE cred_kind='api_key' AND cred_ref=$1",
+        )
+        .bind(&new_id)
+        .fetch_optional(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            scope.map(|s| s.0),
+            Some("selected".to_string()),
+            "rotated key must keep its 'selected' scope, not widen to all"
+        );
+
+        // ...and the selected-set survives the move.
+        let enrolled: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM credential_scope_agents csa \
+             JOIN credential_scopes cs ON cs.id = csa.credential_scope_id \
+             WHERE cs.cred_ref=$1 AND csa.agent_id=$2",
+        )
+        .bind(&new_id)
+        .bind(agent_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(enrolled, 1, "selected-set must survive rotation");
     }
 
     #[sqlx::test(migrations = "../migrations")]

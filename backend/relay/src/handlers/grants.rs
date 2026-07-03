@@ -301,6 +301,15 @@ pub async fn create(
         return Err(ApiError::Forbidden);
     }
 
+    // Scope gate (migration 0027): a grant is created on the granter
+    // agent's behalf (it exposes that agent's capability), so a scoped
+    // credential must be permitted to manage the granter agent — account
+    // membership alone is not enough.
+    let grant_scope = crate::auth::resolve_grant(&state.db, &user).await?;
+    if !crate::auth::grant_allows_agent(&state.db, &grant_scope, req.granter_agent_id).await? {
+        return Err(ApiError::Forbidden);
+    }
+
     // Grantee must exist.
     let _grantee_exists = sqlx::query_scalar!(
         r#"SELECT id FROM agents WHERE id = $1"#,
@@ -372,7 +381,7 @@ pub async fn revoke(
 ) -> ApiResult<Json<GrantDto>> {
     let row = sqlx::query!(
         r#"
-        SELECT g.status, ga.account_id as granter_account_id
+        SELECT g.status, g.granter_agent_id, ga.account_id as granter_account_id
         FROM grants g
         JOIN agents ga ON ga.id = g.granter_agent_id
         WHERE g.id = $1
@@ -391,6 +400,13 @@ pub async fn revoke(
     }
 
     if !user_is_member(&state.db, user.user_id, row.granter_account_id).await? {
+        return Err(ApiError::Forbidden);
+    }
+
+    // Scope gate (migration 0027): revoking acts on the granter agent's
+    // grants, so require scope to manage that agent, not just membership.
+    let grant_scope = crate::auth::resolve_grant(&state.db, &user).await?;
+    if !crate::auth::grant_allows_agent(&state.db, &grant_scope, row.granter_agent_id).await? {
         return Err(ApiError::Forbidden);
     }
 

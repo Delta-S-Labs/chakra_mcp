@@ -33,6 +33,11 @@ pub struct AuthUser {
     /// JWT `exp` translated to a `TIMESTAMPTZ`-compatible value, for
     /// the sign-out handler to mirror into `revoked_tokens.expires_at`.
     pub token_expires_at: Option<DateTime<Utc>>,
+    /// API key id, if this request authenticated via a `ck_` key. `None`
+    /// for JWT requests. Lets scope-gated endpoints resolve the
+    /// credential's agent-management scope (migration 0027) the same way
+    /// the relay does.
+    pub api_key_id: Option<Uuid>,
 }
 
 impl FromRequestParts<AppState> for AuthUser {
@@ -74,6 +79,7 @@ impl FromRequestParts<AppState> for AuthUser {
                 is_admin: claims.is_admin,
                 jti: Some(claims.jti),
                 token_expires_at,
+                api_key_id: None,
             });
         }
 
@@ -137,7 +143,7 @@ async fn api_key_lookup(db: &PgPool, token: &str) -> Result<Option<AuthUser>, Ap
     let key_hash = hash_api_key(token);
     let row = sqlx::query!(
         r#"
-        SELECT u.id as user_id, u.email, u.is_admin
+        SELECT u.id as user_id, u.email, u.is_admin, k.id as api_key_id
         FROM api_keys k
         JOIN users u ON u.id = k.user_id
         WHERE k.key_hash = $1
@@ -165,6 +171,7 @@ async fn api_key_lookup(db: &PgPool, token: &str) -> Result<Option<AuthUser>, Ap
             is_admin: r.is_admin,
             jti: None,
             token_expires_at: None,
+            api_key_id: Some(r.api_key_id),
         }))
     } else {
         Ok(None)

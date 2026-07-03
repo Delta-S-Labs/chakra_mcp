@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT g.status, ga.account_id as granter_account_id\n        FROM grants g\n        JOIN agents ga ON ga.id = g.granter_agent_id\n        WHERE g.id = $1\n        ",
+  "query": "\n        SELECT g.status, g.granter_agent_id, ga.account_id as granter_account_id\n        FROM grants g\n        JOIN agents ga ON ga.id = g.granter_agent_id\n        WHERE g.id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -16,6 +16,17 @@
       },
       {
         "ordinal": 1,
+        "name": "granter_agent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "grants",
+            "name": "granter_agent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
         "name": "granter_account_id",
         "type_info": "Uuid",
         "origin": {
@@ -33,8 +44,9 @@
     },
     "nullable": [
       false,
+      false,
       false
     ]
   },
-  "hash": "016712b99f6dab99fca14f49f21f16ea28da0ae838215cf7505ce16656bc9685"
+  "hash": "e7f997cf3633800b192a0b247fd8187a1d6834ba221ceb40ee51ff85aa61bda0"
 }
