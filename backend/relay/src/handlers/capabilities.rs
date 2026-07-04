@@ -155,11 +155,18 @@ pub async fn list(
     .ok_or(ApiError::NotFound)?;
 
     let is_member = user_is_member(&state.db, user.user_id, agent.account_id).await?;
-    if !is_member && agent.visibility != "network" {
+    // Scope (migration 0027): a member sees a private agent's full
+    // capability list only if its credential is in scope for that agent;
+    // otherwise treat it like a non-member (network-visible caps only).
+    // Network-visible agents stay public.
+    let grant = crate::auth::resolve_grant(&state.db, &user).await?;
+    let manageable =
+        is_member && crate::auth::grant_allows_agent(&state.db, &grant, agent_id).await?;
+    if !manageable && agent.visibility != "network" {
         return Err(ApiError::NotFound);
     }
 
-    // One query — non-members get only network-visible rows.
+    // One query — callers who can't manage the agent get only network rows.
     let rows = sqlx::query!(
         r#"
         SELECT id, agent_id, name, description, input_schema, output_schema,
@@ -171,7 +178,7 @@ pub async fn list(
         ORDER BY name ASC
         "#,
         agent_id,
-        is_member,
+        manageable,
     )
     .fetch_all(&state.db)
     .await?;

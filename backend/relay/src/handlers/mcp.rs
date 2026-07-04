@@ -614,6 +614,9 @@ async fn list_my_accounts(db: &PgPool, user: &AuthUser) -> Result<Value, ApiErro
 }
 
 async fn list_my_agents(db: &PgPool, user: &AuthUser) -> Result<Value, ApiError> {
+    // Scope (migration 0027): mirror REST list_mine — a non-`all`
+    // credential lists only the agents it may manage.
+    let grant = crate::auth::resolve_grant(db, user).await?;
     let rows = sqlx::query!(
         r#"
         SELECT a.id, a.account_id, a.slug, a.display_name, a.description,
@@ -625,9 +628,21 @@ async fn list_my_agents(db: &PgPool, user: &AuthUser) -> Result<Value, ApiError>
         WHERE a.account_id IN (
             SELECT account_id FROM account_memberships WHERE user_id = $1
         )
+          AND (
+            $2 = 'all'
+            OR ($2 = 'own'
+                AND (a.created_by_client_id = $3 OR a.created_by_api_key_id = $4))
+            OR ($2 = 'selected'
+                AND a.id IN (SELECT agent_id FROM credential_scope_agents
+                             WHERE credential_scope_id = $5))
+          )
         ORDER BY a.created_at DESC
         "#,
         user.user_id,
+        grant.mode_str(),
+        grant.client_id,
+        grant.api_key_id,
+        grant.scope_id,
     )
     .fetch_all(db)
     .await?;
@@ -1006,6 +1021,13 @@ async fn pull_inbox(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, 
             .await?
             .ok_or(ApiError::NotFound)?;
     if !user_is_member(db, user.user_id, agent_account).await? {
+        return Err(ApiError::Forbidden);
+    }
+
+    // Scope (migration 0027): mirror REST inbox — claiming an agent's
+    // inbox requires scope to manage that agent.
+    let grant = crate::auth::resolve_grant(db, user).await?;
+    if !crate::auth::grant_allows_agent(db, &grant, a.agent_id).await? {
         return Err(ApiError::Forbidden);
     }
 

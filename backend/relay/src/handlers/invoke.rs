@@ -723,6 +723,15 @@ pub async fn inbox(
         return Err(ApiError::Forbidden);
     }
 
+    // Scope (migration 0027): claiming an agent's inbox is operating that
+    // agent, so require scope to manage it — membership alone isn't enough.
+    // respond/report_result stay off this gate: they act only on rows
+    // already claimed here, so gating the claim bounds them.
+    let grant = crate::auth::resolve_grant(&state.db, &user).await?;
+    if !crate::auth::grant_allows_agent(&state.db, &grant, q.agent_id).await? {
+        return Err(ApiError::Forbidden);
+    }
+
     // Atomically claim the oldest pending rows for this agent.
     // FOR UPDATE SKIP LOCKED lets concurrent pollers safely pull
     // disjoint batches without blocking each other.
