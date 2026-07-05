@@ -398,6 +398,53 @@ mod tests {
         );
     }
 
+    // Relationship-read scoping: manageable_agent_ids returns the bounded
+    // manageable set (None for `all`), and manages_either gates a two-agent
+    // relationship to those touching a manageable side.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn manageable_ids_scope_relationship_reads(pool: PgPool) {
+        use chakramcp_shared::scope::{manageable_agent_ids, manages_either};
+
+        let (_u, agent_a, agent_b, scope_id) = seed(&pool).await;
+
+        // 'selected' scope enrolls agent_b (per seed).
+        let selected = GrantScope {
+            scope_id: Some(scope_id),
+            mode: AgentScopeMode::Selected,
+            client_id: None,
+            api_key_id: None,
+        };
+        let ids = manageable_agent_ids(&pool, &selected).await.unwrap();
+        assert_eq!(ids, Some(vec![agent_b]));
+        assert!(
+            manages_either(&ids, agent_a, agent_b),
+            "relationship touching the enrolled agent is visible"
+        );
+        assert!(
+            !manages_either(&ids, agent_a, Uuid::now_v7()),
+            "relationship touching no enrolled agent is hidden"
+        );
+
+        // 'own' for client mcp_a resolves to the agent it created (agent_a).
+        let own = GrantScope {
+            scope_id: None,
+            mode: AgentScopeMode::Own,
+            client_id: Some("mcp_a".to_string()),
+            api_key_id: None,
+        };
+        assert_eq!(
+            manageable_agent_ids(&pool, &own).await.unwrap(),
+            Some(vec![agent_a])
+        );
+
+        // 'all' → no restriction; every relationship passes.
+        let all = manageable_agent_ids(&pool, &GrantScope::unrestricted(None))
+            .await
+            .unwrap();
+        assert_eq!(all, None);
+        assert!(manages_either(&all, Uuid::now_v7(), Uuid::now_v7()));
+    }
+
     #[sqlx::test(migrations = "../migrations")]
     async fn resolve_grant_defaults_to_all_without_row(pool: PgPool) {
         let user = AuthUser {

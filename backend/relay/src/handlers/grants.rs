@@ -213,8 +213,17 @@ pub async fn list(
     .fetch_all(&state.db)
     .await?;
 
+    // Scope (migration 0027): a non-`all` credential sees only grants
+    // touching an agent it may manage. Membership is already enforced by
+    // the query above; this adds the scope narrowing.
+    let grant = crate::auth::resolve_grant(&state.db, &user).await?;
+    let manageable = chakramcp_shared::scope::manageable_agent_ids(&state.db, &grant).await?;
+
     Ok(Json(
         rows.into_iter()
+            .filter(|r| {
+                chakramcp_shared::scope::manages_either(&manageable, r.g_agent_id, r.e_agent_id)
+            })
             .map(|r| GrantDto {
                 id: r.id,
                 status: r.status,
@@ -254,7 +263,15 @@ pub async fn get_one(
     user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<GrantDto>> {
-    Ok(Json(fetch_grant(&state.db, user.user_id, id).await?))
+    let dto = fetch_grant(&state.db, user.user_id, id).await?;
+    // Scope (migration 0027): hide a grant the caller can't manage either
+    // side of. fetch_grant already enforced membership.
+    let grant = crate::auth::resolve_grant(&state.db, &user).await?;
+    let manageable = chakramcp_shared::scope::manageable_agent_ids(&state.db, &grant).await?;
+    if !chakramcp_shared::scope::manages_either(&manageable, dto.granter.id, dto.grantee.id) {
+        return Err(ApiError::NotFound);
+    }
+    Ok(Json(dto))
 }
 
 // ─── POST /v1/grants ─────────────────────────────────────

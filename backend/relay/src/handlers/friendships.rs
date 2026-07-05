@@ -254,8 +254,16 @@ pub async fn list(
     .fetch_all(&state.db)
     .await?;
 
+    // Scope (migration 0027): a non-`all` credential sees only friendships
+    // touching an agent it may manage. Membership already enforced above.
+    let grant = crate::auth::resolve_grant(&state.db, &user).await?;
+    let manageable = chakramcp_shared::scope::manageable_agent_ids(&state.db, &grant).await?;
+
     Ok(Json(
         rows.into_iter()
+            .filter(|r| {
+                chakramcp_shared::scope::manages_either(&manageable, r.p_agent_id, r.t_agent_id)
+            })
             .map(|r| FriendshipDto {
                 id: r.id,
                 status: r.status,
@@ -304,7 +312,15 @@ pub async fn get_one(
     user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<FriendshipDto>> {
-    Ok(Json(fetch_friendship(&state.db, user.user_id, id).await?))
+    let dto = fetch_friendship(&state.db, user.user_id, id).await?;
+    // Scope (migration 0027): hide a friendship the caller can't manage
+    // either side of. fetch_friendship already enforced membership.
+    let grant = crate::auth::resolve_grant(&state.db, &user).await?;
+    let manageable = chakramcp_shared::scope::manageable_agent_ids(&state.db, &grant).await?;
+    if !chakramcp_shared::scope::manages_either(&manageable, dto.proposer.id, dto.target.id) {
+        return Err(ApiError::NotFound);
+    }
+    Ok(Json(dto))
 }
 
 // ─── POST /v1/friendships ────────────────────────────────
