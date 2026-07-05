@@ -49,6 +49,18 @@ impl GrantScope {
             api_key_id,
         }
     }
+
+    /// The scope mode as its wire string (`all` | `own` | `selected`).
+    /// Lets a LIST query filter by scope in one static SQL fragment —
+    /// `$mode = 'all' OR ($mode = 'own' AND …) OR ($mode = 'selected' AND …)`
+    /// — instead of a per-row `grant_allows_agent` round-trip.
+    pub fn mode_str(&self) -> &'static str {
+        match self.mode {
+            AgentScopeMode::All => "all",
+            AgentScopeMode::Own => "own",
+            AgentScopeMode::Selected => "selected",
+        }
+    }
 }
 
 /// Resolve the agent-management scope bound to the caller's credential.

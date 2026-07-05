@@ -158,6 +158,12 @@ pub async fn list_mine(
     State(state): State<RelayState>,
     user: AuthUser,
 ) -> ApiResult<Json<Vec<AgentDto>>> {
+    // Scope (migration 0027): a non-`all` credential lists only the agents
+    // it may manage. Applied as one static filter keyed off the resolved
+    // grant — `all` matches everything, so unscoped callers are unaffected.
+    // Network-visible agents it doesn't manage stay discoverable via
+    // /v1/network/agents; this is the "manage" list.
+    let grant = crate::auth::resolve_grant(&state.db, &user).await?;
     let rows = sqlx::query!(
         r#"
         SELECT
@@ -176,9 +182,21 @@ pub async fn list_mine(
         )
           AND a.tombstoned_at IS NULL
           AND acc.tombstoned_at IS NULL
+          AND (
+            $2 = 'all'
+            OR ($2 = 'own'
+                AND (a.created_by_client_id = $3 OR a.created_by_api_key_id = $4))
+            OR ($2 = 'selected'
+                AND a.id IN (SELECT agent_id FROM credential_scope_agents
+                             WHERE credential_scope_id = $5))
+          )
         ORDER BY a.created_at DESC
         "#,
-        user.user_id
+        user.user_id,
+        grant.mode_str(),
+        grant.client_id,
+        grant.api_key_id,
+        grant.scope_id
     )
     .fetch_all(&state.db)
     .await?;
@@ -499,7 +517,13 @@ pub async fn get_one(
     .await?
     .ok_or(ApiError::NotFound)?;
 
-    if !r.is_mine && r.visibility != "network" {
+    // Scope (migration 0027): membership makes an agent visible, but only
+    // an in-scope credential may *manage* it. A private agent the caller
+    // can't manage is hidden (404); a network-visible one stays public.
+    let grant = crate::auth::resolve_grant(&state.db, &user).await?;
+    let manageable = r.is_mine && crate::auth::grant_allows_agent(&state.db, &grant, id).await?;
+
+    if !manageable && r.visibility != "network" {
         return Err(ApiError::NotFound);
     }
 
@@ -512,10 +536,10 @@ pub async fn get_one(
         display_name: r.display_name,
         description: r.description,
         visibility: r.visibility,
-        endpoint_url: if r.is_mine { r.endpoint_url } else { None },
+        endpoint_url: if manageable { r.endpoint_url } else { None },
         created_at: r.created_at,
         updated_at: r.updated_at,
-        is_mine: r.is_mine,
+        is_mine: manageable,
         capability_count: r.capability_count,
         avg_rating: r.avg_rating,
         review_count: r.review_count,
@@ -1082,6 +1106,160 @@ mod create_push_mode_tests {
         )
         .unwrap();
         (user_id, account_id, token)
+    }
+
+    // Scoped-grants audit: read-filter. A `selected` credential's
+    // "my agents" list must contain only the agents it may manage —
+    // validates the static scope-filter SQL fragment.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn list_mine_filters_to_scoped_agents(pool: PgPool) {
+        use crate::auth::AuthUser;
+        use axum::extract::State;
+
+        let (user_id, account_id, _jwt) = seed_user_with_jwt(&pool).await;
+        for c in ["mcp_a", "mcp_b"] {
+            sqlx::query(
+                "INSERT INTO oauth_clients (id, client_id, client_name, redirect_uris) \
+                 VALUES ($1, $2, $3, $4)",
+            )
+            .bind(Uuid::now_v7())
+            .bind(c)
+            .bind(c)
+            .bind(vec!["https://x.test".to_string()])
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        let agent_a = Uuid::now_v7();
+        let agent_b = Uuid::now_v7();
+        for (id, slug, client) in [(agent_a, "aa", "mcp_a"), (agent_b, "bb", "mcp_b")] {
+            sqlx::query(
+                "INSERT INTO agents (id, account_id, slug, display_name, mode, created_by_client_id) \
+                 VALUES ($1, $2, $3, $4, 'pull', $5)",
+            )
+            .bind(id)
+            .bind(account_id)
+            .bind(slug)
+            .bind(slug)
+            .bind(client)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        // 'selected' scope enrolling only agent_a, bound to jti.
+        let jti = Uuid::now_v7();
+        let scope_id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO credential_scopes (id, cred_kind, cred_ref, user_id, agent_scope) \
+             VALUES ($1, 'jwt', $2, $3, 'selected')",
+        )
+        .bind(scope_id)
+        .bind(jti.to_string())
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO credential_scope_agents (credential_scope_id, agent_id) VALUES ($1, $2)",
+        )
+        .bind(scope_id)
+        .bind(agent_a)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let user = AuthUser {
+            user_id,
+            email: "x@t.local".into(),
+            is_admin: false,
+            api_key_id: None,
+            minted_jti: Some(jti),
+        };
+        let res = super::list_mine(
+            State(crate::state::RelayState::new(pool.clone(), config())),
+            user,
+        )
+        .await
+        .unwrap();
+        let ids: Vec<Uuid> = res.0.iter().map(|a| a.id).collect();
+        assert_eq!(
+            ids,
+            vec![agent_a],
+            "selected scope must list only the enrolled agent"
+        );
+    }
+
+    // Scoped-grants audit: read scope narrows the *manage* view but not
+    // public discovery — a private out-of-scope agent is hidden (404),
+    // a network-visible one stays readable (is_mine=false).
+    #[sqlx::test(migrations = "../migrations")]
+    async fn get_one_hides_private_out_of_scope_keeps_network_public(pool: PgPool) {
+        use crate::auth::AuthUser;
+        use axum::extract::{Path, State};
+        use chakramcp_shared::error::ApiError;
+
+        let (user_id, account_id, _jwt) = seed_user_with_jwt(&pool).await;
+        sqlx::query(
+            "INSERT INTO oauth_clients (id, client_id, client_name, redirect_uris) \
+             VALUES ($1, 'mcp_a', 'mcp_a', $2)",
+        )
+        .bind(Uuid::now_v7())
+        .bind(vec!["https://x.test".to_string()])
+        .execute(&pool)
+        .await
+        .unwrap();
+        let priv_agent = Uuid::now_v7();
+        let net_agent = Uuid::now_v7();
+        for (id, slug, vis) in [(priv_agent, "pp", "private"), (net_agent, "nn", "network")] {
+            sqlx::query(
+                "INSERT INTO agents (id, account_id, slug, display_name, mode, visibility, created_by_client_id) \
+                 VALUES ($1, $2, $3, $4, 'pull', $5, 'mcp_a')",
+            )
+            .bind(id)
+            .bind(account_id)
+            .bind(slug)
+            .bind(slug)
+            .bind(vis)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        // 'selected' scope enrolling NEITHER agent.
+        let jti = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO credential_scopes (id, cred_kind, cred_ref, user_id, agent_scope) \
+             VALUES ($1, 'jwt', $2, $3, 'selected')",
+        )
+        .bind(Uuid::now_v7())
+        .bind(jti.to_string())
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let mk_user = || AuthUser {
+            user_id,
+            email: "x@t.local".into(),
+            is_admin: false,
+            api_key_id: None,
+            minted_jti: Some(jti),
+        };
+        let state = crate::state::RelayState::new(pool.clone(), config());
+
+        let hidden = super::get_one(State(state.clone()), mk_user(), Path(priv_agent)).await;
+        assert!(
+            matches!(hidden, Err(ApiError::NotFound)),
+            "private out-of-scope agent must be hidden"
+        );
+
+        let public = super::get_one(State(state), mk_user(), Path(net_agent))
+            .await
+            .unwrap();
+        assert_eq!(public.0.id, net_agent, "network agent stays readable");
+        assert!(
+            !public.0.is_mine,
+            "out-of-scope network agent is visible but not manageable"
+        );
     }
 
     #[sqlx::test(migrations = "../migrations")]
