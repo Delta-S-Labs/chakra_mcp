@@ -1091,8 +1091,23 @@ pub async fn list(
     .fetch_all(&state.db)
     .await?;
 
+    // Scope (migration 0027): a non-`all` credential sees only invocations
+    // touching an agent it may manage. Membership already enforced above.
+    let grant = crate::auth::resolve_grant(&state.db, &user).await?;
+    let manageable = chakramcp_shared::scope::manageable_agent_ids(&state.db, &grant).await?;
+
     Ok(Json(
         rows.into_iter()
+            .filter(|r| {
+                // granter/grantee are nullable (agent may be deleted); a
+                // null side can't be manageable, so a nil uuid (never a
+                // real agent) correctly fails its match.
+                chakramcp_shared::scope::manages_either(
+                    &manageable,
+                    r.granter_agent_id.unwrap_or_default(),
+                    r.grantee_agent_id.unwrap_or_default(),
+                )
+            })
             .map(|r| {
                 let (friendship_context, grant_context) =
                     contexts_from_snapshot(r.trust_snapshot.as_ref());
@@ -1134,7 +1149,19 @@ pub async fn get_one(
     user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<InvocationDto>> {
-    Ok(Json(fetch_one(&state.db, user.user_id, id).await?))
+    let dto = fetch_one(&state.db, user.user_id, id).await?;
+    // Scope (migration 0027): hide an invocation the caller can't manage
+    // either side of. fetch_one already enforced membership.
+    let grant = crate::auth::resolve_grant(&state.db, &user).await?;
+    let manageable = chakramcp_shared::scope::manageable_agent_ids(&state.db, &grant).await?;
+    if !chakramcp_shared::scope::manages_either(
+        &manageable,
+        dto.granter_agent_id.unwrap_or_default(),
+        dto.grantee_agent_id.unwrap_or_default(),
+    ) {
+        return Err(ApiError::NotFound);
+    }
+    Ok(Json(dto))
 }
 
 async fn fetch_one(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<InvocationDto, ApiError> {

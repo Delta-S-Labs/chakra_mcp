@@ -169,3 +169,51 @@ pub async fn grant_allows_agent(
         }
     }
 }
+
+/// The bounded set of agent ids a credential may MANAGE, or `None` for
+/// `all` (no restriction). Used to scope-filter *relationship* reads
+/// (friendships / grants / invocations), where each row involves two
+/// agents and should be visible only if the credential manages at least
+/// one of them. Membership is enforced separately by the read queries
+/// themselves; this only adds the scope narrowing.
+pub async fn manageable_agent_ids(
+    db: &PgPool,
+    grant: &GrantScope,
+) -> Result<Option<Vec<Uuid>>, ApiError> {
+    let ids = match grant.mode {
+        AgentScopeMode::All => return Ok(None),
+        AgentScopeMode::Own => {
+            sqlx::query_scalar!(
+                r#"SELECT id FROM agents
+                   WHERE created_by_client_id = $1 OR created_by_api_key_id = $2"#,
+                grant.client_id,
+                grant.api_key_id,
+            )
+            .fetch_all(db)
+            .await?
+        }
+        AgentScopeMode::Selected => {
+            let Some(scope_id) = grant.scope_id else {
+                return Ok(Some(Vec::new()));
+            };
+            sqlx::query_scalar!(
+                r#"SELECT agent_id FROM credential_scope_agents WHERE credential_scope_id = $1"#,
+                scope_id,
+            )
+            .fetch_all(db)
+            .await?
+        }
+    };
+    Ok(Some(ids))
+}
+
+/// Whether a relationship touching agents `a` and `b` is in scope. `None`
+/// (the `all` case) always is; otherwise at least one side must be in the
+/// manageable set. Call after the read query/fetch has already confirmed
+/// the caller is a member of a side — this only adds the scope gate.
+pub fn manages_either(manageable: &Option<Vec<Uuid>>, a: Uuid, b: Uuid) -> bool {
+    match manageable {
+        None => true,
+        Some(ids) => ids.contains(&a) || ids.contains(&b),
+    }
+}
