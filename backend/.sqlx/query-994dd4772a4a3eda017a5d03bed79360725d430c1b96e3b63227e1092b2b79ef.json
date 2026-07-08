@@ -1,0 +1,214 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            a.id, a.account_id, a.slug, a.display_name, a.description,\n            a.visibility, a.endpoint_url, a.mode, a.tags,\n            a.created_at, a.updated_at,\n            acc.slug as account_slug,\n            acc.display_name as account_display_name,\n            (acc.verified_at IS NOT NULL) as \"verified!\",\n            -- Capabilities this caller can actually see: 'network' always,\n            -- plus 'org' ones when the caller shares an organization with a\n            -- member of the owning account (same predicate as the agent\n            -- visibility filter below). Otherwise an 'org' agent surfaced to\n            -- an org-sharer would report 0 capabilities.\n            (SELECT COUNT(*)::bigint FROM agent_capabilities c\n                WHERE c.agent_id = a.id\n                  AND (\n                      c.visibility = 'network'\n                      OR (\n                          c.visibility = 'org'\n                          AND EXISTS (\n                              SELECT 1\n                              FROM account_memberships caller_m\n                              JOIN accounts shared_org ON shared_org.id = caller_m.account_id\n                              JOIN account_memberships owner_m\n                                  ON owner_m.account_id = shared_org.id\n                              JOIN account_memberships owner_acc_m\n                                  ON owner_acc_m.user_id = owner_m.user_id\n                                  AND owner_acc_m.account_id = a.account_id\n                              WHERE caller_m.user_id = $1\n                                AND shared_org.account_type = 'organization'\n                          )\n                      )\n                  )) as \"capability_count!\",\n            (SELECT AVG(rating)::float8 FROM agent_reviews r\n                WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS avg_rating,\n            (SELECT COUNT(*)::bigint FROM agent_reviews r\n                WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS \"review_count!\",\n            EXISTS(\n                SELECT 1 FROM account_memberships m\n                WHERE m.account_id = a.account_id AND m.user_id = $1\n            ) as \"is_mine!\"\n        FROM agents a\n        JOIN accounts acc ON acc.id = a.account_id\n        WHERE a.tombstoned_at IS NULL\n          AND acc.tombstoned_at IS NULL\n          AND (\n              -- Network-visible: anyone sees these (unchanged from the\n              -- pre-org-tier behaviour of /v1/network/agents).\n              a.visibility = 'network'\n              OR (\n                  -- Org-visible: the caller can see this agent if at\n                  -- least one organization-type account has both the\n                  -- caller AND a member of the agent's owning account\n                  -- as members. \"I share an org with the agent owner →\n                  -- I see their 'org'-visibility agents.\" A caller who\n                  -- is a member of the owning account itself trivially\n                  -- satisfies this (the owning account is the shared\n                  -- org, with caller_m.user_id = owner_m.user_id).\n                  a.visibility = 'org'\n                  AND EXISTS (\n                      SELECT 1\n                      FROM account_memberships caller_m\n                      JOIN accounts shared_org ON shared_org.id = caller_m.account_id\n                      JOIN account_memberships owner_m\n                          ON owner_m.account_id = shared_org.id\n                      JOIN account_memberships owner_acc_m\n                          ON owner_acc_m.user_id = owner_m.user_id\n                          AND owner_acc_m.account_id = a.account_id\n                      WHERE caller_m.user_id = $1\n                        AND shared_org.account_type = 'organization'\n                  )\n              )\n          )\n          AND ($2::text    IS NULL OR a.search_vec @@ to_tsquery('simple', $2::text))\n          AND ($3::text    IS NULL OR a.mode = $3::text)\n          AND ($4::boolean IS NULL OR (acc.verified_at IS NOT NULL) = $4::boolean)\n          AND ($5::text[]  IS NULL OR a.tags @> $5::text[])\n          AND (\n              $6::timestamptz IS NULL\n              OR a.created_at < $6::timestamptz\n              OR (a.created_at = $6::timestamptz AND a.id < $7::uuid)\n          )\n        ORDER BY a.created_at DESC, a.id DESC\n        LIMIT $8\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "display_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "visibility",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "visibility"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "endpoint_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "endpoint_url"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "mode",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "mode"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "tags",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "tags"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "account_slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "account_display_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "verified!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 14,
+        "name": "capability_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 15,
+        "name": "avg_rating",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 16,
+        "name": "review_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 17,
+        "name": "is_mine!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Bool",
+        "TextArray",
+        "Timestamptz",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "994dd4772a4a3eda017a5d03bed79360725d430c1b96e3b63227e1092b2b79ef"
+}

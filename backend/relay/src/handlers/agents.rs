@@ -338,8 +338,31 @@ pub async fn list_network(
             acc.slug as account_slug,
             acc.display_name as account_display_name,
             (acc.verified_at IS NOT NULL) as "verified!",
+            -- Capabilities this caller can actually see: 'network' always,
+            -- plus 'org' ones when the caller shares an organization with a
+            -- member of the owning account (same predicate as the agent
+            -- visibility filter below). Otherwise an 'org' agent surfaced to
+            -- an org-sharer would report 0 capabilities.
             (SELECT COUNT(*)::bigint FROM agent_capabilities c
-                WHERE c.agent_id = a.id AND c.visibility = 'network') as "capability_count!",
+                WHERE c.agent_id = a.id
+                  AND (
+                      c.visibility = 'network'
+                      OR (
+                          c.visibility = 'org'
+                          AND EXISTS (
+                              SELECT 1
+                              FROM account_memberships caller_m
+                              JOIN accounts shared_org ON shared_org.id = caller_m.account_id
+                              JOIN account_memberships owner_m
+                                  ON owner_m.account_id = shared_org.id
+                              JOIN account_memberships owner_acc_m
+                                  ON owner_acc_m.user_id = owner_m.user_id
+                                  AND owner_acc_m.account_id = a.account_id
+                              WHERE caller_m.user_id = $1
+                                AND shared_org.account_type = 'organization'
+                          )
+                      )
+                  )) as "capability_count!",
             (SELECT AVG(rating)::float8 FROM agent_reviews r
                 WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS avg_rating,
             (SELECT COUNT(*)::bigint FROM agent_reviews r
@@ -517,13 +540,23 @@ pub async fn get_one(
     .await?
     .ok_or(ApiError::NotFound)?;
 
-    // Scope (migration 0027): membership makes an agent visible, but only
-    // an in-scope credential may *manage* it. A private agent the caller
-    // can't manage is hidden (404); a network-visible one stays public.
+    // Scope (0027) + visibility (0021): membership makes an agent visible,
+    // but only an in-scope credential may *manage* it. Discovery surfaces
+    // stay readable regardless of scope — 'network' is public, and 'org' is
+    // visible to anyone sharing an organization with the owner. Keeping this
+    // in step with `list_network`, which already returns 'org' agents to
+    // org-sharers (otherwise list would show what get 404s).
     let grant = crate::auth::resolve_grant(&state.db, &user).await?;
     let manageable = r.is_mine && crate::auth::grant_allows_agent(&state.db, &grant, id).await?;
 
-    if !manageable && r.visibility != "network" {
+    let discoverable = match r.visibility.as_str() {
+        "network" => true,
+        "org" => {
+            crate::auth::shares_org_with_account(&state.db, user.user_id, r.account_id).await?
+        }
+        _ => false,
+    };
+    if !manageable && !discoverable {
         return Err(ApiError::NotFound);
     }
 
@@ -789,11 +822,15 @@ pub async fn update(
     }
 
     if let Some(v) = req.visibility.as_deref() {
-        if !matches!(v, "private" | "network") {
+        if !matches!(v, "private" | "org" | "network") {
             return Err(ApiError::InvalidRequest(
-                "visibility must be private|network".into(),
+                "visibility must be private|org|network".into(),
             ));
         }
+        // Only the *public* directory needs an admin. 'org' exposure stays
+        // inside a trust boundary the member is already in (visible only to
+        // people who share an organization with the owner), so membership is
+        // enough — matching `create`, which already admits 'org'.
         if v == "network"
             && !user_can_admin_account(&state.db, user.user_id, row.account_id).await?
         {
@@ -1259,6 +1296,138 @@ mod create_push_mode_tests {
         assert!(
             !public.0.is_mine,
             "out-of-scope network agent is visible but not manageable"
+        );
+    }
+
+    // 'org' visibility (migration 0021) is visible to anyone sharing an
+    // organization with the owner. get_one must agree with list_network,
+    // which already returns org agents to org-sharers — otherwise the list
+    // surfaces an agent that get 404s.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn get_one_org_agent_visible_to_org_sharer(pool: PgPool) {
+        use crate::auth::AuthUser;
+        use axum::extract::{Path, State};
+        use chakramcp_shared::error::ApiError;
+
+        // Alice owns an org-visible agent in her own account.
+        let (alice, alice_account, _j1) = seed_user_with_jwt(&pool).await;
+        let agent = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO agents (id, account_id, slug, display_name, mode, visibility) \
+             VALUES ($1, $2, 'org-bot', 'Org Bot', 'pull', 'org')",
+        )
+        .bind(agent)
+        .bind(alice_account)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Bob shares an ORGANIZATION with Alice; Carol shares nothing.
+        let (bob, _bob_acct, _j2) = seed_user_with_jwt(&pool).await;
+        let (carol, _carol_acct, _j3) = seed_user_with_jwt(&pool).await;
+        let org = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO accounts (id, slug, display_name, account_type, owner_user_id) \
+             VALUES ($1, $2, 'Acme', 'organization', $3)",
+        )
+        .bind(org)
+        .bind(format!("acme-{org}"))
+        .bind(alice)
+        .execute(&pool)
+        .await
+        .unwrap();
+        for u in [alice, bob] {
+            sqlx::query(
+                "INSERT INTO account_memberships (id, account_id, user_id, role) \
+                 VALUES ($1, $2, $3, 'member')",
+            )
+            .bind(Uuid::now_v7())
+            .bind(org)
+            .bind(u)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        let state = crate::state::RelayState::new(pool.clone(), config());
+        let mk = |uid| AuthUser {
+            user_id: uid,
+            email: "x@t.local".into(),
+            is_admin: false,
+            api_key_id: None,
+            minted_jti: None,
+        };
+
+        let seen = super::get_one(State(state.clone()), mk(bob), Path(agent))
+            .await
+            .unwrap();
+        assert_eq!(seen.0.id, agent, "an org-sharer sees the org agent");
+        assert!(!seen.0.is_mine, "...but it isn't theirs to manage");
+
+        let hidden = super::get_one(State(state), mk(carol), Path(agent)).await;
+        assert!(
+            matches!(hidden, Err(ApiError::NotFound)),
+            "a user sharing no organization must not see an org-visible agent"
+        );
+    }
+
+    // A plain member may raise their agent to 'org' (inside a trust boundary
+    // they're already in), but 'network' — the public directory — still
+    // requires account admin. Previously `update` rejected 'org' outright
+    // even though `create` accepted it.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn update_to_org_allowed_for_member_network_still_admin_only(pool: PgPool) {
+        let (_alice, account_id, _j) = seed_user_with_jwt(&pool).await;
+        let agent = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO agents (id, account_id, slug, display_name, mode, visibility) \
+             VALUES ($1, $2, 'vis-bot', 'Vis Bot', 'pull', 'private')",
+        )
+        .bind(agent)
+        .bind(account_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Bob is a plain member (not owner/admin) of the agent's account.
+        let (bob, _bob_acct, bob_jwt) = seed_user_with_jwt(&pool).await;
+        sqlx::query(
+            "INSERT INTO account_memberships (id, account_id, user_id, role) \
+             VALUES ($1, $2, $3, 'member')",
+        )
+        .bind(Uuid::now_v7())
+        .bind(account_id)
+        .bind(bob)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let patch = |vis: &str, jwt: String| {
+            Request::builder()
+                .method("PATCH")
+                .uri(format!("/v1/agents/{agent}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::AUTHORIZATION, format!("Bearer {jwt}"))
+                .body(Body::from(
+                    serde_json::to_vec(&serde_json::json!({ "visibility": vis })).unwrap(),
+                ))
+                .unwrap()
+        };
+
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        let res = app.oneshot(patch("org", bob_jwt.clone())).await.unwrap();
+        assert!(
+            res.status().is_success(),
+            "a plain member may set 'org'; got {}",
+            res.status()
+        );
+
+        let app = crate::router(crate::state::RelayState::new(pool, config()));
+        let res = app.oneshot(patch("network", bob_jwt)).await.unwrap();
+        assert_eq!(
+            res.status(),
+            axum::http::StatusCode::FORBIDDEN,
+            "'network' (the public directory) still requires account admin"
         );
     }
 

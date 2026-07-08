@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT EXISTS (\n            SELECT 1\n            FROM account_memberships caller_m\n            JOIN accounts shared_org ON shared_org.id = caller_m.account_id\n            JOIN account_memberships owner_m\n                ON owner_m.account_id = shared_org.id\n            JOIN account_memberships owner_acc_m\n                ON owner_acc_m.user_id = owner_m.user_id\n                AND owner_acc_m.account_id = $2\n            WHERE caller_m.user_id = $1\n              AND shared_org.account_type = 'organization'\n        ) as \"shares!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "shares!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "200c7196ce52cc690b2e2558fb0dce72345dc1239503cb9c6620ba687df73822"
+}

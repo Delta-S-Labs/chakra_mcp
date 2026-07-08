@@ -301,7 +301,7 @@ fn tools_list_result() -> Value {
                         "description":   { "type": "string" },
                         "input_schema":  { "type": "object", "description": "JSON Schema for the input. Defaults to an open object." },
                         "output_schema": { "type": "object", "description": "JSON Schema for the output. Defaults to an open object." },
-                        "visibility":    { "type": "string", "enum": ["private", "network"], "description": "Defaults to 'network'." },
+                        "visibility":    { "type": "string", "enum": ["private", "org", "network"], "description": "Defaults to 'network'. 'org' is visible to anyone sharing an organization with the owner; 'network' is public. public_invoke requires 'network'." },
                         "semantics":     { "type": "string", "enum": ["autonomous", "human_in_loop"], "description": "Defaults to 'autonomous'." }
                     }
                 })),
@@ -1412,9 +1412,9 @@ async fn publish_capability(db: &PgPool, user: &AuthUser, args: Value) -> Result
         ));
     }
     let visibility = a.visibility.as_deref().unwrap_or("network");
-    if !matches!(visibility, "private" | "network") {
+    if !matches!(visibility, "private" | "org" | "network") {
         return Err(ApiError::InvalidRequest(
-            "visibility must be private|network".into(),
+            "visibility must be private|org|network".into(),
         ));
     }
     let semantics = a.semantics.as_deref().unwrap_or("autonomous");

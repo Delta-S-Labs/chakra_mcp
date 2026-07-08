@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, agent_id, name, description, input_schema, output_schema,\n               visibility, created_at, updated_at,\n               public_invoke, public_monthly_quota_per_agent\n        FROM agent_capabilities\n        WHERE agent_id = $1\n          AND ($2::boolean OR visibility = 'network')\n        ORDER BY name ASC\n        ",
+  "query": "\n        SELECT id, agent_id, name, description, input_schema, output_schema,\n               visibility, created_at, updated_at,\n               public_invoke, public_monthly_quota_per_agent\n        FROM agent_capabilities\n        WHERE agent_id = $1\n          AND (\n              $2::boolean\n              OR visibility = 'network'\n              OR ($3::boolean AND visibility = 'org')\n          )\n        ORDER BY name ASC\n        ",
   "describe": {
     "columns": [
       {
@@ -128,6 +128,7 @@
     "parameters": {
       "Left": [
         "Uuid",
+        "Bool",
         "Bool"
       ]
     },
@@ -145,5 +146,5 @@
       true
     ]
   },
-  "hash": "6cea7d7b0f8e89ff7e305b880d1659d107f42c0f4320316a928da74cdc45d885"
+  "hash": "6fc728c4f17ff4f2c4515bbb6b98c02737727900be2bcd7096799a2362c1b100"
 }
