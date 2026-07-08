@@ -871,10 +871,12 @@ pub async fn device_authorization(
     // Optional visibility hint. It's just a pre-fill for the consent form, but
     // validate it against the set the form + device-approve accept so a bad
     // hint fails loudly here instead of getting silently dropped at approve.
+    // 'org' = visible to anyone sharing an organization with the owner
+    // (migration 0021); the hint CHECK is widened to match in 0031.
     if let Some(v) = req.agent_visibility_hint.as_deref() {
-        if !matches!(v, "private" | "network") {
+        if !matches!(v, "private" | "org" | "network") {
             return Err(ApiError::InvalidRequest(
-                "agent_visibility_hint must be 'private' or 'network'".into(),
+                "agent_visibility_hint must be 'private', 'org', or 'network'".into(),
             ));
         }
     }
@@ -1097,9 +1099,9 @@ pub async fn device_approve(
                     .into(),
             ));
         }
-        if !matches!(visibility, "private" | "network") {
+        if !matches!(visibility, "private" | "org" | "network") {
             return Err(ApiError::InvalidRequest(
-                "agent_visibility must be 'private' or 'network'".into(),
+                "agent_visibility must be 'private', 'org', or 'network'".into(),
             ));
         }
     }
@@ -1383,6 +1385,57 @@ mod tests {
     use sqlx::PgPool;
     use tower::ServiceExt;
     use uuid::Uuid;
+
+    // 'org' is a real visibility tier (migration 0021); the pairing hint CHECK
+    // was widened to admit it in 0031, so a client can now pre-fill it.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn device_authorization_accepts_org_visibility_hint(pool: PgPool) {
+        let state = crate::AppState::new(pool.clone(), test_config());
+        let res = crate::router(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/oauth/device_authorization")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "agent_visibility_hint": "org" }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(res.status().is_success(), "an 'org' hint must be accepted");
+
+        let hint: Option<String> =
+            sqlx::query_scalar("SELECT agent_visibility_hint FROM oauth_device_codes LIMIT 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(hint.as_deref(), Some("org"), "the hint is stored verbatim");
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn device_authorization_rejects_unknown_visibility_hint(pool: PgPool) {
+        let state = crate::AppState::new(pool, test_config());
+        let res = crate::router(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/oauth/device_authorization")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "agent_visibility_hint": "public" }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            res.status(),
+            StatusCode::BAD_REQUEST,
+            "a bogus hint fails loudly here, not silently at approve time"
+        );
+    }
 
     // End-to-end: a 'selected' consent at /oauth/issue-code is carried
     // through to /oauth/token, which materialises a credential_scopes row
