@@ -162,11 +162,24 @@ pub async fn list(
     let grant = crate::auth::resolve_grant(&state.db, &user).await?;
     let manageable =
         is_member && crate::auth::grant_allows_agent(&state.db, &grant, agent_id).await?;
-    if !manageable && agent.visibility != "network" {
+
+    // Visibility (migration 0021): 'network' is public; 'org' is visible to
+    // anyone sharing an organization with the owner. Both are discovery
+    // surfaces, so they stay readable regardless of the credential's
+    // agent_scope — matching agents::get_one and list_network. A manageable
+    // caller already sees everything, so skip the extra query for them.
+    let shares_org = if manageable {
+        false
+    } else {
+        crate::auth::shares_org_with_account(&state.db, user.user_id, agent.account_id).await?
+    };
+    let discoverable = agent.visibility == "network" || (agent.visibility == "org" && shares_org);
+    if !manageable && !discoverable {
         return Err(ApiError::NotFound);
     }
 
-    // One query — callers who can't manage the agent get only network rows.
+    // One query — callers who can't manage the agent get network rows, plus
+    // 'org' rows when they share an organization with the owner.
     let rows = sqlx::query!(
         r#"
         SELECT id, agent_id, name, description, input_schema, output_schema,
@@ -174,11 +187,16 @@ pub async fn list(
                public_invoke, public_monthly_quota_per_agent
         FROM agent_capabilities
         WHERE agent_id = $1
-          AND ($2::boolean OR visibility = 'network')
+          AND (
+              $2::boolean
+              OR visibility = 'network'
+              OR ($3::boolean AND visibility = 'org')
+          )
         ORDER BY name ASC
         "#,
         agent_id,
         manageable,
+        shares_org,
     )
     .fetch_all(&state.db)
     .await?;
@@ -224,9 +242,9 @@ pub async fn create(
         ));
     }
     let visibility = req.visibility.as_deref().unwrap_or("network");
-    if !matches!(visibility, "private" | "network") {
+    if !matches!(visibility, "private" | "org" | "network") {
         return Err(ApiError::InvalidRequest(
-            "visibility must be private|network".into(),
+            "visibility must be private|org|network".into(),
         ));
     }
     // The DB CHECK constraint (migration 0020) would also reject an
@@ -323,9 +341,9 @@ pub async fn update(
     let acct = agent_account_for_member(&state, &user, agent_id).await?;
 
     if let Some(v) = req.visibility.as_deref() {
-        if !matches!(v, "private" | "network") {
+        if !matches!(v, "private" | "org" | "network") {
             return Err(ApiError::InvalidRequest(
-                "visibility must be private|network".into(),
+                "visibility must be private|org|network".into(),
             ));
         }
     }

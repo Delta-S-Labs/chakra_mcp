@@ -205,6 +205,43 @@ pub async fn user_can_admin_account(
     Ok(matches!(row.map(|r| r.role), Some(ref r) if r == "owner" || r == "admin"))
 }
 
+/// The `'org'` visibility predicate (migration 0021): whether `user_id`
+/// shares an organization-type account with any member of `account_id`.
+/// "I share an org with the agent owner → I see their 'org'-visibility
+/// agents." A member of `account_id` itself trivially satisfies it when
+/// that account is an organization.
+///
+/// Mirrors the EXISTS inlined in `agents::list_network`, so single-row
+/// read paths (`agents::get_one`, `capabilities::list`) agree with the
+/// list surface instead of 404ing an agent the list happily returns.
+pub async fn shares_org_with_account(
+    db: &PgPool,
+    user_id: Uuid,
+    account_id: Uuid,
+) -> Result<bool, ApiError> {
+    let row = sqlx::query!(
+        r#"
+        SELECT EXISTS (
+            SELECT 1
+            FROM account_memberships caller_m
+            JOIN accounts shared_org ON shared_org.id = caller_m.account_id
+            JOIN account_memberships owner_m
+                ON owner_m.account_id = shared_org.id
+            JOIN account_memberships owner_acc_m
+                ON owner_acc_m.user_id = owner_m.user_id
+                AND owner_acc_m.account_id = $2
+            WHERE caller_m.user_id = $1
+              AND shared_org.account_type = 'organization'
+        ) as "shares!"
+        "#,
+        user_id,
+        account_id,
+    )
+    .fetch_one(db)
+    .await?;
+    Ok(row.shares)
+}
+
 // ─── Per-credential agent-management scope (migration 0027) ──────────
 //
 // The scope model + guard now live in `chakramcp_shared::scope` so the app
