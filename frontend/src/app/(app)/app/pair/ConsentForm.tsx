@@ -16,6 +16,14 @@ export interface PairableAgent {
   account_slug: string;
 }
 
+/** Mirrors the backend tiers (migration 0021 / 0031). */
+type AgentVisibility = "private" | "org" | "network";
+
+/** Anything unrecognised (empty, unknown) falls back to the safe default. */
+function parseVisibility(hint: string): AgentVisibility {
+  return hint === "org" || hint === "network" ? hint : "private";
+}
+
 /**
  * Consent UI for an in-flight device-flow pairing session.
  *
@@ -58,10 +66,10 @@ export function ConsentForm({
     displayNameHint || titleCase(slugHint),
   );
   const [description, setDescription] = useState(descriptionHint);
-  // Pre-fill from the client's hint; anything but an explicit "network"
-  // (empty, unknown) falls back to the safe default. User can still change it.
-  const [visibility, setVisibility] = useState<"private" | "network">(
-    visibilityHint === "network" ? "network" : "private",
+  // Pre-fill from the client's hint; unrecognised values fall back to the
+  // safe default. User can still change it before approving.
+  const [visibility, setVisibility] = useState<AgentVisibility>(
+    parseVisibility(visibilityHint),
   );
 
   const [status, setStatus] = useState<
@@ -249,10 +257,14 @@ export function ConsentForm({
               id="agent-visibility"
               value={visibility}
               onChange={(e) =>
-                setVisibility(e.target.value as "private" | "network")
+                setVisibility(e.target.value as AgentVisibility)
               }
             >
               <option value="private">Private — only you can see it</option>
+              <option value="org">
+                Org — anyone sharing an org with you; not in the public
+                directory
+              </option>
               <option value="network">Network — listed in the directory</option>
             </select>
           </div>

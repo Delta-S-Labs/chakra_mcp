@@ -67,7 +67,7 @@ chakramcp --version   # verify`}</code>
             <pre className={styles.pre}>
               <code>{`chakramcp pair --json \\
   --agent-slug <suggested-slug> --display-name "<suggested name>" \\
-  --description "<what it does>" --visibility private   # private | network`}</code>
+  --description "<what it does>" --visibility private   # private | org | network`}</code>
             </pre>
           </div>
           The first JSON event on stdout is <code>device_authorization</code> — it carries{" "}

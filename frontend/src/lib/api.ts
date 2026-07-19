@@ -663,7 +663,7 @@ export interface DeviceApproveRequest {
   agent_slug?: string;
   agent_display_name?: string;
   agent_description?: string;
-  agent_visibility?: "private" | "network";
+  agent_visibility?: "private" | "org" | "network";
   account_slug?: string;
 }
 

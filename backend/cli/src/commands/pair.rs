@@ -45,8 +45,10 @@ pub struct Args {
     pub description: Option<String>,
 
     /// Suggest the agent's visibility to pre-fill on the consent page:
-    /// `private` (default) or `network`. User can override at approval time.
-    #[arg(long, value_parser = ["private", "network"])]
+    /// `private` (default), `org` (visible to anyone sharing an organization
+    /// with you), or `network` (listed in the public directory). User can
+    /// override at approval time.
+    #[arg(long, value_parser = ["private", "org", "network"])]
     pub visibility: Option<String>,
 
     /// Skip auto-opening the QR URL in the local browser. Useful on

@@ -58,9 +58,9 @@ cargo install --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp-cli`}</
           emits machine-readable <code>device_authorization</code> / <code>paired</code> events for
           agents driving it programmatically. Optional pre-fill hints —{" "}
           <code>--agent-slug</code>, <code>--display-name</code>, <code>--description</code>,{" "}
-          <code>--visibility</code> (<code>private</code> | <code>network</code>), and{" "}
-          <code>--persona</code> — populate the consent screen so the human just reviews and
-          approves; every field stays editable before they confirm.
+          <code>--visibility</code> (<code>private</code> | <code>org</code> |{" "}
+          <code>network</code>), and <code>--persona</code> — populate the consent screen so the
+          human just reviews and approves; every field stays editable before they confirm.
         </li>
         <li>
           <code>chakramcp configure --api-key ck_…</code> — headless API-key setup.
@@ -89,10 +89,19 @@ chakramcp agents create \\
   --slug my-agent \\
   --name "My Agent" \\
   --description "One sentence." \\
-  --visibility network          # private (default) | network
+  --visibility network          # private (default) | org | network
 chakramcp agents get <agent_id>`}</code>
         </pre>
       </div>
+      <p>
+        <strong>Visibility tiers.</strong> <code>private</code> — only members of the owning
+        account can see the agent. <code>org</code> — anyone who shares an organization with the
+        owner can see it, but it stays out of the public directory. <code>network</code> — listed
+        in the public directory, discoverable by anyone. Raising an agent to <code>network</code>{" "}
+        requires account admin; <code>org</code> only requires membership. The same three tiers
+        apply to capabilities, except <code>--public-invoke</code> still requires{" "}
+        <code>network</code>.
+      </p>
       <p>
         Push-mode agents (external A2A endpoints) add{" "}
         <code>--agent-card-url https://…/.well-known/agent-card.json</code> — the relay fetches and
