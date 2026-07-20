@@ -131,17 +131,25 @@ pub(crate) async fn seed_agent(
     created_by: Uuid,
 ) -> Uuid {
     let agent_id = Uuid::now_v7();
+    // Stamp created_at from the process clock rather than the database
+    // default. The usage rollups bound their queries with an in-process
+    // `Utc::now()`, so a row written on the DB clock is invisible whenever the
+    // two disagree — which they do when Postgres runs in a Docker VM whose
+    // clock sits ahead of the host. See `usage::tests::seed_invocation_named`.
+    let created_at = chrono::Utc::now() - chrono::Duration::seconds(1);
     sqlx::query!(
         r#"
         INSERT INTO agents
-            (id, account_id, created_by_user_id, slug, display_name, description, visibility, mode)
-        VALUES ($1, $2, $3, $4, $5, '', 'private', 'pull')
+            (id, account_id, created_by_user_id, slug, display_name, description, visibility, mode,
+             created_at)
+        VALUES ($1, $2, $3, $4, $5, '', 'private', 'pull', $6)
         "#,
         agent_id,
         account_id,
         created_by,
         slug,
         slug,
+        created_at,
     )
     .execute(pool)
     .await

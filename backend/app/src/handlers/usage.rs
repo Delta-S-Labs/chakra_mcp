@@ -981,13 +981,28 @@ mod tests {
         minted_jti: Option<Uuid>,
         status: &str,
     ) {
+        // Stamp created_at from the *process* clock rather than letting it
+        // default to the database's now().
+        //
+        // `resolve_range` bounds every usage query with `to = Utc::now()`
+        // taken in-process, so a row written on the DB clock is only counted
+        // if the two clocks agree. They don't always: with Postgres in a
+        // Docker Desktop VM the container clock can sit tens of milliseconds
+        // *ahead* of the macOS host, which puts every freshly-seeded row in
+        // the future relative to `to` and silently filters it out — the whole
+        // suite then reports 0 for counts it just inserted. CI never sees it
+        // (same kernel, one clock), so it looks like local-only flake.
+        //
+        // Backdating by a second keeps both bounds on one clock and leaves
+        // the row comfortably inside the default 30-day window.
+        let created_at = chrono::Utc::now() - chrono::Duration::seconds(1);
         sqlx::query!(
             r#"
             INSERT INTO relay_invocations
                 (id, granter_agent_id, grantee_agent_id, capability_id,
                  capability_name, invoked_by_user_id, status, elapsed_ms,
-                 api_key_id, minted_jti)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, 0, $8, $9)
+                 api_key_id, minted_jti, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, 0, $8, $9, $10)
             "#,
             Uuid::now_v7(),
             granter_agent,
@@ -998,6 +1013,7 @@ mod tests {
             status,
             api_key_id,
             minted_jti,
+            created_at,
         )
         .execute(pool)
         .await
@@ -1006,12 +1022,16 @@ mod tests {
 
     async fn seed_capability(pool: &PgPool, agent: Uuid) -> Uuid {
         let cap = Uuid::now_v7();
+        // Process-clock created_at — see seed_invocation_named.
+        let created_at = chrono::Utc::now() - chrono::Duration::seconds(1);
         sqlx::query!(
             r#"INSERT INTO agent_capabilities
-                 (id, agent_id, name, description, input_schema, output_schema)
-               VALUES ($1, $2, 'do', 'Do.', '{}'::jsonb, '{}'::jsonb)"#,
+                 (id, agent_id, name, description, input_schema, output_schema,
+                  created_at)
+               VALUES ($1, $2, 'do', 'Do.', '{}'::jsonb, '{}'::jsonb, $3)"#,
             cap,
             agent,
+            created_at,
         )
         .execute(pool)
         .await
@@ -1196,12 +1216,16 @@ mod tests {
         } else {
             None
         };
+        // Process-clock created_at — see seed_invocation_named for why the
+        // database default can't be trusted here (by_action filters on
+        // f.created_at).
+        let created_at = chrono::Utc::now() - chrono::Duration::seconds(1);
         sqlx::query!(
             r#"
             INSERT INTO friendships
                 (id, proposer_agent_id, target_agent_id, status,
-                 proposer_user_id, decided_by_user_id, decided_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+                 proposer_user_id, decided_by_user_id, decided_at, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             "#,
             id,
             proposer_agent,
@@ -1210,6 +1234,7 @@ mod tests {
             proposer_user,
             decided_by_user,
             decided_at,
+            created_at,
         )
         .execute(pool)
         .await
@@ -1234,12 +1259,17 @@ mod tests {
         } else {
             ("active", None)
         };
+        // Process-clock created_at — see seed_invocation_named for why the
+        // database default can't be trusted here (by_action filters on
+        // g.created_at).
+        let created_at = chrono::Utc::now() - chrono::Duration::seconds(1);
         sqlx::query!(
             r#"
             INSERT INTO grants
                 (id, granter_agent_id, grantee_agent_id, capability_id,
-                 status, granted_by_user_id, revoked_by_user_id, revoked_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                 status, granted_by_user_id, revoked_by_user_id, revoked_at,
+                 created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             "#,
             id,
             granter_agent,
@@ -1249,6 +1279,7 @@ mod tests {
             granted_by,
             revoked_by,
             revoked_at,
+            created_at,
         )
         .execute(pool)
         .await
@@ -1266,15 +1297,19 @@ mod tests {
         created_by: Option<Uuid>,
     ) -> Uuid {
         let cap = Uuid::now_v7();
+        // Process-clock created_at — see seed_invocation_named (by_action
+        // counts capabilities_published off c.created_at).
+        let created_at = chrono::Utc::now() - chrono::Duration::seconds(1);
         sqlx::query!(
             r#"INSERT INTO agent_capabilities
                  (id, agent_id, name, description, input_schema, output_schema,
-                  created_by_user_id)
-               VALUES ($1, $2, $3, 'Do.', '{}'::jsonb, '{}'::jsonb, $4)"#,
+                  created_by_user_id, created_at)
+               VALUES ($1, $2, $3, 'Do.', '{}'::jsonb, '{}'::jsonb, $4, $5)"#,
             cap,
             agent,
             name,
             created_by,
+            created_at,
         )
         .execute(pool)
         .await
