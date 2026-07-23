@@ -17,7 +17,7 @@
   "dependencies": {
     "@types/qrcode": "^1.5.6",
     "motion": "^12.40.0",
-    "next": "16.2.9",
+    "next": "16.2.11",
     "next-auth": "5.0.0-beta.31",
     "posthog-js": "^1.391.0",
     "qrcode": "^1.5.4",
@@ -33,15 +33,17 @@
     "@types/react-dom": "^19",
     "@types/react-google-recaptcha": "^2.1.9",
     "eslint": "^9",
-    "eslint-config-next": "16.2.9",
+    "eslint-config-next": "16.2.11",
     "typescript": "^5"
   },
   "pnpm": {
     "overrides": {
       "postcss": "^8.5.10",
-      "brace-expansion@>=5.0.0 <5.0.6": "^5.0.6",
-      "js-yaml@<4.2.0": "^4.2.0",
-      "dompurify@<3.4.11": "^3.4.11"
+      "brace-expansion@<1.1.16": "^1.1.16",
+      "brace-expansion@>=5.0.0 <5.0.7": "^5.0.7",
+      "js-yaml@<4.3.0": "^4.3.0",
+      "dompurify@<3.4.12": "^3.4.12",
+      "sharp@<0.35.0": "^0.35.0"
     }
   }
 }
