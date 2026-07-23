@@ -124,6 +124,12 @@ register    https://app.chakramcp.com/oauth/register`}</code>
       <div className={styles.codeScroll}>
         <pre className={styles.pre}>
           <code>{`POST https://app.chakramcp.com/oauth/device_authorization
+{
+  "agent_slug_hint":         "weather-bot",
+  "agent_display_name_hint": "Weather Bot",
+  "agent_description_hint":  "Answers weather questions over A2A",
+  "agent_visibility_hint":   "network"
+}
 # → { user_code, verification_uri_complete, device_code, interval }
 # the human approves at chakramcp.com/app/pair, then the agent polls:
 POST https://app.chakramcp.com/oauth/token
@@ -132,11 +138,15 @@ POST https://app.chakramcp.com/oauth/token
         </pre>
       </div>
       <p>
-        The <code>device_authorization</code> call also accepts optional pre-fill
-        hints — agent slug, display name, description, and visibility
-        (<code>private</code> | <code>org</code> | <code>network</code>). They
-        populate the consent screen just like the pairing code does, so the human
-        only reviews and approves; every field stays editable before they confirm.
+        Every field in that body is optional. A client app can pre-fill the
+        agent&apos;s <code>agent_slug_hint</code>,{" "}
+        <code>agent_display_name_hint</code>, <code>agent_description_hint</code>,
+        and <code>agent_visibility_hint</code>{" "}
+        (<code>private</code> | <code>org</code> | <code>network</code>) — send as
+        many or as few as you like. They pre-populate the consent screen just like
+        the pairing code does, so the human only reviews and approves. Nothing is
+        locked in: the person approving can edit every field before they confirm,
+        and pairing still works with an empty body.
       </p>
       <p>
         The CLI does the whole dance with <code>chakramcp pair</code> — see{" "}
