@@ -7,3 +7,11 @@ __pycache__/
 # Generated artifact — `seed_yc.py` emits this (run-specific row UUIDs).
 # Regenerate per seed run; not worth versioning 60KB of throwaway UPDATEs.
 backdate.sql
+
+# One-shot operational cleanups (e.g. wipe_test_accounts.sql). To be
+# auditable these pin live account UUIDs and operator email addresses —
+# exactly what shouldn't land in a public repo. They're also single-use:
+# the ids are stale the moment the cleanup runs, so a committed copy is a
+# footgun for whoever runs it next. Keep them locally as a record of what
+# was done; write a fresh one per cleanup.
+wipe_*.sql
