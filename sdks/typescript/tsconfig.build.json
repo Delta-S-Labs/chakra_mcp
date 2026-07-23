@@ -1,0 +1,13 @@
+{
+  // Declaration-only build config. tsup bundles the JS (ESM + CJS); this
+  // runs `tsc` purely to emit the `.d.ts` files into dist/, restricted to
+  // src/ so test types never ship. See tsup.config.ts for why tsc (not
+  // tsup's rollup-plugin-dts) owns declarations under TypeScript 7.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "emitDeclarationOnly": true,
+    "rootDir": "src"
+  },
+  "include": ["src/**/*"],
+  "exclude": ["test/**/*"]
+}
