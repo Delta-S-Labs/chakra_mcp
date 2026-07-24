@@ -40,7 +40,7 @@ Production code writes an invocation row to `relay_invocations` at four sites, u
 |---|---|---|---|---|
 | 1 | A2A push | `forwarder.rs::forward_push` (~`:226`) | `policy::evaluate()` | `Authorized.caller_account_id` |
 | 2 | A2A pull | `inbox_bridge.rs::park` (~`:128`) | `policy::evaluate()` | `Authorized.caller_account_id` |
-| 3 | Legacy `/v1/invoke` | `handlers/invoke.rs::invoke_trusted` (~`:517`) / `invoke_public` (~`:657`) | own inline checks | authenticated caller's account |
+| 3 | Legacy `/v1/invoke` | `handlers/invoke.rs::invoke_trusted` (~`:517`) / `invoke_public` (~`:657`) | own inline checks | grantee agent's account (from the resolved grant/agent row) |
 | 4 | MCP proxy | `handlers/mcp.rs` invoke (~`:939`) | own grant + `user_is_member` check | grantee/caller account from the grant row |
 
 `relay_invocations` has no `account_id` column; the caller's account is derived via `grantee_agent_id → agents.account_id` (or `invoked_by_user_id`). On the A2A path the account is already in hand as `Authorized.caller_account_id`, which is the cleanest source at check time. The INSERTs at `grants.rs:626`, `reviews.rs:848`, and `invoke.rs:2258` are `#[cfg(test)]` seed helpers and are **not** counted. `record_terminal` (`invoke.rs:238`) is **not** a counting site — it runs a single non-transactional `execute()` only on *rejected* legacy rows.
@@ -50,9 +50,11 @@ Production code writes an invocation row to `relay_invocations` at four sites, u
 A single shared primitive, applied identically at all four surfaces:
 
 - **`limits::check(db, limiter, caller_account_id) → LimitOutcome`** — resolves the account's plan, runs the rate check (Redis) and the quota check (Postgres), returns `Allowed | RateLimited | QuotaExceeded`.
-- **`limits::increment(&mut tx, caller_account_id)`** — bumps the monthly counter, called inside the same transaction that writes the `relay_invocations` row on a successful invocation.
+- **`limits::increment(&mut tx, caller_account_id)`** — bumps the monthly counter, called inside the same transaction that writes the `relay_invocations` row.
 
-Each surface calls `check()` before doing work and maps a non-`Allowed` outcome to its own transport error, and calls `increment()` in the success-write transaction. This co-locates check and count on every path and keeps the counter consistent with the ledger.
+**Counting rule: one increment per `relay_invocations` row-write, regardless of the call's outcome** (succeeded / failed / timeout). This keeps counting uniform across surfaces even though `forward_push` writes its row *after* the upstream call with a terminal status while the other three write a `pending` row at accept time — do **not** gate the push increment on `status == 'succeeded'`.
+
+Each surface calls `check()` before doing work and maps a non-`Allowed` outcome to its own transport error, and calls `increment()` in the row-write transaction. This co-locates check and count on every path and keeps the counter consistent with the ledger. All four write sites (`park` `inbox_bridge.rs:145`, `forward_push`'s `persist_invocation` `forwarder.rs:249`, the legacy enqueues `invoke.rs:517`/`:657`, the MCP INSERT `mcp.rs:~939`) are currently bare `execute`s, so each gains a `BEGIN`/`COMMIT` to wrap the row-write + increment; for push this stays short because the row is written after the HTTP round-trip (no network held inside the transaction).
 
 ### Data model (Rollout PR 1 — migrations only)
 
@@ -127,7 +129,7 @@ Config: `SharedConfig` gains `redis_url: Option<String>`; relay state holds `Arc
 **Per-surface wiring** (all call the shared primitive):
 
 - **A2A (surfaces 1 & 2):** in `a2a.rs::handle_send_message`, after `evaluate()` returns `Authorized(authz)` and before `park` / `forward_push`, call `limits::check(db, limiter, authz.caller_account_id)`; on `RateLimited` / `QuotaExceeded` return `deny_response(DenyReason::…)`. `increment()` runs inside the `park` / `forward_push` transaction that writes the row. (Equivalently the check can be the final branch inside `evaluate()`; keeping it in `handle_send_message` leaves `evaluate()` as pure authz. Either way it shares the same `limits::check`.)
-- **Legacy `/v1/invoke` (surface 3):** call `limits::check(…)` at the top of `invoke_trusted` / `invoke_public`; on a hit, return HTTP 429 with the existing quota-payload shape used at `invoke.rs:635`. `increment()` joins the existing enqueue INSERT (`:517` / `:657`) — wrap that INSERT + the increment in one transaction (it is currently a bare `execute`, so this adds the `BEGIN`/`COMMIT`).
+- **Legacy `/v1/invoke` (surface 3):** call `limits::check(…)` once the grant/agent is resolved (the caller account isn't known before then — mirror the MCP placement, not literally the top of the fn); on a hit, return HTTP 429 with a quota payload that carries a **distinct `data.code`** (e.g. `account_monthly_quota_exhausted`) so clients can tell it apart from the existing per-capability `monthly_quota_exhausted` at `invoke.rs:635`. `increment()` joins the enqueue INSERT (`:517` / `:657`) in the same transaction.
 - **MCP proxy (surface 4):** call `limits::check(…)` with the grantee/caller account after the grant + membership check, before the `relay_invocations` INSERT at `mcp.rs:~939`; map a hit to an MCP tool error. `increment()` in the same transaction as that INSERT.
 
 **Shadow mode:** global `LIMITS_ENFORCE` env bool, **default false**. When `check()` would return a non-`Allowed` outcome and `LIMITS_ENFORCE` is false, each caller emits a structured `info!(event = "limit.would_block", kind, account, surface)` log + a metric counter and proceeds as `Allowed`. When true, the caller returns the surface's error. `increment()` still runs on every allowed-or-shadowed successful invocation, so the counter reflects real usage during observation.
@@ -176,7 +178,7 @@ The policy gate (`evaluate()`) covers only the A2A path; legacy `/v1/invoke` and
 Each surface reads the quota before doing work and increments the counter in the success-write transaction. Under extreme concurrency a handful of calls can slip over the monthly cap; acceptable for a period quota. Strict atomic increment-and-check is a later refinement.
 
 ### D8 — Composition with the existing public-invoke quota
-Migration `0022` already enforces `public_monthly_quota_per_agent` — a per-capability cap on *public* invokes, returning 429 at `invoke.rs:635`. The new per-account quota is an **independent, additional** ceiling: a public invoke must pass both (the per-capability public cap *and* the caller-account cap). They do not replace or read each other.
+Migration `0022` already enforces `public_monthly_quota_per_agent` — a per-capability cap on *public* invokes, returning 429 at `invoke.rs:635`. The new per-account quota is an **independent, additional** ceiling: a public invoke must pass both (the per-capability public cap *and* the caller-account cap). They read/write different stores (`relay_invocations` count vs `usage_counters`) and do not interfere. The two 429s carry distinct `data.code`s (`monthly_quota_exhausted` vs `account_monthly_quota_exhausted`) so a client can tell which ceiling it hit.
 
 ## Security note
 
