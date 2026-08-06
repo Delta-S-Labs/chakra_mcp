@@ -30,6 +30,10 @@ ed25519-dalek = { workspace = true }
 reqwest = { workspace = true }
 url = "2"
 bytes = "1"
+deadpool-redis = "0.23"
+# Direct redis dep only to enable the `script` feature (atomic INCR+EXPIRE
+# rate-limit window); cargo unifies it with deadpool-redis's redis 1.5.
+redis = { version = "1", default-features = false, features = ["script"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 thiserror = { workspace = true }

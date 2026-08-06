@@ -194,7 +194,11 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
     };
 
     let app_state = AppState::new(pool.clone(), cfg.shared.clone());
-    let relay_state = RelayState::new(pool, cfg.shared.clone());
+    let relay_state = RelayState::new(pool, cfg.shared.clone()).with_rate_limiter(
+        chakramcp_relay::limits::RateLimiter::from_redis_url(
+            std::env::var("REDIS_URL").ok().as_deref(),
+        ),
+    );
 
     let app = app_router(app_state);
     let relay = relay_router(relay_state);

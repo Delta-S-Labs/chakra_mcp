@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT p.rate_limit_per_min, p.monthly_invocation_quota\n          FROM accounts a\n          JOIN plans p ON p.id = a.plan_id\n         WHERE a.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "rate_limit_per_min",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "plans",
+            "name": "rate_limit_per_min"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "monthly_invocation_quota",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "plans",
+            "name": "monthly_invocation_quota"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "87b128ef0077badd3f1983100347a8ba54820830d654e97a9039b22e00548323"
+}

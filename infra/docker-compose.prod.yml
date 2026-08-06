@@ -39,6 +39,21 @@ services:
       retries: 12
     networks: [internal]
 
+  # Ephemeral store for per-account rate-limit counters (fixed 60s windows).
+  # No persistence — the counters are throwaway and refill every minute; the
+  # relay fails open if this is unreachable. Bounded memory with LRU eviction
+  # as a safety net (keys are short-TTL so it should never fill).
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks: [internal]
+
   # One-shot migration runner. Use:
   #   docker compose --profile migrate run --rm migrate
   # Won't start under `docker compose up` because of the profile.
@@ -63,8 +78,10 @@ services:
     restart: unless-stopped
     depends_on:
       pg: { condition: service_healthy }
+      redis: { condition: service_healthy }
     environment:
       DATABASE_URL: postgres://chakramcp:${POSTGRES_PASSWORD}@pg:5432/chakramcp
+      REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       APP_PORT: "8080"

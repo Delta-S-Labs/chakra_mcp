@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO usage_counters (account_id, period_start, invocations)\n               VALUES ($1, date_trunc('month', now() AT TIME ZONE 'UTC')::date, 999999999)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "39c0ab74afc858b5636f54c217aced02a936e3e48fa8ac8b64cf3297f1ad570d"
+}

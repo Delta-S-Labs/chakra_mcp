@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO usage_counters (account_id, period_start, invocations)\n        VALUES ($1, date_trunc('month', now() AT TIME ZONE 'UTC')::date, 1)\n        ON CONFLICT (account_id, period_start)\n        DO UPDATE SET invocations = usage_counters.invocations + 1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6d3d24c76d81c60280173fa81afd9c1c52da81def83938cd91aefe2ea328c9f2"
+}

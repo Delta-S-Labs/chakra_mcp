@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT invocations\n          FROM usage_counters\n         WHERE account_id = $1\n           AND period_start = date_trunc('month', now() AT TIME ZONE 'UTC')::date\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "invocations",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "usage_counters",
+            "name": "invocations"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "761bfedf7edde52ea977f57fe80854ed074a0acbb925aad3be0080c364ed6498"
+}
