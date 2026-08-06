@@ -44,7 +44,9 @@ async fn main() -> Result<()> {
         None
     };
 
-    let state = RelayState::new(pool, cfg.clone());
+    let state = RelayState::new(pool, cfg.clone()).with_rate_limiter(
+        chakramcp_relay::limits::RateLimiter::from_redis_url(env::var("REDIS_URL").ok().as_deref()),
+    );
     let app = router(state);
 
     let port: u16 = env::var("RELAY_PORT")

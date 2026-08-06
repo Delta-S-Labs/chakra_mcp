@@ -18,6 +18,7 @@ pub mod forwarder;
 pub mod handlers;
 pub mod inbox_bridge;
 pub mod jwt_mint;
+pub mod limits;
 pub mod policy;
 pub mod state;
 
