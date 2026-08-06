@@ -73,16 +73,19 @@ CREATE TABLE IF NOT EXISTS plans (
 CREATE UNIQUE INDEX IF NOT EXISTS plans_one_default
     ON plans (is_default) WHERE is_default;
 
--- seed (placeholder numbers — tune before enforcing)
+-- seed with fixed sentinel UUIDs (placeholder numbers — tune before enforcing).
+-- Fixed IDs let the accounts.plan_id column carry a constant DEFAULT below.
 INSERT INTO plans (id, name, rate_limit_per_min, monthly_invocation_quota, is_default) VALUES
-    (gen_random_uuid(), 'free',       60,   1000,  TRUE),
-    (gen_random_uuid(), 'pro',        600,  50000, FALSE),
-    (gen_random_uuid(), 'enterprise', 6000, NULL,  FALSE)
+    ('00000000-0000-0000-0000-0000000000f1', 'free',       60,   1000,  TRUE),
+    ('00000000-0000-0000-0000-0000000000f2', 'pro',        600,  50000, FALSE),
+    ('00000000-0000-0000-0000-0000000000f3', 'enterprise', 6000, NULL,  FALSE)
 ON CONFLICT (name) DO NOTHING;
 
-ALTER TABLE accounts ADD COLUMN IF NOT EXISTS plan_id UUID REFERENCES plans(id);
-UPDATE accounts SET plan_id = (SELECT id FROM plans WHERE is_default) WHERE plan_id IS NULL;
-ALTER TABLE accounts ALTER COLUMN plan_id SET NOT NULL;
+-- NOT NULL DEFAULT free: one statement backfills every existing account AND
+-- auto-assigns new ones, so account-creation INSERTs that omit plan_id keep
+-- working (no code change needed to make this migration non-breaking).
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS plan_id UUID NOT NULL
+    DEFAULT '00000000-0000-0000-0000-0000000000f1' REFERENCES plans(id);
 
 CREATE TABLE IF NOT EXISTS usage_counters (
     account_id   UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
