@@ -41,7 +41,7 @@ serde_json = "1"
 # (cmake/Go), smaller binary, adequate for JWT-sign/verify volume.
 # Without this flag every encode/decode panics with "Could not
 # automatically determine the process-level CryptoProvider".
-jsonwebtoken = { version = "10", default-features = false, features = ["rust_crypto"] }
+jsonwebtoken = { version = "11", default-features = false, features = ["rust_crypto"] }
 hmac = "0.13"
 sha2 = "0.11"
 rand = "0.8"
