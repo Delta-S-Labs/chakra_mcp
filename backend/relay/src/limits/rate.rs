@@ -115,6 +115,46 @@ async fn check_redis(pool: &deadpool_redis::Pool, account: Uuid, per_min: i32) -
     }
 }
 
+/// Test-only: a **live** Redis pool for integration tests, or `None` (with a
+/// skip note) when no Redis is reachable — so the suite stays green on
+/// machines/CI without a Redis service. Point it at a specific instance with
+/// `REDIS_TEST_URL`; defaults to `redis://127.0.0.1:6379`. The probe (a PING
+/// under a 2s timeout) is what distinguishes "skip, no Redis here" from a real
+/// test failure.
+#[cfg(test)]
+pub(crate) async fn test_redis_pool() -> Option<deadpool_redis::Pool> {
+    let url =
+        std::env::var("REDIS_TEST_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
+    let pool = match deadpool_redis::Config::from_url(&url)
+        .create_pool(Some(deadpool_redis::Runtime::Tokio1))
+    {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("SKIP live-redis test: bad REDIS_TEST_URL {url:?}: {e}");
+            return None;
+        }
+    };
+    let probe = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        let mut conn = pool.get().await.map_err(|e| e.to_string())?;
+        redis::cmd("PING")
+            .query_async::<String>(&mut conn)
+            .await
+            .map_err(|e| e.to_string())
+    })
+    .await;
+    match probe {
+        Ok(Ok(_)) => Some(pool),
+        other => {
+            eprintln!(
+                "SKIP live-redis test: no Redis at {url} ({other:?}); \
+                 start one with `docker run -d -p 6379:6379 redis:7-alpine` \
+                 or set REDIS_TEST_URL"
+            );
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,6 +163,41 @@ mod tests {
         RateLimiter::Counting(std::sync::Arc::new(std::sync::Mutex::new(
             std::collections::HashMap::new(),
         )))
+    }
+
+    /// Live Redis: exercises the real `check_redis` path (the Lua
+    /// `INCR`+`EXPIRE` window script) that the `Counting` mock stands in for
+    /// everywhere else. Skips cleanly when no Redis is reachable.
+    #[tokio::test]
+    async fn live_redis_fixed_window_limits_and_expires() {
+        let Some(pool) = test_redis_pool().await else {
+            return;
+        };
+        let rl = RateLimiter::Redis(pool.clone());
+        let acct = Uuid::now_v7();
+
+        // per_min = 3: first three allowed on real Redis, fourth limited.
+        assert_eq!(rl.check(acct, 3).await, RateOutcome::Allowed);
+        assert_eq!(rl.check(acct, 3).await, RateOutcome::Allowed);
+        assert_eq!(rl.check(acct, 3).await, RateOutcome::Allowed);
+        assert_eq!(rl.check(acct, 3).await, RateOutcome::Limited);
+
+        // The window key carries a TTL (1..=60s): the fixed window self-expires
+        // so minute buckets never leak. This is the EXPIRE branch of
+        // WINDOW_SCRIPT — untestable through the in-memory mock.
+        let key = window_key(acct);
+        let mut conn = pool.get().await.unwrap();
+        let ttl: i64 = redis::cmd("TTL")
+            .arg(&key)
+            .query_async(&mut conn)
+            .await
+            .unwrap();
+        assert!((1..=60).contains(&ttl), "expected a 1..=60s TTL, got {ttl}");
+
+        // A different account has an independent bucket on the same live Redis.
+        let other = Uuid::now_v7();
+        assert_eq!(rl.check(other, 1).await, RateOutcome::Allowed);
+        assert_eq!(rl.check(other, 1).await, RateOutcome::Limited);
     }
 
     #[tokio::test]

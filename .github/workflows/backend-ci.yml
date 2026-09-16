@@ -1,0 +1,86 @@
+name: Backend CI
+
+# Runs the backend workspace test suite (app / relay / shared / cli). Until
+# now the only backend CI was the .sqlx cache check (which compiles the query
+# macros but runs no tests) — so `cargo test` only ever ran on contributors'
+# machines. This job runs it on every backend change against real Postgres and
+# Redis service containers, matching how the relay runs in prod:
+#   * Postgres  → the `#[sqlx::test]` suite (each test gets an ephemeral DB;
+#                 migrations are applied per-test by the macro).
+#   * Redis     → the live rate-limiter integration tests. They self-skip when
+#                 REDIS_TEST_URL is unreachable, so this service is what makes
+#                 them actually execute here rather than skip.
+
+on:
+  push:
+    branches: [main, "feature/**"]
+    paths:
+      - "backend/**/*.rs"
+      - "backend/**/Cargo.toml"
+      - "backend/Cargo.lock"
+      - "backend/migrations/**"
+      - "backend/.sqlx/**"
+      - ".github/workflows/backend-ci.yml"
+  # Always run on PRs so the required-status check always posts (mirrors the
+  # sqlx-prepare-check rationale: PRs that don't touch backend/ would otherwise
+  # hang on "expected — waiting").
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Backend tests (Postgres + Redis)
+    runs-on: ubuntu-22.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: chakramcp
+          POSTGRES_PASSWORD: chakramcp
+          POSTGRES_DB: chakramcp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U chakramcp"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgres://chakramcp:chakramcp@localhost:5432/chakramcp
+      REDIS_TEST_URL: redis://127.0.0.1:6379
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+          key: backend-ci
+
+      # `#[sqlx::test]` creates one ephemeral DB per test and applies the
+      # migrations itself, so no manual `sqlx migrate run` is needed — the
+      # base DB just has to exist (POSTGRES_DB above) with CREATEDB rights
+      # (the image's superuser has them).
+      - name: Run workspace tests
+        run: cargo test --workspace
