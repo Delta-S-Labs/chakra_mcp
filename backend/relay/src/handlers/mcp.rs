@@ -151,6 +151,9 @@ fn api_err_to_rpc(e: ApiError) -> RpcError {
         Forbidden => (ERR_INVALID_REQUEST, "forbidden".into()),
         NotFound => (ERR_INVALID_REQUEST, "not found".into()),
         Conflict(m) => (ERR_INVALID_REQUEST, m.clone()),
+        // Usage limits: a client-side "back off" error (no JSON-RPC 429). The
+        // message ("rate limit exceeded" / "monthly quota exceeded") conveys it.
+        RateLimited | QuotaExceeded => (ERR_INVALID_REQUEST, e.to_string()),
         Database(_) | Auth(_) | Internal(_) => (ERR_INTERNAL, e.to_string()),
     };
     RpcError {
@@ -495,7 +498,7 @@ async fn call_tool(state: &RelayState, user: &AuthUser, params: Value) -> Result
         "list_network_agents" => list_network_agents(&state.db, user).await,
         "list_grants" => list_grants(&state.db, user, p.arguments).await,
         "list_friendships" => list_friendships(&state.db, user, p.arguments).await,
-        "invoke" => invoke(&state.db, user, p.arguments).await,
+        "invoke" => invoke(state, user, p.arguments).await,
         "poll_invocation" => poll_invocation(&state.db, user, p.arguments).await,
         "pull_inbox" => pull_inbox(&state.db, user, p.arguments).await,
         "list_invocations" => list_invocations(&state.db, user, p.arguments).await,
@@ -878,7 +881,8 @@ async fn list_friendships(db: &PgPool, user: &AuthUser, args: Value) -> Result<V
         .collect::<Vec<_>>()))
 }
 
-async fn invoke(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
+async fn invoke(state: &RelayState, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
+    let db = &state.db;
     #[derive(Deserialize)]
     struct A {
         grant_id: Uuid,
@@ -926,6 +930,21 @@ async fn invoke(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiE
         }
     }
 
+    // Per-account usage limits (rate + monthly quota), keyed on the caller's
+    // (grantee's) account. Shadow mode logs a would-block and proceeds;
+    // enforcing returns 429 with an `account_*` code.
+    if let Some(outcome) = crate::limits::enforce(
+        db,
+        &state.rate_limiter,
+        row.grantee_account_id,
+        state.limits_enforce,
+        "mcp",
+    )
+    .await?
+    {
+        return Err(outcome.into());
+    }
+
     // `api_key_id` follows the same caller-side semantics as
     // POST /v1/invoke (see handlers/invoke.rs): the credential that
     // authed this MCP `invoke` tool call. NULL when the caller used
@@ -933,7 +952,9 @@ async fn invoke(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiE
     //
     // `minted_jti` is the dual: NULL on the ck_ path, set on the JWT
     // path so the per-pair dashboard can attribute the call.
+    // Row write + quota increment in one transaction.
     let id = Uuid::now_v7();
+    let mut tx = state.db.begin().await?;
     sqlx::query!(
         r#"
         INSERT INTO relay_invocations
@@ -953,8 +974,10 @@ async fn invoke(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiE
         user.api_key_id,
         user.minted_jti,
     )
-    .execute(db)
+    .execute(&mut *tx)
     .await?;
+    crate::limits::quota::increment(&mut *tx, row.grantee_account_id).await?;
+    tx.commit().await?;
 
     Ok(json!({ "invocation_id": id, "status": "pending" }))
 }

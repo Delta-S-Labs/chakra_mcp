@@ -26,6 +26,22 @@ pub enum LimitOutcome {
     QuotaExceeded,
 }
 
+/// Map a limit hit to the HTTP error the REST/MCP surfaces return.
+/// `enforce()` never yields `Allowed` as a hit, so it maps defensively to an
+/// internal error rather than a 429.
+impl From<LimitOutcome> for chakramcp_shared::error::ApiError {
+    fn from(outcome: LimitOutcome) -> Self {
+        use chakramcp_shared::error::ApiError;
+        match outcome {
+            LimitOutcome::RateLimited => ApiError::RateLimited,
+            LimitOutcome::QuotaExceeded => ApiError::QuotaExceeded,
+            LimitOutcome::Allowed => {
+                ApiError::Internal(anyhow::anyhow!("LimitOutcome::Allowed is not an error"))
+            }
+        }
+    }
+}
+
 /// The limit knobs resolved from an account's plan.
 #[derive(Debug, Clone, Copy)]
 pub struct PlanLimits {
