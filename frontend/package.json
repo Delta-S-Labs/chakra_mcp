@@ -17,7 +17,7 @@
   "dependencies": {
     "@types/qrcode": "^1.5.6",
     "motion": "^12.42.2",
-    "next": "16.2.12",
+    "next": "16.3.5",
     "next-auth": "5.0.0-beta.32",
     "posthog-js": "^1.391.0",
     "qrcode": "^1.5.4",
@@ -33,7 +33,7 @@
     "@types/react-dom": "^19",
     "@types/react-google-recaptcha": "^2.1.9",
     "eslint": "^9",
-    "eslint-config-next": "16.2.12",
+    "eslint-config-next": "16.3.5",
     "typescript": "^5"
   },
   "pnpm": {
@@ -41,9 +41,11 @@
       "postcss": "^8.5.18",
       "brace-expansion@<1.1.17": "^1.1.17",
       "brace-expansion@>=5.0.0 <5.0.9": "^5.0.9",
-      "js-yaml@<4.3.0": "^4.3.0",
-      "dompurify@<3.4.12": "^3.4.12",
-      "sharp@<0.35.0": "^0.35.0"
+      "js-yaml@<4.3.2": "^4.3.2",
+      "dompurify@<3.4.13": "^3.4.13",
+      "sharp@<0.35.4": "^0.35.4",
+      "nanoid@<3.3.18": "^3.3.18",
+      "fflate@<0.4.9": "^0.4.9"
     }
   }
 }
