@@ -82,6 +82,11 @@ services:
     environment:
       DATABASE_URL: postgres://chakramcp:${POSTGRES_PASSWORD}@pg:5432/chakramcp
       REDIS_URL: redis://redis:6379
+      # Usage-limit enforcement. Default false = shadow mode: over-limit calls
+      # are logged as `limit.would_block` and still served. Flip to true (set
+      # LIMITS_ENFORCE=true in the host env, then `docker compose up -d relay`)
+      # only after watching the shadow metrics and tuning the plan limits.
+      LIMITS_ENFORCE: ${LIMITS_ENFORCE:-false}
       JWT_SECRET: ${JWT_SECRET}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       APP_PORT: "8080"
