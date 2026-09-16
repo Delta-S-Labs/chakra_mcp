@@ -320,4 +320,30 @@ mod tests {
             Some(LimitOutcome::RateLimited)
         );
     }
+
+    /// End-to-end live: `enforce` over **real Redis + real Postgres**. Proves
+    /// the whole stack the prod relay runs — plan resolution from PG, the real
+    /// Redis fixed-window limiter, and the enforce/deny decision — not the
+    /// in-memory mock. Skips cleanly when no Redis is reachable (e.g. CI
+    /// without a Redis service); run locally with a `redis:7-alpine` up.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn enforce_denies_rate_live_redis(pool: PgPool) {
+        let Some(redis_pool) = rate::test_redis_pool().await else {
+            return;
+        };
+        let rl = RateLimiter::Redis(redis_pool);
+        // free = 60/min: 60 allowed, the 61st denied — over live Redis + PG.
+        let acct = seed_account_on_plan(&pool, "free").await;
+        for i in 0..60 {
+            assert_eq!(
+                enforce(&pool, &rl, acct, true, "test-live").await.unwrap(),
+                None,
+                "hit {i} should be under the limit"
+            );
+        }
+        assert_eq!(
+            enforce(&pool, &rl, acct, true, "test-live").await.unwrap(),
+            Some(LimitOutcome::RateLimited)
+        );
+    }
 }
