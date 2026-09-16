@@ -3,13 +3,12 @@
 //!
 //! Design: `docs/specs/2026-07-23-usage-quotas-rate-limiting-design.md`.
 //!
-//! This module is the shared primitive both the A2A and legacy/MCP invocation
-//! surfaces call in PR 3:
+//! This module is the shared primitive the invocation surfaces call:
 //!   * [`check`] — read-only rate + quota gate, keyed on the caller's account.
+//!   * [`enforce`] — [`check`] plus shadow-mode policy (deny vs log-and-allow).
 //!   * [`quota::increment`] — bump the monthly counter in the row-write txn.
 //!
-//! Enforcement is not wired into any surface in this PR (PR 2). It is built,
-//! constructed at relay startup, and unit-tested in isolation.
+//! Wired into the A2A surface as of PR 3a; legacy `/v1/invoke` + MCP follow.
 
 pub mod quota;
 pub mod rate;
@@ -81,6 +80,46 @@ pub async fn check(
     }
 
     Ok(LimitOutcome::Allowed)
+}
+
+/// [`check`] plus shadow-mode policy. Returns `Some(outcome)` the caller
+/// should **deny** with, or `None` to **proceed** (under limit, or over but
+/// in shadow mode). When over-limit and `enforce` is false, logs a
+/// structured `limit.would_block` event and allows the call. `surface`
+/// labels the call site (`"a2a"`, `"v1_invoke"`, `"mcp"`) for the logs.
+pub async fn enforce(
+    db: &PgPool,
+    limiter: &RateLimiter,
+    account_id: Uuid,
+    enforce: bool,
+    surface: &str,
+) -> Result<Option<LimitOutcome>, sqlx::Error> {
+    match check(db, limiter, account_id).await? {
+        LimitOutcome::Allowed => Ok(None),
+        hit => {
+            if enforce {
+                Ok(Some(hit))
+            } else {
+                tracing::info!(
+                    event = "limit.would_block",
+                    kind = ?hit,
+                    account = %account_id,
+                    surface,
+                    "usage limit would block (shadow mode)"
+                );
+                Ok(None)
+            }
+        }
+    }
+}
+
+/// Parse the `LIMITS_ENFORCE` env value: truthy → enforce, anything else
+/// (incl. unset) → shadow mode.
+pub fn enforce_flag(val: Option<&str>) -> bool {
+    matches!(
+        val.map(|s| s.trim().to_lowercase()).as_deref(),
+        Some("true" | "1" | "yes" | "on")
+    )
 }
 
 #[cfg(test)]
@@ -213,6 +252,56 @@ mod tests {
         assert_eq!(
             check(&pool, &RateLimiter::Noop, acct).await.unwrap(),
             LimitOutcome::Allowed
+        );
+    }
+
+    async fn seed_at_quota(pool: &PgPool, acct: Uuid) {
+        sqlx::query!(
+            r#"INSERT INTO usage_counters (account_id, period_start, invocations)
+               VALUES ($1, date_trunc('month', now() AT TIME ZONE 'UTC')::date, 1000)"#,
+            acct,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn enforce_shadow_allows_when_over_limit(pool: PgPool) {
+        let acct = seed_account_on_plan(&pool, "free").await;
+        seed_at_quota(&pool, acct).await;
+        // Shadow mode (enforce=false): over quota → still None (proceed).
+        assert_eq!(
+            enforce(&pool, &RateLimiter::Noop, acct, false, "test")
+                .await
+                .unwrap(),
+            None
+        );
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn enforce_denies_quota_when_enforcing(pool: PgPool) {
+        let acct = seed_account_on_plan(&pool, "free").await;
+        seed_at_quota(&pool, acct).await;
+        assert_eq!(
+            enforce(&pool, &RateLimiter::Noop, acct, true, "test")
+                .await
+                .unwrap(),
+            Some(LimitOutcome::QuotaExceeded)
+        );
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn enforce_denies_rate_when_enforcing(pool: PgPool) {
+        // free = 60/min; trip the counting limiter, then the 61st enforces.
+        let acct = seed_account_on_plan(&pool, "free").await;
+        let rl = counting_limiter();
+        for _ in 0..60 {
+            assert_eq!(enforce(&pool, &rl, acct, true, "test").await.unwrap(), None);
+        }
+        assert_eq!(
+            enforce(&pool, &rl, acct, true, "test").await.unwrap(),
+            Some(LimitOutcome::RateLimited)
         );
     }
 }

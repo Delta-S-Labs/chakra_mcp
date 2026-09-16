@@ -13,26 +13,37 @@ pub struct RelayState {
     pub config: Arc<SharedConfig>,
     /// Per-account request-velocity limiter. Defaults to `Noop` (no Redis);
     /// production injects a Redis-backed one via [`RelayState::with_rate_limiter`].
-    /// Read by the invocation surfaces in PR 3.
-    #[allow(dead_code)]
     pub rate_limiter: Arc<RateLimiter>,
+    /// When false (the default), usage-limit checks run in **shadow mode**:
+    /// an over-limit call is logged as a would-block but still allowed. When
+    /// true, over-limit calls are actually denied. Set from `LIMITS_ENFORCE`
+    /// at startup; tests default to shadow.
+    pub limits_enforce: bool,
 }
 
 impl RelayState {
-    /// Construct with rate limiting disabled (Noop). Keeps the two-arg
-    /// signature every existing caller (incl. tests) relies on; production
-    /// chains [`with_rate_limiter`](Self::with_rate_limiter).
+    /// Construct with rate limiting disabled (Noop) and enforcement off
+    /// (shadow). Keeps the two-arg signature every existing caller (incl.
+    /// tests) relies on; production chains the builders below.
     pub fn new(db: PgPool, config: SharedConfig) -> Self {
         Self {
             db,
             config: Arc::new(config),
             rate_limiter: Arc::new(RateLimiter::Noop),
+            limits_enforce: false,
         }
     }
 
     /// Replace the rate limiter (production wiring reads `REDIS_URL`).
     pub fn with_rate_limiter(mut self, limiter: RateLimiter) -> Self {
         self.rate_limiter = Arc::new(limiter);
+        self
+    }
+
+    /// Turn usage-limit enforcement on (off = shadow mode). Production
+    /// wiring reads `LIMITS_ENFORCE`.
+    pub fn with_limits_enforce(mut self, on: bool) -> Self {
+        self.limits_enforce = on;
         self
     }
 
