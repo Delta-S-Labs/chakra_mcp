@@ -62,6 +62,13 @@ jobs:
           --health-timeout 3s
           --health-retries 12
     env:
+      # Compile the query macros against the committed .sqlx cache (verified
+      # current by the sqlx-prepare-check job) rather than the live DB — the
+      # service's base DB has no schema (migrations are applied per-test by
+      # `#[sqlx::test]` at runtime, which still connects via DATABASE_URL).
+      # Same as the prod build; without this, macro verification hits the
+      # empty base DB and fails with `relation "agents" does not exist`.
+      SQLX_OFFLINE: "true"
       DATABASE_URL: postgres://chakramcp:chakramcp@localhost:5432/chakramcp
       REDIS_TEST_URL: redis://127.0.0.1:6379
     defaults:
