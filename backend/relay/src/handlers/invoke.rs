@@ -472,6 +472,21 @@ async fn invoke_trusted(
         }
     }
 
+    // Per-account usage limits (rate + monthly quota), keyed on the caller's
+    // (grantee's) account. Shadow mode logs a would-block and proceeds;
+    // enforcing returns 429 with an `account_*` code.
+    if let Some(outcome) = crate::limits::enforce(
+        &state.db,
+        &state.rate_limiter,
+        row.grantee_account_id,
+        state.limits_enforce,
+        "v1_invoke",
+    )
+    .await?
+    {
+        return Err(outcome.into());
+    }
+
     // Freeze the trust context at queue time (migration 0024). Audit
     // log endpoints return this verbatim so they show what was true
     // when the call happened, not what's true now. Shape mirrors the
@@ -511,7 +526,10 @@ async fn invoke_trusted(
     // `minted_jti` is the dual: NULL on the ck_ path, set on the JWT
     // path so the per-pair dashboard can attribute the call back to
     // the device-flow / oauth-code row that minted this token.
+    // Row write + quota increment in one transaction (counts against the
+    // grantee/caller account, one per row-write).
     let id = Uuid::now_v7();
+    let mut tx = state.db.begin().await?;
     sqlx::query!(
         r#"
         INSERT INTO relay_invocations
@@ -532,8 +550,10 @@ async fn invoke_trusted(
         user.minted_jti,
         trust_snapshot,
     )
-    .execute(&state.db)
+    .execute(&mut *tx)
     .await?;
+    crate::limits::quota::increment(&mut *tx, row.grantee_account_id).await?;
+    tx.commit().await?;
 
     Ok((
         StatusCode::ACCEPTED,
@@ -648,10 +668,28 @@ async fn invoke_public(
             .into_response());
     }
 
+    // Per-account usage limits (rate + monthly quota), keyed on the invoker's
+    // account. Independent of the per-capability public quota above: a public
+    // invoke must pass both. Shadow mode logs a would-block and proceeds;
+    // enforcing returns 429 with an `account_*` code.
+    if let Some(outcome) = crate::limits::enforce(
+        &state.db,
+        &state.rate_limiter,
+        invoker.account_id,
+        state.limits_enforce,
+        "v1_invoke_public",
+    )
+    .await?
+    {
+        return Err(outcome.into());
+    }
+
     // Enqueue with grant_id = NULL. Same audit columns as the trusted
     // path; the friendship/grant context bundled into the eventual
     // inbox-pull row will be `null` (the inbox handler tolerates it).
+    // Row write + quota increment in one transaction.
     let id = Uuid::now_v7();
+    let mut tx = state.db.begin().await?;
     sqlx::query!(
         r#"
         INSERT INTO relay_invocations
@@ -670,8 +708,10 @@ async fn invoke_public(
         user.api_key_id,
         user.minted_jti,
     )
-    .execute(&state.db)
+    .execute(&mut *tx)
     .await?;
+    crate::limits::quota::increment(&mut *tx, invoker.account_id).await?;
+    tx.commit().await?;
 
     Ok((
         StatusCode::ACCEPTED,
@@ -2182,6 +2222,87 @@ mod public_invoke_tests {
         assert_eq!(row.status, "pending");
         // Silence warnings about unused fields in the fixture.
         let _ = (f.granter_user, f.invoker_user);
+    }
+
+    // ─── Usage limits on the legacy public path (PR3b) ───────
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn public_invoke_enforce_over_account_quota_returns_429(pool: PgPool) {
+        let f = seed_public(&pool, 5, false).await;
+        // Push the invoker's account over the free-plan monthly quota (1000).
+        // The per-capability public quota (5) still passes at 0 prior invokes,
+        // so it's the per-account cap that trips — proving they compose.
+        let acct = sqlx::query_scalar!(
+            "SELECT account_id FROM agents WHERE id = $1",
+            f.invoker_agent
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            r#"INSERT INTO usage_counters (account_id, period_start, invocations)
+               VALUES ($1, date_trunc('month', now() AT TIME ZONE 'UTC')::date, 1000)"#,
+            acct
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let app = crate::router(
+            crate::state::RelayState::new(pool.clone(), config()).with_limits_enforce(true),
+        );
+        let res = app
+            .oneshot(invoke_req(
+                &f.invoker_token,
+                serde_json::json!({
+                    "capability_id": f.public_cap,
+                    "grantee_agent_id": f.invoker_agent,
+                    "input": {"hi": 1}
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
+        let body: Value =
+            serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        assert_eq!(body["error"]["code"], "account_monthly_quota_exhausted");
+        let _ = (f.granter_user, f.invoker_user, f.granter_agent);
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn public_invoke_increments_account_counter(pool: PgPool) {
+        let f = seed_public(&pool, 5, false).await;
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        let res = app
+            .oneshot(invoke_req(
+                &f.invoker_token,
+                serde_json::json!({
+                    "capability_id": f.public_cap,
+                    "grantee_agent_id": f.invoker_agent,
+                    "input": {"hi": 1}
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::ACCEPTED);
+        // The enqueue counted this invocation against the invoker's account.
+        let acct = sqlx::query_scalar!(
+            "SELECT account_id FROM agents WHERE id = $1",
+            f.invoker_agent
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let used = sqlx::query_scalar!(
+            r#"SELECT invocations FROM usage_counters
+               WHERE account_id = $1
+                 AND period_start = date_trunc('month', now() AT TIME ZONE 'UTC')::date"#,
+            acct
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(used, 1);
+        let _ = (f.granter_user, f.invoker_user, f.granter_agent);
     }
 
     /// Friend-only capability via the public path → 404. Don't leak

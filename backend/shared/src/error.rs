@@ -31,6 +31,12 @@ pub enum ApiError {
 
     #[error("internal: {0}")]
     Internal(#[from] anyhow::Error),
+
+    #[error("rate limit exceeded")]
+    RateLimited,
+
+    #[error("monthly quota exceeded")]
+    QuotaExceeded,
 }
 
 #[derive(Serialize)]
@@ -58,6 +64,15 @@ impl IntoResponse for ApiError {
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal_error", true)
             }
             ApiError::Auth(_) => (StatusCode::UNAUTHORIZED, "unauthorized", false),
+            // Per-account usage limits (distinct `code`s from the per-capability
+            // public-invoke quota so clients can tell the two apart). Rate is
+            // retryable once the 60s window rolls; quota resets next month.
+            ApiError::RateLimited => (StatusCode::TOO_MANY_REQUESTS, "account_rate_limited", true),
+            ApiError::QuotaExceeded => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "account_monthly_quota_exhausted",
+                false,
+            ),
         };
 
         let body = ErrorEnvelope {
