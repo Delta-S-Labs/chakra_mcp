@@ -57,6 +57,10 @@ pub enum DenyReason {
     FriendshipRequired,
     GrantRequired,
     TargetUnreachable,
+    /// Caller's account is over its plan's per-minute rate limit.
+    RateLimited,
+    /// Caller's account has hit its plan's monthly invocation quota.
+    QuotaExceeded,
 }
 
 impl DenyReason {
@@ -84,6 +88,11 @@ impl DenyReason {
             | Self::TargetAgentNotFound
             | Self::TargetTombstoned
             | Self::CapabilityNotOnTarget => -32006,
+            // -32007 / -32008: usage limits (both map to HTTP 429 in
+            // a2a::jsonrpc_to_http). Distinct codes so clients can tell
+            // "slow down" from "out of quota".
+            Self::RateLimited => -32007,
+            Self::QuotaExceeded => -32008,
         }
     }
 
@@ -104,6 +113,8 @@ impl DenyReason {
             Self::FriendshipRequired => "chk.policy.friendship_required",
             Self::GrantRequired => "chk.policy.grant_required",
             Self::TargetUnreachable => "chk.target.unreachable",
+            Self::RateLimited => "chk.limit.rate",
+            Self::QuotaExceeded => "chk.limit.quota",
         }
     }
 
@@ -124,6 +135,8 @@ impl DenyReason {
             Self::FriendshipRequired => "friendship required",
             Self::GrantRequired => "grant required",
             Self::TargetUnreachable => "target unreachable",
+            Self::RateLimited => "rate limit exceeded",
+            Self::QuotaExceeded => "monthly quota exceeded",
         }
     }
 }

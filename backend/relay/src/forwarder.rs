@@ -221,6 +221,13 @@ async fn persist_invocation(
     // path so the per-pair dashboard at /v1/pairings/{kind}/{id}/usage
     // can join back to the device-flow / oauth-code row that minted
     // the token.
+    // Row write + monthly-quota increment in one transaction, so the counter
+    // can never drift from the ledger. The row is written after the upstream
+    // call with a terminal status; the quota counts every attempt (success,
+    // failure, or timeout) — one increment per row-write, matching the pull
+    // and legacy surfaces. Counts against the caller's account. The txn is
+    // short: no network is held inside it (the HTTP call already happened).
+    let mut tx = db.begin().await?;
     sqlx::query!(
         r#"
         INSERT INTO relay_invocations
@@ -246,8 +253,10 @@ async fn persist_invocation(
         authz.api_key_id,
         authz.minted_jti,
     )
-    .execute(db)
+    .execute(&mut *tx)
     .await?;
+    crate::limits::quota::increment(&mut *tx, authz.caller_account_id).await?;
+    tx.commit().await?;
     Ok(())
 }
 

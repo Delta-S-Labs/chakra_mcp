@@ -73,6 +73,34 @@ async fn handle_send_message(
     let decision = evaluate(&state.db, headers, state, account_slug, agent_slug).await;
     match decision {
         Decision::Authorized(authz) => {
+            // Usage limits (per-account rate + monthly quota), keyed on the
+            // caller's account. In shadow mode a would-block is logged and the
+            // call proceeds; when enforcing, it's denied (→ HTTP 429).
+            match crate::limits::enforce(
+                &state.db,
+                &state.rate_limiter,
+                authz.caller_account_id,
+                state.limits_enforce,
+                "a2a",
+            )
+            .await
+            {
+                Ok(None) => {}
+                Ok(Some(outcome)) => {
+                    let reason = match outcome {
+                        crate::limits::LimitOutcome::RateLimited => DenyReason::RateLimited,
+                        crate::limits::LimitOutcome::QuotaExceeded => DenyReason::QuotaExceeded,
+                        crate::limits::LimitOutcome::Allowed => {
+                            unreachable!("enforce() returns None for Allowed")
+                        }
+                    };
+                    return deny_response(&reason);
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, "usage-limit check failed");
+                    return internal_error();
+                }
+            }
             let cap_name = match capability_name(&state.db, authz.capability_id).await {
                 Ok(n) => n,
                 Err(e) => {
@@ -443,12 +471,14 @@ fn discovery_disabled() -> Response {
 /// - -32002 (friendship) / -32003 (grant) → 403
 /// - -32005 (unreachable) → 503
 /// - -32006 (target tombstoned/missing) → 404
+/// - -32007 (rate) / -32008 (quota) → 429
 fn jsonrpc_to_http(code: i32) -> StatusCode {
     match code {
         -32000 | -32001 => StatusCode::UNAUTHORIZED,
         -32002 | -32003 => StatusCode::FORBIDDEN,
         -32005 => StatusCode::SERVICE_UNAVAILABLE,
         -32006 => StatusCode::NOT_FOUND,
+        -32007 | -32008 => StatusCode::TOO_MANY_REQUESTS,
         _ => StatusCode::OK,
     }
 }
@@ -923,6 +953,96 @@ mod tests {
         // existing `inbox.serve()` handler sees the same shape it
         // always saw (backward compat with v0.1.0 SDK contract).
         assert_eq!(row.input_preview, Some(serde_json::json!({"text": "hi"})));
+    }
+
+    // ─── Usage limits (PR3a) ─────────────────────────────────
+
+    async fn seed_caller_quota_at(pool: &PgPool, account_id: Uuid, used: i64) {
+        sqlx::query!(
+            r#"INSERT INTO usage_counters (account_id, period_start, invocations)
+               VALUES ($1, date_trunc('month', now() AT TIME ZONE 'UTC')::date, $2)"#,
+            account_id,
+            used,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    fn a2a_send_request(f: &Fixture) -> Request<Body> {
+        Request::builder()
+            .method("POST")
+            .uri(path_for(f))
+            .header(
+                header::AUTHORIZATION,
+                format!("Bearer {}", f.api_key_plaintext),
+            )
+            .header("X-ChakraMCP-Caller-Agent", f.caller_agent_id.to_string())
+            .header("X-ChakraMCP-Capability", f.capability_id.to_string())
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                r#"{"jsonrpc":"2.0","id":7,"method":"SendMessage","params":{"text":"hi"}}"#,
+            ))
+            .unwrap()
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn shadow_mode_allows_over_quota(pool: PgPool) {
+        let f = seed_full_fixture(&pool).await;
+        // Caller is on the free plan (quota 1000) and already at the cap.
+        seed_caller_quota_at(&pool, f.caller_account_id, 1000).await;
+        // Default RelayState → limits_enforce = false (shadow mode).
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config_v2_on()));
+        let res = app.oneshot(a2a_send_request(&f)).await.unwrap();
+        // Over quota, but shadow mode logs a would-block and still parks.
+        assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn enforce_over_quota_returns_429(pool: PgPool) {
+        let f = seed_full_fixture(&pool).await;
+        seed_caller_quota_at(&pool, f.caller_account_id, 1000).await;
+        // Precondition (isolates handler wiring from the limit logic): the
+        // caller's account is over quota exactly as the handler will read it.
+        assert_eq!(
+            crate::limits::check(
+                &pool,
+                &crate::limits::RateLimiter::Noop,
+                f.caller_account_id
+            )
+            .await
+            .unwrap(),
+            crate::limits::LimitOutcome::QuotaExceeded,
+            "precondition: caller must be over quota"
+        );
+        let app = crate::router(
+            crate::state::RelayState::new(pool.clone(), config_v2_on()).with_limits_enforce(true),
+        );
+        let res = app.oneshot(a2a_send_request(&f)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
+        let body = parse_body(res).await;
+        assert_eq!(body["error"]["code"], -32008);
+        assert_eq!(body["error"]["data"]["code"], "chk.limit.quota");
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn successful_pull_increments_quota_counter(pool: PgPool) {
+        let f = seed_full_fixture(&pool).await;
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config_v2_on()));
+        let res = app.oneshot(a2a_send_request(&f)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        // The park path counted this invocation against the caller's account,
+        // in the same transaction as the relay_invocations row.
+        let used = sqlx::query_scalar!(
+            r#"SELECT invocations FROM usage_counters
+               WHERE account_id = $1
+                 AND period_start = date_trunc('month', now() AT TIME ZONE 'UTC')::date"#,
+            f.caller_account_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(used, 1);
     }
 
     /// Promote the fixture's target agent to push mode by giving it
