@@ -25,4 +25,4 @@ futures = "0.3"
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }
 httpmock = "0.8"
-serial_test = "3"
+serial_test = "4"
