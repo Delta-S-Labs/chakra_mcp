@@ -249,10 +249,12 @@ fn canonical_payload_b64(card: &AgentCard) -> Result<String, serde_json::Error> 
 mod tests {
     use super::super::synthesizer::*;
     use super::*;
-    use rand::rngs::OsRng;
+    use rand::{rngs::OsRng, RngCore};
 
     fn make_key(kid: &str) -> SigningKey {
-        let inner = DalekSigningKey::generate(&mut OsRng);
+        let mut seed = [0u8; SECRET_KEY_LENGTH];
+        OsRng.fill_bytes(&mut seed);
+        let inner = DalekSigningKey::from_bytes(&seed);
         SigningKey {
             kid: kid.to_string(),
             inner,

@@ -251,12 +251,14 @@ struct JwtHeader {
 mod tests {
     use super::*;
     use ed25519_dalek::SigningKey as DalekSigningKey;
-    use rand::rngs::OsRng;
+    use rand::{rngs::OsRng, RngCore};
 
     fn make_key(kid: &str) -> SigningKey {
+        let mut seed = [0u8; 32];
+        OsRng.fill_bytes(&mut seed);
         SigningKey {
             kid: kid.to_string(),
-            inner: DalekSigningKey::generate(&mut OsRng),
+            inner: DalekSigningKey::from_bytes(&seed),
         }
     }
 
