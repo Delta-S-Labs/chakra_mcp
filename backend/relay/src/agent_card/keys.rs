@@ -17,7 +17,7 @@
 
 use chrono::{DateTime, Utc};
 use ed25519_dalek::{SigningKey as DalekSigningKey, SECRET_KEY_LENGTH};
-use rand::rngs::OsRng;
+use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -78,7 +78,12 @@ impl KeyStore {
     /// callers should generally use `ensure_active_key` instead.
     pub async fn create_new_key(&self) -> Result<AppSigningKey, KeyStoreError> {
         let kid = Uuid::now_v7();
-        let signing_key = DalekSigningKey::generate(&mut OsRng);
+        // An Ed25519 signing key is a 32-byte seed. dalek 3 gates `generate`
+        // behind its `rand_core` feature (which pins rand_core 0.9); we keep
+        // rand 0.8 elsewhere, so seed from OsRng and build via `from_bytes`.
+        let mut seed = [0u8; SECRET_KEY_LENGTH];
+        OsRng.fill_bytes(&mut seed);
+        let signing_key = DalekSigningKey::from_bytes(&seed);
         let verifying_key = signing_key.verifying_key();
         let secret_bytes = signing_key.to_bytes();
         let public_bytes = verifying_key.to_bytes();
