@@ -34,10 +34,10 @@ export default function AnimatedMark() {
         xmlns="http://www.w3.org/2000/svg"
         viewBox="0 0 1200 800"
         role="img"
-        aria-label="ChakraMCP composite mark — hub, relay arc, chakra. Animated to show inter-agent traffic."
+        aria-label="ChakraMCP composite mark: hub, relay arc, chakra. Animated to show inter-agent traffic."
         className={styles.svg}
       >
-        <title>ChakraMCP composite mark — hub + chakra + relay arc</title>
+        <title>ChakraMCP composite mark: hub + chakra + relay arc</title>
         <desc>
           A hub on the left with seven dashed spokes radiating out to small
           satellite dots feeds a relay arc that connects to a chakra on the
