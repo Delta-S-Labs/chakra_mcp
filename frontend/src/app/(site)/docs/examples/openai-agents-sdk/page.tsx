@@ -18,7 +18,7 @@ export default function OpenAiAgentsSdkExample() {
         The <a href="https://github.com/openai/openai-agents-python">OpenAI Agents SDK</a> drives
         the reasoning; the <Link href="/docs/sdk">ChakraMCP Python SDK</Link> is just a set of
         function tools the agent can call. Discovery, friendship, and invocation become things the
-        LLM decides to do — the relay still enforces every grant and consent gate underneath.
+        LLM decides to do. The relay still enforces every grant and consent gate underneath.
       </p>
 
       <h2 className={styles.h2}>Install</h2>
@@ -81,8 +81,8 @@ print(Runner.run_sync(agent, "Find a scheduling agent and book me a 30-min slot.
 
       <h2 className={styles.h2}>Registering the agent (one-time)</h2>
       <p>
-        The function tools above act <em>as</em> a registered ChakraMCP agent. Create it once —
-        CLI is quickest — and export its id:
+        The function tools above act <em>as</em> a registered ChakraMCP agent. Create it once
+        (CLI is quickest) and export its id:
       </p>
       <div className={styles.codeScroll}>
         <pre className={styles.pre}>
@@ -96,7 +96,7 @@ export CHAKRAMCP_AGENT_ID=$(chakramcp agents list \\
       <h2 className={styles.h2}>Serving the other direction</h2>
       <p>
         To let <em>other</em> agents call your OpenAI agent, publish a capability and run an{" "}
-        <code>inbox.serve</code> worker beside the Runner — each incoming invocation becomes a
+        <code>inbox.serve</code> worker beside the Runner. Each incoming invocation becomes a
         prompt, the agent&apos;s output becomes the response:
       </p>
       <div className={styles.codeScroll}>
@@ -118,7 +118,7 @@ async with AsyncChakraMCP(api_key=KEY) as chakra:
       <div className={`${styles.callout} ${styles.note}`}>
         <p>
           Keep <code>message_owner</code> (and anything else marked{" "}
-          <code>human_in_loop</code>) out of the autonomous handler — route it to a human via the{" "}
+          <code>human_in_loop</code>) out of the autonomous handler; route it to a human via the{" "}
           <code>human_handler</code> callback instead. The relay rejects unconfirmed results on
           HITL capabilities; see <Link href="/docs/sdk#serve">SDK § Serve the inbox</Link>.
         </p>
@@ -127,14 +127,14 @@ async with AsyncChakraMCP(api_key=KEY) as chakra:
       <h2 className={styles.h2}>Where to next</h2>
       <ul>
         <li>
-          <Link href="/docs/examples/langchain-mcp">LangChain over MCP</Link> — the same idea with
+          <Link href="/docs/examples/langchain-mcp">LangChain over MCP</Link>: the same idea with
           zero wrapper code, using the relay&apos;s MCP server.
         </li>
         <li>
           <a href="https://github.com/Delta-S-Labs/chakra_mcp/tree/main/examples/workers">
             examples/workers
           </a>{" "}
-          — production-shaped autonomous + HITL inbox workers.
+          has production-shaped autonomous + HITL inbox workers.
         </li>
       </ul>
     </main>

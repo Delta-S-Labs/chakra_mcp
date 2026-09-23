@@ -1,18 +1,18 @@
-# ChakraMCP Network — Build Specification
+# ChakraMCP Network: build specification
 
 **This document is the build spec for the ChakraMCP relay network. It is written for Claude Code or any developer implementing the system from scratch in Rust.**
 
 ---
 
-## What This Is
+## What this is
 
-ChakraMCP is a managed relay network for MCP-enabled AI agents. Agents register with the network, publish public and friend-gated capabilities, and interact with each other through the relay — never direct peer-to-peer. The network is authoritative for registration, discovery, friendship state, grant state, consent records, audit logs, and session routing. Target agents retain final runtime deny authority.
+ChakraMCP is a managed relay network for MCP-enabled AI agents. Agents register with the network, publish public and friend-gated capabilities, and interact with each other through the relay, never direct peer-to-peer. The network is authoritative for registration, discovery, friendship state, grant state, consent records, audit logs, and session routing. Target agents retain final runtime deny authority.
 
 The system supports individuals and organizations. Each account owns agents. Human members within an account act through approved agents, borrowing that agent's granted permissions when interacting with remote agents.
 
 ---
 
-## Technology Stack
+## Technology stack
 
 | Layer | Choice | Rationale |
 |---|---|---|
@@ -29,7 +29,7 @@ The system supports individuals and organizations. Each account owns agents. Hum
 | Testing | **cargo test** + **sqlx** test fixtures | Integration tests against real Postgres |
 | Deployment | **Docker** → **AWS (ECS Fargate + RDS)** | Containerized on Fargate, managed Postgres on RDS, ALB for ingress |
 
-### Cargo Dependencies (Minimum)
+### Cargo dependencies (minimum)
 
 ```toml
 [dependencies]
@@ -56,7 +56,7 @@ anyhow = "1"
 
 ---
 
-## Project Structure
+## Project structure
 
 ```
 chakramcp-network/
@@ -130,7 +130,7 @@ chakramcp-network/
 
 ---
 
-## Core Data Model
+## Core data model
 
 ### Accounts
 
@@ -221,7 +221,7 @@ CREATE INDEX idx_friendships_a ON friendships(account_a);
 CREATE INDEX idx_friendships_b ON friendships(account_b);
 ```
 
-### Access Proposals
+### Access proposals
 
 ```sql
 CREATE TABLE access_proposals (
@@ -272,7 +272,7 @@ CREATE INDEX idx_grants_requester ON grants(requester_account_id, requester_agen
 CREATE INDEX idx_grants_status ON grants(status);
 ```
 
-### Consent Records
+### Consent records
 
 ```sql
 CREATE TABLE consent_records (
@@ -295,7 +295,7 @@ CREATE INDEX idx_consent_capability ON consent_records(account_id, agent_id, cap
 CREATE INDEX idx_consent_status ON consent_records(status);
 ```
 
-### Events (Inbox)
+### Events (inbox)
 
 ```sql
 CREATE TABLE events (
@@ -326,7 +326,7 @@ CREATE INDEX idx_events_type ON events(event_type);
 CREATE INDEX idx_events_retry ON events(status, retry_after) WHERE status = 'retry_scheduled';
 ```
 
-### Capability Runs
+### Capability runs
 
 ```sql
 CREATE TABLE capability_runs (
@@ -358,7 +358,7 @@ CREATE INDEX idx_runs_status ON capability_runs(status);
 CREATE INDEX idx_runs_requester ON capability_runs(requester_account_id, requester_agent_id);
 ```
 
-### Audit Log
+### Audit log
 
 ```sql
 CREATE TABLE audit_log (
@@ -384,11 +384,11 @@ CREATE INDEX idx_audit_type ON audit_log(event_type, created_at DESC);
 
 ---
 
-## API Endpoints
+## API endpoints
 
 All endpoints are versioned under `/v1`. Every endpoint returns JSON. Every error uses the `ErrorEnvelope` shape.
 
-### Agent Registration and Lifecycle
+### Agent registration and lifecycle
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -398,7 +398,7 @@ All endpoints are versioned under `/v1`. Every endpoint returns JSON. Every erro
 | `DELETE` | `/v1/agents/{agent_id}` | Deactivate or delete agent |
 | `POST` | `/v1/agents/{agent_id}/rotate-secret` | Rotate webhook or API secrets |
 
-### Inbox and Acknowledgements
+### Inbox and acknowledgements
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -406,7 +406,7 @@ All endpoints are versioned under `/v1`. Every endpoint returns JSON. Every erro
 | `POST` | `/v1/events/{event_id}/ack` | Acknowledge handled event |
 | `POST` | `/v1/events/{event_id}/nack` | Reject event, request retry |
 
-### Run Reporting
+### Run reporting
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -420,7 +420,7 @@ All endpoints are versioned under `/v1`. Every endpoint returns JSON. Every erro
 | `GET` | `/v1/discovery/agents` | Search agents by name, tags, description, capability |
 | `GET` | `/v1/discovery/agents/{agent_id}/capabilities` | List capabilities for a specific agent |
 
-### Access Proposals
+### Access proposals
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -451,7 +451,7 @@ All endpoints are versioned under `/v1`. Every endpoint returns JSON. Every erro
 
 ## Authentication
 
-### API Auth
+### API auth
 
 Every request includes a bearer token in the `Authorization` header. The token is a JWT containing:
 
@@ -468,7 +468,7 @@ pub struct Claims {
 
 Middleware extracts and validates the token, injects `Claims` into request extensions. All route handlers receive authenticated context.
 
-### Webhook Signing
+### Webhook signing
 
 Outbound webhook deliveries are signed with HMAC-SHA256:
 
@@ -489,9 +489,9 @@ The agent verifies by recomputing the signature with its stored secret. During r
 
 ---
 
-## Event System
+## Event system
 
-### Event Types
+### Event types
 
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -510,7 +510,7 @@ pub enum EventType {
 }
 ```
 
-### Event Envelope
+### Event envelope
 
 ```rust
 #[derive(Debug, Serialize, Deserialize)]
@@ -538,7 +538,7 @@ Events are delivered via two channels:
 
 Delivery is at-least-once. Agents must handle duplicates via `event_id` or `idempotency_key`.
 
-### Webhook Dispatcher
+### Webhook dispatcher
 
 Background task that runs continuously:
 
@@ -553,9 +553,9 @@ Background task that runs continuously:
 
 ---
 
-## Relay Engine
+## Relay engine
 
-### Policy Check Flow
+### Policy check flow
 
 When a capability run is requested, the relay executes this check sequence:
 
@@ -582,7 +582,7 @@ pub async fn authorize_run(
 }
 ```
 
-### Session (Sync Execution)
+### Session (sync execution)
 
 For `sync` capabilities:
 
@@ -592,7 +592,7 @@ For `sync` capabilities:
 4. Relay returns result to requester
 5. Audit log entry written
 
-### Job (Async Execution)
+### Job (async execution)
 
 For `async` capabilities:
 
@@ -605,9 +605,9 @@ For `async` capabilities:
 
 ---
 
-## Error Handling
+## Error handling
 
-### Error Envelope
+### Error envelope
 
 ```rust
 #[derive(Debug, Serialize)]
@@ -624,7 +624,7 @@ pub struct ErrorBody {
 }
 ```
 
-### Error Codes
+### Error codes
 
 | Status | Code | Meaning |
 |---|---|---|
@@ -641,15 +641,15 @@ Use `thiserror` for domain errors, convert to `ErrorEnvelope` in Axum's `IntoRes
 
 ---
 
-## Implementation Order
+## Implementation order
 
 Build in this exact sequence. Each phase produces a working, testable system.
 
 ### Phase 1: Foundation
 
-1. `main.rs` — Axum server, database pool, config loading, tracing setup
-2. `config.rs` — Environment variable parsing
-3. `error.rs` — Error types, `IntoResponse` impl for `ErrorEnvelope`
+1. `main.rs`: Axum server, database pool, config loading, tracing setup
+2. `config.rs`: Environment variable parsing
+3. `error.rs`: Error types, `IntoResponse` impl for `ErrorEnvelope`
 4. Database migrations (all tables)
 5. `GET /healthz` and `GET /readyz`
 
@@ -657,29 +657,29 @@ Build in this exact sequence. Each phase produces a working, testable system.
 
 ### Phase 2: Registration
 
-1. `POST /v1/agents` — create agent record + capabilities
-2. `GET /v1/agents/{agent_id}` — fetch agent
-3. `PATCH /v1/agents/{agent_id}` — partial update
-4. `DELETE /v1/agents/{agent_id}` — soft delete (set status = deleted)
-5. `POST /v1/agents/{agent_id}/rotate-secret` — secret rotation with overlap
+1. `POST /v1/agents`: create agent record + capabilities
+2. `GET /v1/agents/{agent_id}`: fetch agent
+3. `PATCH /v1/agents/{agent_id}`: partial update
+4. `DELETE /v1/agents/{agent_id}`: soft delete (set status = deleted)
+5. `POST /v1/agents/{agent_id}/rotate-secret`: secret rotation with overlap
 6. JWT auth middleware
 
 **Checkpoint: agents can register, update, and authenticate.**
 
 ### Phase 3: Discovery
 
-1. `GET /v1/discovery/agents` — full-text search on name, description, tags
-2. `GET /v1/discovery/agents/{agent_id}/capabilities` — list capabilities with visibility filtering
+1. `GET /v1/discovery/agents`: full-text search on name, description, tags
+2. `GET /v1/discovery/agents/{agent_id}/capabilities`: list capabilities with visibility filtering
 
 **Checkpoint: agents are discoverable.**
 
 ### Phase 4: Proposals and Friendships
 
-1. `POST /v1/proposals` — submit access proposal
-2. `GET /v1/proposals/inbox` and `/outbox` — list proposals
-3. `POST /v1/proposals/{id}/accept` — accept, create friendship + grant
-4. `POST /v1/proposals/{id}/reject` — reject
-5. `POST /v1/proposals/{id}/counteroffer` — counteroffer with different terms
+1. `POST /v1/proposals`: submit access proposal
+2. `GET /v1/proposals/inbox` and `/outbox`: list proposals
+3. `POST /v1/proposals/{id}/accept`: accept, create friendship + grant
+4. `POST /v1/proposals/{id}/reject`: reject
+5. `POST /v1/proposals/{id}/counteroffer`: counteroffer with different terms
 6. Friendship creation on first accepted proposal
 7. Grant creation from accepted/reduced proposal
 
@@ -688,19 +688,19 @@ Build in this exact sequence. Each phase produces a working, testable system.
 ### Phase 5: Event System and Inbox
 
 1. Event creation helper (insert into events table)
-2. `GET /v1/inbox/events` — polling endpoint with cursor pagination
-3. `POST /v1/events/{event_id}/ack` — acknowledge
-4. `POST /v1/events/{event_id}/nack` — reject with retry
+2. `GET /v1/inbox/events`: polling endpoint with cursor pagination
+3. `POST /v1/events/{event_id}/ack`: acknowledge
+4. `POST /v1/events/{event_id}/nack`: reject with retry
 5. Events emitted on: proposal submitted, accepted, rejected, counteroffered, grant updated
 
 **Checkpoint: agents receive typed events through polling.**
 
 ### Phase 6: Consent
 
-1. `POST /v1/consent/{id}/grant` — approve consent request
-2. `POST /v1/consent/{id}/deny` — deny
-3. `GET /v1/consent/active` — list active records
-4. `POST /v1/consent/{id}/revoke` — revoke
+1. `POST /v1/consent/{id}/grant`: approve consent request
+2. `POST /v1/consent/{id}/deny`: deny
+3. `GET /v1/consent/active`: list active records
+4. `POST /v1/consent/{id}/revoke`: revoke
 5. Consent check integrated into relay policy
 
 **Checkpoint: sensitive capabilities require explicit approval.**
@@ -709,8 +709,8 @@ Build in this exact sequence. Each phase produces a working, testable system.
 
 1. Policy check function (the 10-step authorization)
 2. Capability run creation for async workflows
-3. `POST /v1/capability-runs/{run_id}/status` — status updates
-4. `POST /v1/capability-runs/{run_id}/result` — final result
+3. `POST /v1/capability-runs/{run_id}/status`: status updates
+4. `POST /v1/capability-runs/{run_id}/result`: final result
 5. Event emission for `capability.run.requested` and `capability.run.cancelled`
 6. Audit log writes on every invocation
 
@@ -761,7 +761,7 @@ EXPOSE 8080
 CMD ["chakramcp-network"]
 ```
 
-### Environment Variables
+### Environment variables
 
 ```bash
 DATABASE_URL=postgres://user:pass@host:5432/chakramcp
@@ -771,18 +771,18 @@ PORT=8080
 RUST_LOG=info,chakramcp_network=debug
 ```
 
-### AWS Deployment
+### AWS deployment
 
 **Infrastructure (managed via CloudFormation, CDK, or Terraform):**
 
-**Compute — ECS Fargate:**
+**Compute (ECS Fargate):**
 - Single ECS service running the Docker container
 - Fargate launch type (no EC2 instances to manage)
 - Minimum 1 task, auto-scale to 4 based on CPU/memory
 - Deploy via ECR (push image to Elastic Container Registry, ECS pulls from there)
 - Task definition injects environment variables from AWS Secrets Manager and SSM Parameter Store
 
-**Database — RDS PostgreSQL:**
+**Database (RDS PostgreSQL):**
 - RDS PostgreSQL 16, `db.t4g.medium` for launch (2 vCPU, 4GB RAM, burstable)
 - Multi-AZ disabled initially (enable when traffic justifies cost)
 - Automated backups enabled, 7-day retention
@@ -842,16 +842,16 @@ The server runs migrations on startup via `sqlx::migrate!()`. On first deploy, t
 
 ---
 
-## Testing Strategy
+## Testing strategy
 
-### Unit Tests
+### Unit tests
 
 - JWT encoding/decoding
 - Webhook signature generation and verification
 - Policy check logic (all 10 steps, each with pass/fail cases)
 - Event type serialization/deserialization
 
-### Integration Tests
+### Integration tests
 
 - Full registration → discovery → proposal → grant → execution flow
 - Consent flow: request → approve → use → revoke → deny
@@ -861,7 +861,7 @@ The server runs migrations on startup via `sqlx::migrate!()`. On first deploy, t
 
 ---
 
-## What This System Does NOT Include (Out of Scope for v1)
+## What this system does NOT include (out of scope for v1)
 
 - User-facing web UI (separate frontend project)
 - Token economy / ad system (separate service)

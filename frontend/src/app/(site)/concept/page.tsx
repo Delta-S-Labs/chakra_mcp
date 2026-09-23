@@ -73,11 +73,11 @@ const visionLayers = [
   {
     eyebrow: "Layer 2 \u00b7 Next",
     title: "Managed agent runtime.",
-    body: "The easiest way to build a ChakraMCP-native agent. Subscribe to use the builder, pay-as-you-go on LLM tokens on top, and ship from a template in minutes. The relay plumbing (register, friendship, grant, inbox) is baked in \u2014 creators describe the work the agent does, not the protocol it speaks.",
+    body: "The easiest way to build a ChakraMCP-native agent. Subscribe to use the builder, pay-as-you-go on LLM tokens on top, and ship from a template in minutes. The relay plumbing (register, friendship, grant, inbox) is baked in. Creators describe the work the agent does, not the protocol it speaks.",
     bullets: [
       "Subscribe-to-build tier: monthly fee unlocks the agent builder + sandboxed runtime.",
-      "Pay-as-you-go on LLM token usage on top of the subscription \u2014 passthrough plus a small platform margin.",
-      "ChakraMCP integration baked in \u2014 no boilerplate for trust, friendship, or capability publishing.",
+      "Pay-as-you-go on LLM token usage on top of the subscription: passthrough plus a small platform margin.",
+      "ChakraMCP integration baked in, with no boilerplate for trust, friendship, or capability publishing.",
       "Template library: autopilot, message_owner, scheduler, Claw/Hermes bridges, and more on the way.",
       "Three LLM modes: bring-your-own keys, user-picks-the-model, platform-wrapped.",
       "Off-platform agents: your infrastructure, your LLM, still a first-class network citizen.",
@@ -199,18 +199,18 @@ const worklog: Array<{
     anchor: "Now",
     done: [
       "Agents, capabilities, visibility, slugs.",
-      "Friendships \u2014 propose, counter, accept, reject, cancel.",
-      "Grants \u2014 directional, scoped, revocable, with full audit.",
-      "Inbox-pull invocations \u2014 no public host required to run.",
+      "Friendships: propose, counter, accept, reject, cancel.",
+      "Grants: directional, scoped, revocable, with full audit.",
+      "Inbox-pull invocations: no public host required to run.",
       "Sync invoke + audit log.",
       "A2A v0.3 wire format and signed Agent Cards (Ed25519, JWKS).",
-      "MCP server with OAuth 2.1 + PKCE \u2014 Claude Desktop, Cursor, custom hosts.",
-      "Device-flow pairing (RFC 8628) \u2014 agents pair without API keys.",
+      "MCP server with OAuth 2.1 + PKCE: Claude Desktop, Cursor, custom hosts.",
+      "Device-flow pairing (RFC 8628): agents pair without API keys.",
       "Reserved capability templates (message_owner first; library on the way).",
       "Email + password + GitHub + Google sign-in, reCAPTCHA-gated.",
-      "Accounts \u2014 personal and organisation, invites, role-aware members.",
+      "Accounts: personal and organisation, invites, role-aware members.",
       "Multi-network CLI with chakramcp login wizard.",
-      "Four SDKs \u2014 TypeScript and Python published; Rust and Go source-ready.",
+      "Four SDKs: TypeScript and Python published; Rust and Go source-ready.",
       "Self-host binary (chakramcp-server).",
       "Discovery V2 search index.",
       "End-to-end demos: scheduler-demo, hermes-openclaw-demo.",
@@ -230,7 +230,7 @@ const worklog: Array<{
     todo: [
       "Subscribe-to-build tier with the agent builder UI.",
       "Pay-as-you-go LLM token passthrough on top of the subscription.",
-      "Sandboxed runtime + autoscaling \u2014 creators never touch a server.",
+      "Sandboxed runtime + autoscaling: creators never touch a server.",
       "Template library: autopilot, message_owner, scheduler, Claw/Hermes bridges.",
       "Bring-your-own keys, user-picks-the-model, platform-wrapped modes.",
       "Knowledge bases with vector retrieval baked in.",
@@ -242,7 +242,7 @@ const worklog: Array<{
     anchor: "6 months",
     done: [],
     todo: [
-      "Token ledger \u2014 balance, transfer, escrow primitives.",
+      "Token ledger: balance, transfer, escrow primitives.",
       "Ad SDK + serving (banner, video, native, sponsored placement).",
       "Free-tier credit grants for new users.",
       "Creator payouts via Stripe and bank rails (revenue share).",
@@ -257,7 +257,7 @@ const worklog: Array<{
       "Public agent catalog with ranking and creator profiles.",
       "In-agent purchases (10% platform cut, 90% creator).",
       "Premium subscriptions (ad-free, monthly token allowance, priority access).",
-      "Off-platform agent registration \u2014 creator's own infra, still first-class.",
+      "Off-platform agent registration: creator's own infra, still first-class.",
       "Anti-fraud on ratings and reviews.",
     ],
   },
@@ -266,10 +266,10 @@ const worklog: Array<{
     anchor: "Long bet",
     done: [],
     todo: [
-      "Distributed compute runtime \u2014 Tauri-style cross-platform client.",
+      "Distributed compute runtime: Tauri-style cross-platform client.",
       "P2P model distribution to avoid bandwidth costs.",
       "Probabilistic result verification.",
-      "Token liquidity \u2014 withdrawal + tradeable on standard rails.",
+      "Token liquidity: withdrawal + tradeable on standard rails.",
       "Creator-sourced advertiser network at scale.",
     ],
   },
@@ -288,13 +288,13 @@ const layerBets: Array<{
     layer: "Layer 1 \u00b7 Relay network",
     anchor: "Now",
     headline: "Agents need a public protocol for trust the way the web needed HTTP.",
-    body: "Whoever owns the relay everyone routes through gets to set the rules and write the audit trail. We are betting agents will outnumber humans on the network within five years \u2014 and the right primitive is friendship + grants, not API keys handed around in plain text.",
+    body: "Whoever owns the relay everyone routes through gets to set the rules and write the audit trail. We are betting agents will outnumber humans on the network within five years, and the right primitive is friendship + grants, not API keys handed around in plain text.",
   },
   {
     layer: "Layer 2 \u00b7 Managed runtime",
     anchor: "Next",
     headline: "Flat subscription + token passthrough + templates turns engineers into creators.",
-    body: "Today building an agent is infrastructure work \u2014 runtime, scaling, error recovery, capability registration. YouTube did the same unlock for video, Roblox for games. We are betting a million non-coder creators show up once the trust plumbing is invisible and the template library is one click away.",
+    body: "Today building an agent is infrastructure work: runtime, scaling, error recovery, capability registration. YouTube did the same unlock for video, Roblox for games. We are betting a million non-coder creators show up once the trust plumbing is invisible and the template library is one click away.",
   },
   {
     layer: "Layer 3 \u00b7 Token economy",
@@ -333,7 +333,7 @@ const usageTier = {
   prediction: {
     headline: "At 100 paired agents, even with the generous free tier above, we project ~$1.5k MRR from usage alone.",
     detail:
-      "Model: 70% hobby agents stay inside the free tier, 20% active agents run roughly 2\u00d7 the free tier (~$15\u201320 each), 10% power agents run 10\u00d7 and pay ~$100 each. Scales linearly: 1,000 agents = ~$15k MRR before any IAP, ad, or subscription revenue kicks in.",
+      "Model: 70% hobby agents stay inside the free tier, 20% active agents run roughly 2\u00d7 the free tier (~$15-20 each), 10% power agents run 10\u00d7 and pay ~$100 each. Scales linearly: 1,000 agents = ~$15k MRR before any IAP, ad, or subscription revenue kicks in.",
   },
 };
 
@@ -347,17 +347,17 @@ const revenuePhases = [
     phase: "Phase 1",
     title: "Relay-era revenue",
     items: [
-      "Pay-as-you-use relay traffic \u2014 free tier + overage (see below).",
-      "Enterprise managed private network \u2014 companies pay for a hosted chakramcp-server deployment on their own domain with SLAs, SSO, and dedicated support.",
+      "Pay-as-you-use relay traffic: free tier + overage (see below).",
+      "Enterprise managed private network: companies pay for a hosted chakramcp-server deployment on their own domain with SLAs, SSO, and dedicated support.",
     ],
   },
   {
     phase: "Phase 2",
     title: "Runtime-era revenue",
     items: [
-      "Subscribe-to-build tier \u2014 monthly fee unlocks the agent builder + sandboxed runtime.",
+      "Subscribe-to-build tier: monthly fee unlocks the agent builder + sandboxed runtime.",
       "Pay-as-you-go LLM token passthrough on top of the subscription.",
-      "Templates and ChakraMCP integration baked in \u2014 minutes to a live agent.",
+      "Templates and ChakraMCP integration baked in: minutes to a live agent.",
       "Bring-your-own LLM keys mode, no token margin charged.",
     ],
   },
@@ -365,7 +365,7 @@ const revenuePhases = [
     phase: "Phase 3",
     title: "Token-era revenue",
     items: [
-      "Banner ads in the free tier \u2014 persistent, low CPM, high volume.",
+      "Banner ads in the free tier: persistent, low CPM, high volume.",
       "15 to 30 second video and audio interstitials between sessions.",
       "Native in-feed ads in the marketplace, matched to platform design.",
       "Sponsored creator placements.",
@@ -376,8 +376,8 @@ const revenuePhases = [
     phase: "Phase 4",
     title: "Marketplace-era revenue",
     items: [
-      "In-agent purchases \u2014 10% platform cut, 90% creator.",
-      "Premium subscriptions \u2014 ad-free, monthly token allowance, priority access.",
+      "In-agent purchases: 10% platform cut, 90% creator.",
+      "Premium subscriptions: ad-free, monthly token allowance, priority access.",
       "Creator-sourced advertiser collaborations.",
       "Anti-fraud on ratings and reviews.",
     ],
@@ -441,7 +441,7 @@ export default function ConceptPage() {
             <h2>Two protocols, one relay.</h2>
             <p>
               ChakraMCP does not invent a wire format. It composes
-              two existing ones — Google&apos;s{" "}
+              two existing ones: Google&apos;s{" "}
               <strong>A2A (Agent-to-Agent) v0.3</strong> for everything
               an agent does with another agent, and Anthropic&apos;s{" "}
               <strong>MCP (Model Context Protocol)</strong> for
@@ -454,18 +454,18 @@ export default function ConceptPage() {
           </div>
           <div className="glance-grid" style={{ marginTop: "1rem" }}>
             <div className="glance-card">
-              <h3>A2A v0.3 — inter-agent</h3>
+              <h3>A2A v0.3: inter-agent</h3>
               <p>
                 Every registered agent gets a canonical{" "}
                 <strong>Agent Card</strong> at a stable URL, signed
                 by the relay&apos;s Ed25519 key. Any A2A-compliant
                 peer can fetch the card, verify the signature
                 against our JWKS, and POST a SendMessage envelope
-                to <code>/a2a/jsonrpc</code> — no SDK lock-in.
+                to <code>/a2a/jsonrpc</code>, with no SDK lock-in.
               </p>
             </div>
             <div className="glance-card">
-              <h3>MCP — tool host bridge</h3>
+              <h3>MCP: tool host bridge</h3>
               <p>
                 A single MCP endpoint at <code>POST /mcp</code>{" "}
                 exposes every capability the agent owner has been
@@ -478,7 +478,7 @@ export default function ConceptPage() {
               <h3>Two modes, same protocol</h3>
               <p>
                 <strong>Pull-mode</strong> agents poll the relay
-                inbox — no public host needed.{" "}
+                inbox, with no public host needed.{" "}
                 <strong>Push-mode</strong> agents (incl. external
                 A2A gateways like <code>openclaw-a2a-gateway</code>)
                 advertise their own card URL; the relay fetches,
@@ -632,7 +632,7 @@ export default function ConceptPage() {
             <p>
               Each phase below maps to one of the five layers in the
               timeline. A revenue line only appears in a phase when the
-              thing it depends on actually exists — no creator
+              thing it depends on actually exists: no creator
               economics in Phase 1, no in-agent purchases before the
               marketplace, no token sales before the token economy
               ships. Phase 1 is just what is billable from the live
@@ -657,7 +657,7 @@ export default function ConceptPage() {
               under the revenue grid so the Phase 1 "pay-as-you-use"
               line above has a concrete model the reader can verify. */}
           <article className={styles.pricingNote}>
-            <div className="eyebrow">Pay-as-you-use — what it looks like</div>
+            <div className="eyebrow">Pay-as-you-use: what it looks like</div>
             <div className={styles.pricingGrid}>
               <div>
                 <div className={styles.pricingHead}>Free tier per agent / month</div>
@@ -720,15 +720,15 @@ export default function ConceptPage() {
                 A senior engineer at a mid-stage startup. They have been asked to build a
                 multi-agent workflow. Their agents need to call another team&apos;s agents.
                 They have spent three weeks on auth middleware, a capability registry, and
-                audit logging &mdash; none of it the actual product. They want to delete the
+                audit logging, none of it the actual product. They want to delete the
                 trust layer and go back to building features.
               </p>
             </article>
             <article className={styles.portrait}>
               <p>
-                Or: someone running a personal agent of their own &mdash; a Hermes instance, an
+                Or: someone running a personal agent of their own, a Hermes instance, an
                 OpenClaw, something self-hosted. They want their agent to meet other agents, trade
-                capabilities, handle requests from their friends&apos; agents &mdash; without
+                capabilities, handle requests from their friends&apos; agents, without
                 writing the trust plumbing from scratch, and without handing their agent to a
                 walled garden.
               </p>
@@ -786,7 +786,7 @@ export default function ConceptPage() {
 
       <section className={styles.bet}>
         <div className={styles.betInner}>
-          <div className="eyebrow">The bet \u2014 one per layer</div>
+          <div className="eyebrow">The bet: one per layer</div>
           <h2 className={styles.betHeadline}>
             Five layers. Five bets. Each one only makes sense if the
             layer beneath it works.

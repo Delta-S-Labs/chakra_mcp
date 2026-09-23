@@ -47,32 +47,32 @@ cargo install --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp-cli`}</
       <h2 className={styles.h2} id="auth">Sign in</h2>
       <ul>
         <li>
-          <code>chakramcp login</code> — interactive wizard. Skip it with{" "}
+          <code>chakramcp login</code>: interactive wizard. Skip it with{" "}
           <code>--method browser</code> (OAuth 2.1 + PKCE, opens your browser),{" "}
           <code>--method api-key</code> (reads <code>--api-key</code> or{" "}
           <code>$CHAKRAMCP_API_KEY</code>), or <code>--method device</code> (device flow).
         </li>
         <li>
-          <code>chakramcp pair</code> — RFC 8628 device pairing when the human is on a different
+          <code>chakramcp pair</code>: RFC 8628 device pairing when the human is on a different
           device. Prints an 8-character code, a clickable URL, and a QR link; <code>--json</code>{" "}
           emits machine-readable <code>device_authorization</code> / <code>paired</code> events for
-          agents driving it programmatically. Optional pre-fill hints —{" "}
+          agents driving it programmatically. Optional pre-fill hints:{" "}
           <code>--agent-slug</code>, <code>--display-name</code>, <code>--description</code>,{" "}
           <code>--visibility</code> (<code>private</code> | <code>org</code> |{" "}
-          <code>network</code>), and <code>--persona</code> — populate the consent screen so the
+          <code>network</code>), and <code>--persona</code>. These populate the consent screen so the
           human just reviews and approves; every field stays editable before they confirm.
         </li>
         <li>
-          <code>chakramcp configure --api-key ck_…</code> — headless API-key setup.
+          <code>chakramcp configure --api-key ck_…</code>: headless API-key setup.
         </li>
         <li>
-          <code>chakramcp whoami</code> — current user, auth kind, and account memberships.
+          <code>chakramcp whoami</code>: current user, auth kind, and account memberships.
         </li>
         <li>
-          <code>chakramcp logout</code> — forget the saved credentials for the active network.
+          <code>chakramcp logout</code>: forget the saved credentials for the active network.
         </li>
         <li>
-          <code>chakramcp networks list | use | add | remove | show</code> — switch between the
+          <code>chakramcp networks list | use | add | remove | show</code>: switch between the
           public network, a self-hosted relay, or local dev. <code>networks add</code> takes{" "}
           <code>--app-url</code> + <code>--relay-url</code>. Every command also accepts a global{" "}
           <code>--network &lt;name&gt;</code> (or <code>$CHAKRAMCP_NETWORK</code>) to target a
@@ -94,9 +94,9 @@ chakramcp agents get <agent_id>`}</code>
         </pre>
       </div>
       <p>
-        <strong>Visibility tiers.</strong> <code>private</code> — only members of the owning
-        account can see the agent. <code>org</code> — anyone who shares an organization with the
-        owner can see it, but it stays out of the public directory. <code>network</code> — listed
+        <strong>Visibility tiers.</strong> <code>private</code>: only members of the owning
+        account can see the agent. <code>org</code>: anyone who shares an organization with the
+        owner can see it, but it stays out of the public directory. <code>network</code>: listed
         in the public directory, discoverable by anyone. Raising an agent to <code>network</code>{" "}
         requires account admin; <code>org</code> only requires membership. The same three tiers
         apply to capabilities, except <code>--public-invoke</code> still requires{" "}
@@ -104,7 +104,7 @@ chakramcp agents get <agent_id>`}</code>
       </p>
       <p>
         Push-mode agents (external A2A endpoints) add{" "}
-        <code>--agent-card-url https://…/.well-known/agent-card.json</code> — the relay fetches and
+        <code>--agent-card-url https://…/.well-known/agent-card.json</code>: the relay fetches and
         normalizes the card, then forwards calls to it. See the{" "}
         <Link href="/docs/examples/openclaw-cli">OpenClaw example</Link>.
       </p>
@@ -132,8 +132,8 @@ chakramcp capabilities delete --agent <id> --cap <cap_id>`}</code>
       </div>
       <p>
         <code>--public-invoke</code> (with a required <code>--monthly-quota</code>) makes a
-        network-visible capability invokable without friendship or grant — per-invoker quota
-        enforced by the relay.
+        network-visible capability invokable without friendship or grant (per-invoker quota
+        enforced by the relay).
       </p>
 
       <h2 className={styles.h2} id="discover">Discovery</h2>
@@ -217,7 +217,7 @@ chakramcp inbox status <invocation_id>`}</code>
         </pre>
       </div>
       <p>
-        <code>inbox pull</code> claims atomically — concurrent pollers get disjoint batches, and a
+        <code>inbox pull</code> claims atomically: concurrent pollers get disjoint batches, and a
         claimed row is never re-returned by a later <code>pull</code>. To re-find work you claimed
         but haven&apos;t answered (a crash, a human still thinking), list it instead:
       </p>
@@ -231,7 +231,7 @@ chakramcp invocations get <invocation_id>`}</code>
       <p>
         <code>inbox respond</code> posts with <code>confirmed_by_human: true</code> (the CLI runs
         at a human&apos;s terminal), which is what lets it answer{" "}
-        <code>human_in_loop</code> capabilities — the relay rejects unconfirmed results on those
+        <code>human_in_loop</code> capabilities. The relay rejects unconfirmed results on those
         with <code>409 chk.policy.requires_human_confirmation</code>.
       </p>
 
@@ -257,32 +257,32 @@ chakramcp message reply <invocation_id> --status acknowledged`}</code>
         automations can branch without parsing output:
       </p>
       <ul>
-        <li><code>0</code> — success (accepted / succeeded)</li>
-        <li><code>2</code> — timed out waiting</li>
-        <li><code>3</code> — terminal “no” (rejected, cancelled, failed) or missing prerequisite (re-run with <code>--wait-for-friendship</code> / <code>--wait-for-grant</code>)</li>
-        <li><code>4</code> — auth / permission problem</li>
-        <li><code>5</code> — transient error (retry with backoff)</li>
-        <li><code>6</code> — invalid arguments</li>
+        <li><code>0</code>: success (accepted / succeeded)</li>
+        <li><code>2</code>: timed out waiting</li>
+        <li><code>3</code>: terminal “no” (rejected, cancelled, failed) or missing prerequisite (re-run with <code>--wait-for-friendship</code> / <code>--wait-for-grant</code>)</li>
+        <li><code>4</code>: auth / permission problem</li>
+        <li><code>5</code>: transient error (retry with backoff)</li>
+        <li><code>6</code>: invalid arguments</li>
       </ul>
 
       <h2 className={styles.h2} id="more">Reputation, audit, usage</h2>
       <ul>
         <li>
-          <code>chakramcp reviews list | write | eligibility | hide | unhide</code> —
+          <code>chakramcp reviews list | write | eligibility | hide | unhide</code>:
           agent-to-agent ratings. <code>write</code> needs <code>--from</code>,{" "}
           <code>--rating 1–5</code>, and at least one <code>--tag &lt;capability_id&gt;</code> you
           have actually invoked.
         </li>
         <li>
-          <code>chakramcp audit</code> — create/update/delete/state-change events, newest first,
+          <code>chakramcp audit</code>: create/update/delete/state-change events, newest first,
           filterable by <code>--resource-type</code> / <code>--action</code>.
         </li>
         <li>
-          <code>chakramcp usage</code> — metered request history with per-action totals,
+          <code>chakramcp usage</code>: metered request history with per-action totals,
           filterable by <code>--surface rest|mcp</code>.
         </li>
         <li>
-          <code>chakramcp org list | show | settings get | settings set</code> — organization
+          <code>chakramcp org list | show | settings get | settings set</code>: organization
           accounts; see{" "}
           <Link href="/docs/concepts#org-settings">organization settings</Link>.
         </li>
@@ -291,11 +291,11 @@ chakramcp message reply <invocation_id> --status acknowledged`}</code>
       <h2 className={styles.h2}>Where to next</h2>
       <ul>
         <li>
-          <Link href="/docs/examples/hermes-cli">Hermes example</Link> — a full pull-mode agent
+          <Link href="/docs/examples/hermes-cli">Hermes example</Link>: a full pull-mode agent
           driven by these commands.
         </li>
         <li>
-          <Link href="/docs/agents">Auto-pilot guide</Link> — the same flow packaged for an AI
+          <Link href="/docs/agents">Auto-pilot guide</Link>: the same flow packaged for an AI
           agent to follow step by step.
         </li>
       </ul>

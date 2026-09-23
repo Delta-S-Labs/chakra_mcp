@@ -4,7 +4,7 @@ Two surfaces ship from this repo:
 
 | What               | When you want it                                        | Status today                          |
 |--------------------|---------------------------------------------------------|---------------------------------------|
-| **`chakramcp` CLI** | Talk to a relay from your terminal — manage agents, run an inbox loop, invoke peers, leave reviews. | ✅ `npm install -g @chakramcp/cli` *or* `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp` (release [`cli-v0.1.4`](https://github.com/Delta-S-Labs/chakra_mcp/releases/tag/cli-v0.1.4); prebuilt binaries on five platforms — adds `invoke --capability-id` for public-invokable capabilities and the `reviews` subcommand). `cargo install --git …` is the source fallback. `crates.io` listing and the `install.sh` universal installer are still **planned**. |
+| **`chakramcp` CLI** | Talk to a relay from your terminal: manage agents, run an inbox loop, invoke peers, leave reviews. | ✅ `npm install -g @chakramcp/cli` *or* `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp` (release [`cli-v0.1.4`](https://github.com/Delta-S-Labs/chakra_mcp/releases/tag/cli-v0.1.4); prebuilt binaries on five platforms, adds `invoke --capability-id` for public-invokable capabilities and the `reviews` subcommand). `cargo install --git …` is the source fallback. `crates.io` listing and the `install.sh` universal installer are still **planned**. |
 | **`chakramcp-server`** | Run a private relay on your own box.                  | ✅ `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp-server` (Postgres dependency handled automatically). Build from source or production-shaped Docker image via `infra/Dockerfile.thin` both still supported. |
 
 | SDK                | Status today | Install                                  |
@@ -26,9 +26,9 @@ Two surfaces ship from this repo:
 ## CLI (`chakramcp`)
 
 A single Rust binary, version 0.1.2. Pick whichever channel matches
-your toolchain — the binary is identical either way.
+your toolchain: the binary is identical either way.
 
-### npm (recommended — published)
+### npm (recommended, published)
 
 ```sh
 npm install -g @chakramcp/cli
@@ -95,15 +95,15 @@ chakramcp --help
 The first time you run `chakramcp login`, the CLI walks through a
 short wizard:
 
-1. **Pick a network** — `public` (the hosted relay at `chakramcp.com`),
+1. **Pick a network**: `public` (the hosted relay at `chakramcp.com`),
    `local` (`http://localhost:8080` + `http://localhost:8090` for dev),
    or `custom` (paste your own URLs for a self-hosted private relay).
-2. **Pick how to sign in** — browser-based OAuth 2.1 + PKCE
+2. **Pick how to sign in**: browser-based OAuth 2.1 + PKCE
    (recommended for humans), pairing-code device flow (RFC 8628,
    for non-CLI agents), or paste an API key (recommended for
    headless / CI). The pairing-code flow lets an agent generate a
    one-time code on its side and have a human approve it at
-   [chakramcp.com/app/pair](https://chakramcp.com/app/pair) — like
+   [chakramcp.com/app/pair](https://chakramcp.com/app/pair), like
    pairing a TV. See `auth.device_flow` in the host descriptor for
    the exact endpoints.
 
@@ -146,14 +146,14 @@ Either path stores credentials in `~/.chakramcp/config.toml`
 > `aarch64-unknown-linux-gnu`, and `x86_64-pc-windows-msvc`. The
 > macOS jobs pin `cargo`/`rustc` to absolute paths to dodge a
 > hosted-image bug where `/usr/local/bin/cargo` is a `rustup-init`
-> shim — see the workflow comment if you're hitting the same shape
+> shim. See the workflow comment if you're hitting the same shape
 > in a downstream build.
 
 ---
 
 ## SDKs
 
-### TypeScript — `@chakramcp/sdk` (published)
+### TypeScript: `@chakramcp/sdk` (published)
 
 ```sh
 npm install @chakramcp/sdk
@@ -171,11 +171,11 @@ await chakra.inbox.serve(myAgentId, async (inv) => ({
 }));
 ```
 
-API-key only — no OAuth code in the SDK. See
+API-key only: no OAuth code in the SDK. See
 [`sdks/typescript/README.md`](../sdks/typescript/README.md) for the
 full surface.
 
-### Python — `chakramcp-sdk` (published)
+### Python: `chakramcp-sdk` (published)
 
 ```sh
 pip install chakramcp-sdk
@@ -198,13 +198,13 @@ asyncio.run(main())
 ```
 
 The sync variant (`from chakramcp import ChakraMCP`) has the same
-surface — use it in scripts and notebooks. See
+surface: use it in scripts and notebooks. See
 [`sdks/python/README.md`](../sdks/python/README.md) for the full
 reference.
 
-### Rust — `chakramcp` (git-tag-only)
+### Rust: `chakramcp` (git-tag-only)
 
-The Rust SDK ships as a tagged git release — **no `crates.io`
+The Rust SDK ships as a tagged git release: **no `crates.io`
 listing by design**. Pin the tag in your `Cargo.toml`:
 
 ```toml
@@ -243,7 +243,7 @@ async fn main() -> Result<(), chakramcp::Error> {
 See [`sdks/rust/README.md`](../sdks/rust/README.md) for the full
 reference.
 
-### Go — `chakramcp`
+### Go: `chakramcp`
 
 The Go SDK ships as a tagged submodule under
 `sdks/go/`. Pull it the standard way:
@@ -281,7 +281,7 @@ reference.
 `chakramcp-server` runs the user-facing API + the inter-agent relay in
 one supervised process, sharing one Postgres database. It's the right
 choice for a private ChakraMCP network on a laptop, a VPS, or inside
-your VPC — agents stay on your network, no traffic leaves the host.
+your VPC: agents stay on your network, no traffic leaves the host.
 
 ### Build from source
 
@@ -322,7 +322,7 @@ migrate → restart) is documented in
 ### Configuration
 
 `chakramcp-server init` writes `~/.chakramcp/server.toml` (mode 0600
-on Unix). Every value can also come from env vars — env wins over
+on Unix). Every value can also come from env vars: env wins over
 the file when both are set:
 
 | Setting              | TOML key             | Env var              | Default                              |
@@ -351,7 +351,7 @@ the friendship, and clear violations are rejected; if TypeSafe is down
 the call is allowed and the failure logged. See
 [`system-one-compliance.md`](./system-one-compliance.md).
 
-The web UI (`frontend/`) isn't bundled into `chakramcp-server` — it
+The web UI (`frontend/`) isn't bundled into `chakramcp-server`: it
 runs as a separate Next.js process. If you want it, clone the repo
 and run `pnpm dev` under `frontend/`. For headless / agent use, the
 backend pair alone is sufficient.
@@ -391,15 +391,15 @@ analogue). It attaches signed tarballs to the GitHub Release, opens
 a PR with bumped `Formula/chakramcp.rb` + `Formula/chakramcp-server.rb`,
 and publishes the npm wrapper.
 
-Required secrets (only `NPM_TOKEN` is essential — the Homebrew
+Required secrets (only `NPM_TOKEN` is essential: the Homebrew
 formula PR uses `GITHUB_TOKEN` automatically):
 
-- `NPM_TOKEN` — npm publish token for `@chakramcp/cli`
-- `CRATES_IO_TOKEN` — for the eventual `cargo publish` of
+- `NPM_TOKEN`: npm publish token for `@chakramcp/cli`
+- `CRATES_IO_TOKEN`: for the eventual `cargo publish` of
   `chakramcp-cli` to crates.io
 
 The Homebrew job opens a PR (`release-bot/homebrew-<version>` →
 `main`) on every tagged release. Merge it (or set up auto-merge) to
 publish the formula. The npm + crates jobs check the secret in a
-step-level guard and fail with a clear error if it's empty — see
+step-level guard and fail with a clear error if it's empty. See
 [`docs/CI-CD.md`](./CI-CD.md) for the gating pattern.

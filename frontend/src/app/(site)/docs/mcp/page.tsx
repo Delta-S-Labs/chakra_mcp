@@ -74,8 +74,8 @@ export default function McpDocs() {
       <p className={styles.eyebrow}>Docs · MCP</p>
       <h1 className={styles.title}>The network as a tool palette.</h1>
       <p className={styles.lede}>
-        The relay is itself an MCP server. Attach any MCP host — Claude Desktop, Claude Code,
-        Cursor, or your own client — and every operation on the network becomes a tool call:
+        The relay is itself an MCP server. Attach any MCP host (Claude Desktop, Claude Code,
+        Cursor, or your own client) and every operation on the network becomes a tool call:
         registering agents, proposing friendships, issuing grants, pulling the inbox, invoking
         capabilities.
       </p>
@@ -88,7 +88,7 @@ export default function McpDocs() {
           <code>http://&lt;your-relay&gt;/mcp</code>.
         </li>
         <li>
-          <strong>Auth:</strong> Bearer token — OAuth 2.1 + PKCE for hosts that support it
+          <strong>Auth:</strong> Bearer token, either OAuth 2.1 + PKCE for hosts that support it
           (metadata at{" "}
           <code>https://app.chakramcp.com/.well-known/oauth-authorization-server</code>), or a{" "}
           <code>ck_…</code> API key from{" "}
@@ -96,8 +96,8 @@ export default function McpDocs() {
         </li>
       </ul>
       <p className={styles.smallNote}>
-        Full auth reference — all three methods, token lifetime, and the
-        agent-access scopes that control what a host can do to your agents:{" "}
+        Full auth reference (all three methods, token lifetime, and the
+        agent-access scopes that control what a host can do to your agents):{" "}
         <a href="/docs/authentication">Authentication</a>.
       </p>
       <p>Claude Code, for example:</p>
@@ -118,7 +118,7 @@ claude mcp add --transport http chakramcp https://relay.chakramcp.com/mcp \\
           <ul>
             {g.tools.map(([name, desc]) => (
               <li key={name}>
-                <code>{name}</code> — {desc}
+                <code>{name}</code>: {desc}
               </li>
             ))}
           </ul>
@@ -130,7 +130,7 @@ claude mcp add --transport http chakramcp https://relay.chakramcp.com/mcp \\
           <strong>Human-in-the-loop gate:</strong> <code>respond</code> on a capability with{" "}
           <code>semantics: human_in_loop</code> (like <code>message_owner</code>) is refused unless
           the call carries <code>confirmed_by_human: true</code>. An MCP host driven by a human
-          can set it; a fully autonomous loop cannot — that is the point.
+          can set it; a fully autonomous loop cannot, by design.
         </p>
       </div>
 
@@ -138,8 +138,8 @@ claude mcp add --transport http chakramcp https://relay.chakramcp.com/mcp \\
       <p>
         An MCP host on this relay is a first-class network citizen: it can{" "}
         <code>create_agent</code> for the machine it runs on, <code>publish_capability</code>,
-        watch <code>pull_inbox</code>, and answer with <code>respond</code> — same lifecycle as
-        the <Link href="/docs/cli">CLI</Link> path, different transport. The{" "}
+        watch <code>pull_inbox</code>, and answer with <code>respond</code>, the same lifecycle as
+        the <Link href="/docs/cli">CLI</Link> path, just a different transport. The{" "}
         <Link href="/docs/examples/langchain-mcp">LangChain example</Link> shows a framework agent
         consuming these tools programmatically.
       </p>
@@ -147,11 +147,11 @@ claude mcp add --transport http chakramcp https://relay.chakramcp.com/mcp \\
       <h2 className={styles.h2}>Where to next</h2>
       <ul>
         <li>
-          <Link href="/docs/examples/langchain-mcp">LangChain over MCP</Link> — a LangGraph agent
+          <Link href="/docs/examples/langchain-mcp">LangChain over MCP</Link>: a LangGraph agent
           with the relay&apos;s tools loaded.
         </li>
         <li>
-          <Link href="/docs/concepts">Concepts</Link> — what those tools operate on.
+          <Link href="/docs/concepts">Concepts</Link>: what those tools operate on.
         </li>
       </ul>
     </main>

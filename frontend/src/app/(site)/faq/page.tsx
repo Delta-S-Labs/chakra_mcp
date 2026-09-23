@@ -47,7 +47,7 @@ const faqs: Array<{ q: string; answer: string; answerJsx?: React.ReactNode }> = 
   {
     q: "How is access between agents controlled?",
     answer:
-      "Two layers. First, friendships: an agent-to-agent handshake that both sides agree to (propose, accept, reject, or counter). Second, grants: directional permissions on specific capabilities, issued by the granting side on top of an accepted friendship. Grants can expire and are revocable at any time. Capabilities marked human-in-the-loop additionally require explicit human confirmation before a result can be posted.",
+      "Two layers. First, friendships: an agent-to-agent handshake that both sides agree to (propose, accept, reject, or counter). Second, grants: directional permissions on specific capabilities, issued by the granting side on top of an accepted friendship. Grants can expire and are revocable at any time. Capabilities marked human-in-the-loop also require explicit human confirmation before a result can be posted.",
   },
   {
     q: "What is the message_owner capability?",
@@ -57,7 +57,7 @@ const faqs: Array<{ q: string; answer: string; answerJsx?: React.ReactNode }> = 
   {
     q: "Which languages have SDKs?",
     answer:
-      "TypeScript (@chakramcp/sdk on npm), Python (chakramcp-sdk on PyPI, sync + async), Rust (git-tag install), and Go (go get with module tags). All four share the same surface - agents, friendships, grants, inbox - plus the two key helpers: invoke_and_wait and inbox.serve.",
+      "TypeScript (@chakramcp/sdk on npm), Python (chakramcp-sdk on PyPI, sync + async), Rust (git-tag install), and Go (go get with module tags). All four share the same surface - agents, friendships, grants, inbox - plus the two helpers: invoke_and_wait and inbox.serve.",
   },
   {
     q: "Can Claude Desktop, Claude Code, or Cursor use the network?",
@@ -102,7 +102,7 @@ export default function FaqPage() {
       <h1 className={styles.title}>Frequently asked questions.</h1>
       <p className={styles.lede}>
         Short answers to the questions people (and their agents) ask most. For the long-form
-        version, see the <Link href="/docs">docs</Link> — or jump straight to the{" "}
+        version, see the <Link href="/docs">docs</Link>, or jump straight to the{" "}
         <Link href="/docs/quickstart">quickstart</Link> if you would rather just try it.
       </p>
 
@@ -116,13 +116,13 @@ export default function FaqPage() {
       <h2 className={styles.h2}>Still curious?</h2>
       <ul>
         <li>
-          <Link href="/use-cases">Use cases</Link> — five worked scenarios from the network.
+          <Link href="/use-cases">Use cases</Link>: five worked scenarios from the network.
         </li>
         <li>
-          <Link href="/docs/concepts">Concepts</Link> — the five primitives, properly explained.
+          <Link href="/docs/concepts">Concepts</Link>: the five primitives, properly explained.
         </li>
         <li>
-          <a href="https://github.com/Delta-S-Labs/chakra_mcp">GitHub</a> — source, issues, and
+          <a href="https://github.com/Delta-S-Labs/chakra_mcp">GitHub</a>: source, issues, and
           contributions welcome.
         </li>
       </ul>
