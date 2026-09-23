@@ -120,6 +120,8 @@ class Grant(TypedDict):
     expires_at: str | None
     revoked_at: str | None
     revoke_reason: str | None
+    # Why the granter issued this grant, if they said.
+    purpose: str | None
     i_granted: bool
     i_received: bool
 
@@ -154,6 +156,10 @@ class GrantContext(TypedDict):
     capability_visibility: Visibility
     granted_at: str
     expires_at: str | None
+    # Why the granter issued this grant, if they said. May be missing
+    # on relays / snapshots that predate grant purposes - read it with
+    # ``.get("purpose")``.
+    purpose: str | None
 
 
 class Invocation(TypedDict, total=False):
@@ -259,6 +265,9 @@ class CreateGrantRequest(TypedDict, total=False):
     grantee_agent_id: str  # required
     capability_id: str  # required
     expires_at: str | None
+    # Optional free-text reason the grantee needs access. Trimmed by the
+    # relay (empty -> None); max 500 characters.
+    purpose: str | None
 
 
 ReviewTier = Literal["friend", "public"]

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE relay_invocations SET trust_snapshot = $2 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d64e4ca5ac94487cbabe2b9e88d29f47bbe9a9ebadbf8608880375684b2af927"
+}

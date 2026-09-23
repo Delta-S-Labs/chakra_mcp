@@ -89,6 +89,12 @@ services:
       # `docker compose up -d relay` (which also starts Redis — until it's up,
       # rate limiting fails open and only the Postgres-backed quota enforces).
       LIMITS_ENFORCE: ${LIMITS_ENFORCE:-true}
+      # System One compliance checks (TypeSafe Jev) — off unless the host env
+      # sets SYSTEM_ONE_CHECKS=true and TYPESAFE_AI_KEY. Fail-open: a TypeSafe
+      # outage never blocks calls. See docs/system-one-compliance.md.
+      SYSTEM_ONE_CHECKS: ${SYSTEM_ONE_CHECKS:-false}
+      TYPESAFE_AI_KEY: ${TYPESAFE_AI_KEY:-}
+      TYPESAFE_AI_MODEL: ${TYPESAFE_AI_MODEL:-jev-latest}
       JWT_SECRET: ${JWT_SECRET}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       APP_PORT: "8080"

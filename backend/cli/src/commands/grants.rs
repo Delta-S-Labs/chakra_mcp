@@ -22,6 +22,10 @@ pub enum Cmd {
         to: String,
         #[arg(long)]
         capability: String,
+        /// Why the grantee needs access (≤ 500 chars). Invocations are
+        /// checked against it when System One compliance checks are on.
+        #[arg(long)]
+        purpose: Option<String>,
     },
     /// Revoke a grant you issued.
     Revoke {
@@ -45,11 +49,13 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             from,
             to,
             capability,
+            purpose,
         } => {
             let body = json!({
                 "granter_agent_id": from,
                 "grantee_agent_id": to,
                 "capability_id": capability,
+                "purpose": purpose,
             });
             let v: Value = api.post_relay("/v1/grants", &body).await?;
             print(&v)

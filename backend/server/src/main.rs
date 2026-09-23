@@ -200,7 +200,8 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
         ))
         .with_limits_enforce(chakramcp_relay::limits::enforce_flag(
             std::env::var("LIMITS_ENFORCE").ok().as_deref(),
-        ));
+        ))
+        .with_compliance(chakramcp_relay::compliance::ComplianceChecker::from_env());
 
     let app = app_router(app_state);
     let relay = relay_router(relay_state);

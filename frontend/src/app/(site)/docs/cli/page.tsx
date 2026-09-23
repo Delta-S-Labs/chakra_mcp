@@ -177,7 +177,8 @@ chakramcp friendships wait <friendship_id> --timeout 300 --json`}</code>
           <code>{`chakramcp grants list --direction inbound      # what I've been granted
 chakramcp grants list --direction outbound     # what I've granted out
 chakramcp grants create --from <my_agent_id> --to <peer_agent_id> \\
-  --capability <capability_id>                 # requires accepted friendship
+  --capability <capability_id> \\
+  --purpose "Book team dinners"                # requires accepted friendship; purpose optional
 chakramcp grants revoke <grant_id> --reason "rotating access"`}</code>
         </pre>
       </div>

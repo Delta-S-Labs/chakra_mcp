@@ -50,7 +50,8 @@ async fn main() -> Result<()> {
         ))
         .with_limits_enforce(chakramcp_relay::limits::enforce_flag(
             env::var("LIMITS_ENFORCE").ok().as_deref(),
-        ));
+        ))
+        .with_compliance(chakramcp_relay::compliance::ComplianceChecker::from_env());
     let app = router(state);
 
     let port: u16 = env::var("RELAY_PORT")

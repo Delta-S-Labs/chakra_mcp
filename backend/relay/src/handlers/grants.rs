@@ -23,6 +23,9 @@ use crate::auth::{user_is_member, AuthUser};
 use crate::handlers::friendships::AgentSummary;
 use crate::state::RelayState;
 
+/// Upper bound on `grants.purpose` (mirrors the migration 0033 CHECK).
+const MAX_PURPOSE_CHARS: usize = 500;
+
 // ─── DTOs ────────────────────────────────────────────────
 
 #[derive(Debug, Serialize)]
@@ -36,6 +39,9 @@ pub struct GrantDto {
     pub capability_visibility: String,
     pub granted_at: DateTime<Utc>,
     pub expires_at: Option<DateTime<Utc>>,
+    /// Why the granter gave this access (migration 0033). Free text,
+    /// optional; also judged against by the System One compliance check.
+    pub purpose: Option<String>,
     pub revoked_at: Option<DateTime<Utc>>,
     pub revoke_reason: Option<String>,
     /// True when the requesting user is on the granter side.
@@ -50,6 +56,9 @@ pub struct CreateRequest {
     pub grantee_agent_id: Uuid,
     pub capability_id: Uuid,
     pub expires_at: Option<DateTime<Utc>>,
+    /// Optional, ≤ 500 chars after trimming; blank is treated as absent.
+    #[serde(default)]
+    pub purpose: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -71,7 +80,7 @@ async fn fetch_grant(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<GrantDto, A
         r#"
         SELECT
             g.id, g.status, g.capability_id,
-            g.granted_at, g.expires_at, g.revoked_at, g.revoke_reason,
+            g.granted_at, g.expires_at, g.purpose, g.revoked_at, g.revoke_reason,
             ga.id   as g_agent_id,   ga.slug as g_agent_slug,   ga.display_name as g_agent_display_name,
             gacc.id as g_acct_id,    gacc.slug as g_acct_slug,  gacc.display_name as g_acct_display_name,
             ea.id   as e_agent_id,   ea.slug as e_agent_slug,   ea.display_name as e_agent_display_name,
@@ -126,6 +135,7 @@ async fn fetch_grant(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<GrantDto, A
         capability_visibility: r.capability_visibility,
         granted_at: r.granted_at,
         expires_at: r.expires_at,
+        purpose: r.purpose,
         revoked_at: r.revoked_at,
         revoke_reason: r.revoke_reason,
         i_granted: r.i_granted,
@@ -179,7 +189,7 @@ pub async fn list(
         r#"
         SELECT
             g.id, g.status, g.capability_id,
-            g.granted_at, g.expires_at, g.revoked_at, g.revoke_reason,
+            g.granted_at, g.expires_at, g.purpose, g.revoked_at, g.revoke_reason,
             ga.id   as g_agent_id,   ga.slug as g_agent_slug,   ga.display_name as g_agent_display_name,
             gacc.id as g_acct_id,    gacc.slug as g_acct_slug,  gacc.display_name as g_acct_display_name,
             ea.id   as e_agent_id,   ea.slug as e_agent_slug,   ea.display_name as e_agent_display_name,
@@ -248,6 +258,7 @@ pub async fn list(
                 capability_visibility: r.capability_visibility,
                 granted_at: r.granted_at,
                 expires_at: r.expires_at,
+                purpose: r.purpose,
                 revoked_at: r.revoked_at,
                 revoke_reason: r.revoke_reason,
                 i_granted: r.i_granted,
@@ -291,6 +302,21 @@ pub async fn create(
                 "expires_at must be in the future".into(),
             ));
         }
+    }
+
+    let purpose = req
+        .purpose
+        .as_deref()
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(str::to_owned);
+    if purpose
+        .as_deref()
+        .is_some_and(|p| p.chars().count() > MAX_PURPOSE_CHARS)
+    {
+        return Err(ApiError::InvalidRequest(format!(
+            "purpose must be at most {MAX_PURPOSE_CHARS} characters"
+        )));
     }
 
     // Capability must belong to granter agent.
@@ -348,8 +374,8 @@ pub async fn create(
         r#"
         INSERT INTO grants
             (id, granter_agent_id, grantee_agent_id, capability_id,
-             granted_by_user_id, expires_at)
-        VALUES ($1, $2, $3, $4, $5, $6)
+             granted_by_user_id, expires_at, purpose)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING id
         "#,
         id,
@@ -358,6 +384,7 @@ pub async fn create(
         req.capability_id,
         user.user_id,
         req.expires_at,
+        purpose,
     )
     .fetch_optional(&state.db)
     .await

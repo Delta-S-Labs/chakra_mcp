@@ -115,6 +115,8 @@ export interface Grant {
   expires_at: string | null;
   revoked_at: string | null;
   revoke_reason: string | null;
+  /** Why the granter issued this grant, if they said. */
+  purpose: string | null;
   i_granted: boolean;
   i_received: boolean;
 }
@@ -217,6 +219,11 @@ export interface GrantContext {
   capability_visibility: Visibility;
   granted_at: string;
   expires_at: string | null;
+  /**
+   * Why the granter issued this grant, if they said. Undefined on
+   * relays / snapshots that predate grant purposes.
+   */
+  purpose?: string | null;
 }
 
 export const TERMINAL_STATUSES: ReadonlySet<InvocationStatus> = new Set([
@@ -308,6 +315,11 @@ export interface CreateGrantRequest {
   grantee_agent_id: string;
   capability_id: string;
   expires_at?: string | null;
+  /**
+   * Optional free-text reason the grantee needs access. Trimmed by the
+   * relay (empty becomes null); max 500 characters.
+   */
+  purpose?: string | null;
 }
 
 export interface RevokeGrantRequest {

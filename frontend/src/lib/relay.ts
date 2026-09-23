@@ -382,6 +382,9 @@ export interface Grant {
   expires_at: string | null;
   revoked_at: string | null;
   revoke_reason: string | null;
+  /** Free-text "why" the granter gave for this grant. Null when none
+   *  was supplied. */
+  purpose: string | null;
   i_granted: boolean;
   i_received: boolean;
 }
@@ -391,6 +394,8 @@ export interface CreateGrantRequest {
   grantee_agent_id: string;
   capability_id: string;
   expires_at?: string | null;
+  /** Optional "why" for the grant (max 500 chars; trimmed, empty → null). */
+  purpose?: string | null;
 }
 
 export interface RevokeGrantRequest {
@@ -475,6 +480,9 @@ export interface GrantContext {
   capability_visibility: Visibility;
   granted_at: string;
   expires_at: string | null;
+  /** The grant's purpose at queue time. Absent on snapshots taken
+   *  before the relay recorded purposes. */
+  purpose?: string | null;
 }
 
 export interface Invocation {

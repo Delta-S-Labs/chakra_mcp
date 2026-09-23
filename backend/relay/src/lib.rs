@@ -13,6 +13,7 @@ use tower_http::trace::TraceLayer;
 
 pub mod agent_card;
 pub mod auth;
+pub mod compliance;
 pub mod events;
 pub mod forwarder;
 pub mod handlers;
