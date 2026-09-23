@@ -1,12 +1,16 @@
 # Credit ledger foundation — design (Phase 1 of quota productization)
 
 _Drafted 2026-09-23. Status: proposed. Supersedes the quota model from
-`2026-07-23-usage-quotas-rate-limiting-design.md` (P5), which is live and
-enforcing in prod._
+`2026-07-23-usage-quotas-rate-limiting-design.md` (the "prior quota project"),
+which is live and enforcing in prod._
+
+_Phase labels **P1–P5 in this document refer to the phases of quota
+productization** (P1 = this spec). The superseded project is always called the
+"prior quota project," never "P5", to avoid a collision._
 
 ## Context
 
-P5 shipped a plan-based quota system: named plans (`free`/`pro`/`enterprise`)
+The prior quota project shipped a plan-based quota system: named plans (`free`/`pro`/`enterprise`)
 carrying `rate_limit_per_min` + `monthly_invocation_quota`, enforced across the
 four invocation surfaces (A2A push via `forwarder`, A2A pull via `inbox_bridge`,
 legacy `/v1/invoke`, MCP proxy) through the shared `limits::enforce` primitive.
@@ -114,18 +118,26 @@ current := date_trunc('month', now() AT TIME ZONE 'UTC')::date
 if free_grant_period IS NULL OR free_grant_period < current:
     months := LEAST(12, month_diff(COALESCE(free_grant_period, current_minus_1mo), current))
     grant  := months * resolve_monthly_free_grant_mc(account)   -- COALESCE(col, config default)
-    UPDATE accounts
-       SET credit_balance_mc = credit_balance_mc + grant,
-           free_grant_period = current
-     WHERE id = $acct AND free_grant_period IS NOT DISTINCT FROM $observed_period   -- idempotency
-    INSERT INTO credit_ledger (…, delta_mc=grant, reason='free_grant', balance_after_mc=…)
+    -- Single statement: the ledger row is written ONLY if the guarded UPDATE hit
+    -- a row, so a grantor that loses the race writes neither balance nor ledger.
+    WITH applied AS (
+      UPDATE accounts
+         SET credit_balance_mc = credit_balance_mc + grant,
+             free_grant_period = current
+       WHERE id = $acct AND free_grant_period IS NOT DISTINCT FROM $observed_period
+      RETURNING credit_balance_mc
+    )
+    INSERT INTO credit_ledger (account_id, delta_mc, reason, balance_after_mc, …)
+    SELECT $acct, grant, 'free_grant', credit_balance_mc, … FROM applied;
 ```
 
 - Rollover: grants are additive; unused free accumulates.
 - Catch-up capped at 12 months so a long-dormant account can't accrue an
   unbounded windfall.
-- Idempotent + atomic via the `WHERE free_grant_period = observed` guard (a
-  concurrent grantor loses the race and no-ops).
+- Idempotent + atomic: the guarded `WHERE free_grant_period = observed` UPDATE
+  and the ledger INSERT are one CTE, so a grantor that loses the race writes
+  neither the balance bump nor a (spurious) ledger row — preserving the ledger
+  invariant.
 - Brand-new accounts (post-migration) have `credit_balance_mc = 0`,
   `free_grant_period = NULL`; their first enforce applies the current month's
   grant before the balance check, so the first invocation is covered. (Seeding
@@ -197,11 +209,11 @@ dropped `usage_counters`. Split into two migrations shipped in two deploys:
 
 **`0033_credits_expand.sql` (deploy 1, with the credits code):**
 1. `ALTER TABLE accounts ADD` the four new columns.
-2. Backfill `rate_limit_per_min` from each account's current plan (via
+2. `CREATE TABLE credit_ledger` + its index. (Must precede any ledger INSERT.)
+3. Backfill `rate_limit_per_min` from each account's current plan (via
    `plan_id` join) — preserves existing rate tiers.
-3. Seed `credit_balance_mc = 100000`, `free_grant_period = current month`, and
+4. Seed `credit_balance_mc = 100000`, `free_grant_period = current month`, and
    one `migration_seed` `credit_ledger` row per existing account.
-4. `CREATE TABLE credit_ledger`.
 - Keeps `plans`/`plan_id`/`usage_counters` intact, so the old relay serving
   during the migrate window still works. The new relay ignores them.
 
