@@ -4,7 +4,7 @@ _Drafted 2026-09-23. Status: proposed. Supersedes the quota model from
 `2026-07-23-usage-quotas-rate-limiting-design.md` (the "prior quota project"),
 which is live and enforcing in prod._
 
-_Phase labels **P1–P5 in this document refer to the phases of quota
+_Phase labels **P1–P6 in this document refer to the phases of quota
 productization** (P1 = this spec). The superseded project is always called the
 "prior quota project," never "P5", to avoid a collision._
 
@@ -22,11 +22,42 @@ Rate limiting (velocity, req/min, Redis) is orthogonal and stays. This document
 specs **Phase 1: the credit-ledger foundation** — the metering substrate. Later
 phases build on it (see [Later phases](#later-phases)).
 
+### Deployment modes (managed vs self-hosted)
+
+ChakraMCP is self-hostable, so the credit substrate serves two modes, gated by a
+`HOSTING_MODE` config (`managed` | `self_hosted`, default **`self_hosted`** so a
+fresh self-host never exposes purchasing):
+
+- **Managed** (the operator's own hosted instance): credits are mostly
+  **purchased** (Dodo, Phase 4); the superadmin can also grant.
+- **Self-hosted** (anyone running their own instance): **no payment.** The
+  instance's own admin grants allowance, relies on the monthly auto-renewal (the
+  free grant), fields user "increase my quota" requests, and observes usage /
+  receives alerts.
+
+**The enforcement substrate is identical in both modes** (per-account balance,
+ledger, consume, enforce). Only what tops the balance up and the surrounding UX
+differ:
+
+| Capability | Managed | Self-hosted |
+|----|----|----|
+| Enforcement + balance (**this phase**) | ✓ | ✓ |
+| Monthly free grant / auto-renewal (**this phase**) | ✓ | ✓ |
+| Admin grants (P3) | ✓ (operator/superadmin) | ✓ (their admin) |
+| Purchasing (P4, Dodo) | ✓ | ✗ (gated off by `HOSTING_MODE`) |
+| Request-increase + usage alerts (P5) | ✓ | ✓ (primary top-up path) |
+
+Phase 1 is the mode-agnostic substrate; it introduces the `HOSTING_MODE` config
+but gates nothing yet (purchasing arrives in P4). UI terminology ("credits / buy"
+vs "allowance / request increase") is a per-mode presentation detail for later
+phases.
+
 ### Decisions locked in brainstorming
 
 | Decision | Choice |
 |----|----|
-| Model | Credit-based, replaces the monthly invocation quota. |
+| Model | Credit-based, replaces the monthly invocation quota; **one universal substrate for both hosting modes.** |
+| Hosting modes | `HOSTING_MODE` = `managed` \| `self_hosted` (default `self_hosted`); gates purchasing (P4) only. |
 | Free credits | Every account gets a monthly free grant that **rolls over** (accumulates; no expiry). |
 | Purchased credits | Persist; added later (Phase 4, via **Dodo Payments**). |
 | Plans | **Retired.** Rate limit + free grant move to per-account columns with a global default. |
@@ -38,13 +69,16 @@ phases build on it (see [Later phases](#later-phases)).
 
 **Goals:** a per-account credit balance in mc; a monthly free grant that rolls
 over; per-invocation draw-down replacing the monthly-quota check in
-`limits::enforce`; an audit ledger for every credit-in/adjustment; retire the
-`plans`/`usage_counters`/`plan_id` machinery; do it without a downtime window on
-the live enforcing system.
+`limits::enforce`; an audit ledger for every credit-in/adjustment; a
+mode-agnostic substrate that serves both hosting modes (introduce `HOSTING_MODE`
+config); retire the `plans`/`usage_counters`/`plan_id` machinery; do it without a
+downtime window on the live enforcing system.
 
-**Non-goals (later phases):** owner-facing visibility (P2), admin credit
-management (P3), Dodo purchasing (P4), richer agent 429 signaling (P5),
-per-action-class cost weighting, metering non-invocation platform writes.
+**Non-goals (later phases):** owner-facing visibility (P2), admin management
+(P3), Dodo purchasing — managed-only (P4), request-increase + alerts (P5), agent
+429 signaling (P6), per-action-class cost weighting, metering non-invocation
+platform writes, and any purchasing/request/alert UX (Phase 1 only stores the
+`HOSTING_MODE` flag; it gates nothing yet).
 
 ## The credit model
 
@@ -192,6 +226,7 @@ Added to `chakramcp_shared::config::SharedConfig`, read by the relay:
 
 | Env | Default | Meaning |
 |----|----|----|
+| `HOSTING_MODE` | `self_hosted` | `managed` \| `self_hosted`. Phase 1 only stores it; it gates purchasing (P4) so a self-host never exposes a buy flow. |
 | `CREDITS_DEFAULT_MONTHLY_FREE_MC` | `100000` (100 credits) | Monthly free grant when `accounts.monthly_free_grant_mc` is NULL. At 0.1/invocation = **1,000 invocations/mo, = today's free tier.** |
 | `CREDITS_COST_PER_INVOCATION_MC` | `100` (0.1 credit) | Flat cost per invocation. |
 | `LIMITS_DEFAULT_RATE_PER_MIN` | `60` | Rate limit when `accounts.rate_limit_per_min` is NULL. |
@@ -248,19 +283,29 @@ accounting via `limit.would_block` logs, then re-enable — before deploy 2.
 
 ## Later phases
 
-- **P2 — Owner visibility:** balance, consumption, effective limits, grant
-  history on `/app/usage` + `/app/account` (a read endpoint over
-  `credit_balance_mc` + `credit_ledger` + `relay_invocations`).
-- **P3 — Admin credit management:** grant/adjust credits, set an account's
-  monthly grant + rate limit; admin API + UI; every change a `credit_ledger`
-  row (audited).
-- **P4 — Purchasing (Dodo Payments):** checkout + signed webhooks →
-  idempotent `purchase` ledger rows + balance top-up; `DODOPAYMENT_API_KEY`
-  already in `.env.local`. Merchant-of-record; refunds → `refund` rows.
-- **P5 — Agent signaling:** 429 `Retry-After` + balance/limit headers so
-  calling agents back off gracefully.
-- **Cost weighting:** promote `cost_mc()` from a flat value to a per-action-class
-  table.
+All phases build on this one substrate; mode differences are noted per phase.
+
+- **P2 — Owner visibility (both modes):** balance, consumption, effective
+  limits, grant history on `/app/usage` + `/app/account` (a read endpoint over
+  `credit_balance_mc` + `credit_ledger` + `relay_invocations`). UI wording
+  adapts to `HOSTING_MODE` ("credits" vs "allowance").
+- **P3 — Admin management (both modes):** grant/adjust an account's balance, set
+  its monthly grant + rate limit, observe usage; admin API + UI; every change a
+  `credit_ledger` row (audited). In managed this is the superadmin (operator);
+  in self-hosted it's the instance's own admin.
+- **P4 — Purchasing (managed-only, Dodo Payments):** gated by
+  `HOSTING_MODE=managed`. Checkout + signed webhooks → idempotent `purchase`
+  ledger rows + balance top-up; refunds → `refund` rows; recurring auto-renewal
+  as a Dodo subscription. `DODOPAYMENT_API_KEY` already in `.env.local`. Never
+  exposed on a self-host.
+- **P5 — Request-increase + alerts (both modes):** a user raises a
+  quota-increase request to their admin (the primary top-up path on a
+  self-host); usage alerts fire to the admin (and user) as balance nears
+  exhaustion. Approval → an `admin_grant` ledger row (reuses P3).
+- **P6 — Agent signaling:** 429 `Retry-After` + balance/limit headers so calling
+  agents back off gracefully.
+- **Cost weighting (ongoing):** promote `cost_mc()` from a flat value to a
+  per-action-class table.
 
 ## Open items (resolved defaults, flag if you disagree)
 
