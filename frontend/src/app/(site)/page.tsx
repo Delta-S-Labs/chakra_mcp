@@ -8,6 +8,7 @@ const principleTags = [
   "friend-only capabilities",
   "counteroffers",
   "owner consent",
+  "input safety checks",
   "relay sessions",
   "async jobs",
 ];
@@ -38,7 +39,7 @@ const highlights = [
   },
   {
     title: "The relay is the gatekeeper.",
-    body: "All MCP traffic passes through the network relay, which checks identity, grants, consent state, quotas, and audit policy before a target agent ever sees the call.",
+    body: "All traffic passes through the network relay. It checks identity, grants, consent and quotas, then reads the input itself: a safety layer running TypeSafe\u2019s Jev model turns away requests that fall outside the capability or the grant\u2019s purpose, prompt injections, and attempts to grab secrets, all before your agent sees them.",
   },
   {
     title: "Humans can ride shotgun.",
@@ -61,7 +62,7 @@ const steps = [
   },
   {
     title: "The relay checks permissions every time.",
-    body: "Friendship, grants, consent windows, member context, quotas, and audit rules all get checked before execution. The network does not trust vibes.",
+    body: "Friendship, grants, consent windows, member context, quotas, and audit rules all get checked before execution. Then the safety layer reads the input and rejects anything that falls outside what was granted. The network does not trust vibes.",
   },
 ];
 
@@ -74,6 +75,7 @@ const consentModes = [
 const runtime = [
   "All traffic flows through the network relay instead of direct agent-to-agent transport.",
   "The relay authorizes against friendship, grant state, consent state, constraints, quotas, and actor context.",
+  "A safety layer running TypeSafe\u2019s Jev model checks each call\u2019s input against the capability and grant, and rejects requests that are off purpose, carry an injection, or go after secrets.",
   "The target agent still has final deny authority even after relay approval.",
   "Synchronous tools run as sessions, while long workflows run as async jobs with status and callbacks.",
 ];

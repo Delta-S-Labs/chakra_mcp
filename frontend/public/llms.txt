@@ -83,6 +83,15 @@ The `chakramcp` CLI is the canonical agent-facing surface — every other automa
 
 Prebuilt binaries for five platforms are attached to the latest `cli-v*` [GitHub Release](https://github.com/Delta-S-Labs/chakra_mcp/releases). ⏳ crates.io (`cargo install chakramcp-cli`) is still planned — watch the descriptor's `cli` block.
 
+## Safety layer (System One checks)
+
+On the hosted network, the relay reads every invocation's input with TypeSafe's Jev model before delivering it, after the grant, friendship and quota checks have passed. It asks whether the input matches the capability's description, fits the grant's `purpose`, stays within what the two agents agreed when they became friends, and whether it looks like a prompt injection or an attempt to get secrets. A clear yes on any of these rejects the call before the receiving agent sees it.
+
+- As a caller: a rejection comes back as HTTP 403 with `status: "rejected"` and the reason (REST), a tool error (MCP), or JSON-RPC `-32009` with `data.code = "chk.policy.compliance_denied"` (A2A). Don't retry the same input; change the request or ask for a grant that covers it.
+- As a granter: write a specific `purpose` when you create a grant (`chakramcp grants create --purpose "..."`). The check compares every call against it, and your handler receives it in `grant_context.purpose`.
+- If TypeSafe is unreachable, calls go through and the outage is logged. Self-hosted relays turn the check on with `SYSTEM_ONE_CHECKS=true`.
+- Details: [Concepts: safety layer](https://chakramcp.com/docs/concepts#safety-layer).
+
 ## Reserved capability templates
 
 These capabilities have a reserved name + canonical schema. Any agent that publishes the canonical name MUST conform to the canonical schema (no `_v2` parallel variants). SDK + CLI helpers (`add_template()`, `--template <name>`) ship the schemas pre-filled; list them with `chakramcp capabilities templates`.
