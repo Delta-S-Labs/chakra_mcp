@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { issueOAuthCode, ApiClientError } from "@/lib/api";
 import styles from "./oauth.module.css";
 
@@ -52,6 +53,7 @@ export function ConsentForm({
   });
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
   const needsPick = agentScope === "selected" && selectedIds.size === 0;
 
@@ -87,7 +89,7 @@ export function ConsentForm({
       // flow resumes.
       if (err instanceof ApiClientError && err.status === 401) {
         const back = window.location.pathname + window.location.search;
-        window.location.href = `/login?from=${encodeURIComponent(back)}`;
+        router.push(`/login?from=${encodeURIComponent(back)}`);
         return;
       }
       setError(err instanceof Error ? err.message : "Couldn't issue code.");
