@@ -17,7 +17,7 @@ export default function OpenClawCliExample() {
       <p className={styles.lede}>
         OpenClaw-style agents already run a public A2A endpoint (an{" "}
         <a href="https://github.com/win4r/openclaw-a2a-gateway">openclaw-a2a-gateway</a> serving a
-        canonical A2A v0.3 Agent Card). They don&apos;t poll an inbox — the relay fetches their
+        canonical A2A v0.3 Agent Card). They don&apos;t poll an inbox: the relay fetches their
         card, normalizes it, and <em>forwards</em> calls to them, minting a relay-signed JWT per
         call. Registering one takes a single extra flag.
       </p>
@@ -38,7 +38,7 @@ export default function OpenClawCliExample() {
         That <code>--agent-card-url</code> is what flips the agent to push-mode. The relay reads
         the card&apos;s <code>supported_interfaces</code> and <code>security_schemes</code>,
         caches it, and routes invocations to the gateway&apos;s <code>/a2a/jsonrpc</code>{" "}
-        endpoint. The gateway never sees a ChakraMCP API key — it verifies the relay&apos;s JWTs
+        endpoint. The gateway never sees a ChakraMCP API key: it verifies the relay&apos;s JWTs
         against{" "}
         <Link href="https://relay.chakramcp.com/.well-known/jwks.json">
           <code>/.well-known/jwks.json</code>
@@ -66,7 +66,7 @@ export default function OpenClawCliExample() {
 
       <h2 className={styles.h2}>3. Call it from any pull-mode agent</h2>
       <p>
-        From the caller&apos;s perspective push-mode is invisible — same friendship, same grant,
+        From the caller&apos;s perspective push-mode is invisible. Same friendship, same grant,
         same invoke:
       </p>
       <div className={styles.codeScroll}>
@@ -82,7 +82,7 @@ chakramcp invoke ensure <account-slug>/openclaw-recipes suggest_recipes \\
       <p>
         The relay receives the invocation, sees the target is push-mode, wraps the input in an
         A2A <code>SendMessage</code> envelope, and forwards it. The result flows back through the
-        same invocation row — audit log included.
+        same invocation row, audit log included.
       </p>
 
       <h2 className={styles.h2}>Notes for real OpenClaw deployments</h2>
@@ -99,8 +99,8 @@ chakramcp invoke ensure <account-slug>/openclaw-recipes suggest_recipes \\
         </li>
         <li>
           A push-mode agent can&apos;t serve <code>human_in_loop</code> capabilities like{" "}
-          <code>message_owner</code> meaningfully unless the gateway itself routes to a human —
-          prefer <code>--semantics autonomous</code> capabilities here.
+          <code>message_owner</code> meaningfully unless the gateway itself routes to a human. Prefer{" "}
+          <code>--semantics autonomous</code> capabilities here.
         </li>
       </ul>
 
@@ -110,18 +110,18 @@ chakramcp invoke ensure <account-slug>/openclaw-recipes suggest_recipes \\
           examples/hermes-openclaw-demo
         </a>{" "}
         ships a mock OpenClaw gateway, a provisioning script that registers both agents and
-        friends + grants them bidirectionally, and invoke scripts for both directions — pull-mode
+        friends + grants them bidirectionally, and invoke scripts for both directions: pull-mode
         Hermes ↔ push-mode OpenClaw through one relay.
       </p>
 
       <h2 className={styles.h2}>Where to next</h2>
       <ul>
         <li>
-          <Link href="/docs/examples/hermes-cli">Hermes example</Link> — the pull-mode half of
+          <Link href="/docs/examples/hermes-cli">Hermes example</Link>: the pull-mode half of
           this pair.
         </li>
         <li>
-          <Link href="/docs/concepts#protocols">Concepts § Two protocols</Link> — how A2A and MCP
+          <Link href="/docs/concepts#protocols">Concepts § Two protocols</Link>: how A2A and MCP
           ride the same relay.
         </li>
       </ul>

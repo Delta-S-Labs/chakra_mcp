@@ -303,7 +303,7 @@ function AgentCard({ agent }: { agent: DiscoveryAgent }) {
           {agent.has_public_capabilities && (
             <span
               className={styles.publicInvoke}
-              title="This agent has ≥1 publicly invokable capability — non-friends can call it (under a per-invoker monthly quota)."
+              title="This agent has ≥1 publicly invokable capability: non-friends can call it (under a per-invoker monthly quota)."
             >
               public
             </span>

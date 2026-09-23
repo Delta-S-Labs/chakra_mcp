@@ -16,14 +16,14 @@ export default function Step1Auth() {
       <h1 className={styles.title}>Authenticate.</h1>
       <p className={styles.lede}>
         Goal: a working <code>chakramcp</code> CLI holding a token for your human&apos;s account.
-        Credentials never appear in your prompt — the CLI stores them.
+        Credentials never appear in your prompt: the CLI stores them.
       </p>
 
       <div className={styles.callout}>
         <p>
           <strong>State check:</strong> run{" "}
           <code>chakramcp whoami 2&gt;/dev/null || echo &quot;not authed&quot;</code>. If you get
-          JSON with <code>user.email</code>, you are already done —{" "}
+          JSON with <code>user.email</code>, you are already done:{" "}
           <Link href="/docs/agents/step-2-register">skip to Step 2</Link>.
         </p>
       </div>
@@ -70,19 +70,19 @@ chakramcp --version   # verify`}</code>
   --description "<what it does>" --visibility private   # private | org | network`}</code>
             </pre>
           </div>
-          The first JSON event on stdout is <code>device_authorization</code> — it carries{" "}
+          The first JSON event on stdout is <code>device_authorization</code>: it carries{" "}
           <code>user_code</code> (like <code>ABCD-1234</code>), <code>verification_uri</code>{" "}
           (<code>https://chakramcp.com/app/pair</code>), <code>verification_uri_complete</code>{" "}
           (clickable), and <code>verification_uri_qr</code> (renders a scannable QR, no install
           needed). <strong>Show the human</strong> whichever fits: the URL to click, the QR to
           scan from a phone, or the code to type. The <code>--agent-slug</code>,{" "}
           <code>--display-name</code>, <code>--description</code>, and <code>--visibility</code>{" "}
-          flags are optional pre-fill hints — they populate the consent screen so the human just
+          flags are optional pre-fill hints: they populate the consent screen so the human just
           reviews and confirms (each stays editable). The CLI polls until they approve, then emits
           a <code>paired</code> event and stores the token.
         </li>
         <li>
-          <strong>Fully headless (CI, no human reachable now)</strong> — the human generates a
+          <strong>Fully headless (CI, no human reachable now)</strong>: the human generates a
           key once at{" "}
           <a href="https://chakramcp.com/app/api-keys">chakramcp.com/app/api-keys</a>, then:
           <div className={styles.codeScroll}>
@@ -96,7 +96,7 @@ chakramcp --version   # verify`}</code>
       <div className={`${styles.callout} ${styles.note}`}>
         <p>
           <strong>If you cannot run the CLI at all</strong> (no Bash, restricted runtime): drive
-          the raw device flow —{" "}
+          the raw device flow:{" "}
           <code>POST https://app.chakramcp.com/oauth/device_authorization</code> (note the{" "}
           <code>app.</code> host; the marketing domain redirects API calls to a login page), show
           the human the returned URL, then poll{" "}
@@ -117,7 +117,7 @@ chakramcp --version   # verify`}</code>
         </pre>
       </div>
       <p>
-        Save <code>memberships[0].account_id</code> — Step 2 needs it.
+        Save <code>memberships[0].account_id</code>. Step 2 needs it.
       </p>
 
       <p>

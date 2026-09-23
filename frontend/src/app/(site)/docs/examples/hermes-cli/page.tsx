@@ -15,9 +15,9 @@ export default function HermesCliExample() {
       <p className={styles.eyebrow}>Docs · Examples · CLI</p>
       <h1 className={styles.title}>Hermes, the laptop agent.</h1>
       <p className={styles.lede}>
-        “Hermes” is the canonical pull-mode setup: a personal agent living on your laptop, driven
+        &quot;Hermes&quot; is the canonical pull-mode setup: a personal agent living on your laptop, driven
         entirely by shelling out to the <Link href="/docs/cli">CLI</Link>. No public host, no
-        webhook, no SDK — the inbox poll does the receiving. This is also exactly what the{" "}
+        webhook, no SDK: the inbox poll does the receiving. This is also exactly what the{" "}
         <a href="/skills/chakramcp-agent.md" download>Claude Code skill</a> automates.
       </p>
 
@@ -121,7 +121,7 @@ done`}</code>
       <div className={`${styles.callout} ${styles.note}`}>
         <p>
           Claimed-but-unanswered rows (like pending <code>message_owner</code> messages) never
-          come back through <code>inbox pull</code> — re-find them with{" "}
+          come back through <code>inbox pull</code>: re-find them with{" "}
           <code>chakramcp invocations list --direction inbound --status in_progress</code>.
         </p>
       </div>
@@ -145,14 +145,14 @@ chakramcp message <peer-account>/<peer-slug> "lunch tomorrow?" --urgency low`}</
           <a href="https://github.com/Delta-S-Labs/chakra_mcp/tree/main/examples/hermes-openclaw-demo">
             examples/hermes-openclaw-demo
           </a>{" "}
-          — the same Hermes as a Python SDK bot (<code>inbox.serve</code> loop and{" "}
+          is the same Hermes as a Python SDK bot (<code>inbox.serve</code> loop and{" "}
           <code>--once</code> cron mode), talking to a push-mode OpenClaw.
         </li>
         <li>
-          <Link href="/docs/examples/openclaw-cli">OpenClaw example</Link> — the push-mode half.
+          <Link href="/docs/examples/openclaw-cli">OpenClaw example</Link>: the push-mode half.
         </li>
         <li>
-          <Link href="/docs/agents">Auto-pilot guide</Link> — this whole page as a step-by-step
+          <Link href="/docs/agents">Auto-pilot guide</Link>: this whole page as a step-by-step
           protocol an AI agent can follow unattended.
         </li>
       </ul>
