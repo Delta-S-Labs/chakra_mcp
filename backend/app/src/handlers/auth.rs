@@ -14,9 +14,8 @@
 //!   * Rate limiting per IP / email
 //!   * Lockout after N failed attempts
 
-use argon2::password_hash::rand_core::OsRng;
-use argon2::password_hash::SaltString;
-use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
+use argon2::password_hash::phc::PasswordHash;
+use argon2::{Argon2, PasswordHasher, PasswordVerifier};
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;
@@ -259,10 +258,11 @@ pub async fn signout(State(state): State<AppState>, user: AuthUser) -> ApiResult
 // ─────────────────────────────────────────────────────────
 
 fn hash_password(plain: &str) -> Result<String, ApiError> {
-    let salt = SaltString::generate(&mut OsRng);
-    let argon2 = Argon2::default();
-    let hash = argon2
-        .hash_password(plain.as_bytes(), &salt)
+    // argon2 0.6 (password-hash 0.6): `hash_password` takes only the password
+    // and generates a random salt itself via the `getrandom` feature (on by
+    // default), replacing the old explicit `SaltString::generate(&mut OsRng)`.
+    let hash = Argon2::default()
+        .hash_password(plain.as_bytes())
         .map_err(|e| ApiError::Internal(anyhow::anyhow!("password hashing failed: {e}")))?;
     Ok(hash.to_string())
 }
@@ -489,6 +489,60 @@ mod signout_tests {
             res.status(),
             StatusCode::OK,
             "another user's revocation must not invalidate this user's token",
+        );
+    }
+}
+
+#[cfg(test)]
+mod password_tests {
+    //! Argon2id password hashing: round-trip + cross-version backward
+    //! compatibility. `hash_password`/`verify_password` were previously
+    //! untested (the signout tests seed a placeholder hash); this module was
+    //! added with the argon2 0.5 → 0.6 upgrade to prove hashes already stored
+    //! in `users.password_hash` keep authenticating after the bump.
+    use super::{hash_password, verify_password};
+    use chakramcp_shared::error::ApiError;
+
+    // A real Argon2id PHC string produced by argon2 0.5.3 (the pre-upgrade
+    // version) for `V05_PASSWORD`. If 0.6 can still verify it, existing users
+    // can still log in.
+    const V05_PASSWORD: &str = "correct-horse-battery-staple-v05";
+    const V05_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$Tq9rqVFKHliQY6aIu/doBg$R2bCUeP9WjSzJ+ylF/JJCqGAzDQc7YbbJhV99iq4CDo";
+
+    #[test]
+    fn verifies_hash_produced_by_argon2_0_5() {
+        verify_password(V05_PASSWORD, V05_HASH)
+            .expect("a stored 0.5-era hash must still verify under argon2 0.6");
+        assert!(
+            matches!(
+                verify_password("wrong", V05_HASH),
+                Err(ApiError::Unauthorized)
+            ),
+            "a wrong password against the 0.5 hash must be rejected"
+        );
+    }
+
+    #[test]
+    fn hash_then_verify_round_trips() {
+        let hash = hash_password("s3cr3t-pw").unwrap();
+        assert!(
+            hash.starts_with("$argon2id$"),
+            "unexpected hash format: {hash}"
+        );
+        verify_password("s3cr3t-pw", &hash).expect("correct password should verify");
+        assert!(
+            matches!(verify_password("nope", &hash), Err(ApiError::Unauthorized)),
+            "incorrect password should be Unauthorized"
+        );
+    }
+
+    #[test]
+    fn each_hash_uses_a_fresh_random_salt() {
+        // The 0.6 auto-salt path must still salt per-call: same password,
+        // different hashes.
+        assert_ne!(
+            hash_password("same").unwrap(),
+            hash_password("same").unwrap()
         );
     }
 }
