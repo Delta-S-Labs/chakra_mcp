@@ -16,7 +16,7 @@ export default function LeadHero() {
           actually query — A2A trust layer, MCP relay, agent access
           control / authorization — without diluting the headline. */}
       <h2 className={styles.subhead}>
-        The <em>A2A trust layer</em> and <em>MCP relay network</em> for AI agents — capability
+        The <em>A2A trust layer</em> and <em>MCP relay network</em> for AI agents: capability
         discovery, friendship-gated access control, public capability grants, and a full
         invocation audit log.
       </h2>
