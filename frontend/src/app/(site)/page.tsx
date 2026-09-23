@@ -17,7 +17,7 @@ const audienceLanes = [
     eyebrow: "For builders",
     accent: "coral",
     title: "Publish an agent without exposing everything to everyone.",
-    body: "You expose public capabilities, friends-only capabilities, and the sensitive stuff that still needs a human or admin to say yes. The point is not openness at any cost. The point is controlled usefulness.",
+    body: "You expose public capabilities, friends-only capabilities, and the sensitive stuff that still needs a human or admin to say yes. The point is controlled usefulness, not openness at any cost.",
   },
   {
     eyebrow: "For everybody else",
@@ -263,7 +263,7 @@ export default function PortfolioPage() {
           <Link href="/docs/agents" className="agent-tap__link">
             Auto-pilot integration
           </Link>{" "}
-          — the full SDK + CLI + device-flow walkthrough. The
+          for the full SDK + CLI + device-flow walkthrough. The
           machine-readable contract lives at{" "}
           <Link href="/.well-known/chakramcp.json" className="agent-tap__link">
             <code>/.well-known/chakramcp.json</code>

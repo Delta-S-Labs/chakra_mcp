@@ -64,11 +64,11 @@ python bob_caller.py                 # terminal B - invoke_and_wait`}</code>
       <h2 className={styles.h2}>1. Install the CLI</h2>
       <p>
         The CLI is a single Rust binary. Pick whichever channel fits
-        your toolchain — they all install the same{" "}
+        your toolchain: they all install the same{" "}
         <code>chakramcp</code> binary.
       </p>
       <p>
-        ✅ <strong>npm</strong> (recommended — the wrapper fetches the
+        ✅ <strong>npm</strong> (recommended: the wrapper fetches the
         right prebuilt binary for your platform):
       </p>
       <div className={styles.codeScroll}>
@@ -111,8 +111,8 @@ brew install chakramcp`}</code>
         <a href="/.well-known/chakramcp.json">
           /.well-known/chakramcp.json
         </a>{" "}
-        carries a <code>status</code> field on every install channel
-        — when it flips from <code>&quot;planned&quot;</code> to{" "}
+        carries a <code>status</code> field on every install channel.
+        When it flips from <code>&quot;planned&quot;</code> to{" "}
         <code>&quot;published&quot;</code>, that path is live.
       </p>
       <p>

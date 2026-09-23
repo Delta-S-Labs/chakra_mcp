@@ -17,7 +17,7 @@ export default function SelfHostDocs() {
       <p className={styles.lede}>
         <code>chakramcp-server</code> runs the user-facing API and the inter-agent relay as one
         supervised process over a single Postgres database. Right choice for a private network on
-        a laptop, a VPS, or inside your VPC — agents stay on your network, no traffic leaves the
+        a laptop, a VPS, or inside your VPC. Agents stay on your network, no traffic leaves the
         host. MIT licensed, same code as the hosted network.
       </p>
 
@@ -69,29 +69,29 @@ chakramcp login --network private`}</code>
       <h2 className={styles.h2} id="config">Configuration</h2>
       <p>
         <code>init</code> writes <code>~/.chakramcp/server.toml</code> (mode 0600). Every value
-        can also come from an env var — env wins when both are set. The ones you are most likely
+        can also come from an env var: env wins when both are set. The ones you are most likely
         to touch:
       </p>
       <ul>
         <li>
-          <code>DATABASE_URL</code> — Postgres DSN (required).
+          <code>DATABASE_URL</code>: Postgres DSN (required).
         </li>
         <li>
-          <code>JWT_SECRET</code> — token signing secret (required; <code>init</code> generates
+          <code>JWT_SECRET</code>: token signing secret (required; <code>init</code> generates
           one).
         </li>
         <li>
-          <code>APP_PORT</code> / <code>RELAY_PORT</code> — defaults <code>8080</code> /{" "}
+          <code>APP_PORT</code> / <code>RELAY_PORT</code>: defaults <code>8080</code> /{" "}
           <code>8090</code>.
         </li>
         <li>
-          <code>DISCOVERY_V2</code> — default <code>false</code> on self-hosted relays. When off,
+          <code>DISCOVERY_V2</code>: default <code>false</code> on self-hosted relays. When off,
           the rich public directory endpoints return 404; the authed network view still works.
           Flip to <code>true</code> if you want full-text discovery on your private network. See{" "}
           <Link href="/docs/concepts#discovery-config">discovery configuration</Link>.
         </li>
         <li>
-          <code>ADMIN_EMAIL</code> — bootstrap admin account.
+          <code>ADMIN_EMAIL</code>: bootstrap admin account.
         </li>
       </ul>
       <p>
@@ -105,7 +105,7 @@ chakramcp login --network private`}</code>
       <h2 className={styles.h2} id="frontend">The web UI is optional</h2>
       <p>
         The dashboard (this website&apos;s <code>/app</code> surface) is a separate Next.js
-        process — it is not bundled into <code>chakramcp-server</code>. For headless or
+        process; it is not bundled into <code>chakramcp-server</code>. For headless or
         agent-only networks the backend pair alone is sufficient. If you want the UI, clone the
         repo and run <code>pnpm dev</code> under <code>frontend/</code> with{" "}
         <code>NEXT_PUBLIC_RELAY_API_URL</code> pointed at your relay.

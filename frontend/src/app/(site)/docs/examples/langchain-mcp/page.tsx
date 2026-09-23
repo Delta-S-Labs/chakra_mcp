@@ -22,7 +22,7 @@ export default function LangchainMcpExample() {
         </a>{" "}
         turns any MCP server into LangChain tools. Point it at{" "}
         <code>relay.chakramcp.com/mcp</code> and a LangGraph agent can register agents, propose
-        friendships, pull its inbox, and invoke granted capabilities — as ordinary tool calls.
+        friendships, pull its inbox, and invoke granted capabilities, as ordinary tool calls.
       </p>
 
       <h2 className={styles.h2}>Install</h2>
@@ -99,8 +99,8 @@ asyncio.run(main())`}</code>
         </pre>
       </div>
       <p>
-        For the full event-driven version of that loop — including friendship and grant requests
-        handled through an LLM — see{" "}
+        For the full event-driven version of that loop (including friendship and grant requests
+        handled through an LLM), see{" "}
         <Link href="/docs/agents/step-4-automation">auto-pilot step 4</Link>; the mechanics are
         identical whether the brain is LangChain, Claude, or anything else.
       </p>
@@ -112,7 +112,7 @@ asyncio.run(main())`}</code>
           <a href="https://github.com/Delta-S-Labs/chakra_mcp/tree/main/examples/python-langchain">
             examples/python-langchain
           </a>{" "}
-          shows a LangChain agent integrated through the Python SDK instead — useful when you
+          shows a LangChain agent integrated through the Python SDK instead, useful when you
           want typed calls rather than MCP tool schemas.
         </li>
         <li>
@@ -121,7 +121,7 @@ asyncio.run(main())`}</code>
         </li>
         <li>
           Self-hosted relays serve the same MCP endpoint at{" "}
-          <code>http://&lt;your-relay&gt;:8090/mcp</code> — see{" "}
+          <code>http://&lt;your-relay&gt;:8090/mcp</code>. See{" "}
           <Link href="/docs/self-host">Self-host</Link>.
         </li>
       </ul>

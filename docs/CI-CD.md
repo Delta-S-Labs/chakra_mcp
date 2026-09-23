@@ -12,7 +12,7 @@
                   • Lefthook pre-push: clippy + frontend lint all
 ```
 
-## Pre-merge — already wired
+## Pre-merge: already wired
 
 Branch protection on `main` requires all four status checks green
 and the branch up-to-date before a merge button enables. Set up via
@@ -21,14 +21,14 @@ Inspect / change at <https://github.com/Delta-S-Labs/chakra_mcp/settings/branche
 
 Required checks:
 
-- `Frontend CI` — lint + typecheck + build for the Next.js app
-- `CLI CI` — `cargo build` + `cargo clippy --workspace -- -D warnings` + `cargo fmt --check` on `backend/cli`
-- `Verify .sqlx cache is up to date` — runs `cargo sqlx prepare --workspace --check -- --tests` so committed query JSON matches source
-- `CodeQL` — SAST baseline
+- `Frontend CI`: lint + typecheck + build for the Next.js app
+- `CLI CI`: `cargo build` + `cargo clippy --workspace -- -D warnings` + `cargo fmt --check` on `backend/cli`
+- `Verify .sqlx cache is up to date`: runs `cargo sqlx prepare --workspace --check -- --tests` so committed query JSON matches source
+- `CodeQL`: SAST baseline
 
 Plus `.github/workflows/security-scan.yml` runs on every PR and
 **blocks** on leaked secrets via gitleaks. Other scans
-(`cargo audit`, `pnpm audit`, `pip-audit`, ZAP) are advisory —
+(`cargo audit`, `pnpm audit`, `pip-audit`, ZAP) are advisory:
 they post warnings rather than failing the workflow.
 
 The lefthook `pre-push` hook also runs full-workspace clippy +
@@ -37,15 +37,15 @@ once per clone:
 
     task install:hooks
 
-## Post-merge — CD pipeline
+## Post-merge: CD pipeline
 
 `.github/workflows/cd.yml` triggers on `push: main` (and manual
 dispatch). It runs three jobs:
 
-1. **detect** — `dorny/paths-filter` sets booleans for `frontend`,
+1. **detect**: `dorny/paths-filter` sets booleans for `frontend`,
    `backend`, and `migrations`. The downstream jobs gate on these.
 
-2. **surface-frontend-changes** — if `frontend/**` changed, just
+2. **surface-frontend-changes**: if `frontend/**` changed, just
    posts a workflow annotation. **Netlify's GitHub integration
    handles the actual deploy** (auto-build on push to main + a
    deploy preview on every PR). No token required from us. If you
@@ -53,9 +53,9 @@ dispatch). It runs three jobs:
    the Netlify UI or via `npx netlify-cli deploy --prod --build`
    from your laptop's `netlify login` session.
 
-3. **deploy-backend** — if `backend/**` or `infra/**` changed:
+3. **deploy-backend**: if `backend/**` or `infra/**` changed:
    - `cargo build --release --bin chakramcp-server` natively on
-     the ubuntu-22.04 runner (no cross-compile — runner IS x86_64).
+     the ubuntu-22.04 runner (no cross-compile, runner IS x86_64).
    - `cp target/release/chakramcp-server infra/chakramcp-server`.
    - `docker build -f infra/Dockerfile.thin` → `docker push` to
      `877326604850.dkr.ecr.us-east-1.amazonaws.com/chakramcp-server`
@@ -66,7 +66,7 @@ dispatch). It runs three jobs:
      relay restart so new code never sees an old schema.
    - `docker compose up -d --force-recreate relay`.
    - Probe `https://relay.chakramcp.com/healthz`, `/readyz`,
-     `/v1/discovery/agents` — fail the workflow if any return non-200.
+     `/v1/discovery/agents`. Fail the workflow if any return non-200.
 
 ### Required secrets
 
@@ -78,12 +78,12 @@ Set once via `gh secret set <NAME> --repo Delta-S-Labs/chakra_mcp`:
 | `AWS_ACCESS_KEY_ID` | IAM user creds for ECR push | Create user `cd-publisher` with `AmazonEC2ContainerRegistryPowerUser` policy |
 | `AWS_SECRET_ACCESS_KEY` | Pair of above | Same user |
 | `LIGHTSAIL_SSH_KEY` | Private key for `ubuntu@54.84.88.246` | Contents of `~/.ssh/lightsail-chakramcp-prod.pem` |
-| `NPM_TOKEN` | Automation token for `npm publish` | Already set — npmjs.com → Access tokens → Automation |
+| `NPM_TOKEN` | Automation token for `npm publish` | Already set: npmjs.com → Access tokens → Automation |
 
-No `NETLIFY_AUTH_TOKEN` needed — Netlify deploys via its GitHub
+No `NETLIFY_AUTH_TOKEN` needed: Netlify deploys via its GitHub
 integration, not via our workflow.
 
-OIDC trust to AWS is the production upgrade path — replaces the
+OIDC trust to AWS is the production upgrade path. It replaces the
 long-lived access key with a per-run token. Configure the OIDC
 provider in IAM, create a role trusted by
 `token.actions.githubusercontent.com` scoped to
@@ -135,9 +135,9 @@ Held PRs get the `needs-human-review` label so they're easy to filter.
 
 PRs that were red before the CI-fix batch landed need a rebase:
 
-- #11 `@types/node` 20→25 — major-version bump for dev-deps, will hold
-- #12 `next` group bump — patch/minor; auto-merge after rebase
-- #13 `react` group bump — likely patch; auto-merge after rebase
+- #11 `@types/node` 20→25: major-version bump for dev-deps, will hold
+- #12 `next` group bump: patch/minor; auto-merge after rebase
+- #13 `react` group bump: likely patch; auto-merge after rebase
 
 Trigger a re-test by commenting `@dependabot recreate` on each PR.
 

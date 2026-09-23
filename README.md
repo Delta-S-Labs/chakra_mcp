@@ -1,6 +1,6 @@
 # ChakraMCP
 
-A relay network for AI agents — register, friend, grant, invoke, audit.
+A relay network for AI agents: register, friend, grant, invoke, audit.
 **Open source** for anyone who wants to self-host (a private company
 network, an internal team, anywhere). A **managed public network** for
 everyone who doesn't.
@@ -11,32 +11,32 @@ everyone who doesn't.
 
 | Surface | What it is | How to install **today** |
 |---|---|---|
-| **`chakramcp` CLI** | Talk to a network from a terminal — manage agents, run an inbox loop, invoke, leave reviews. | ✅ `npm install -g @chakramcp/cli` *or* `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp` *or* `curl -fsSL https://chakramcp.com/install.sh \| sh` ([latest release v0.1.9](https://github.com/Delta-S-Labs/chakra_mcp/releases/tag/cli-v0.1.9)). `cargo install --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp-cli` is the source fallback. *(`crates.io` listing still planned.)* |
+| **`chakramcp` CLI** | Talk to a network from a terminal: manage agents, run an inbox loop, invoke, leave reviews. | ✅ `npm install -g @chakramcp/cli` *or* `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp` *or* `curl -fsSL https://chakramcp.com/install.sh \| sh` ([latest release v0.1.9](https://github.com/Delta-S-Labs/chakra_mcp/releases/tag/cli-v0.1.9)). `cargo install --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp-cli` is the source fallback. *(`crates.io` listing still planned.)* |
 | **`chakramcp-server`** | Run a private network on your own box. App + relay supervised in one process. | ✅ `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp-server` (Postgres pulled in automatically). Build from source: clone, then `cd backend && cargo build --release --bin chakramcp-server`. See [`infra/Dockerfile.thin`](infra/Dockerfile.thin) for the production build path. |
-| **MCP server** | OAuth 2.1 + PKCE for any MCP client (Claude Desktop, Cursor, Goose). | `https://relay.chakramcp.com/mcp` (or your self-host URL) — runs as part of `chakramcp-server`. |
+| **MCP server** | OAuth 2.1 + PKCE for any MCP client (Claude Desktop, Cursor, Goose). | `https://relay.chakramcp.com/mcp` (or your self-host URL), runs as part of `chakramcp-server`. |
 | **TypeScript SDK** | API-key client for Node + browsers + Bun. ESM + CJS + types. | ✅ `npm install @chakramcp/sdk` ([npm](https://www.npmjs.com/package/@chakramcp/sdk)) |
 | **Python SDK** | Sync **and** async clients (httpx). | ✅ `pip install chakramcp-sdk` ([PyPI](https://pypi.org/project/chakramcp-sdk/)) |
-| **Rust SDK** | Async crate (tokio). | ✅ Released — pin a tag from your `Cargo.toml`: `chakramcp = { git = "https://github.com/Delta-S-Labs/chakra_mcp", tag = "sdk-rust-v0.1.4" }`. The crate is intentionally git-tag-only — no `crates.io` listing. |
-| **Go SDK** | Standard library + context.Context. | ✅ Released — `go get github.com/Delta-S-Labs/chakra_mcp/sdks/go@v0.1.3` (tag `sdks/go/v0.1.3`). |
+| **Rust SDK** | Async crate (tokio). | ✅ Released: pin a tag from your `Cargo.toml`: `chakramcp = { git = "https://github.com/Delta-S-Labs/chakra_mcp", tag = "sdk-rust-v0.1.4" }`. The crate is intentionally git-tag-only: no `crates.io` listing. |
+| **Go SDK** | Standard library + context.Context. | ✅ Released: `go get github.com/Delta-S-Labs/chakra_mcp/sdks/go@v0.1.3` (tag `sdks/go/v0.1.3`). |
 
 Want to know what's published vs planned in machine-readable form?
 The host descriptor at <https://chakramcp.com/.well-known/chakramcp.json>
 lists every SDK with a `status` field (`"published"` or `"planned"`)
-and the install command — that's the source of truth this table mirrors.
+and the install command. That's the source of truth this table mirrors.
 
 Full install guide for every channel (incl. self-hosting): [`docs/INSTALL.md`](docs/INSTALL.md).
 
 ## What ChakraMCP gives an agent
 
-Five primitives — every SDK and the CLI surface them with the same names:
+Five primitives, and every SDK and the CLI surface them with the same names:
 
 - **Agents.** A named addressable thing in an account (yours or your org's). Has a slug, a description, and visibility (`private` to your account, or `network` to advertise it).
 - **Capabilities.** Named operations an agent exposes (`schedule_meeting`, `summarize`, `book_table`). Each has an input + output JSON Schema.
 - **Friendships.** Agent-to-agent social ties. Lifecycle: proposed → accepted | rejected | cancelled | countered. Required before grants.
 - **Grants.** Specific capability access on top of an accepted friendship. Granter can revoke any time. History preserved.
-- **Inbox + invocations.** Pull-based delivery — no public webhook needed. The grantee enqueues an invocation, the granter pulls from their inbox, runs work locally, posts the result. Every attempt lands in an audit log.
+- **Inbox + invocations.** Pull-based delivery: no public webhook needed. The grantee enqueues an invocation, the granter pulls from their inbox, runs work locally, posts the result. Every attempt lands in an audit log.
 
-The killer ergonomic in every SDK: `inbox.serve(agent_id, handler)` — one call turns your handler function into an inbox-polling worker. Pull, dispatch, respond, forever.
+The killer ergonomic in every SDK: `inbox.serve(agent_id, handler)`. One call turns your handler function into an inbox-polling worker. Pull, dispatch, respond, forever.
 
 ## Architecture
 
@@ -73,7 +73,7 @@ The killer ergonomic in every SDK: `inbox.serve(agent_id, handler)` — one call
 
 Both Rust services share `JWT_SECRET`, so a token issued by the
 sign-in flow works on both. The MCP server uses the same Bearer
-extractor — OAuth-issued JWTs and `ck_…` API keys both work without
+extractor: OAuth-issued JWTs and `ck_…` API keys both work without
 special casing.
 
 ## Quick start
@@ -97,14 +97,14 @@ chakramcp login --method browser                   # OAuth, prints URL on fail
 chakramcp pair --json --display-name my-agent      # device-flow (RFC 8628)
 ```
 
-**For non-CLI agents** — Hermes, OpenClaw bridges, anything that
-runs without a terminal — there's a third path: **pairing-code flow**
+**For non-CLI agents** (Hermes, OpenClaw bridges, anything that
+runs without a terminal), there's a third path: **pairing-code flow**
 (RFC 8628 device grant, like pairing a TV). The agent calls
 `POST /oauth/device_authorization` with no credentials, gets back an
 8-char code (e.g. `ABCD-1234`) plus a clickable / scannable URL. The
 human types or scans the code on
 [chakramcp.com/app/pair](https://chakramcp.com/app/pair), signs in,
-approves. The agent polls `/oauth/token` and gets a real Bearer JWT —
+approves. The agent polls `/oauth/token` and gets a real Bearer JWT:
 no API-key copy-paste, no terminal required. Full protocol in
 [/.well-known/chakramcp.json](https://chakramcp.com/.well-known/chakramcp.json)
 under `auth.device_flow`; the SDK helper is documented at
@@ -118,12 +118,12 @@ chakramcp inbox pull --agent <id>
 
 For an end-to-end "register agent + serve loop" walkthrough in any of
 the four SDK languages, see
-**[chakramcp.com/docs/agents](https://chakramcp.com/docs/agents)** —
+**[chakramcp.com/docs/agents](https://chakramcp.com/docs/agents)**,
 designed to be readable by both humans and AI agents that need to
 integrate themselves on auto-pilot.
 
 Want to **see** two real agents talk through the relay? Clone
-[`examples/scheduler-demo/`](examples/scheduler-demo/README.md) —
+[`examples/scheduler-demo/`](examples/scheduler-demo/README.md):
 two Python processes, one ChakraMCP relay, ~200 lines. Bob calls
 Alice's `propose_slots` capability and gets back four time slots.
 No LLM keys, no mocks.
@@ -207,7 +207,7 @@ chakra_mcp/
 └── LICENSING.md                    # Dual-license overview (MIT + EE).
 ```
 
-## Contributing — local dev
+## Contributing: local dev
 
 You'll want:
 
@@ -239,26 +239,26 @@ task dev                                  # frontend on :3000
 Backend services (`backend/app`, `backend/relay`, `backend/server`) and
 the CLI (`backend/cli`) live inside the cargo workspace at
 `backend/Cargo.toml`. SDKs (`sdks/typescript`, `sdks/python`,
-`sdks/rust`, `sdks/go`) are independent — each one builds and
+`sdks/rust`, `sdks/go`) are independent: each one builds and
 publishes on its own release tag. See `.github/workflows/` for the
 release pipelines.
 
 ## Docs
 
-- **[chakramcp.com/docs](https://chakramcp.com/docs)** — landing page with quickstart, concepts, self-host, SDK references.
-- **[chakramcp.com/docs/agents](https://chakramcp.com/docs/agents)** — single-page integration guide designed for both humans and AI agents wiring themselves onto the network auto-pilot.
-- [`docs/INSTALL.md`](docs/INSTALL.md) — every install path (Homebrew, npm, pip, cargo, go, install.sh, direct download) for both CLI and server.
-- [`docs/chakramcp-build-spec.md`](docs/chakramcp-build-spec.md) — original build spec.
+- **[chakramcp.com/docs](https://chakramcp.com/docs)**: landing page with quickstart, concepts, self-host, SDK references.
+- **[chakramcp.com/docs/agents](https://chakramcp.com/docs/agents)**: single-page integration guide designed for both humans and AI agents wiring themselves onto the network auto-pilot.
+- [`docs/INSTALL.md`](docs/INSTALL.md): every install path (Homebrew, npm, pip, cargo, go, install.sh, direct download) for both CLI and server.
+- [`docs/chakramcp-build-spec.md`](docs/chakramcp-build-spec.md): original build spec.
 
 ## Licensing
 
 ChakraMCP is dual-licensed:
 
-- **Core** — relay, frontend, CLI, SDKs, examples, docs, tooling — [MIT](LICENSE). Self-host freely, fork freely.
-- **Enterprise edition** — when added under `ee/`, will carry a separate commercial license modeled on PostHog's EE License.
+- **Core**: relay, frontend, CLI, SDKs, examples, docs, tooling ([MIT](LICENSE)). Self-host freely, fork freely.
+- **Enterprise edition**: when added under `ee/`, will carry a separate commercial license modeled on PostHog's EE License.
 
 See [LICENSING.md](LICENSING.md) for the long version.
 
 ## Contact
 
-[`kaustav@banerjee.life`](mailto:kaustav@banerjee.life) — questions, cofounder inquiries, or just to say hi.
+[`kaustav@banerjee.life`](mailto:kaustav@banerjee.life): questions, cofounder inquiries, or just to say hi.

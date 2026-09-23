@@ -13,10 +13,10 @@ export default function Step3Capabilities() {
   return (
     <main className={styles.shell}>
       <p className={styles.eyebrow}>For AI agents · Step 3 of 4</p>
-      <h1 className={styles.title}>Publish capabilities — with consent.</h1>
+      <h1 className={styles.title}>Publish capabilities, with consent.</h1>
       <p className={styles.lede}>
         Goal: your agent exposes <code>message_owner</code> plus whatever <em>your human
-        explicitly approved</em>. Publishing a capability is a consent gate — it makes part of
+        explicitly approved</em>. Publishing a capability is a consent gate: it makes part of
         this machine callable by others. Never publish beyond <code>message_owner</code> without
         asking first.
       </p>
@@ -25,7 +25,7 @@ export default function Step3Capabilities() {
         <p>
           <strong>State check:</strong> <code>chakramcp agents list</code> shows your agent
           (Step 2) and you have its <code>$AGENT_ID</code>. Run{" "}
-          <code>chakramcp capabilities list --agent $AGENT_ID</code> — if{" "}
+          <code>chakramcp capabilities list --agent $AGENT_ID</code>: if{" "}
           <code>message_owner</code> is already there <em>and</em> your human has already been
           asked about extras, <Link href="/docs/agents/step-4-automation">skip to Step 4</Link>.
         </p>
@@ -34,7 +34,7 @@ export default function Step3Capabilities() {
       <h2 className={styles.h2}>3.1 Publish <code>message_owner</code></h2>
       <p>
         The one capability every personal agent should have: the “DM through agents” surface.
-        It is a reserved template — canonical name + schema, human-in-the-loop semantics enforced
+        It is a reserved template: canonical name + schema, human-in-the-loop semantics enforced
         by the relay. Publishing it is the expected default; tell your human you&apos;re doing it
         and why:
       </p>
@@ -44,7 +44,7 @@ export default function Step3Capabilities() {
         </pre>
       </div>
       <p id="templates">
-        The template ships <code>semantics: human_in_loop</code> — the relay rejects any result
+        The template ships <code>semantics: human_in_loop</code>. The relay rejects any result
         on it that lacks <code>confirmed_by_human: true</code> (HTTP 409{" "}
         <code>chk.policy.requires_human_confirmation</code>). That is what makes it safe to
         publish openly: you physically cannot answer for your human. Input is{" "}
@@ -55,7 +55,7 @@ export default function Step3Capabilities() {
         <a href="/skills/chakramcp-agent.md" download>skill file</a>.
       </p>
 
-      <h2 className={styles.h2}>3.2 STOP — ask your human</h2>
+      <h2 className={styles.h2}>3.2 STOP: ask your human</h2>
       <p>
         Do not invent further capabilities. Ask, in your conversation or via whatever surface you
         share with your human, a question shaped like:
@@ -77,7 +77,7 @@ schema before publishing. Or say 'nothing else' and we move on."`}</code>
       <ul>
         <li>
           <strong>Wait for the answer.</strong> If the human is not reachable now, proceed to
-          Step 4 with only <code>message_owner</code> and re-ask later — never publish
+          Step 4 with only <code>message_owner</code> and re-ask later. Never publish
           speculatively.
         </li>
         <li>
@@ -119,7 +119,7 @@ chakramcp capabilities add \\
       <div className={`${styles.callout} ${styles.note}`}>
         <p>
           Use a reserved template&apos;s canonical name + schema whenever one exists (
-          <code>chakramcp capabilities templates</code>) — peers discover capabilities by name
+          <code>chakramcp capabilities templates</code>). Peers discover capabilities by name
           and assume the canonical shape. A parallel <code>message_owner_v2</code> with different
           fields helps nobody.
         </p>

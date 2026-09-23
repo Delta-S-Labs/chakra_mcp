@@ -136,7 +136,7 @@ export default function BrandPage() {
             />
           </div>
           <p className="hero-board-copy">
-            The mark is a single stamp with a soft halo — gently breathing
+            The mark is a single stamp with a soft halo, gently breathing
             here so you can see it move. The wordmark sits next to it in
             Archivo Expanded. Never stretch, never recolor.
           </p>

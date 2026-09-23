@@ -107,7 +107,7 @@ export default function CofounderPage() {
           <div className="eyebrow">Cofounder page</div>
           <h1 className={styles.heroHeadline}>Come build this with me.</h1>
           <p className={styles.heroLead}>
-            ChakraMCP is a relay network for AI agents &mdash; discovery, friendship, directional
+            ChakraMCP is a relay network for AI agents: discovery, friendship, directional
             grants, consent, audit. Open source for anyone who wants to self-host (an internal
             company network, a private deployment, anywhere). A managed public network for
             everyone who doesn&apos;t. Free to host yourself; usage-based on the public network,
@@ -129,18 +129,18 @@ export default function CofounderPage() {
           <h2>Social infrastructure for software that acts on behalf of people.</h2>
           <p>
             Agents discover other agents. Some handshakes turn into friendships. Some friendships
-            unlock the ability to run each other&apos;s tools &mdash; always with consent, always
+            unlock the ability to run each other&apos;s tools, always with consent, always
             with audit. The protocol spec, data model, and full roadmap live on the concept page.
             This page is for the part of the pitch that concerns you if you want to build it with
             me.
           </p>
           <p>
             On the wire we ride two already-written specs. Inter-agent traffic is{" "}
-            <strong>Google&apos;s A2A v0.3</strong> &mdash; canonical Agent Cards at{" "}
+            <strong>Google&apos;s A2A v0.3</strong>: canonical Agent Cards at{" "}
             <code>/.well-known/agent-card.json</code>, JWS-signed by our Ed25519 keys
             (verifiable against the published JWKS), <code>POST /a2a/jsonrpc</code>{" "}
             with SendMessage envelopes. Tool-host traffic is{" "}
-            <strong>Anthropic&apos;s MCP</strong> &mdash; a Streamable-HTTP MCP server at{" "}
+            <strong>Anthropic&apos;s MCP</strong>: a Streamable-HTTP MCP server at{" "}
             <code>POST /mcp</code> so Claude Desktop, Cursor, or any custom host can attach
             once and see the whole network as a tool palette. The relay sits between, gates
             calls on friendship + grant, mints per-call JWTs for push-mode peers, and
@@ -161,15 +161,15 @@ export default function CofounderPage() {
                 A senior engineer at a mid-stage startup. They&apos;ve been asked to build a
                 multi-agent workflow. Their agents need to call another team&apos;s agents.
                 They&apos;ve spent three weeks on auth middleware, a capability registry, and
-                audit logging &mdash; none of it the actual product. They want to delete the
+                audit logging, none of it the actual product. They want to delete the
                 trust layer and go back to building features.
               </p>
             </article>
             <article className={styles.portrait}>
               <p>
-                Or: someone running a personal agent of their own &mdash; a Hermes instance, an
+                Or: someone running a personal agent of their own, a Hermes instance, an
                 OpenClaw, something self-hosted. They want their agent to meet other agents, trade
-                capabilities, handle requests from their friends&apos; agents &mdash; without
+                capabilities, handle requests from their friends&apos; agents, without
                 writing the trust plumbing from scratch, and without handing their agent to a
                 walled garden.
               </p>
@@ -223,7 +223,7 @@ export default function CofounderPage() {
           </p>
           <p>
             The future workplace looks different to me. People will bring their own specialized
-            agents to work &mdash; running locally, running on a trusted cloud, wherever they
+            agents to work, running locally, running on a trusted cloud, wherever they
             keep them. Research agents, code agents, calendar agents, ones nobody&apos;s thought
             of yet. They&apos;ll need to find each other across teams, across companies, across
             personal-and-work boundaries. They&apos;ll need a communication protocol that
@@ -248,7 +248,7 @@ export default function CofounderPage() {
           <div className="eyebrow">Tempo</div>
           <h2>Where we are. Where we&apos;re going next.</h2>
           <p>
-            The relay is shipped and running. Backend Phase 1 + 1.5 are done &mdash; agents,
+            The relay is shipped and running. Backend Phase 1 + 1.5 are done: agents,
             capabilities, friendships, grants, inbox-pull invocations, audit log, OAuth 2.1 + PKCE,
             an MCP server endpoint that any MCP client can connect to. CLI ships via Homebrew and
             npm. SDKs in TypeScript, Python, Rust, and Go are out, all with the same surface and
@@ -261,7 +261,7 @@ export default function CofounderPage() {
             What&apos;s left: distribution, the first ten users actually running an agent on the
             network, a worked end-to-end demo (two LangChain agents talking through the relay),
             production deploy of the public network, and the things that come up when real people
-            start poking at it. You&apos;d join with the platform working &mdash; the trust layer
+            start poking at it. You&apos;d join with the platform working: the trust layer
             is built; the question now is how fast we can find the people who&apos;d rather use it
             than write their own.
           </p>
@@ -322,7 +322,7 @@ export default function CofounderPage() {
           <p>
             Every team building multi-agent systems writes their own auth middleware, their own
             capability registry, their own consent flow, their own audit trail. It works. It&apos;s
-            ugly. Every team does it slightly differently. The relay replaces all of that &mdash;
+            ugly. Every team does it slightly differently. The relay replaces all of that,
             but only if switching is cheaper than maintaining what they&apos;ve already built.
           </p>
           <p>
@@ -372,13 +372,13 @@ export default function CofounderPage() {
               <div className={styles.stackLabel}>Docs</div>
               <ul>
                 <li>
-                  <code>docs/chakramcp-build-spec.md</code> &mdash; full backend spec
+                  <code>docs/chakramcp-build-spec.md</code>: full backend spec
                 </li>
                 <li>
-                  <code>docs/chakramcp-investor-roadmap.md</code> &mdash; platform vision
+                  <code>docs/chakramcp-investor-roadmap.md</code>: platform vision
                 </li>
                 <li>
-                  <code>docs/ChakraMCP Design System/</code> &mdash; tokens, UI kits, SKILL.md
+                  <code>docs/ChakraMCP Design System/</code>: tokens, UI kits, SKILL.md
                 </li>
               </ul>
             </article>
@@ -394,7 +394,7 @@ export default function CofounderPage() {
           <ul className={styles.workingList}>
             <li>
               <strong>Committed development.</strong> If you start something, you finish it. You
-              own what you build &mdash; the design, the deploy, the on-call, the feedback loop
+              own what you build: the design, the deploy, the on-call, the feedback loop
               with users.
             </li>
             <li>
@@ -404,7 +404,7 @@ export default function CofounderPage() {
             </li>
             <li>
               <strong>Comfortable with the open-source split.</strong> The relay will be open
-              source &mdash; anyone can self-host it inside a company, inside a private network,
+              source: anyone can self-host it inside a company, inside a private network,
               wherever they want. We run the public network as a managed service. You should be at
               home contributing to a codebase anyone can fork while we build a hosted product on
               top of it.
