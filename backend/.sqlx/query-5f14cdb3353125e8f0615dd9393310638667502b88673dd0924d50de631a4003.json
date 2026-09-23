@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n            g.id, g.status, g.capability_id,\n            g.granted_at, g.expires_at, g.revoked_at, g.revoke_reason,\n            ga.id   as g_agent_id,   ga.slug as g_agent_slug,   ga.display_name as g_agent_display_name,\n            gacc.id as g_acct_id,    gacc.slug as g_acct_slug,  gacc.display_name as g_acct_display_name,\n            ea.id   as e_agent_id,   ea.slug as e_agent_slug,   ea.display_name as e_agent_display_name,\n            eacc.id as e_acct_id,    eacc.slug as e_acct_slug,  eacc.display_name as e_acct_display_name,\n            cap.name as capability_name, cap.visibility as capability_visibility,\n            EXISTS(SELECT 1 FROM account_memberships m WHERE m.account_id = ga.account_id AND m.user_id = $2) as \"i_granted!\",\n            EXISTS(SELECT 1 FROM account_memberships m WHERE m.account_id = ea.account_id AND m.user_id = $2) as \"i_received!\"\n        FROM grants g\n        JOIN agents ga ON ga.id = g.granter_agent_id\n        JOIN accounts gacc ON gacc.id = ga.account_id\n        JOIN agents ea ON ea.id = g.grantee_agent_id\n        JOIN accounts eacc ON eacc.id = ea.account_id\n        JOIN agent_capabilities cap ON cap.id = g.capability_id\n        WHERE g.id = $1\n          AND ga.tombstoned_at  IS NULL\n          AND ea.tombstoned_at  IS NULL\n          AND gacc.tombstoned_at IS NULL\n          AND eacc.tombstoned_at IS NULL\n        ",
+  "query": "\n        SELECT\n            g.id, g.status, g.capability_id,\n            g.granted_at, g.expires_at, g.purpose, g.revoked_at, g.revoke_reason,\n            ga.id   as g_agent_id,   ga.slug as g_agent_slug,   ga.display_name as g_agent_display_name,\n            gacc.id as g_acct_id,    gacc.slug as g_acct_slug,  gacc.display_name as g_acct_display_name,\n            ea.id   as e_agent_id,   ea.slug as e_agent_slug,   ea.display_name as e_agent_display_name,\n            eacc.id as e_acct_id,    eacc.slug as e_acct_slug,  eacc.display_name as e_acct_display_name,\n            cap.name as capability_name, cap.visibility as capability_visibility,\n            EXISTS(SELECT 1 FROM account_memberships m WHERE m.account_id = ga.account_id AND m.user_id = $1) as \"i_granted!\",\n            EXISTS(SELECT 1 FROM account_memberships m WHERE m.account_id = ea.account_id AND m.user_id = $1) as \"i_received!\"\n        FROM grants g\n        JOIN agents ga ON ga.id = g.granter_agent_id\n        JOIN accounts gacc ON gacc.id = ga.account_id\n        JOIN agents ea ON ea.id = g.grantee_agent_id\n        JOIN accounts eacc ON eacc.id = ea.account_id\n        JOIN agent_capabilities cap ON cap.id = g.capability_id\n        WHERE\n            (\n                ($2::boolean AND EXISTS(SELECT 1 FROM account_memberships m WHERE m.account_id = ga.account_id AND m.user_id = $1))\n             OR ($3::boolean AND EXISTS(SELECT 1 FROM account_memberships m WHERE m.account_id = ea.account_id AND m.user_id = $1))\n            )\n            AND ($4::text IS NULL OR g.status = $4)\n            AND ga.tombstoned_at  IS NULL\n            AND ea.tombstoned_at  IS NULL\n            AND gacc.tombstoned_at IS NULL\n            AND eacc.tombstoned_at IS NULL\n        ORDER BY g.granted_at DESC\n        ",
   "describe": {
     "columns": [
       {
@@ -60,6 +60,17 @@
       },
       {
         "ordinal": 5,
+        "name": "purpose",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "grants",
+            "name": "purpose"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
         "name": "revoked_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -70,7 +81,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "revoke_reason",
         "type_info": "Text",
         "origin": {
@@ -81,7 +92,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "g_agent_id",
         "type_info": "Uuid",
         "origin": {
@@ -92,7 +103,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "g_agent_slug",
         "type_info": "Text",
         "origin": {
@@ -103,7 +114,7 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "g_agent_display_name",
         "type_info": "Text",
         "origin": {
@@ -114,7 +125,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "g_acct_id",
         "type_info": "Uuid",
         "origin": {
@@ -125,7 +136,7 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "g_acct_slug",
         "type_info": "Text",
         "origin": {
@@ -136,7 +147,7 @@
         }
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "g_acct_display_name",
         "type_info": "Text",
         "origin": {
@@ -147,7 +158,7 @@
         }
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "e_agent_id",
         "type_info": "Uuid",
         "origin": {
@@ -158,7 +169,7 @@
         }
       },
       {
-        "ordinal": 14,
+        "ordinal": 15,
         "name": "e_agent_slug",
         "type_info": "Text",
         "origin": {
@@ -169,7 +180,7 @@
         }
       },
       {
-        "ordinal": 15,
+        "ordinal": 16,
         "name": "e_agent_display_name",
         "type_info": "Text",
         "origin": {
@@ -180,7 +191,7 @@
         }
       },
       {
-        "ordinal": 16,
+        "ordinal": 17,
         "name": "e_acct_id",
         "type_info": "Uuid",
         "origin": {
@@ -191,7 +202,7 @@
         }
       },
       {
-        "ordinal": 17,
+        "ordinal": 18,
         "name": "e_acct_slug",
         "type_info": "Text",
         "origin": {
@@ -202,7 +213,7 @@
         }
       },
       {
-        "ordinal": 18,
+        "ordinal": 19,
         "name": "e_acct_display_name",
         "type_info": "Text",
         "origin": {
@@ -213,7 +224,7 @@
         }
       },
       {
-        "ordinal": 19,
+        "ordinal": 20,
         "name": "capability_name",
         "type_info": "Text",
         "origin": {
@@ -224,7 +235,7 @@
         }
       },
       {
-        "ordinal": 20,
+        "ordinal": 21,
         "name": "capability_visibility",
         "type_info": "Text",
         "origin": {
@@ -235,13 +246,13 @@
         }
       },
       {
-        "ordinal": 21,
+        "ordinal": 22,
         "name": "i_granted!",
         "type_info": "Bool",
         "origin": "Expression"
       },
       {
-        "ordinal": 22,
+        "ordinal": 23,
         "name": "i_received!",
         "type_info": "Bool",
         "origin": "Expression"
@@ -250,7 +261,9 @@
     "parameters": {
       "Left": [
         "Uuid",
-        "Uuid"
+        "Bool",
+        "Bool",
+        "Text"
       ]
     },
     "nullable": [
@@ -258,6 +271,7 @@
       false,
       false,
       false,
+      true,
       true,
       true,
       true,
@@ -279,5 +293,5 @@
       null
     ]
   },
-  "hash": "d7ff4c105ebe930fde46dfdedda33ef31bb86ff0a788520d4c3f22de10e15463"
+  "hash": "5f14cdb3353125e8f0615dd9393310638667502b88673dd0924d50de631a4003"
 }

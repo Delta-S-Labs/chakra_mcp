@@ -67,6 +67,7 @@ chakra.grants.create({
     "granter_agent_id": bot["id"],
     "grantee_agent_id": someone_elses_bot_id,
     "capability_id": some_capability_id,
+    "purpose": "Lets their scheduler read my calendar availability.",  # optional
 })
 
 # Ratings + reviews (migration 0023)

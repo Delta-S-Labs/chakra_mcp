@@ -302,13 +302,13 @@ mod tests {
         content_type: Option<String>,
     }
 
+    /// Test upstream reply for the n-th hit: status, headers, body.
+    type Responder =
+        dyn Fn(usize) -> (StatusCode, Vec<(&'static str, &'static str)>, Vec<u8>) + Send + Sync;
+
     struct Upstream {
         url: String,
         last: Arc<std::sync::Mutex<Option<CapturedRequest>>>,
-        hits: Arc<AtomicUsize>,
-        responder: Box<
-            dyn Fn(usize) -> (StatusCode, Vec<(&'static str, &'static str)>, Vec<u8>) + Send + Sync,
-        >,
     }
 
     async fn start_upstream<R>(responder: R) -> Upstream
@@ -326,11 +326,7 @@ mod tests {
         struct AppState {
             last: Arc<std::sync::Mutex<Option<CapturedRequest>>>,
             hits: Arc<AtomicUsize>,
-            responder: Arc<
-                dyn Fn(usize) -> (StatusCode, Vec<(&'static str, &'static str)>, Vec<u8>)
-                    + Send
-                    + Sync,
-            >,
+            responder: Arc<Responder>,
         }
 
         async fn handler(
@@ -363,7 +359,7 @@ mod tests {
 
         let app_state = AppState {
             last: last.clone(),
-            hits: hits.clone(),
+            hits,
             responder: Arc::new(responder),
         };
         let app = axum::Router::new()
@@ -377,8 +373,6 @@ mod tests {
         Upstream {
             url: format!("http://{}/a2a/jsonrpc", addr),
             last,
-            hits,
-            responder: Box::new(|_| (StatusCode::OK, vec![], vec![])),
         }
     }
 

@@ -185,6 +185,9 @@ pub struct Grant {
     pub expires_at: Option<DateTime<Utc>>,
     pub revoked_at: Option<DateTime<Utc>>,
     pub revoke_reason: Option<String>,
+    /// Why the granter issued this grant; `None` when unset.
+    #[serde(default)]
+    pub purpose: Option<String>,
     pub i_granted: bool,
     pub i_received: bool,
 }
@@ -267,6 +270,10 @@ pub struct GrantContext {
     pub capability_visibility: Visibility,
     pub granted_at: DateTime<Utc>,
     pub expires_at: Option<DateTime<Utc>>,
+    /// Why the granter issued this grant; `None` when unset or when the
+    /// relay/snapshot predates grant purposes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub purpose: Option<String>,
 }
 
 // ─── Request bodies ──────────────────────────────────────
@@ -347,6 +354,10 @@ pub struct CreateGrantRequest {
     pub capability_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<DateTime<Utc>>,
+    /// Optional free-text reason the grantee needs access. The relay
+    /// trims it (empty becomes null) and caps it at 500 characters.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub purpose: Option<String>,
 }
 
 /// Two flavours — exactly one of `grant_id` (trusted) or

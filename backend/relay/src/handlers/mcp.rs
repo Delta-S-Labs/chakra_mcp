@@ -28,6 +28,7 @@ use uuid::Uuid;
 use chakramcp_shared::error::ApiError;
 
 use crate::auth::{user_is_member, AuthUser};
+use crate::handlers::invoke::TrustedOutcome;
 use crate::state::RelayState;
 
 const PROTOCOL_VERSION: &str = "2025-06-18";
@@ -400,7 +401,8 @@ fn tools_list_result() -> Value {
                         "granter_agent_id": { "type": "string", "format": "uuid", "description": "Your agent that owns the capability." },
                         "grantee_agent_id": { "type": "string", "format": "uuid", "description": "The friend's agent being granted access." },
                         "capability_id":    { "type": "string", "format": "uuid" },
-                        "expires_at":       { "type": "string", "format": "date-time", "description": "Optional RFC3339 expiry." }
+                        "expires_at":       { "type": "string", "format": "date-time", "description": "Optional RFC3339 expiry." },
+                        "purpose":          { "type": "string", "maxLength": 500, "description": "Optional: why this agent needs access. Invocations are checked against it when System One compliance checks are on." }
                     }
                 })),
             tool("revoke_grant",
@@ -882,7 +884,6 @@ async fn list_friendships(db: &PgPool, user: &AuthUser, args: Value) -> Result<V
 }
 
 async fn invoke(state: &RelayState, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
-    let db = &state.db;
     #[derive(Deserialize)]
     struct A {
         grant_id: Uuid,
@@ -892,94 +893,31 @@ async fn invoke(state: &RelayState, user: &AuthUser, args: Value) -> Result<Valu
     let a: A = serde_json::from_value(args)
         .map_err(|e| ApiError::InvalidRequest(format!("bad invoke args: {e}")))?;
 
-    let row = sqlx::query!(
-        r#"
-        SELECT g.id as grant_id, g.status as grant_status,
-               g.granter_agent_id, g.grantee_agent_id, g.capability_id,
-               g.expires_at,
-               ea.account_id as grantee_account_id,
-               cap.name as capability_name
-        FROM grants g
-        JOIN agents ea ON ea.id = g.grantee_agent_id
-        JOIN agent_capabilities cap ON cap.id = g.capability_id
-        WHERE g.id = $1
-        "#,
+    // Same authorization + enqueue path as REST `POST /v1/invoke`
+    // (grantee match, membership, grant state, accepted friendship,
+    // usage limits, audit truncation, trust snapshot).
+    match crate::handlers::invoke::authorize_and_enqueue_trusted(
+        state,
+        user,
         a.grant_id,
-    )
-    .fetch_optional(db)
-    .await?
-    .ok_or(ApiError::NotFound)?;
-
-    if row.grantee_agent_id != a.grantee_agent_id {
-        return Err(ApiError::InvalidRequest(
-            "grantee_agent_id does not match the grant".into(),
-        ));
-    }
-    if !user_is_member(db, user.user_id, row.grantee_account_id).await? {
-        return Err(ApiError::Forbidden);
-    }
-    if row.grant_status != "active" {
-        return Err(ApiError::Conflict(format!(
-            "grant is {}; only active grants can be invoked",
-            row.grant_status
-        )));
-    }
-    if let Some(exp) = row.expires_at {
-        if exp <= Utc::now() {
-            return Err(ApiError::Conflict("grant has expired".into()));
-        }
-    }
-
-    // Per-account usage limits (rate + monthly quota), keyed on the caller's
-    // (grantee's) account. Shadow mode logs a would-block and proceeds;
-    // enforcing returns 429 with an `account_*` code.
-    if let Some(outcome) = crate::limits::enforce(
-        db,
-        &state.rate_limiter,
-        row.grantee_account_id,
-        state.limits_enforce,
+        a.grantee_agent_id,
+        &a.input,
         "mcp",
     )
     .await?
     {
-        return Err(outcome.into());
+        TrustedOutcome::Enqueued { invocation_id } => {
+            Ok(json!({ "invocation_id": invocation_id, "status": "pending" }))
+        }
+        // The rejection is already recorded; surface it as a tool error.
+        TrustedOutcome::Rejected { status, error, .. } => {
+            Err(if status == StatusCode::BAD_REQUEST {
+                ApiError::InvalidRequest(error)
+            } else {
+                ApiError::Conflict(error)
+            })
+        }
     }
-
-    // `api_key_id` follows the same caller-side semantics as
-    // POST /v1/invoke (see handlers/invoke.rs): the credential that
-    // authed this MCP `invoke` tool call. NULL when the caller used
-    // a user JWT.
-    //
-    // `minted_jti` is the dual: NULL on the ck_ path, set on the JWT
-    // path so the per-pair dashboard can attribute the call.
-    // Row write + quota increment in one transaction.
-    let id = Uuid::now_v7();
-    let mut tx = state.db.begin().await?;
-    sqlx::query!(
-        r#"
-        INSERT INTO relay_invocations
-            (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
-             capability_name, invoked_by_user_id, status, input_preview,
-             api_key_id, minted_jti)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9, $10)
-        "#,
-        id,
-        row.grant_id,
-        row.granter_agent_id,
-        row.grantee_agent_id,
-        row.capability_id,
-        row.capability_name,
-        user.user_id,
-        a.input,
-        user.api_key_id,
-        user.minted_jti,
-    )
-    .execute(&mut *tx)
-    .await?;
-    crate::limits::quota::increment(&mut *tx, row.grantee_account_id).await?;
-    tx.commit().await?;
-
-    Ok(json!({ "invocation_id": id, "status": "pending" }))
 }
 
 async fn poll_invocation(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
@@ -2417,6 +2355,184 @@ mod manage_agents_tests {
         )
         .await;
         assert_eq!(grant["isError"], json!(true), "grant: {grant}");
+    }
+
+    /// Two agents under one owner, a capability on B, an accepted
+    /// friendship, and a grant from B to A — all over /mcp. Returns
+    /// (token, grantee A, grant id, friendship id).
+    async fn seed_granted_pair(pool: &PgPool) -> (String, String, String, String) {
+        let (_uid, account_id, token) = seed_user_with_jwt(pool).await;
+        let mk = |slug: &str| json!({ "account_id": account_id, "slug": slug, "display_name": slug, "visibility": "network" });
+        let a = ok(&call(pool, &token, "create_agent", mk("inv-a")).await)["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let b = ok(&call(pool, &token, "create_agent", mk("inv-b")).await)["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let cap = ok(&call(
+            pool,
+            &token,
+            "publish_capability",
+            json!({ "agent_id": b, "name": "x" }),
+        )
+        .await)["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let fr = ok(&call(
+            pool,
+            &token,
+            "propose_friendship",
+            json!({ "proposer_agent_id": a, "target_agent_id": b }),
+        )
+        .await)["friendship_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        ok(&call(
+            pool,
+            &token,
+            "accept_friendship",
+            json!({ "friendship_id": fr }),
+        )
+        .await);
+        let grant = ok(&call(
+            pool,
+            &token,
+            "create_grant",
+            json!({ "granter_agent_id": b, "grantee_agent_id": a, "capability_id": cap }),
+        )
+        .await)["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        (token, a, grant, fr)
+    }
+
+    async fn invocation_row(pool: &PgPool, grant: &str) -> (String, Option<String>, Value, Value) {
+        let grant: Uuid = grant.parse().unwrap();
+        sqlx::query_as::<_, (String, Option<String>, Value, Option<Value>)>(
+            "SELECT status, error_message, input_preview, trust_snapshot
+               FROM relay_invocations WHERE grant_id = $1",
+        )
+        .bind(grant)
+        .fetch_one(pool)
+        .await
+        .map(|(st, err, input, snap)| (st, err, input, snap.unwrap_or(Value::Null)))
+        .unwrap()
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn invoke_rejected_without_accepted_friendship(pool: PgPool) {
+        let (token, a, grant, fr) = seed_granted_pair(&pool).await;
+        // Accepted friendships have no API exit today; simulate the
+        // relationship ending underneath a still-active grant.
+        sqlx::query("UPDATE friendships SET status = 'cancelled' WHERE id = $1")
+            .bind(fr.parse::<Uuid>().unwrap())
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let res = call(
+            &pool,
+            &token,
+            "invoke",
+            json!({ "grant_id": grant, "grantee_agent_id": a, "input": { "q": 1 } }),
+        )
+        .await;
+        assert_eq!(res["isError"], json!(true), "invoke: {res}");
+
+        let (status, err, _, _) = invocation_row(&pool, &grant).await;
+        assert_eq!(status, "rejected");
+        assert!(err.unwrap().contains("friendship"));
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn invoke_truncates_large_input(pool: PgPool) {
+        let (token, a, grant, _) = seed_granted_pair(&pool).await;
+        let big = "x".repeat(20 * 1024);
+        ok(&call(
+            &pool,
+            &token,
+            "invoke",
+            json!({ "grant_id": grant, "grantee_agent_id": a, "input": { "blob": big } }),
+        )
+        .await);
+
+        let (status, _, input, _) = invocation_row(&pool, &grant).await;
+        assert_eq!(status, "pending");
+        assert_eq!(
+            input["__chakramcp_truncated__"],
+            json!(true),
+            "input: {input}"
+        );
+        assert!(input["original_byte_length"].as_u64().unwrap() > 20 * 1024);
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn invoke_records_trust_snapshot(pool: PgPool) {
+        let (token, a, grant, fr) = seed_granted_pair(&pool).await;
+        ok(&call(
+            &pool,
+            &token,
+            "invoke",
+            json!({ "grant_id": grant, "grantee_agent_id": a, "input": { "q": 1 } }),
+        )
+        .await);
+
+        let (_, _, input, snap) = invocation_row(&pool, &grant).await;
+        assert_eq!(input, json!({ "q": 1 }));
+        assert_eq!(snap["grant"]["id"], json!(grant), "snapshot: {snap}");
+        assert_eq!(snap["grant"]["status"], json!("active"));
+        assert_eq!(snap["grant"]["capability_name"], json!("x"));
+        assert_eq!(snap["friendship"]["id"], json!(fr));
+        assert_eq!(snap["friendship"]["status"], json!("accepted"));
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn create_grant_accepts_and_validates_purpose(pool: PgPool) {
+        let (_uid, account_id, token) = seed_user_with_jwt(&pool).await;
+        let mk = |slug: &str| json!({ "account_id": account_id, "slug": slug, "display_name": slug, "visibility": "network" });
+        let a = ok(&call(&pool, &token, "create_agent", mk("p-a")).await)["id"].clone();
+        let b = ok(&call(&pool, &token, "create_agent", mk("p-b")).await)["id"].clone();
+        let cap = ok(&call(
+            &pool,
+            &token,
+            "publish_capability",
+            json!({ "agent_id": b, "name": "x" }),
+        )
+        .await)["id"]
+            .clone();
+        let fr = ok(&call(
+            &pool,
+            &token,
+            "propose_friendship",
+            json!({ "proposer_agent_id": a, "target_agent_id": b }),
+        )
+        .await)["friendship_id"]
+            .clone();
+        ok(&call(
+            &pool,
+            &token,
+            "accept_friendship",
+            json!({ "friendship_id": fr }),
+        )
+        .await);
+        let grant = |purpose: Value| json!({ "granter_agent_id": b, "grantee_agent_id": a, "capability_id": cap, "purpose": purpose });
+
+        let too_long = call(&pool, &token, "create_grant", grant(json!("x".repeat(501)))).await;
+        assert_eq!(too_long["isError"], json!(true), "{too_long}");
+
+        let created = call(
+            &pool,
+            &token,
+            "create_grant",
+            grant(json!("  Book team dinners  ")),
+        )
+        .await;
+        assert_eq!(ok(&created)["purpose"], json!("Book team dinners"));
     }
 
     #[test]

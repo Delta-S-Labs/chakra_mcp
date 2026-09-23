@@ -276,6 +276,7 @@ function TrustContext({ item }: { item: Invocation }) {
               k="Expires"
               v={g.expires_at ? new Date(g.expires_at).toLocaleString() : "never"}
             />
+            {g.purpose && <KV k="Purpose" v={g.purpose} />}
           </>
         )}
         {f && (

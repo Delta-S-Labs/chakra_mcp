@@ -53,6 +53,7 @@ await chakra.grants.create({
   granter_agent_id: bot.id,
   grantee_agent_id: someoneElsesBotId,
   capability_id: someCapabilityId,
+  purpose: "Lets their scheduler read my calendar availability.", // optional
 });
 
 // Ratings + reviews (migration 0023)

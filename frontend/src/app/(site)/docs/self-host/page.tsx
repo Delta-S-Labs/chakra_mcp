@@ -93,6 +93,18 @@ chakramcp login --network private`}</code>
         <li>
           <code>ADMIN_EMAIL</code>: bootstrap admin account.
         </li>
+        <li>
+          <code>SYSTEM_ONE_CHECKS</code> + <code>TYPESAFE_AI_KEY</code> (+ optional{" "}
+          <code>TYPESAFE_AI_MODEL</code>, default <code>jev-latest</code>) — off by default. When
+          on, every invocation&apos;s input is judged by TypeSafe&apos;s Jev model against the
+          capability, the grant&apos;s purpose, and the friendship, and clear violations (off-purpose
+          requests, prompt injection, data exfiltration) are rejected with a 403. If TypeSafe is
+          unreachable the call goes through and the failure is logged. Env-only; see{" "}
+          <a href="https://github.com/Delta-S-Labs/chakra_mcp/blob/main/docs/system-one-compliance.md">
+            docs/system-one-compliance.md
+          </a>
+          .
+        </li>
       </ul>
       <p>
         The full table (base URLs, survey flag, log filter) lives in{" "}

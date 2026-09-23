@@ -167,6 +167,7 @@ type Grant struct {
 	ExpiresAt            *time.Time   `json:"expires_at"`
 	RevokedAt            *time.Time   `json:"revoked_at"`
 	RevokeReason         *string      `json:"revoke_reason"`
+	Purpose              *string      `json:"purpose"` // why the granter issued it; nil when unset
 	IGranted             bool         `json:"i_granted"`
 	IReceived            bool         `json:"i_received"`
 }
@@ -241,6 +242,9 @@ type GrantContext struct {
 	CapabilityVisibility Visibility  `json:"capability_visibility"`
 	GrantedAt            time.Time   `json:"granted_at"`
 	ExpiresAt            *time.Time  `json:"expires_at"`
+	// Purpose is why the granter issued this grant; nil when unset or
+	// when the relay/snapshot predates grant purposes.
+	Purpose *string `json:"purpose,omitempty"`
 }
 
 // ─── Request bodies ──────────────────────────────────────
@@ -294,6 +298,9 @@ type CreateGrantRequest struct {
 	GranteeAgentID string     `json:"grantee_agent_id"`
 	CapabilityID   string     `json:"capability_id"`
 	ExpiresAt      *time.Time `json:"expires_at,omitempty"`
+	// Purpose is an optional free-text reason the grantee needs access.
+	// The relay trims it (empty becomes null) and caps it at 500 chars.
+	Purpose *string `json:"purpose,omitempty"`
 }
 
 // InvokeRequest carries exactly one of GrantID (trusted path) or

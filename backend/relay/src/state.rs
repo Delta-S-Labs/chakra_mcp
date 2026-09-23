@@ -4,6 +4,7 @@ use sqlx::PgPool;
 
 use chakramcp_shared::config::SharedConfig;
 
+use crate::compliance::ComplianceChecker;
 use crate::limits::RateLimiter;
 
 #[derive(Clone)]
@@ -19,6 +20,10 @@ pub struct RelayState {
     /// true, over-limit calls are actually denied. Set from `LIMITS_ENFORCE`
     /// at startup; tests default to shadow.
     pub limits_enforce: bool,
+    /// System One compliance checker (TypeSafe). `None` = checks off, the
+    /// default; production wiring reads `SYSTEM_ONE_CHECKS` +
+    /// `TYPESAFE_AI_*` via [`ComplianceChecker::from_env`].
+    pub compliance: Option<Arc<ComplianceChecker>>,
 }
 
 impl RelayState {
@@ -31,6 +36,7 @@ impl RelayState {
             config: Arc::new(config),
             rate_limiter: Arc::new(RateLimiter::Noop),
             limits_enforce: false,
+            compliance: None,
         }
     }
 
@@ -44,6 +50,12 @@ impl RelayState {
     /// wiring reads `LIMITS_ENFORCE`.
     pub fn with_limits_enforce(mut self, on: bool) -> Self {
         self.limits_enforce = on;
+        self
+    }
+
+    /// Install (or clear) the System One compliance checker.
+    pub fn with_compliance(mut self, checker: Option<ComplianceChecker>) -> Self {
+        self.compliance = checker.map(Arc::new);
         self
     }
 

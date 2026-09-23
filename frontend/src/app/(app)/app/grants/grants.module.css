@@ -110,6 +110,19 @@
 
 .field { display: grid; gap: 0.3rem; }
 
+/* Full-width row under the selects (purpose textarea); the submit
+   button then drops to the last column of the row after it. */
+.fieldWide { grid-column: 1 / -1; }
+.fields > .create { grid-column: -2 / -1; justify-self: end; }
+
+.fieldHelp {
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+}
+
+.field textarea { resize: vertical; }
+
 .fieldLabel {
   font-family: var(--font-display);
   font-weight: 700;
@@ -326,6 +339,7 @@
 
 @media (max-width: 720px) {
   .fields { grid-template-columns: 1fr; }
+  .fields > .create { grid-column: auto; justify-self: start; }
   .row { grid-template-columns: 1fr; }
   .rowActions { justify-content: flex-start; }
 }

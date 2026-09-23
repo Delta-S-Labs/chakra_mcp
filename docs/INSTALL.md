@@ -338,6 +338,18 @@ the file when both are set:
 | Relay public URL     | `relay_base_url`     | `RELAY_BASE_URL`     | `http://localhost:8090`              |
 | Discovery v2 enabled | `discovery_v2_enabled` | `DISCOVERY_V2`     | `false`                              |
 | Log filter           | `log_filter`         | `RUST_LOG`           | `info,…=debug,sqlx=warn`             |
+| System One checks    | —                    | `SYSTEM_ONE_CHECKS`  | `false`                              |
+| TypeSafe API key     | —                    | `TYPESAFE_AI_KEY`    | unset (required when checks are on)  |
+| TypeSafe model       | —                    | `TYPESAFE_AI_MODEL`  | `jev-latest`                         |
+| TypeSafe base URL    | —                    | `TYPESAFE_AI_BASE_URL` | `https://api.typesafe.ai`          |
+| TypeSafe timeout (ms)| —                    | `TYPESAFE_AI_TIMEOUT_MS` | `2000`                           |
+
+The System One rows are env-only (no TOML key). When
+`SYSTEM_ONE_CHECKS` is on, every invocation's input is judged by
+TypeSafe's Jev model against the capability, the grant's purpose, and
+the friendship, and clear violations are rejected; if TypeSafe is down
+the call is allowed and the failure logged. See
+[`system-one-compliance.md`](./system-one-compliance.md).
 
 The web UI (`frontend/`) isn't bundled into `chakramcp-server`: it
 runs as a separate Next.js process. If you want it, clone the repo

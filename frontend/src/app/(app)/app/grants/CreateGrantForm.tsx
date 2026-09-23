@@ -11,6 +11,8 @@ import {
 } from "@/lib/relay";
 import styles from "./grants.module.css";
 
+const PURPOSE_MAX = 500;
+
 export function CreateGrantForm({
   token,
   myAgents,
@@ -55,6 +57,7 @@ export function CreateGrantForm({
   const [granterId, setGranterId] = useState(granterCandidates[0]?.id ?? "");
   const [granteeId, setGranteeId] = useState("");
   const [capId, setCapId] = useState("");
+  const [purpose, setPurpose] = useState("");
   const [capabilities, setCapabilities] = useState<Capability[]>([]);
   const [loadingCaps, setLoadingCaps] = useState(false);
   const [pending, setPending] = useState(false);
@@ -132,7 +135,9 @@ export function CreateGrantForm({
         granter_agent_id: granterId,
         grantee_agent_id: granteeId,
         capability_id: capId,
+        purpose: purpose.trim() || null,
       });
+      setPurpose("");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't create grant.");
@@ -200,6 +205,21 @@ export function CreateGrantForm({
               ))
             )}
           </select>
+        </label>
+
+        <label className={`${styles.field} ${styles.fieldWide}`}>
+          <span className={styles.fieldLabel}>Purpose (optional)</span>
+          <textarea
+            rows={2}
+            maxLength={PURPOSE_MAX}
+            value={purpose}
+            onChange={(e) => setPurpose(e.target.value)}
+            placeholder="e.g. Lets the billing agent look up invoice status."
+          />
+          <span className={styles.fieldHelp}>
+            Why this agent needs access. Used for System One compliance
+            checks when enabled.
+          </span>
         </label>
 
         <button type="submit" className={styles.create} disabled={pending}>

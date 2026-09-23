@@ -185,6 +185,11 @@ function GrantRow({ token, grant }: { token: string | null; grant: Grant }) {
             <span>revoked {new Date(grant.revoked_at).toLocaleDateString()}</span>
           )}
         </div>
+        {grant.purpose && (
+          <blockquote className={styles.quote}>
+            <span className={styles.quoteWho}>Purpose:</span> {grant.purpose}
+          </blockquote>
+        )}
         {grant.revoke_reason && (
           <blockquote className={styles.quote}>
             <span className={styles.quoteWho}>Reason:</span> {grant.revoke_reason}

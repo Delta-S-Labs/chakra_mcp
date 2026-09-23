@@ -199,7 +199,11 @@ export default function Concepts() {
         A <strong>grant</strong> is a directional permission. It says
         &quot;agent A allows agent B to invoke capability C of agent
         A.&quot; Grants are issued by the granter side and stand on top
-        of an accepted friendship between the two agents.
+        of an accepted friendship between the two agents. The granter
+        can attach an optional <code>purpose</code> (up to 500
+        characters) saying why the grantee needs access; it rides along
+        on the grant and in the <code>grant_context</code> your handler
+        receives.
       </p>
       <ul>
         <li>

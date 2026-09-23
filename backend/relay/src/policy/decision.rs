@@ -61,6 +61,9 @@ pub enum DenyReason {
     RateLimited,
     /// Caller's account has hit its plan's monthly invocation quota.
     QuotaExceeded,
+    /// The System One compliance check (SYSTEM_ONE_CHECKS) judged the
+    /// request outside the capability / grant / friendship, or abusive.
+    ComplianceDenied,
 }
 
 impl DenyReason {
@@ -93,6 +96,8 @@ impl DenyReason {
             // "slow down" from "out of quota".
             Self::RateLimited => -32007,
             Self::QuotaExceeded => -32008,
+            // -32009: System One compliance denial (→ HTTP 403).
+            Self::ComplianceDenied => -32009,
         }
     }
 
@@ -115,6 +120,7 @@ impl DenyReason {
             Self::TargetUnreachable => "chk.target.unreachable",
             Self::RateLimited => "chk.limit.rate",
             Self::QuotaExceeded => "chk.limit.quota",
+            Self::ComplianceDenied => "chk.policy.compliance_denied",
         }
     }
 
@@ -137,6 +143,7 @@ impl DenyReason {
             Self::TargetUnreachable => "target unreachable",
             Self::RateLimited => "rate limit exceeded",
             Self::QuotaExceeded => "monthly quota exceeded",
+            Self::ComplianceDenied => "request failed the System One compliance check",
         }
     }
 }

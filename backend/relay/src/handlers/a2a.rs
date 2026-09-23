@@ -101,13 +101,44 @@ async fn handle_send_message(
                     return internal_error();
                 }
             }
-            let cap_name = match capability_name(&state.db, authz.capability_id).await {
-                Ok(n) => n,
+            let ctx = match compliance_context(&state.db, &authz).await {
+                Ok(c) => c,
                 Err(e) => {
                     tracing::error!(error = %e, "capability lookup failed post-authorization");
                     return internal_error();
                 }
             };
+            // System One compliance (when enabled), judged on the A2A
+            // `params` (the message being sent). Fail-open lives inside
+            // the checker; only an actual violation lands here.
+            if let Some(checker) = state.compliance.as_deref() {
+                let envelope: serde_json::Value =
+                    serde_json::from_slice(&body).unwrap_or(serde_json::Value::Null);
+                let input = envelope.get("params").unwrap_or(&envelope);
+                let subject = crate::compliance::Subject {
+                    capability_name: &ctx.name,
+                    capability_description: Some(ctx.description.as_str())
+                        .filter(|d| !d.trim().is_empty()),
+                    grant_purpose: ctx.grant_purpose.as_deref(),
+                    relationship: Some(crate::compliance::Relationship {
+                        proposer_message: ctx.proposer_message.as_deref(),
+                        response_message: ctx.response_message.as_deref(),
+                    }),
+                    input,
+                };
+                if let crate::compliance::Verdict::Deny { reason, report } =
+                    checker.check(&subject).await
+                {
+                    tracing::info!(
+                        grant_id = %authz.grant_id,
+                        capability = %ctx.name,
+                        %report,
+                        "A2A call denied by System One compliance check"
+                    );
+                    return compliance_deny_response(&reason);
+                }
+            }
+            let cap_name = ctx.name;
             if authz.target_is_push {
                 handle_authorized_push(state, authz, cap_name, body, headers).await
             } else {
@@ -395,17 +426,73 @@ async fn handle_authorized_pull(
     }
 }
 
-async fn capability_name(
+/// What the forwarder + the compliance check need about the authorised
+/// capability, grant and friendship, in one round trip.
+struct ComplianceContext {
+    name: String,
+    description: String,
+    grant_purpose: Option<String>,
+    proposer_message: Option<String>,
+    response_message: Option<String>,
+}
+
+async fn compliance_context(
     db: &sqlx::PgPool,
-    capability_id: uuid::Uuid,
-) -> Result<String, sqlx::Error> {
+    authz: &Authorized,
+) -> Result<ComplianceContext, sqlx::Error> {
     let row = sqlx::query!(
-        "SELECT name FROM agent_capabilities WHERE id = $1",
-        capability_id,
+        r#"
+        SELECT cap.name, cap.description,
+               g.purpose           as "grant_purpose?",
+               f.proposer_message  as "proposer_message?",
+               f.response_message  as "response_message?"
+        FROM agent_capabilities cap
+        LEFT JOIN grants g ON g.id = $2
+        LEFT JOIN LATERAL (
+            SELECT proposer_message, response_message
+            FROM friendships
+            WHERE status = 'accepted'
+              AND ((proposer_agent_id = $3 AND target_agent_id = $4)
+                OR (proposer_agent_id = $4 AND target_agent_id = $3))
+            ORDER BY decided_at DESC
+            LIMIT 1
+        ) f ON true
+        WHERE cap.id = $1
+        "#,
+        authz.capability_id,
+        authz.grant_id,
+        authz.caller_agent_id,
+        authz.target_agent_id,
     )
     .fetch_one(db)
     .await?;
-    Ok(row.name)
+    Ok(ComplianceContext {
+        name: row.name,
+        description: row.description,
+        grant_purpose: row.grant_purpose,
+        proposer_message: row.proposer_message,
+        response_message: row.response_message,
+    })
+}
+
+/// Like [`deny_response`] for `ComplianceDenied`, but carries the
+/// checker's per-question detail in `data.detail`.
+fn compliance_deny_response(detail: &str) -> Response {
+    let reason = DenyReason::ComplianceDenied;
+    (
+        jsonrpc_to_http(reason.jsonrpc_code()),
+        [(header::CONTENT_TYPE, "application/json")],
+        Json(serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": null,
+            "error": {
+                "code": reason.jsonrpc_code(),
+                "message": reason.message(),
+                "data": { "code": reason.data_code(), "detail": detail }
+            }
+        })),
+    )
+        .into_response()
 }
 
 fn internal_error() -> Response {
@@ -468,14 +555,14 @@ fn discovery_disabled() -> Response {
 /// Conventions:
 /// - -32000 (auth missing) → 401
 /// - -32001 (auth invalid) → 401
-/// - -32002 (friendship) / -32003 (grant) → 403
+/// - -32002 (friendship) / -32003 (grant) / -32009 (compliance) → 403
 /// - -32005 (unreachable) → 503
 /// - -32006 (target tombstoned/missing) → 404
 /// - -32007 (rate) / -32008 (quota) → 429
 fn jsonrpc_to_http(code: i32) -> StatusCode {
     match code {
         -32000 | -32001 => StatusCode::UNAUTHORIZED,
-        -32002 | -32003 => StatusCode::FORBIDDEN,
+        -32002 | -32003 | -32009 => StatusCode::FORBIDDEN,
         -32005 => StatusCode::SERVICE_UNAVAILABLE,
         -32006 => StatusCode::NOT_FOUND,
         -32007 | -32008 => StatusCode::TOO_MANY_REQUESTS,
@@ -913,7 +1000,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri(&path_for(&f))
+                    .uri(path_for(&f))
                     .header(
                         header::AUTHORIZATION,
                         format!("Bearer {}", f.api_key_plaintext),
@@ -953,6 +1040,42 @@ mod tests {
         // existing `inbox.serve()` handler sees the same shape it
         // always saw (backward compat with v0.1.0 SDK contract).
         assert_eq!(row.input_preview, Some(serde_json::json!({"text": "hi"})));
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn deny_compliance_check(pool: PgPool) {
+        use crate::compliance::{questions, test_support};
+        let f = seed_full_fixture(&pool).await;
+        let mut fake = test_support::Fake::default();
+        fake.nouls.insert(questions::DATA_EXFILTRATION, 0.9);
+        let url = test_support::serve(fake.clone()).await;
+        let state = crate::state::RelayState::new(pool.clone(), config_v2_on())
+            .with_compliance(Some(test_support::checker(&url)));
+
+        let res = crate::router(state)
+            .oneshot(a2a_send_request(&f))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        let body = parse_body(res).await;
+        assert_eq!(body["error"]["code"], -32009);
+        assert_eq!(
+            body["error"]["data"]["code"],
+            "chk.policy.compliance_denied"
+        );
+        assert!(body["error"]["data"]["detail"]
+            .as_str()
+            .unwrap()
+            .contains("data_exfiltration"));
+
+        // Nothing was parked, and the model judged the SendMessage params.
+        let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM relay_invocations")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(n, 0);
+        let sent = fake.last_body.lock().unwrap().clone().unwrap();
+        assert!(sent["state"]["request"]["input"].is_object(), "{sent}");
     }
 
     // ─── Usage limits (PR3a) ─────────────────────────────────
@@ -1534,7 +1657,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri(&path_for(&f))
+                    .uri(path_for(&f))
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(
                         header::AUTHORIZATION,
