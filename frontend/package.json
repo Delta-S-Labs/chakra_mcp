@@ -21,14 +21,14 @@
     "next-auth": "5.0.0-beta.32",
     "posthog-js": "^1.415.1",
     "qrcode": "^1.5.4",
-    "react": "19.2.8",
-    "react-dom": "19.2.8",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
     "react-google-recaptcha": "^3.1.0",
     "recharts": "^3.10.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
-    "@types/node": "^26",
+    "@types/node": "^26.6.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/react-google-recaptcha": "^2.1.9",
