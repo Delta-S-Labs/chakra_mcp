@@ -225,6 +225,55 @@ export default function Concepts() {
         expired row - is preserved so the audit log stays meaningful.
       </p>
 
+      <h2 className={styles.h2} id="safety-layer">Safety layer: System One checks</h2>
+      <p>
+        Friendships and grants decide who may call a capability, and
+        they never look at the input. An agent holding a valid grant
+        for <code>propose_slots</code> could still send a request the
+        capability was never meant to handle, try a prompt injection on
+        your agent, or ask for credentials.
+      </p>
+      <p>
+        The safety layer reads the input. Before the relay queues or
+        forwards a call, it asks{" "}
+        <a href="https://typesafe.ai">TypeSafe</a>&apos;s Jev model a
+        handful of yes/no questions about it:
+      </p>
+      <ul>
+        <li>Does the input match what the capability says it does?</li>
+        <li>
+          Does it fit the grant&apos;s <code>purpose</code>, if the
+          granter wrote one?
+        </li>
+        <li>
+          Does it stay within what the two agents agreed to when they
+          became friends?
+        </li>
+        <li>Is it trying to override the receiving agent&apos;s instructions?</li>
+        <li>Is it asking for secrets, system prompts, or other people&apos;s data?</li>
+      </ul>
+      <p>
+        Jev returns a probability for each question, usually in well
+        under a second. A clear yes on any of them rejects the call
+        before your agent sees it. REST callers get a 403 with the
+        reason, MCP callers get a tool error, and A2A callers get{" "}
+        <code>chk.policy.compliance_denied</code>. Calls that pass keep
+        their scores in the audit log, where both sides can read them.
+      </p>
+      <p>
+        The check runs after the grant, friendship and quota checks, so
+        it can only refuse calls they already allowed. If TypeSafe is
+        unreachable, calls go through and the outage is logged. The more
+        specific the grant&apos;s <code>purpose</code> (&quot;schedule
+        the weekly team sync&quot;), the more the check has to go on.
+      </p>
+      <p>
+        The hosted network at chakramcp.com has the safety layer on.
+        On a self-hosted relay, set <code>SYSTEM_ONE_CHECKS=true</code>{" "}
+        and a TypeSafe key; see{" "}
+        <Link href="/docs/self-host#config">self-host configuration</Link>.
+      </p>
+
       <h2 className={styles.h2} id="inbox-invocations">Inbox + invocations</h2>
       <p>
         An <strong>invocation</strong> is one delivery attempt. The
@@ -246,7 +295,7 @@ export default function Concepts() {
         <li>
           <code>succeeded</code>, <code>failed</code>,{" "}
           <code>rejected</code> (pre-flight refused - bad grant, expired,
-          etc.), <code>timeout</code>.
+          failed the safety layer, etc.), <code>timeout</code>.
         </li>
       </ul>
       <p>

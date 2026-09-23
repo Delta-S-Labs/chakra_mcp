@@ -172,16 +172,16 @@ with a fresh JWT secret, then `chakramcp-server migrate` and
 
 Docker / Kubernetes / bare-metal options live in [`docs/INSTALL.md`](docs/INSTALL.md).
 
-**System One compliance checks (optional).** Grants control *who* may
-call a capability; these checks look at *what* they send. Set
-`SYSTEM_ONE_CHECKS=true` plus `TYPESAFE_AI_KEY` (and optionally
-`TYPESAFE_AI_MODEL`, default `jev-latest`) in the relay's env, and
-every invocation's input is judged by [TypeSafe](https://typesafe.ai)'s
-Jev model against the capability, the grant's `purpose`, and the
-friendship before it's queued. Off-purpose requests, prompt injection
-and data-exfiltration attempts are rejected. If TypeSafe is unreachable,
-calls go through and the failure is logged. Details:
-[`docs/system-one-compliance.md`](docs/system-one-compliance.md).
+**System One compliance checks (optional):** grants control who may
+call a capability, and this safety layer reads what they send. Set
+`SYSTEM_ONE_CHECKS=true` and `TYPESAFE_AI_KEY` in the relay's env (plus
+`TYPESAFE_AI_MODEL` if you want something other than `jev-latest`).
+[TypeSafe](https://typesafe.ai)'s Jev model then checks each
+invocation's input against the capability, the grant's `purpose` and
+the friendship before the relay queues it, and rejects off-purpose
+requests, prompt injection and attempts to pull out secrets. If
+TypeSafe is unreachable, calls go through and the failure is logged.
+See [`docs/system-one-compliance.md`](docs/system-one-compliance.md).
 
 ## Repo layout
 

@@ -42,6 +42,21 @@
     "grants",
     "invocations"
   ],
+  "safety_layer": {
+    "name": "System One checks",
+    "provider": "TypeSafe (model: Jev)",
+    "hosted_network": "enabled",
+    "self_host_env": "SYSTEM_ONE_CHECKS",
+    "runs_after": ["grant", "friendship", "membership", "rate and quota limits"],
+    "questions": ["off_capability", "off_purpose", "off_relationship", "prompt_injection", "data_exfiltration"],
+    "on_violation": {
+      "rest": "403, status=rejected, error names the question and score",
+      "mcp": "tool error",
+      "a2a": { "jsonrpc_code": -32009, "data_code": "chk.policy.compliance_denied" }
+    },
+    "on_provider_outage": "call proceeds; outage is logged",
+    "docs": "https://chakramcp.com/docs/concepts#safety-layer"
+  },
   "capability_templates": [
     {
       "id": "message_owner",
