@@ -5,6 +5,7 @@ use sqlx::PgPool;
 use chakramcp_shared::config::SharedConfig;
 
 use crate::compliance::ComplianceChecker;
+use crate::events::UsageRecorder;
 use crate::limits::RateLimiter;
 
 #[derive(Clone)]
@@ -24,6 +25,10 @@ pub struct RelayState {
     /// default; production wiring reads `SYSTEM_ONE_CHECKS` +
     /// `TYPESAFE_AI_*` via [`ComplianceChecker::from_env`].
     pub compliance: Option<Arc<ComplianceChecker>>,
+    /// Usage-event recorder. Records nothing by default; production attaches
+    /// one via [`RelayState::with_usage_recorder`] whose background writer
+    /// does the DB work, so no request waits on usage metering.
+    pub usage: UsageRecorder,
 }
 
 impl RelayState {
@@ -37,6 +42,7 @@ impl RelayState {
             rate_limiter: Arc::new(RateLimiter::Noop),
             limits_enforce: false,
             compliance: None,
+            usage: UsageRecorder::noop(),
         }
     }
 
@@ -50,6 +56,12 @@ impl RelayState {
     /// wiring reads `LIMITS_ENFORCE`.
     pub fn with_limits_enforce(mut self, on: bool) -> Self {
         self.limits_enforce = on;
+        self
+    }
+
+    /// Attach the usage recorder (production: [`UsageRecorder::spawn`]).
+    pub fn with_usage_recorder(mut self, recorder: UsageRecorder) -> Self {
+        self.usage = recorder;
         self
     }
 

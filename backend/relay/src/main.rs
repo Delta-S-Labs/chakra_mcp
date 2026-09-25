@@ -52,6 +52,9 @@ async fn main() -> Result<()> {
             env::var("LIMITS_ENFORCE").ok().as_deref(),
         ))
         .with_compliance(chakramcp_relay::compliance::ComplianceChecker::from_env());
+    // Usage metering runs on a background writer so requests never wait on it.
+    let usage = chakramcp_relay::events::UsageRecorder::spawn(state.clone());
+    let state = state.with_usage_recorder(usage);
     let app = router(state);
 
     let port: u16 = env::var("RELAY_PORT")

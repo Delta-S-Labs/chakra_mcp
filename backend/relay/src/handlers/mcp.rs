@@ -573,19 +573,18 @@ async fn call_tool(state: &RelayState, user: &AuthUser, params: Value) -> Result
         }
     };
 
-    // Meter every MCP tool call (reads + writes) for billing. Audit for
-    // write tools is recorded inside each tool impl / bridged REST handler.
-    crate::events::record_usage(
-        &state.db,
-        Some(user),
-        None,
-        "mcp",
-        &format!("mcp:{tool}"),
-        "MCP",
-        &tool,
-        if ok { 200 } else { 400 },
-    )
-    .await;
+    // Meter every MCP tool call (reads + writes). Queued for the background
+    // writer, so the response never waits on it. Audit for write tools is
+    // recorded inside each tool impl / bridged REST handler.
+    state.usage.record(crate::events::UsageEvent {
+        actor: crate::events::UsageActor::User(user.clone()),
+        account_id: None,
+        surface: "mcp",
+        action: format!("mcp:{tool}"),
+        method: "MCP".to_owned(),
+        route: tool.to_string(),
+        status_code: if ok { 200 } else { 400 },
+    });
 
     Ok(envelope)
 }
@@ -1713,8 +1712,17 @@ mod manage_agents_tests {
     }
 
     /// POST a tools/call to /mcp and return the parsed JSON-RPC `result`.
+    /// State whose usage recorder has a live background writer, so tests can
+    /// assert on `usage_events` after a `flush`.
+    fn recording_state(pool: &PgPool) -> crate::state::RelayState {
+        let state = crate::state::RelayState::new(pool.clone(), config());
+        let usage = crate::events::UsageRecorder::spawn(state.clone());
+        state.with_usage_recorder(usage)
+    }
+
     async fn call(pool: &PgPool, token: &str, name: &str, arguments: Value) -> Value {
-        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        let state = recording_state(pool);
+        let app = crate::router(state.clone());
         let res = app
             .oneshot(
                 Request::builder()
@@ -1738,7 +1746,38 @@ mod manage_agents_tests {
         assert!(res.status().is_success(), "http {}", res.status());
         let body: Value =
             serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        // Usage is written off the request path; wait for it so callers can
+        // assert on `usage_events`.
+        state.usage.flush().await;
         body["result"].clone()
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn rest_usage_is_attributed_off_the_request_path(pool: PgPool) {
+        let (uid, _account_id, token) = seed_user_with_jwt(&pool).await;
+        let state = recording_state(&pool);
+        let res = crate::router(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/audit")
+                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(res.status().is_success(), "http {}", res.status());
+        state.usage.flush().await;
+
+        // The middleware queued only the raw header; the writer resolved it.
+        let actor = sqlx::query_scalar::<_, Option<Uuid>>(
+            "SELECT actor_user_id FROM usage_events WHERE surface = 'rest' AND route = '/v1/audit'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(actor, Some(uid));
     }
 
     #[sqlx::test(migrations = "../migrations")]

@@ -29,42 +29,44 @@ pub use state::RelayState;
 /// request (every GET/POST/PATCH/DELETE), attributed to the caller. The
 /// `/mcp` endpoint meters per-tool inside its dispatcher instead, and
 /// health/well-known probes are skipped as noise.
+///
+/// Adds no waiting to the request: it doesn't authenticate the caller (the
+/// raw `Authorization` header is resolved later by the background writer)
+/// and doesn't await the INSERT — `record` is a non-blocking channel send.
 async fn usage_middleware(State(state): State<RelayState>, req: Request, next: Next) -> Response {
-    let method = req.method().as_str().to_owned();
     let route = req
         .extensions()
         .get::<MatchedPath>()
         .map(|m| m.as_str().to_owned())
         .unwrap_or_else(|| req.uri().path().to_owned());
-    let actor = {
-        let header = req
-            .headers()
-            .get(AUTHORIZATION)
-            .and_then(|v| v.to_str().ok());
-        auth::authenticate(&state, header).await
-    };
-
-    let resp = next.run(req).await;
-
     let skip = route == "/mcp"
         || route.starts_with("/healthz")
         || route.starts_with("/readyz")
         || route.starts_with("/.well-known");
-    if !skip {
-        let status = resp.status().as_u16() as i32;
-        let action = format!("{method} {route}");
-        events::record_usage(
-            &state.db,
-            actor.as_ref(),
-            None,
-            "rest",
-            &action,
-            &method,
-            &route,
-            status,
-        )
-        .await;
+    if skip {
+        return next.run(req).await;
     }
+
+    let method = req.method().as_str().to_owned();
+    let actor = req
+        .headers()
+        .get(AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .map_or(events::UsageActor::Anonymous, |h| {
+            events::UsageActor::Header(h.to_owned())
+        });
+
+    let resp = next.run(req).await;
+
+    state.usage.record(events::UsageEvent {
+        actor,
+        account_id: None,
+        surface: "rest",
+        action: format!("{method} {route}"),
+        method,
+        route,
+        status_code: i32::from(resp.status().as_u16()),
+    });
     resp
 }
 
