@@ -202,6 +202,9 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
             std::env::var("LIMITS_ENFORCE").ok().as_deref(),
         ))
         .with_compliance(chakramcp_relay::compliance::ComplianceChecker::from_env());
+    // Usage metering runs on a background writer so requests never wait on it.
+    let usage = chakramcp_relay::events::UsageRecorder::spawn(relay_state.clone());
+    let relay_state = relay_state.with_usage_recorder(usage);
 
     let app = app_router(app_state);
     let relay = relay_router(relay_state);
