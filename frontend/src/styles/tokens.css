@@ -1,6 +1,6 @@
 /* ChakraMCP - colors & type */
 /* Load fonts from Google Fonts (Archivo Expanded + Afacad) */
-@import url('https://fonts.googleapis.com/css2?family=Afacad:wght@400;500;600;700&family=Archivo+Expanded:wght@500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Afacad:wght@400;500;600;700&family=Archivo+Expanded:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
   /* --- Type families --- */

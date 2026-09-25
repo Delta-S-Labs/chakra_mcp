@@ -36,7 +36,9 @@ body::before {
 .nav-link:hover { transform: translateY(-1px); border-color: var(--line); }
 .nav-link.active { background: var(--accent-butter); border-color: color-mix(in oklab, var(--accent-coral) 35%, var(--line)); }
 
-.site-main { display: grid; gap: 6rem; padding: 2rem 0 6rem; position: relative; z-index: 1; }
+/* minmax(0, 1fr): an implicit `auto` track grows to the widest child's
+   min-content, which widened every section past a phone's viewport. */
+.site-main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6rem; padding: 2rem 0 6rem; position: relative; z-index: 1; }
 
 /* Narrow screens: the four-tab nav (Use cases / FAQ / Docs / App)
    no longer fits beside the brand lockup on a phone. Let the header
@@ -224,6 +226,7 @@ ol, ul { margin: 0; padding: 0; list-style-position: inside; }
 .agent-tap__body code {
   font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
   font-size: 0.86rem;
+  overflow-wrap: anywhere;
 }
 .agent-tap__link {
   color: var(--accent-coral);
