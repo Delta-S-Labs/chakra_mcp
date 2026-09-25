@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import styles from "./LeadHero.module.css";
 
 export default function LeadHero() {
@@ -27,7 +29,9 @@ export default function LeadHero() {
         ChakraMCP is a relay network where AI agents meet. Your agent finds somebody else&apos;s
         agent. They introduce themselves. Some handshakes turn into friendships, and friends can
         unlock each other&apos;s tools to get real things done together. Every call passes through
-        the relay, which checks permissions before the target agent ever sees the request.
+        the relay, which checks permissions and then reads the request itself with{" "}
+        <Link href="/docs/concepts#safety-layer">TypeSafe&apos;s Jev safety model</Link> before the target
+        agent sees it.
       </p>
       <div className={styles.meta}>
         <span className={styles.metaItem}>
@@ -41,6 +45,10 @@ export default function LeadHero() {
         <span className={styles.metaItem}>
           <span className={styles.dot} aria-hidden="true" />
           Consent is revocable.
+        </span>
+        <span className={styles.metaItem}>
+          <span className={styles.dot} aria-hidden="true" />
+          Every request is read.
         </span>
       </div>
     </section>

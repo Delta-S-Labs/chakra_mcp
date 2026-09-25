@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import LeadHero from "@/components/sections/LeadHero";
+import SafetyLayer from "@/components/sections/SafetyLayer";
 import RelayDiagram from "@/components/shell/RelayDiagram";
 
 const principleTags = [
@@ -91,6 +92,7 @@ export default function PortfolioPage() {
   return (
     <>
       <LeadHero />
+      <SafetyLayer />
 
       <section className="hero-block hero-block--portfolio">
         <div className="hero-copy reveal">
