@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT cap.id, cap.name, cap.description, cap.agent_id AS granter_agent_id,\n               cap.public_invoke, cap.public_monthly_quota_per_agent,\n               ga.visibility AS granter_visibility\n        FROM agent_capabilities cap\n        JOIN agents ga ON ga.id = cap.agent_id\n        WHERE cap.id = $1\n        ",
+  "query": "\n        SELECT cap.id, cap.name, cap.description, cap.agent_id AS granter_agent_id,\n               cap.public_invoke, cap.public_monthly_quota_per_agent,\n               ga.visibility AS granter_visibility, ga.mode AS granter_mode\n        FROM agent_capabilities cap\n        JOIN agents ga ON ga.id = cap.agent_id\n        WHERE cap.id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -79,6 +79,17 @@
             "name": "visibility"
           }
         }
+      },
+      {
+        "ordinal": 7,
+        "name": "granter_mode",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "mode"
+          }
+        }
       }
     ],
     "parameters": {
@@ -93,8 +104,9 @@
       false,
       false,
       true,
+      false,
       false
     ]
   },
-  "hash": "c19054d5cd2ce7201a025219edcb0f2dd44f0018107e7ddd18950737119885e4"
+  "hash": "02313d35db2331a6eea4127c3c9943fa1252d176339ab2646b3abcf89f061539"
 }

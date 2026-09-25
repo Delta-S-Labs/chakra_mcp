@@ -42,9 +42,10 @@
 //!   caller's side and shapes it as an A2A Task. The same row is
 //!   both an "Invocation" (legacy poll) and a "Task" (A2A poll).
 //! - `forwarder::forward_push` (D5b) writes a terminal-status row
-//!   directly. v0.1.0 SDKs invoking via `/v1/invoke` against push
-//!   targets currently see a pending row that no one delivers —
-//!   push agents are reached only via the new A2A endpoint in v1.
+//!   directly. Push agents are reached only via the A2A endpoint, so
+//!   `/v1/invoke` (and the MCP `invoke` tool, which shares the trusted
+//!   path) refuse push targets with a 409 up front rather than parking a
+//!   row no one would ever deliver.
 //!   The scheduler-demo (and every v0.1.0 SDK use case to date)
 //!   targets pull-mode agents and is unaffected.
 //!
@@ -312,6 +313,12 @@ async fn store_rejection_report(db: &PgPool, id: Uuid, report: Value) -> Result<
     Ok(())
 }
 
+/// Refusal for queued invocations aimed at push-mode agents (trusted and
+/// public paths). Push agents take calls on their A2A endpoint; a queued
+/// row would sit `pending` forever.
+const PUSH_TARGET_ERROR: &str = "target agent is push-mode: it takes calls on its A2A endpoint \
+     (POST /agents/<account>/<slug>/a2a/jsonrpc), not as queued invocations";
+
 /// Capability descriptions default to `''`; treat blank as absent so the
 /// capability-fit question only runs when there's something to fit.
 fn nonblank(s: &str) -> Option<&str> {
@@ -465,6 +472,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
             g.granter_agent_id, g.grantee_agent_id, g.capability_id,
             g.expires_at, g.granted_at, g.purpose as grant_purpose,
             ga.account_id as granter_account_id,
+            ga.mode as granter_mode,
             ea.account_id as grantee_account_id,
             cap.name as capability_name,
             cap.visibility as capability_visibility,
@@ -564,6 +572,14 @@ pub(crate) async fn authorize_and_enqueue_trusted(
             "no accepted friendship between the granter and grantee agents".into(),
         )
         .await;
+    }
+
+    // This path only queues work for the granter to pull from its inbox. A
+    // push-mode agent never polls an inbox — it's reached through its A2A
+    // endpoint — so a queued row would never be delivered. Refuse up front,
+    // before usage limits or compliance spend anything on it.
+    if row.granter_mode == "push" {
+        return reject(StatusCode::CONFLICT, PUSH_TARGET_ERROR.into()).await;
     }
 
     // Per-account usage limits (rate + monthly quota), keyed on the caller's
@@ -707,7 +723,7 @@ async fn invoke_public(
         r#"
         SELECT cap.id, cap.name, cap.description, cap.agent_id AS granter_agent_id,
                cap.public_invoke, cap.public_monthly_quota_per_agent,
-               ga.visibility AS granter_visibility
+               ga.visibility AS granter_visibility, ga.mode AS granter_mode
         FROM agent_capabilities cap
         JOIN agents ga ON ga.id = cap.agent_id
         WHERE cap.id = $1
@@ -749,6 +765,12 @@ async fn invoke_public(
         return Err(ApiError::InvalidRequest(
             "cannot invoke your own agent's capability via the public path".into(),
         ));
+    }
+
+    // Public invokes are queued for the owner to pull too, so a push-mode
+    // owner would never receive them (see the trusted path).
+    if cap.granter_mode == "push" {
+        return Err(ApiError::Conflict(PUSH_TARGET_ERROR.into()));
     }
 
     // Per-invoker monthly quota. Calendar month (resets on the 1st).
@@ -1702,6 +1724,54 @@ mod legacy_v01_contract_tests {
     /// + `chakramcp.AsyncChakraMCP.inbox.serve` do at the wire level.
     /// If this test passes, the scheduler-demo passes.
     #[sqlx::test(migrations = "../migrations")]
+    async fn invoke_to_push_agent_is_refused_not_parked(pool: PgPool) {
+        let f = seed_demo(&pool).await;
+        // Flip the granter to push mode (the CHECK requires a card URL).
+        sqlx::query(
+            "UPDATE agents SET mode = 'push', agent_card_url = 'https://push.example/card' WHERE id = $1",
+        )
+        .bind(f.granter_agent_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/invoke")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, format!("Bearer {}", f.caller_token))
+                    .body(Body::from(
+                        serde_json::to_vec(&serde_json::json!({
+                            "grant_id": f.grant_id,
+                            "grantee_agent_id": f.grantee_agent_id,
+                            "input": {"duration_min": 30}
+                        }))
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CONFLICT);
+        let body: serde_json::Value =
+            serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        assert_eq!(body["status"], "rejected");
+        assert!(body["error"].as_str().unwrap().contains("push-mode"));
+
+        // Recorded as rejected (auditable, never charged); nothing parked.
+        let statuses: Vec<String> =
+            sqlx::query_scalar("SELECT status FROM relay_invocations WHERE grant_id = $1")
+                .bind(f.grant_id)
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(statuses, vec!["rejected".to_owned()]);
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
     async fn v01_pull_mode_full_lifecycle(pool: PgPool) {
         let f = seed_demo(&pool).await;
         let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
@@ -2392,6 +2462,40 @@ mod public_invoke_tests {
     /// Happy path. Non-friend invokes a public_invoke=true capability →
     /// 202, row written with grant_id=NULL + correct grantee/granter +
     /// status=pending.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn public_invoke_to_push_agent_is_refused(pool: PgPool) {
+        let f = seed_public(&pool, 5, false).await;
+        sqlx::query(
+            "UPDATE agents SET mode = 'push', agent_card_url = 'https://push.example/card' WHERE id = $1",
+        )
+        .bind(f.granter_agent)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        let res = app
+            .oneshot(invoke_req(
+                &f.invoker_token,
+                serde_json::json!({
+                    "capability_id": f.public_cap,
+                    "grantee_agent_id": f.invoker_agent,
+                    "input": {"hi": 1}
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CONFLICT);
+
+        let rows: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM relay_invocations WHERE capability_id = $1")
+                .bind(f.public_cap)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(rows, 0, "a refused public invoke writes no row");
+    }
+
     #[sqlx::test(migrations = "../migrations")]
     async fn public_invoke_enqueues_with_null_grant(pool: PgPool) {
         let f = seed_public(&pool, 5, false).await;
