@@ -116,7 +116,8 @@ ALTER TABLE accounts
 
 ```sql
 CREATE TABLE credit_ledger (
-    id              UUID        PRIMARY KEY,
+    id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),  -- pgcrypto (migration 0001); lets every insert (migration seed + runtime settle) omit id
+
     account_id      UUID        NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
     delta_mc        BIGINT      NOT NULL,          -- signed; +grant/+purchase, −refund/−adjustment
     reason          TEXT        NOT NULL CHECK (reason IN
@@ -214,11 +215,17 @@ Module rework (relay `src/limits/`):
   `forwarder::persist_invocation`, `inbox_bridge::park`, `invoke_trusted`,
   `invoke_public`, `mcp::invoke`.
 
-Error codes (rename from quota → credits):
-- `DenyReason::QuotaExceeded` → `InsufficientCredits`: keep jsonrpc `-32008`,
+Error codes (rename from quota → credits) — **per-surface mapping is unchanged, only the variant/code/message rename**:
+- **A2A:** `DenyReason::QuotaExceeded` → `InsufficientCredits`: keep jsonrpc
+  `-32008` (so the existing `-32007 | -32008 => TOO_MANY_REQUESTS` arm in the real
+  `jsonrpc_to_http` needs no change — avoids the historical wrong-match footgun),
   data code `chk.limit.credits`, message "insufficient credits".
-- `ApiError::QuotaExceeded` → `InsufficientCredits`: 429, code
-  `account_credits_exhausted`. `RateLimited` unchanged.
+- **`/v1/invoke`:** `ApiError::QuotaExceeded` → `InsufficientCredits`: 429, code
+  `account_credits_exhausted`.
+- **MCP:** unchanged mapping — `mcp.rs` returns a JSON-RPC `ERR_INVALID_REQUEST`
+  (a client-side "back off" error, **not** a 429) carrying the new "insufficient
+  credits" message. Only the message/variant changes here.
+- `RateLimited` unchanged.
 
 ## Config (env, per-account overridable)
 
@@ -274,8 +281,10 @@ accounting via `limit.would_block` logs, then re-enable — before deploy 2.
 - **`enforce`:** shadow vs enforce with credits at a representative surface;
   `limit.would_block` shape.
 - **Four surfaces:** port the existing quota tests to credits (A2A push/pull,
-  `/v1/invoke` trusted/public, MCP) — assert balance decremented by `cost_mc`,
-  exhausted → 429 with the new codes.
+  `/v1/invoke` trusted/public, MCP) — assert balance decremented by `cost_mc`, and
+  exhausted-account denial per surface: A2A + `/v1/invoke` → **429**
+  (`account_credits_exhausted`); MCP → **JSON-RPC `ERR_INVALID_REQUEST`** with the
+  "insufficient credits" message (not 429).
 - **Migration:** expand backfill correctness (balance/ledger/rate limit seeded);
   expand keeps old tables; contract drops them; a fresh DB migrates cleanly end
   to end.
