@@ -10,11 +10,13 @@ in-memory switches; everything else runs in parallel.
 
 | # | PR | Deploy | Depends on |
 |----|----|----|----|
-| 1 | **PR-A** — usage middleware off the hot path | yes | — |
-| 2 | **PR-B** — reject legacy `/v1/invoke` to push-mode agents | yes | — |
-| 3 | **PR1** — expand migration `0033` | yes (migration) | prod guard query = 0 |
+| 1 | **PR-A** — usage middleware off the hot path | ✅ shipped (#323) | — |
+| 2 | **PR-B** — refuse queued invocations to push-mode agents | ✅ shipped (#324) | — |
+| 3 | **PR1** — expand migration `0034` | yes (migration) | prod guard = 0 (confirmed 2026-09-26) |
 | 4 | **PR2** — swap to async credits | yes (binary only) | PR1 live |
-| 5 | **PR3** — contract migration `0034` | yes (migration, must succeed) | PR2 live |
+| 5 | **PR3** — contract migration `0035` | yes (migration, must succeed) | PR2 live |
+
+(`0033` is #312's `grant_purpose`, which landed after this plan was first drafted.)
 
 ⚠️ **One merge at a time.** CD's concurrency group drops a middle deploy on a burst.
 After each merge, confirm the commit's CD run exists and `Restart relay` + `Probe
@@ -26,7 +28,7 @@ Never revert a migration file; revert code.
 
 ---
 
-## PR-A — Usage middleware off the hot path
+## PR-A — Usage middleware off the hot path — ✅ shipped ([#323](https://github.com/Delta-S-Labs/chakra_mcp/pull/323))
 
 **Problem.** Every relay REST request (A2A, `/v1/invoke`, …) re-authenticates the
 caller in `usage_middleware` *before* the handler (a DB query: revocation check or
@@ -65,7 +67,7 @@ MCP traffic.
 
 ---
 
-## PR-B — Reject legacy `/v1/invoke` to push-mode agents
+## PR-B — Refuse queued invocations to push-mode agents — ✅ shipped ([#324](https://github.com/Delta-S-Labs/chakra_mcp/pull/324))
 
 **Problem.** `invoke.rs:44-47`: v0.1 SDKs invoking a **push-mode** target via
 `/v1/invoke` get a `pending` row no one ever delivers. Under credits it would be
@@ -86,7 +88,7 @@ unchanged (the `legacy_v01_contract_tests` stay green).
 **Before merging:** run against prod and confirm `0`:
 `SELECT count(*) FROM accounts a JOIN plans p ON p.id = a.plan_id WHERE p.name <> 'free';`
 
-**File:** `backend/migrations/0033_credits_expand.sql`
+**File:** `backend/migrations/0034_credits_expand.sql`
 1. `SET LOCAL lock_timeout = '5s';`
 2. Guard: `DO $$ … RAISE EXCEPTION … $$` if any account is on a non-free plan.
 3. Create `credit_wallets` (+ period index), `credit_ledger` (+ indexes, purchase
@@ -95,8 +97,8 @@ unchanged (the `legacy_v01_contract_tests` stay green).
 - Touches neither `relay_invocations` nor `accounts`. No backfill.
 
 **Tests:** the guard test — `#[sqlx::test(migrations = false)]`,
-`Migrator::run_to(32)`, seed a `pro` account with runtime `sqlx::query`, assert
-`run_to(33)` fails; then the clean path succeeds and all four tables exist. Runtime
+`Migrator::run_to(33)`, seed a `pro` account with runtime `sqlx::query`, assert
+`run_to(34)` fails; then the clean path succeeds and all four tables exist. Runtime
 queries keep `.sqlx` unchanged.
 
 **Done when:** deploy green; the four tables exist in prod; old enforcement still works.
@@ -121,11 +123,12 @@ queries keep `.sqlx` unchanged.
 - `relay/src/state.rs` — cache + `CreditsConfig` via builders (defaults in `new`).
 - `relay/src/main.rs`, `server/src/main.rs` — parse + validate config, run one
   refresh **before serving**, spawn the supervised worker.
-- Enforce call sites: `handlers/a2a.rs:79`, `handlers/invoke.rs:478` and `:675`,
-  `handlers/mcp.rs:936`.
-- Write sites — replace `BEGIN` → INSERT → `quota::increment` → `COMMIT` with the
-  single enqueueing statement: `forwarder.rs:230-259`, `inbox_bridge.rs:129-152`,
-  `handlers/invoke.rs:532-556` and `:692-714`, `handlers/mcp.rs:957-980`.
+- Enforce call sites (3): `handlers/a2a.rs:79`, `handlers/invoke.rs:588` (trusted —
+  also serves the MCP `invoke` tool since #312) and `:817` (public).
+- Write sites (4) — replace `BEGIN` → INSERT → `quota::increment` → `COMMIT` with
+  the single enqueueing statement: `forwarder.rs:230-259`, `inbox_bridge.rs:129-152`,
+  `handlers/invoke.rs:675-699` (trusted) and `:875-898` (public).
+  _Line numbers as of 2026-09-26; re-verify at implementation._
 - Renames: `policy/decision.rs`, `shared/src/error.rs`, `mcp.rs:156`,
   `a2a.rs:92`; tests in `a2a.rs` (`:1025` string; `:1024`'s `-32008` stays; drop the
   `usage_counters` helpers at `:962`/`:1037`), `invoke.rs` (`:2267`, `:2230`).
@@ -134,7 +137,7 @@ queries keep `.sqlx` unchanged.
 - `backend/.sqlx/**` — regenerate.
 
 **Tests:** per the spec's Testing section (charge, grant, switch/refresh,
-supervision/config, enforce, five sites, invariant, live Redis).
+supervision/config, enforce, four sites, invariant, live Redis).
 
 **Rollout:** optional — set `LIMITS_ENFORCE=false` before merging, watch the tick
 logs, re-enable. Release note: `chk.limit.credits` / `account_credits_exhausted`
@@ -147,13 +150,13 @@ created and granted as accounts invoke, and an exhausted test account is denied.
 
 ## PR3 — Contract migration
 
-**File:** `backend/migrations/0034_credits_contract.sql` — drop `accounts.plan_id`,
+**File:** `backend/migrations/0035_credits_contract.sql` — drop `accounts.plan_id`,
 `plans`, `usage_counters`.
 
 **Must-succeed:** once applied, the PR2 binary can no longer boot. Merge only with PR2
 live and healthy.
 
-**Tests:** a fresh DB migrates `0001..0034` cleanly; full suite green; `.sqlx`
+**Tests:** a fresh DB migrates `0001..0035` cleanly; full suite green; `.sqlx`
 unchanged.
 
 ---

@@ -187,9 +187,11 @@ granted (the ledger invariant holds universally), but never blocked.
   |----|----|----|
   | `forwarder::persist_invocation` | A2A push | `authz.caller_account_id` |
   | `inbox_bridge::park` | A2A pull | `authz.caller_account_id` |
-  | `invoke_trusted` | `/v1/invoke` | `row.grantee_account_id` |
-  | `invoke_public` | `/v1/invoke` | `invoker.account_id` |
-  | `mcp::invoke` | MCP | `row.grantee_account_id` |
+  | `authorize_and_enqueue_trusted` | `/v1/invoke` (grant) **and** the MCP `invoke` tool | `row.grantee_account_id` |
+  | `invoke_public` | `/v1/invoke` (public capability) | `invoker.account_id` |
+
+  (Since #312 the MCP `invoke` tool shares the trusted path, so there are four
+  write sites, not five.)
 
 - **Never charged** — anything that never enqueues: all history before this ships,
   pre-dispatch rejections (`record_terminal`), and legacy `/v1/invoke` calls to
@@ -262,13 +264,14 @@ used only by the quota path being replaced.
 
 ## Enforcement integration
 
-`limits::enforce` stays un-bypassable at the four enforce call sites (`a2a.rs`,
-`invoke.rs` ×2, `mcp.rs`) but no longer touches the DB: rate check (Redis, limit
+`limits::enforce` stays un-bypassable at the three enforce call sites (`a2a.rs`,
+and `invoke.rs`'s trusted and public paths — the MCP `invoke` tool goes through
+the trusted one) but no longer touches the DB: rate check (Redis, limit
 from the override cache) → credit switch. Shadow mode (`LIMITS_ENFORCE=false`) is
 unchanged: a blocked account logs `limit.would_block` and is allowed; the worker
 charges and grants regardless.
 
-At the five write sites, the `BEGIN` → INSERT → `quota::increment` → `COMMIT`
+At the four write sites, the `BEGIN` → INSERT → `quota::increment` → `COMMIT`
 transaction (it wraps exactly those two statements at every site) becomes the single
 enqueueing statement above.
 
@@ -314,18 +317,18 @@ Three PRs, merged one at a time (CD's concurrency group drops a middle deploy).
 `SELECT count(*) FROM accounts a JOIN plans p ON p.id = a.plan_id WHERE p.name <> 'free';`
 — because a guard failure at *boot* (outside the CD migrate step) would crash-loop.
 
-**`0033_credits_expand.sql` (PR1 — additive):** `SET LOCAL lock_timeout`; guard
+**`0034_credits_expand.sql` (PR1 — additive; `0033` is #312's grant purpose):** `SET LOCAL lock_timeout`; guard
 (`RAISE EXCEPTION` if any account is on a non-free plan); create `credit_wallets`,
 `credit_ledger`, `credit_charge_queue`, `invocation_charges` + indexes. Touches
 neither `relay_invocations` nor `accounts`; no backfill.
 
-**PR2 (swap — no migration):** worker, cache, config, the five enqueueing
+**PR2 (swap — no migration):** worker, cache, config, the four enqueueing
 statements, error renames. First tick after deploy: wallets appear as accounts
 invoke; each is granted one month (everyone starts fresh — current-month usage
 under the old quota is not carried over).
 
-**`0034_credits_contract.sql` (PR3, after PR2 is live):** drop `accounts.plan_id`,
-`plans`, `usage_counters`. **Must-succeed deploy:** once 0034 is applied, the PR2
+**`0035_credits_contract.sql` (PR3, after PR2 is live):** drop `accounts.plan_id`,
+`plans`, `usage_counters`. **Must-succeed deploy:** once 0035 is applied, the PR2
 binary can no longer boot.
 
 **Rollback.** Revert *code*, never migration files — a binary missing an applied
@@ -352,24 +355,25 @@ blocked-set size, and duration; warn when the queue grows across consecutive tic
 - **Supervision/config:** a failing step doesn't kill the loop; 0 or unparseable
   values fail startup.
 - **Enforce:** deny / shadow-allow / per-account rate override.
-- **Five sites:** each writes exactly one queue row with the expected account in the
+- **Four sites:** each writes exactly one queue row with the expected account in the
   same statement; exhausted denial per surface (A2A + `/v1/invoke` → 429, MCP →
   JSON-RPC error).
 - **Invariant:** `balance == Σ ledger − Σ charges` after mixed grants and charges.
 - **Migration:** the guard test uses `#[sqlx::test(migrations = false)]` with
-  `Migrator::run_to(32)` then `run_to(33)` and runtime `sqlx::query` (so `.sqlx`
+  `Migrator::run_to(33)` then `run_to(34)` and runtime `sqlx::query` (so `.sqlx`
   stays unchanged; it's the one allowed `plans` reference after PR2); a fresh DB
-  migrates `0001→0034` cleanly.
+  migrates `0001→0035` cleanly.
 - **Live Redis** rate path stays green.
 
-## Prerequisites (decided 2026-09-25, outside credits)
+## Prerequisites (decided 2026-09-25, outside credits) — shipped
 
-- **PR-A — usage middleware off the hot path.** Today the relay's middleware
-  re-authenticates every request before the handler and awaits a `usage_events`
-  INSERT before returning. Both move to a background writer fed by a bounded,
-  never-blocking channel.
-- **PR-B — reject legacy `/v1/invoke` to push-mode agents** before dispatch (today
-  they park a row no one delivers; under credits it would be charged every time).
+- **PR-A — usage middleware off the hot path** ([#323](https://github.com/Delta-S-Labs/chakra_mcp/pull/323)).
+  The relay's middleware no longer re-authenticates each request before the
+  handler or awaits a `usage_events` INSERT before returning; a background writer
+  fed by a bounded, never-blocking channel does both.
+- **PR-B — refuse queued invocations to push-mode agents** ([#324](https://github.com/Delta-S-Labs/chakra_mcp/pull/324)).
+  `/v1/invoke` and the MCP `invoke` tool return 409 before dispatch instead of
+  parking a row no one delivers, so they're never charged.
 
 ## Later phases
 

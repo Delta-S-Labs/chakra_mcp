@@ -13,6 +13,9 @@
 pub mod quota;
 pub mod rate;
 
+#[cfg(test)]
+mod credits_schema_tests;
+
 pub use rate::{RateLimiter, RateOutcome};
 
 use sqlx::PgPool;
