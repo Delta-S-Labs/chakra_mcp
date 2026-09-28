@@ -10,8 +10,9 @@
 -- too — its foreign key's triggers live on `accounts`), and `accounts` is
 -- read on the invocation path. A lock request that *waits* queues every later
 -- reader behind it, so never wait long: try for 100 ms, and on a timeout back
--- off (letting the queued readers through) and retry. Once the lock is held,
--- the drops are catalog-only and take milliseconds.
+-- off (letting the queued readers through) and retry. The unused tables are
+-- locked first and `accounts` last, so once `accounts` is held nothing is
+-- left to wait for: the drops are catalog-only and take milliseconds.
 
 DO $$
 DECLARE
@@ -20,6 +21,12 @@ BEGIN
     LOOP
         BEGIN
             SET LOCAL lock_timeout = '100ms';
+            IF to_regclass('usage_counters') IS NOT NULL THEN
+                LOCK TABLE usage_counters IN ACCESS EXCLUSIVE MODE;
+            END IF;
+            IF to_regclass('plans') IS NOT NULL THEN
+                LOCK TABLE plans IN ACCESS EXCLUSIVE MODE;
+            END IF;
             LOCK TABLE accounts IN ACCESS EXCLUSIVE MODE;
             ALTER TABLE accounts DROP COLUMN IF EXISTS plan_id;
             DROP TABLE IF EXISTS usage_counters;

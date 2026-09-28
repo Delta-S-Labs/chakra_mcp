@@ -188,8 +188,9 @@ live and healthy.
 (checked on PG 16: both time out behind a plain `SELECT` of `accounts`). A lock
 request that *waits* queues every later `accounts` reader behind it, invocation-path
 reads included. So the migration never waits long: in a PL/pgSQL loop it sets
-`lock_timeout = '100ms'`, takes `LOCK TABLE accounts IN ACCESS EXCLUSIVE MODE`
-first, runs all three drops (`IF EXISTS`, catalog-only, milliseconds), and on
+`lock_timeout = '100ms'`, locks the unused `usage_counters` and `plans` first and
+`accounts` last (so once `accounts` is held nothing is left to wait for), runs all
+three drops (`IF EXISTS`, catalog-only, milliseconds), and on
 `lock_not_available` / `deadlock_detected` backs off `min(0.05 s × attempt, 1 s)` and
 retries — 50 attempts, then `RAISE` (the transaction rolls back and CD's migrate step
 fails with the old relay still serving). Measured with a 1.5 s read of `accounts` in
@@ -199,8 +200,11 @@ flight: the naive `ALTER` held a new reader for 930 ms; the loop kept readers un
 **Tests:** plan objects gone after a full migrate; an account's wallet survives the
 contract (from 0035 with data); readers never park behind the migration's lock while
 it waits out a long read (mutation-checked: the naive `ALTER` makes a reader wait
-4.7 s); full suite green; `.sqlx` unchanged (`prepare --check` against the post-0036
-schema).
+4.7 s; with no lock timeout at all the reader's own 1 s timeout fails the test fast
+instead of hanging); full suite green; `.sqlx` unchanged (`prepare --check` against
+the post-0036 schema). Independent review: **Ship** — under ~7k reads/s it applied in
+18 ms; with a long read in flight readers peaked at 114 ms; if the lock never clears it
+gives up after ~45 s and rolls back intact.
 
 ---
 

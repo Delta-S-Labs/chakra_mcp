@@ -363,14 +363,20 @@ async fn contract_never_parks_readers_behind_its_lock(pool: PgPool) {
     tokio::time::sleep(Duration::from_millis(300)).await;
 
     // ...and a new read arriving meanwhile waits at most one short attempt,
-    // not for the long read to finish.
+    // not for the long read to finish. (Its own lock timeout makes a
+    // regression fail here instead of deadlocking the test: the long read
+    // only ends after these reads.)
     let mut reader = wide.acquire().await.unwrap();
+    sqlx::query("SET lock_timeout = '1s'")
+        .execute(&mut *reader)
+        .await
+        .unwrap();
     for _ in 0..3 {
         let started = Instant::now();
         sqlx::query("SELECT count(*) FROM accounts")
             .execute(&mut *reader)
             .await
-            .unwrap();
+            .expect("a reader was parked behind the migration");
         assert!(
             started.elapsed() < Duration::from_millis(600),
             "a reader waited {:?} behind the migration",

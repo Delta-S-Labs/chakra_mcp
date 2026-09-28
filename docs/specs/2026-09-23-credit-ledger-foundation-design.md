@@ -378,8 +378,9 @@ lock request *waits*, every reader of `accounts` — invocation-path reads inclu
 queues behind it (reproduced: a worker charge waiting on a held wallet lock kept an
 `ALTER TABLE accounts` waiting, and an `accounts` read waited 744 ms behind that). So
 0036 takes the lock in a retry loop — `lock_timeout = '100ms'`, back off, retry (50
-attempts) — never holding readers for more than one short attempt, and does all three
-drops under it.
+attempts, ~45 s, then roll back) — never holding readers for more than one short
+attempt. It locks the unused tables first and `accounts` last, then does all three
+drops under those locks.
 
 **Rollback.** Revert *code*, never migration files — a binary missing an applied
 migration refuses to boot (or ship the revert with `set_ignore_missing(true)`).
