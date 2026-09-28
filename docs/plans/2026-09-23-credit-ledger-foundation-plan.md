@@ -13,8 +13,8 @@ in-memory switches; everything else runs in parallel.
 | 1 | **PR-A** — usage middleware off the hot path | ✅ shipped (#323) | — |
 | 2 | **PR-B** — refuse queued invocations to push-mode agents | ✅ shipped (#324) | — |
 | 3 | **PR1** — expand migration `0034` | ✅ shipped (#325) | prod guard = 0 (confirmed 2026-09-26) |
-| 4 | **PR1b** — hardening migration `0035` | yes (migration) | PR1 live |
-| 5 | **PR2** — swap to async credits | yes (binary only) | PR1b live |
+| 4 | **PR1b** — hardening migration `0035` | ✅ shipped (#327) | PR1 live |
+| 5 | **PR2** — swap to async credits | ✅ shipped (#326) | PR1b live |
 | 6 | **PR3** — contract migration `0036` | yes (migration, must succeed) | PR2 live |
 
 (`0033` is #312's `grant_purpose`, which landed after this plan was first drafted.)
@@ -182,6 +182,30 @@ created and granted as accounts invoke, and an exhausted test account is denied.
 
 **Must-succeed:** once applied, the PR2 binary can no longer boot. Merge only with PR2
 live and healthy.
+
+**Locking (from PR2's review):** the `accounts` DROP COLUMN needs ACCESS EXCLUSIVE,
+and while it waits, every `accounts` reader queues behind it — invocation-path reads
+included. Wrap it in a retry loop with a short lock timeout instead of the 5 s one:
+
+```sql
+DO $$
+DECLARE attempt int := 0;
+BEGIN
+    LOOP
+        BEGIN
+            SET LOCAL lock_timeout = '100ms';
+            ALTER TABLE accounts DROP COLUMN plan_id;
+            EXIT;
+        EXCEPTION WHEN lock_not_available THEN
+            attempt := attempt + 1;
+            IF attempt >= 50 THEN RAISE; END IF;
+            PERFORM pg_sleep(least(0.05 * attempt, 1));
+        END;
+    END LOOP;
+END $$;
+```
+
+The `plans` / `usage_counters` drops touch tables nothing reads any more.
 
 **Tests:** a fresh DB migrates `0001..0036` cleanly; full suite green; `.sqlx`
 unchanged.
