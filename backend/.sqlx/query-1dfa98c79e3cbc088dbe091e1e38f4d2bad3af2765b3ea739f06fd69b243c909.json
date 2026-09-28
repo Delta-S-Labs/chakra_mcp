@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n          a.id,\n          a.slug,\n          a.display_name,\n          a.account_type,\n          a.created_at,\n          (SELECT COUNT(*) FROM account_memberships m WHERE m.account_id = a.id) as \"member_count!\",\n          (SELECT u.email FROM users u WHERE u.id = a.owner_user_id) as owner_email\n        FROM accounts a\n        ORDER BY a.created_at DESC\n        ",
+  "query": "\n        SELECT\n          a.id,\n          a.slug,\n          a.display_name,\n          a.account_type,\n          a.created_at,\n          (SELECT COUNT(*) FROM account_memberships m WHERE m.account_id = a.id) as \"member_count!\",\n          (SELECT u.email FROM users u WHERE u.id = a.owner_user_id) as owner_email,\n          w.balance_mc as \"credit_balance_mc?\",\n          w.free_grant_period as \"credit_granted_period?\",\n          COALESCE(w.unlimited, false) as \"credit_unlimited!\"\n        FROM accounts a\n        LEFT JOIN credit_wallets w ON w.account_id = a.id\n        ORDER BY a.created_at DESC\n        ",
   "describe": {
     "columns": [
       {
@@ -69,6 +69,34 @@
         "name": "owner_email",
         "type_info": "Text",
         "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "credit_balance_mc?",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "credit_wallets",
+            "name": "balance_mc"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "credit_granted_period?",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "credit_wallets",
+            "name": "free_grant_period"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "credit_unlimited!",
+        "type_info": "Bool",
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -81,8 +109,11 @@
       false,
       false,
       null,
+      null,
+      false,
+      true,
       null
     ]
   },
-  "hash": "817949b2f103ca1dd77eee13d2b064e18b1b81260c4ed88c1b4c53c4a596f43b"
+  "hash": "1dfa98c79e3cbc088dbe091e1e38f4d2bad3af2765b3ea739f06fd69b243c909"
 }

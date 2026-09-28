@@ -439,12 +439,29 @@ switches go stale, and their recovery.
 
 ## Later phases
 
-- **P2 — Owner visibility:** balance (`credit_wallets`; accounts without one show
-  the default grant), spend (`invocation_charges`), grants/adjustments
-  (`credit_ledger`), effective limits.
-- **P3 — Admin credit management:** grant, adjust (incl. manual refund corrections),
-  per-account overrides, the `unlimited` switch; admin API + UI; each change a
-  ledger row with the acting admin in `metadata`.
+- **P2 — Owner visibility (built):** `GET /v1/orgs/{slug}/credits` for any member
+  (app service; 404 for non-members, like the other `/v1/orgs/{slug}` routes). Returns
+  the balance (an account with no wallet yet shows the grant its first invocation
+  brings), the status (`active` / `blocked` / `unlimited`, by the switch's own rule —
+  `chakramcp_shared::credits::is_blocked`), the effective monthly grant and rate limit
+  with the overrides behind them, the next grant date, this month's spend, per-day
+  spend over 30 days, and the last 50 ledger entries (notes shown, admin identities
+  not). Month bounds use the database clock, which stamps `charged_at`. Page:
+  `/app/credits`. `CreditsConfig` moved to the shared crate so the app shows exactly
+  the defaults the relay enforces.
+- **P3 — Admin credit management (built):** `GET` / `PATCH
+  /v1/admin/accounts/{id}/credits` and `POST /v1/admin/accounts/{id}/credits/ledger`,
+  behind `AdminUser` (the `ADMIN_EMAIL` user). A **grant** (`admin_grant`, > 0) or an
+  **adjustment** (`adjustment`, either sign, note required — e.g. correcting after a
+  refund) is one statement: wallet upsert + ledger row with the resulting balance, so
+  the reconciliation invariant holds. **Settings** — monthly-grant and rate-limit
+  overrides (`null` = back to the default) and `unlimited` — write a zero-delta
+  `adjustment` row with `metadata.kind = "settings"` and `{from, to}` per change, so
+  an account's history explains its limits too. Every row carries the admin's id and
+  email in `metadata.admin`; bounds: 1 billion credits per entry, notes ≤ 500 chars,
+  and the 0035 CHECKs. Effects reach the relay at its next switch refresh (≤ 5 s).
+  `GET /v1/admin/orgs` gains `credit_balance_mc` and `credit_status`; the admin console
+  links each account to `/app/admin/accounts/{id}`.
 - **P4 — Purchasing (managed-only, Dodo):** introduces `HOSTING_MODE` (default
   `managed` in the prod compose); checkout + signed webhooks → `purchase` rows
   (deduped by the unique index) + top-up. Refunds stay manual.

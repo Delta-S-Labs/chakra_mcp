@@ -1,0 +1,37 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH bounds AS (SELECT date_trunc('month', now() AT TIME ZONE 'UTC') AS start)\n        SELECT (bounds.start + interval '1 month')::date AS \"next_grant_on!\",\n               count(c.invocation_id) AS \"invocations!\",\n               COALESCE(SUM(c.cost_mc), 0)::bigint AS \"spent_mc!\"\n          FROM bounds\n          LEFT JOIN invocation_charges c\n            ON c.account_id = $1 AND c.charged_at >= bounds.start AT TIME ZONE 'UTC'\n         GROUP BY bounds.start\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "next_grant_on!",
+        "type_info": "Date",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "invocations!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "spent_mc!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "b71cb0e4d38851055037cd571132a3fce2545d13c99ca248b3f123bca132a436"
+}

@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use uuid::Uuid;
 
+use chakramcp_shared::credits::is_blocked;
 use chakramcp_shared::error::ApiResult;
 
 use crate::auth::AdminUser;
@@ -28,6 +29,10 @@ pub struct AdminOrgDto {
     pub member_count: i64,
     pub owner_email: Option<String>,
     pub created_at: DateTime<Utc>,
+    /// Milli-credits; `None` until the account's first charge or admin change.
+    pub credit_balance_mc: Option<i64>,
+    /// `active`, `blocked` (out of credits) or `unlimited`.
+    pub credit_status: &'static str,
 }
 
 #[derive(Debug, Serialize)]
@@ -90,8 +95,12 @@ pub async fn list_orgs(
           a.account_type,
           a.created_at,
           (SELECT COUNT(*) FROM account_memberships m WHERE m.account_id = a.id) as "member_count!",
-          (SELECT u.email FROM users u WHERE u.id = a.owner_user_id) as owner_email
+          (SELECT u.email FROM users u WHERE u.id = a.owner_user_id) as owner_email,
+          w.balance_mc as "credit_balance_mc?",
+          w.free_grant_period as "credit_granted_period?",
+          COALESCE(w.unlimited, false) as "credit_unlimited!"
         FROM accounts a
+        LEFT JOIN credit_wallets w ON w.account_id = a.id
         ORDER BY a.created_at DESC
         "#
     )
@@ -108,6 +117,21 @@ pub async fn list_orgs(
                 member_count: r.member_count,
                 owner_email: r.owner_email,
                 created_at: r.created_at,
+                credit_balance_mc: r.credit_balance_mc,
+                credit_status: if r.credit_unlimited {
+                    "unlimited"
+                } else if r.credit_balance_mc.is_some_and(|balance| {
+                    is_blocked(
+                        balance,
+                        r.credit_granted_period.is_some(),
+                        false,
+                        state.credits.cost_per_invocation_mc,
+                    )
+                }) {
+                    "blocked"
+                } else {
+                    "active"
+                },
             })
             .collect(),
     ))

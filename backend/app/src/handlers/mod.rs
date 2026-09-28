@@ -2,6 +2,7 @@ pub mod admin;
 pub mod agents;
 pub mod api_keys;
 pub mod auth;
+pub mod credits;
 pub mod health;
 pub mod oauth;
 pub mod orgs;

@@ -1,4 +1,6 @@
-//! Credit settings, read once at startup.
+//! Credit settings and the blocking rule, shared by the relay (which
+//! enforces credits) and the app (which shows them to owners and admins).
+//! Design: `docs/specs/2026-09-23-credit-ledger-foundation-design.md`.
 
 use std::time::Duration;
 
@@ -83,6 +85,20 @@ impl CreditsConfig {
     }
 }
 
+/// Whether an account in this state is refused: it can't afford one more
+/// invocation, isn't unlimited, and has had its first monthly grant (a
+/// wallet created moments ago mustn't be blocked before that lands). The
+/// relay's switch refresh (`relay::limits::credits::cache`) applies the
+/// same rule in SQL.
+pub fn is_blocked(
+    balance_mc: i64,
+    granted: bool,
+    unlimited: bool,
+    cost_per_invocation_mc: i64,
+) -> bool {
+    !unlimited && granted && balance_mc < cost_per_invocation_mc
+}
+
 fn positive<T>(get: &impl Fn(&str) -> Option<String>, key: &str, default: T) -> anyhow::Result<T>
 where
     T: std::str::FromStr + PartialOrd + Default,
@@ -146,6 +162,16 @@ mod tests {
         // A zero interval would panic tokio's interval timer.
         assert!(from(&[("CREDITS_SWEEP_INTERVAL_SECS", "0")]).is_err());
         assert!(from(&[("LIMITS_DEFAULT_RATE_PER_MIN", "0")]).is_err());
+    }
+
+    #[test]
+    fn blocked_only_when_granted_limited_and_short() {
+        let cost = 100;
+        assert!(is_blocked(99, true, false, cost));
+        assert!(is_blocked(-500, true, false, cost));
+        assert!(!is_blocked(100, true, false, cost), "can pay for one more");
+        assert!(!is_blocked(-500, true, true, cost), "unlimited");
+        assert!(!is_blocked(-100, false, false, cost), "never granted");
     }
 
     #[test]

@@ -12,11 +12,10 @@
 //! can therefore overflow slightly negative between ticks — by design.
 
 mod cache;
-mod config;
 pub mod worker;
 
 pub use cache::CreditCache;
-pub use config::CreditsConfig;
+pub use chakramcp_shared::credits::CreditsConfig;
 pub use worker::spawn_worker;
 
 #[cfg(test)]

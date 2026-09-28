@@ -80,6 +80,10 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/v1/orgs/{slug}/members", get(handlers::orgs::list_members))
         .route(
+            "/v1/orgs/{slug}/credits",
+            get(handlers::credits::account_credits),
+        )
+        .route(
             "/v1/orgs/{slug}/invites",
             post(handlers::orgs::create_invite),
         )
@@ -116,6 +120,15 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/admin/users", get(handlers::admin::list_users))
         .route("/v1/admin/orgs", get(handlers::admin::list_orgs))
         .route("/v1/admin/api-keys", get(handlers::admin::list_api_keys))
+        .route(
+            "/v1/admin/accounts/{account_id}/credits",
+            get(handlers::credits::admin_account_credits)
+                .patch(handlers::credits::admin_update_settings),
+        )
+        .route(
+            "/v1/admin/accounts/{account_id}/credits/ledger",
+            post(handlers::credits::admin_add_entry),
+        )
         .with_state(state)
         .layer(cors);
     chakramcp_shared::telemetry::instrument(router, "app")

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH w AS (\n            INSERT INTO credit_wallets (account_id, balance_mc, updated_at)\n            VALUES ($1, $2, now())\n            ON CONFLICT (account_id) DO UPDATE\n               SET balance_mc = credit_wallets.balance_mc + EXCLUDED.balance_mc,\n                   updated_at = now()\n            RETURNING account_id, balance_mc\n        )\n        INSERT INTO credit_ledger (account_id, delta_mc, reason, balance_after_mc, metadata)\n        SELECT account_id, $2, $3, balance_mc, $4 FROM w\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e6920ab3295b2bb5c842f25eb877926762fd798d27ee558bf415fa2ba214f208"
+}
