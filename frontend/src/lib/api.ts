@@ -194,16 +194,25 @@ export function loginWithPassword(args: { email: string; password: string }) {
 
 // ─── OAuth-flow upsert + session ────────────────────────
 
-export function upsertUser(args: {
-  email: string;
-  name: string;
-  avatar_url?: string | null;
-  provider: string;
-  provider_user_id: string;
-  raw_profile?: unknown;
-}) {
+/**
+ * Exchange a Google/GitHub identity for a backend session. Server-only:
+ * the backend trusts the email, so it requires `secret`
+ * (`UPSERT_SHARED_SECRET`, never exposed to the browser).
+ */
+export function upsertUser(
+  args: {
+    email: string;
+    name: string;
+    avatar_url?: string | null;
+    provider: string;
+    provider_user_id: string;
+    raw_profile?: unknown;
+  },
+  secret: string,
+) {
   return request<UpsertResponse>("/v1/users/upsert", {
     method: "POST",
+    headers: { "x-chakramcp-upsert-secret": secret },
     body: JSON.stringify(args),
   });
 }

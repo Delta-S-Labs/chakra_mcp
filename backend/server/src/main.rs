@@ -208,7 +208,11 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
     }
     chakramcp_relay::limits::credits::spawn_worker(&pool, credit_cache.clone(), credits);
 
-    let app_state = AppState::new(pool.clone(), cfg.shared.clone());
+    let app_state = AppState::new(pool.clone(), cfg.shared.clone())
+        .with_upsert_secret(std::env::var("UPSERT_SHARED_SECRET").ok());
+    if app_state.upsert_secret.is_none() {
+        tracing::warn!("UPSERT_SHARED_SECRET is not set: Google/GitHub sign-in is disabled");
+    }
     let relay_state = RelayState::new(pool, cfg.shared.clone())
         .with_rate_limiter(chakramcp_relay::limits::RateLimiter::from_redis_url(
             std::env::var("REDIS_URL").ok().as_deref(),
