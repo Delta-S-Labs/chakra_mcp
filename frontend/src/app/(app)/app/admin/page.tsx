@@ -1,6 +1,9 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { adminListUsers, adminListOrgs, adminListApiKeys } from "@/lib/api";
+import { StatusPill } from "@/components/credits/CreditsPanel";
+import { formatCredits } from "@/lib/format";
 import styles from "./admin.module.css";
 
 export default async function AdminPage() {
@@ -34,8 +37,8 @@ export default async function AdminPage() {
         <h1 className={styles.title}>Network operator console.</h1>
         <p className={styles.body}>
           Visible only to the user whose email matches <code>ADMIN_EMAIL</code> on
-          the backend. Read-only for now - actions (suspend, transfer ownership,
-          revoke) land in the next slice.
+          the backend. Open an account to manage its credits; other actions
+          (suspend, transfer ownership, revoke) land in a later slice.
         </p>
       </header>
 
@@ -97,19 +100,22 @@ export default async function AdminPage() {
                 <th>Type</th>
                 <th>Members</th>
                 <th>Owner</th>
+                <th>Credits</th>
                 <th>Created</th>
               </tr>
             </thead>
             <tbody>
               {orgs.length === 0 && (
                 <tr>
-                  <td colSpan={6} className={styles.empty}>No accounts yet.</td>
+                  <td colSpan={7} className={styles.empty}>No accounts yet.</td>
                 </tr>
               )}
               {orgs.map((o) => (
                 <tr key={o.id}>
                   <td>
-                    <code>{o.slug}</code>
+                    <Link href={`/app/admin/accounts/${o.id}`} className={styles.rowLink}>
+                      <code>{o.slug}</code>
+                    </Link>
                   </td>
                   <td>{o.display_name}</td>
                   <td>
@@ -121,6 +127,12 @@ export default async function AdminPage() {
                   </td>
                   <td>{o.member_count}</td>
                   <td className={styles.muted}>{o.owner_email ?? "-"}</td>
+                  <td className={styles.creditCell}>
+                    <span className={styles.muted}>
+                      {o.credit_balance_mc === null ? "unused" : formatCredits(o.credit_balance_mc)}
+                    </span>{" "}
+                    <StatusPill status={o.credit_status} />
+                  </td>
                   <td className={styles.muted}>{fmt(o.created_at)}</td>
                 </tr>
               ))}

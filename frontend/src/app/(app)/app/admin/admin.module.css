@@ -124,6 +124,12 @@
 
 .revokedRow { opacity: 0.55; }
 
+/* inline-block: a slug that wraps stays one solid click target. */
+.rowLink { display: inline-block; text-decoration: none; }
+.rowLink:hover code { background: color-mix(in oklab, var(--accent-coral) 30%, transparent); }
+
+.creditCell { white-space: nowrap; }
+
 /* ─── Status pills ─── */
 .pillOk,
 .pillCoral,

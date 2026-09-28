@@ -138,6 +138,9 @@ export function UserMenu({
           <Link className={styles.userDropdownItem} href="/app/usage">
             Usage
           </Link>
+          <Link className={styles.userDropdownItem} href="/app/credits">
+            Credits
+          </Link>
           <Link className={styles.userDropdownItem} href="/app/audit">
             Audit
           </Link>

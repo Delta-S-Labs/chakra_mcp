@@ -56,3 +56,19 @@ export function formatElapsed(ms: number): string {
   const m = Math.round((totalSeconds - h * 3600) / 60);
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
+
+const creditsFormat = new Intl.NumberFormat("en-US", { maximumFractionDigits: 3 });
+
+/**
+ * Milli-credits (the API's unit) as credits: `99700` → `"99.7"`,
+ * `-200` → `"-0.2"`. Up to three decimals, so the smallest unit
+ * (1 mc = 0.001 credit) always shows.
+ */
+export function formatCredits(mc: number): string {
+  return creditsFormat.format(mc / 1000);
+}
+
+/** Credits typed by a person → milli-credits for the API. */
+export function creditsToMc(credits: number): number {
+  return Math.round(credits * 1000);
+}

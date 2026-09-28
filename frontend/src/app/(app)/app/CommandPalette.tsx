@@ -45,6 +45,7 @@ const COMMANDS: Command[] = [
   { label: "Grants", href: "/app/grants", key: "g" },
   { label: "Inbox", href: "/app/inbox", key: "i" },
   { label: "Usage", href: "/app/usage", key: "u" },
+  { label: "Credits", href: "/app/credits", key: "c" },
   { label: "Audit", href: "/app/audit", key: "x" },
   { label: "API keys", href: "/app/api-keys", key: "k" },
   { label: "Pair agent", href: "/app/pair", key: "p" },
