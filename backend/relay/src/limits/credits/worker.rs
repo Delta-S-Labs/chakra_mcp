@@ -99,7 +99,7 @@ async fn switches_loop(db: PgPool, cache: Arc<CreditCache>, cfg: CreditsConfig) 
     let mut stale = false;
     loop {
         ticker.tick().await;
-        refresh_switches(&db, &cache, cfg.cost_per_invocation_mc, &mut stale).await;
+        refresh_switches(&db, &cache, &cfg, &mut stale).await;
     }
 }
 
@@ -149,18 +149,25 @@ pub(crate) async fn account(db: &PgPool, cfg: &CreditsConfig, last_depth: &mut O
     *last_depth = depth;
 }
 
-/// Reload the switches. After a failed refresh the last snapshot stands
-/// until it goes stale; from then on nobody is blocked (fail open), which is
-/// logged as an error because enforcement is off until a refresh succeeds.
-/// `stale` carries that state between calls.
+/// Reload the switches. A refresh that fails — or takes longer than a tick,
+/// which counts as failing, so a stall (a dead connection, a crawling query)
+/// can't go unnoticed — leaves the last snapshot in place until it goes
+/// stale; from then on nobody is blocked (fail open), which is logged as an
+/// error because enforcement is off until a refresh succeeds. `stale`
+/// carries that state between calls.
 pub(crate) async fn refresh_switches(
     db: &PgPool,
     cache: &CreditCache,
-    cost_per_invocation_mc: i64,
+    cfg: &CreditsConfig,
     stale: &mut bool,
 ) {
     let before = cache.blocked_count();
-    match cache.refresh(db, cost_per_invocation_mc).await {
+    let refresh = cache.refresh(db, cfg.cost_per_invocation_mc);
+    let refreshed = match tokio::time::timeout(cfg.sweep_interval, refresh).await {
+        Ok(result) => result.map_err(|e| e.to_string()),
+        Err(_) => Err(format!("timed out after {:?}", cfg.sweep_interval)),
+    };
+    match refreshed {
         Ok(()) => {
             let blocked = cache.blocked_count();
             if std::mem::take(stale) {
@@ -359,8 +366,9 @@ async fn begin_accounting(
 }
 
 /// Commit on success. On failure roll back right away: a dropped
-/// transaction is only rolled back once its connection is reused, and until
-/// then it would keep the accounting lock from the pass's next step.
+/// transaction's ROLLBACK is sent later, by a background task when its
+/// connection returns to the pool, and until then it would keep the
+/// accounting lock from the pass's next step.
 async fn finish<T>(
     tx: Transaction<'static, Postgres>,
     result: Result<T, sqlx::Error>,
@@ -379,10 +387,16 @@ async fn finish<T>(
     }
 }
 
+/// Rows waiting to be charged (for the logs). Lock-bounded like everything
+/// else here: a table lock on the queue must not stall the accounting loop.
 async fn queue_depth(db: &PgPool) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar!(r#"SELECT count(*) AS "depth!" FROM credit_charge_queue"#)
-        .fetch_one(db)
-        .await
+    let mut tx = db.begin().await?;
+    sqlx::query(SET_LOCK_TIMEOUT).execute(&mut *tx).await?;
+    let depth = sqlx::query_scalar!(r#"SELECT count(*) AS "depth!" FROM credit_charge_queue"#)
+        .fetch_one(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(depth)
 }
 
 /// The grant period for now: the first of the current UTC month.
@@ -790,7 +804,7 @@ mod tests {
         enqueue(&pool, spent, 1).await;
 
         account(&pool, &cfg, &mut None).await;
-        refresh_switches(&pool, &cache, cfg.cost_per_invocation_mc, &mut false).await;
+        refresh_switches(&pool, &cache, &cfg, &mut false).await;
 
         assert_eq!(balance(&pool, newcomer).await, Some(GRANT - 2 * COST));
         assert!(!cache.is_blocked(newcomer));
@@ -805,24 +819,76 @@ mod tests {
     async fn failed_refreshes_fail_open_once_stale_then_recover(pool: PgPool) {
         let broke = seed_account(&pool).await;
         granted_wallet(&pool, broke, 0).await;
+        let cfg = CreditsConfig::default();
         let cache = CreditCache::new(Duration::from_millis(500));
         let mut stale = false;
-        refresh_switches(&pool, &cache, COST, &mut stale).await;
+        refresh_switches(&pool, &cache, &cfg, &mut stale).await;
         assert!(cache.is_blocked(broke) && !stale);
 
         // The database goes away: the last snapshot stands until it's stale...
         let gone = concurrent_pool(&pool).await;
         gone.close().await;
-        refresh_switches(&gone, &cache, COST, &mut stale).await;
+        refresh_switches(&gone, &cache, &cfg, &mut stale).await;
         assert!(cache.is_blocked(broke) && !stale, "still fresh");
         tokio::time::sleep(Duration::from_millis(600)).await;
-        refresh_switches(&gone, &cache, COST, &mut stale).await;
+        refresh_switches(&gone, &cache, &cfg, &mut stale).await;
         assert!(stale, "flagged (and logged) as stale");
         assert!(!cache.is_blocked(broke), "stale switches fail open");
 
         // ...and the next good refresh restores enforcement.
-        refresh_switches(&pool, &cache, COST, &mut stale).await;
+        refresh_switches(&pool, &cache, &cfg, &mut stale).await;
         assert!(!stale && cache.is_blocked(broke));
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn a_stalled_refresh_counts_as_failed(pool: PgPool) {
+        let cfg = CreditsConfig {
+            sweep_interval: Duration::from_millis(200),
+            ..CreditsConfig::default()
+        };
+        let cache = CreditCache::new(cfg.stale_after());
+        let mut stale = false;
+
+        // A table lock on the wallets (a migration mid-ALTER, say) stalls the
+        // refresh; it's given up at the tick, before the lock timeout.
+        let wide = concurrent_pool(&pool).await;
+        let mut ddl = wide.begin().await.unwrap();
+        sqlx::query("LOCK TABLE credit_wallets IN ACCESS EXCLUSIVE MODE")
+            .execute(&mut *ddl)
+            .await
+            .unwrap();
+        let started = Instant::now();
+        refresh_switches(&wide, &cache, &cfg, &mut stale).await;
+        assert!(
+            started.elapsed() < Duration::from_millis(900),
+            "took {:?}",
+            started.elapsed()
+        );
+        assert!(
+            stale,
+            "never loaded, now stalled: flagged (and logged) as stale"
+        );
+
+        ddl.rollback().await.unwrap();
+        refresh_switches(&wide, &cache, &cfg, &mut stale).await;
+        assert!(!stale && !cache.is_stale());
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn the_queue_depth_check_bounds_its_lock_wait(pool: PgPool) {
+        let wide = concurrent_pool(&pool).await;
+        let mut ddl = wide.begin().await.unwrap();
+        sqlx::query("LOCK TABLE credit_charge_queue IN ACCESS EXCLUSIVE MODE")
+            .execute(&mut *ddl)
+            .await
+            .unwrap();
+        let depth = tokio::time::timeout(Duration::from_secs(5), queue_depth(&wide))
+            .await
+            .expect("gives up at the lock timeout");
+        assert!(depth.is_err());
+
+        ddl.rollback().await.unwrap();
+        assert_eq!(queue_depth(&wide).await.unwrap(), 0);
     }
 
     #[sqlx::test(migrations = "../migrations")]

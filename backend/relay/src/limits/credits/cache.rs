@@ -104,9 +104,14 @@ impl CreditCache {
         cost_per_invocation_mc: i64,
     ) -> Result<(), sqlx::Error> {
         // Plain reads never wait on row locks, but they do queue behind a
-        // table lock (DDL); give up after the lock timeout instead.
+        // table lock (DDL); give up after the lock timeout instead. And cut a
+        // crawling read off server-side, so it isn't left running after the
+        // worker has given up on it.
         let mut tx = db.begin().await?;
         sqlx::query(super::SET_LOCK_TIMEOUT)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("SET LOCAL statement_timeout = '5s'")
             .execute(&mut *tx)
             .await?;
         let blocked = sqlx::query_scalar!(

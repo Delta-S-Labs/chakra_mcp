@@ -173,9 +173,11 @@ On **every instance**, the switches loop:
    (never-granted wallets are never falsely blocked); `rate_overrides` = wallets
    with non-NULL `rate_limit_per_min`. Swapped in atomically with a `refreshed_at`
    stamp. Plain reads never wait on row locks; the lock timeout covers table locks
-   (DDL). A failed refresh keeps the last snapshot until it goes stale; the moment
-   it does, the loop logs an **error** (enforcement is off until a refresh
-   succeeds), and logs recovery.
+   (DDL), and a 5 s `statement_timeout` cuts off a crawling read. A refresh that
+   fails — or takes longer than a tick, which counts as failing, so a stalled
+   connection can't go unnoticed — keeps the last snapshot until it goes stale;
+   the moment it does, the loop logs an **error** (enforcement is off until a
+   refresh succeeds), and logs recovery.
 
 **Supervision.** Each step's errors are logged and the loop continues; a loop that
 panics — or, somehow, returns — is restarted after 1 s (never a tight respawn).
@@ -370,7 +372,13 @@ under the old quota is not carried over).
 
 **`0036_credits_contract.sql` (PR3, after PR2 is live):** drop `accounts.plan_id`,
 `plans`, `usage_counters`. **Must-succeed deploy:** once 0036 is applied, the PR2
-binary can no longer boot.
+binary can no longer boot. **Lock carefully:** `DROP COLUMN` on `accounts` needs
+ACCESS EXCLUSIVE, and while it *waits* every reader of `accounts` — invocation-path
+reads included — queues behind it (reproduced: a worker charge waiting on a held
+wallet lock kept an `ALTER TABLE accounts` waiting, and an `accounts` read waited
+744 ms behind that). Use a short `lock_timeout` (~100 ms) in a retry loop — a
+PL/pgSQL `EXCEPTION WHEN lock_not_available` block with backoff — not the 5 s the
+additive migrations use.
 
 **Rollback.** Revert *code*, never migration files — a binary missing an applied
 migration refuses to boot (or ship the revert with `set_ignore_missing(true)`).
@@ -397,11 +405,12 @@ switches go stale, and their recovery.
   exact `balance_after_mc`; two overlapping runs don't double-grant.
 - **Switch/refresh:** blocked cases (incl. never-granted and unlimited); rate
   overrides load; a stale cache reports nobody blocked; failed refreshes keep the
-  snapshot until stale, then fail open, then recover; the startup refresh runs
-  before serving.
+  snapshot until stale, then fail open, then recover; a refresh stalled past a
+  tick counts as failed. (The startup refresh before serving lives in the two
+  mains and isn't unit-tested.)
 - **Lock bounds:** a wallet row held by another session costs the charge one pass
   (lock timeout), grants still land, the switches still refresh, and the next pass
-  charges it.
+  charges it; the queue-depth check gives up on a table lock.
 - **Supervision/config:** a loop that panics or returns is restarted after a
   pause; 0, unparseable, or over-300 s values fail startup.
 - **Enforce:** deny / shadow-allow / per-account rate override.
