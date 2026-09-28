@@ -1,6 +1,6 @@
 # Usage quotas & rate limiting
 
-**Status:** design (drafted 2026-07-23, revised after spec-review iteration 1)
+**Status:** superseded — credits replaced the plan quota ([2026-09-23-credit-ledger-foundation-design.md](2026-09-23-credit-ledger-foundation-design.md), shipped 2026-09-28); the rate limit lives on there, and migration 0036 dropped `plans` / `usage_counters`. Originally drafted 2026-07-23, revised after spec-review iteration 1.
 **Brainstormed via:** `/brainstorming`
 **Depends on:** the relay policy gate (`backend/relay/src/policy/`), `relay_invocations`, the invocation write paths (`forwarder.rs`, `inbox_bridge.rs`, `handlers/invoke.rs`, `handlers/mcp.rs`), the usage rollups (`backend/app/src/handlers/usage.rs`).
 

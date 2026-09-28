@@ -1,7 +1,8 @@
 # Credit ledger foundation — implementation plan (Phase 1)
 
 _Plan for [docs/specs/2026-09-23-credit-ledger-foundation-design.md](../specs/2026-09-23-credit-ledger-foundation-design.md).
-Drafted 2026-09-23; rebuilt 2026-09-25 (charge queue, review fixes, prerequisites)._
+Drafted 2026-09-23; rebuilt 2026-09-25 (charge queue, review fixes, prerequisites).
+**Phase 1 complete 2026-09-28** — everything below is shipped and deployed._
 
 **Governing rule:** never hamper invocation performance. The invocation path reads
 in-memory switches; everything else runs in parallel.
@@ -15,7 +16,7 @@ in-memory switches; everything else runs in parallel.
 | 3 | **PR1** — expand migration `0034` | ✅ shipped (#325) | prod guard = 0 (confirmed 2026-09-26) |
 | 4 | **PR1b** — hardening migration `0035` | ✅ shipped (#327) | PR1 live |
 | 5 | **PR2** — swap to async credits | ✅ shipped (#326) | PR1b live |
-| 6 | **PR3** — contract migration `0036` | yes (migration, must succeed) | PR2 live |
+| 6 | **PR3** — contract migration `0036` | ✅ shipped (#329) | PR2 live |
 
 (`0033` is #312's `grant_purpose`, which landed after this plan was first drafted.)
 
@@ -217,3 +218,5 @@ gives up after ~45 s and rolls back intact.
 - **Local deps:** Postgres `:5544` (`docker start chakra-sqlx-pg`), Redis `:6379`
   (`docker start chakra-test-redis`, `REDIS_TEST_URL`).
 - **Rollback:** revert code, never migration files. PR3 is forward-only.
+- **Deploys** run the CD run's own `:<sha7>` image for both `migrate` and `relay`; a
+  failed pull fails the step, and the restart verifies the relay's image ID (#330).
