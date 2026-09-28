@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT account_id FROM credit_wallets\n             WHERE NOT unlimited\n               AND free_grant_period IS NOT NULL\n               AND balance_mc < $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "credit_wallets",
+            "name": "account_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8e7aaa302374dba9952317e062aa774b2b746b9babf9ed5a128814beae72995f"
+}

@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH drained AS (\n            DELETE FROM credit_charge_queue\n             WHERE invocation_id IN (SELECT invocation_id FROM credit_charge_queue\n                                      ORDER BY invocation_id\n                                      LIMIT $1\n                                      FOR UPDATE SKIP LOCKED)\n            RETURNING invocation_id, account_id\n        ), charged AS (\n            INSERT INTO invocation_charges (invocation_id, account_id, cost_mc)\n            SELECT d.invocation_id, d.account_id,\n                   CASE WHEN EXISTS (SELECT 1 FROM accounts a WHERE a.id = d.account_id)\n                        THEN $2::bigint ELSE 0 END\n              FROM drained d\n            ON CONFLICT (invocation_id) DO NOTHING\n            RETURNING account_id, cost_mc\n        ), totals AS (\n            SELECT account_id, SUM(cost_mc)::bigint AS total\n              FROM charged\n             WHERE cost_mc > 0\n             GROUP BY account_id\n        ), debited AS (\n            INSERT INTO credit_wallets (account_id, balance_mc, updated_at)\n            SELECT account_id, -total, now() FROM totals\n            ON CONFLICT (account_id) DO UPDATE\n               SET balance_mc = credit_wallets.balance_mc + EXCLUDED.balance_mc,\n                   updated_at = now()\n            RETURNING account_id\n        )\n        SELECT (SELECT count(*) FROM drained) AS \"drained!\",\n               (SELECT count(*) FROM debited) AS \"debits!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "drained!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "debits!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "22de00bcd720aa6f101862e85d681f5c5419773f2415a7d83be548d1a2cde8e5"
+}

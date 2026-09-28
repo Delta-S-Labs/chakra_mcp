@@ -221,15 +221,17 @@ async fn persist_invocation(
     // path so the per-pair dashboard at /v1/pairings/{kind}/{id}/usage
     // can join back to the device-flow / oauth-code row that minted
     // the token.
-    // Row write + monthly-quota increment in one transaction, so the counter
-    // can never drift from the ledger. The row is written after the upstream
-    // call with a terminal status; the quota counts every attempt (success,
-    // failure, or timeout) — one increment per row-write, matching the pull
-    // and legacy surfaces. Counts against the caller's account. The txn is
-    // short: no network is held inside it (the HTTP call already happened).
-    let mut tx = db.begin().await?;
+    // One statement writes the row and queues its credit charge (the worker
+    // drains the queue in the background), so the charge exists exactly when
+    // the row does and credit accounting adds no round trip. The row is
+    // written after the upstream call with a terminal status; every attempt
+    // is charged (success, failure, or timeout), against the caller's account.
     sqlx::query!(
         r#"
+        WITH charge AS (
+            INSERT INTO credit_charge_queue (invocation_id, account_id)
+            VALUES ($1, $16)
+        )
         INSERT INTO relay_invocations
             (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
              capability_name, invoked_by_user_id, status, http_status,
@@ -252,11 +254,10 @@ async fn persist_invocation(
         output_preview,
         authz.api_key_id,
         authz.minted_jti,
+        authz.caller_account_id,
     )
-    .execute(&mut *tx)
+    .execute(db)
     .await?;
-    crate::limits::quota::increment(&mut *tx, authz.caller_account_id).await?;
-    tx.commit().await?;
     Ok(())
 }
 

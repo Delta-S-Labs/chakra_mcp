@@ -35,8 +35,8 @@ pub enum ApiError {
     #[error("rate limit exceeded")]
     RateLimited,
 
-    #[error("monthly quota exceeded")]
-    QuotaExceeded,
+    #[error("insufficient credits")]
+    InsufficientCredits,
 }
 
 #[derive(Serialize)]
@@ -66,11 +66,12 @@ impl IntoResponse for ApiError {
             ApiError::Auth(_) => (StatusCode::UNAUTHORIZED, "unauthorized", false),
             // Per-account usage limits (distinct `code`s from the per-capability
             // public-invoke quota so clients can tell the two apart). Rate is
-            // retryable once the 60s window rolls; quota resets next month.
+            // retryable once the 60s window rolls; credits need a top-up or
+            // the next monthly grant.
             ApiError::RateLimited => (StatusCode::TOO_MANY_REQUESTS, "account_rate_limited", true),
-            ApiError::QuotaExceeded => (
+            ApiError::InsufficientCredits => (
                 StatusCode::TOO_MANY_REQUESTS,
-                "account_monthly_quota_exhausted",
+                "account_credits_exhausted",
                 false,
             ),
         };

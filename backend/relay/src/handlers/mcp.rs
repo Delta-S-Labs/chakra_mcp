@@ -153,8 +153,8 @@ fn api_err_to_rpc(e: ApiError) -> RpcError {
         NotFound => (ERR_INVALID_REQUEST, "not found".into()),
         Conflict(m) => (ERR_INVALID_REQUEST, m.clone()),
         // Usage limits: a client-side "back off" error (no JSON-RPC 429). The
-        // message ("rate limit exceeded" / "monthly quota exceeded") conveys it.
-        RateLimited | QuotaExceeded => (ERR_INVALID_REQUEST, e.to_string()),
+        // message ("rate limit exceeded" / "insufficient credits") conveys it.
+        RateLimited | InsufficientCredits => (ERR_INVALID_REQUEST, e.to_string()),
         Database(_) | Auth(_) | Internal(_) => (ERR_INTERNAL, e.to_string()),
     };
     RpcError {
@@ -1712,6 +1712,19 @@ mod manage_agents_tests {
     }
 
     /// POST a tools/call to /mcp and return the parsed JSON-RPC `result`.
+    /// MCP (via the shared trusted path) refuses an out-of-credits caller with
+    /// a client-side back-off error rather than a JSON-RPC 429.
+    #[test]
+    fn usage_limit_refusals_map_to_a_client_side_rpc_error() {
+        use chakramcp_shared::error::ApiError;
+        let credits = super::api_err_to_rpc(ApiError::InsufficientCredits);
+        assert_eq!(credits.code, super::ERR_INVALID_REQUEST);
+        assert_eq!(credits.message, "insufficient credits");
+        let rate = super::api_err_to_rpc(ApiError::RateLimited);
+        assert_eq!(rate.code, super::ERR_INVALID_REQUEST);
+        assert_eq!(rate.message, "rate limit exceeded");
+    }
+
     /// State whose usage recorder has a live background writer, so tests can
     /// assert on `usage_events` after a `flush`.
     fn recording_state(pool: &PgPool) -> crate::state::RelayState {

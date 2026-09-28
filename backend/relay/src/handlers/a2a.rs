@@ -73,33 +73,18 @@ async fn handle_send_message(
     let decision = evaluate(&state.db, headers, state, account_slug, agent_slug).await;
     match decision {
         Decision::Authorized(authz) => {
-            // Usage limits (per-account rate + monthly quota), keyed on the
-            // caller's account. In shadow mode a would-block is logged and the
-            // call proceeds; when enforcing, it's denied (→ HTTP 429).
-            match crate::limits::enforce(
-                &state.db,
-                &state.rate_limiter,
-                authz.caller_account_id,
-                state.limits_enforce,
-                "a2a",
-            )
-            .await
-            {
-                Ok(None) => {}
-                Ok(Some(outcome)) => {
-                    let reason = match outcome {
-                        crate::limits::LimitOutcome::RateLimited => DenyReason::RateLimited,
-                        crate::limits::LimitOutcome::QuotaExceeded => DenyReason::QuotaExceeded,
-                        crate::limits::LimitOutcome::Allowed => {
-                            unreachable!("enforce() returns None for Allowed")
-                        }
-                    };
-                    return deny_response(&reason);
-                }
-                Err(e) => {
-                    tracing::error!(error = %e, "usage-limit check failed");
-                    return internal_error();
-                }
+            // Usage limits (per-account rate + credits), keyed on the caller's
+            // account. In-memory only: the credits worker keeps the switch
+            // current. In shadow mode a would-block is logged and the call
+            // proceeds; when enforcing, it's refused (→ HTTP 429).
+            if let Some(outcome) = state.enforce_limits(authz.caller_account_id, "a2a").await {
+                let reason = match outcome {
+                    crate::limits::LimitOutcome::RateLimited => DenyReason::RateLimited,
+                    crate::limits::LimitOutcome::InsufficientCredits => {
+                        DenyReason::InsufficientCredits
+                    }
+                };
+                return deny_response(&reason);
             }
             let ctx = match compliance_context(&state.db, &authz).await {
                 Ok(c) => c,
@@ -1078,18 +1063,15 @@ mod tests {
         assert!(sent["state"]["request"]["input"].is_object(), "{sent}");
     }
 
-    // ─── Usage limits (PR3a) ─────────────────────────────────
+    // ─── Usage limits: credits ───────────────────────────────
 
-    async fn seed_caller_quota_at(pool: &PgPool, account_id: Uuid, used: i64) {
-        sqlx::query!(
-            r#"INSERT INTO usage_counters (account_id, period_start, invocations)
-               VALUES ($1, date_trunc('month', now() AT TIME ZONE 'UTC')::date, $2)"#,
-            account_id,
-            used,
-        )
-        .execute(pool)
-        .await
-        .unwrap();
+    /// Charge-queue rows written for `account` (one per accepted invocation).
+    async fn queued_charges(pool: &PgPool, account: Uuid) -> i64 {
+        sqlx::query_scalar("SELECT count(*) FROM credit_charge_queue WHERE account_id = $1")
+            .bind(account)
+            .fetch_one(pool)
+            .await
+            .unwrap()
     }
 
     fn a2a_send_request(f: &Fixture) -> Request<Body> {
@@ -1110,62 +1092,56 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "../migrations")]
-    async fn shadow_mode_allows_over_quota(pool: PgPool) {
+    async fn shadow_mode_allows_when_out_of_credits(pool: PgPool) {
         let f = seed_full_fixture(&pool).await;
-        // Caller is on the free plan (quota 1000) and already at the cap.
-        seed_caller_quota_at(&pool, f.caller_account_id, 1000).await;
+        let credits = crate::limits::credits::exhausted_cache(&pool, f.caller_account_id).await;
         // Default RelayState → limits_enforce = false (shadow mode).
-        let app = crate::router(crate::state::RelayState::new(pool.clone(), config_v2_on()));
+        let app = crate::router(
+            crate::state::RelayState::new(pool.clone(), config_v2_on()).with_credit_cache(credits),
+        );
         let res = app.oneshot(a2a_send_request(&f)).await.unwrap();
-        // Over quota, but shadow mode logs a would-block and still parks.
+        // Out of credits, but shadow mode logs a would-block and still parks.
         assert_eq!(res.status(), StatusCode::OK);
     }
 
     #[sqlx::test(migrations = "../migrations")]
-    async fn enforce_over_quota_returns_429(pool: PgPool) {
+    async fn enforcing_refuses_when_out_of_credits(pool: PgPool) {
         let f = seed_full_fixture(&pool).await;
-        seed_caller_quota_at(&pool, f.caller_account_id, 1000).await;
-        // Precondition (isolates handler wiring from the limit logic): the
-        // caller's account is over quota exactly as the handler will read it.
-        assert_eq!(
-            crate::limits::check(
-                &pool,
-                &crate::limits::RateLimiter::Noop,
-                f.caller_account_id
-            )
-            .await
-            .unwrap(),
-            crate::limits::LimitOutcome::QuotaExceeded,
-            "precondition: caller must be over quota"
-        );
+        let credits = crate::limits::credits::exhausted_cache(&pool, f.caller_account_id).await;
         let app = crate::router(
-            crate::state::RelayState::new(pool.clone(), config_v2_on()).with_limits_enforce(true),
+            crate::state::RelayState::new(pool.clone(), config_v2_on())
+                .with_limits_enforce(true)
+                .with_credit_cache(credits),
         );
         let res = app.oneshot(a2a_send_request(&f)).await.unwrap();
         assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
         let body = parse_body(res).await;
         assert_eq!(body["error"]["code"], -32008);
-        assert_eq!(body["error"]["data"]["code"], "chk.limit.quota");
+        assert_eq!(body["error"]["data"]["code"], "chk.limit.credits");
+        // Refused before dispatch: nothing parked, nothing charged.
+        assert_eq!(queued_charges(&pool, f.caller_account_id).await, 0);
     }
 
     #[sqlx::test(migrations = "../migrations")]
-    async fn successful_pull_increments_quota_counter(pool: PgPool) {
+    async fn a_pull_invocation_queues_one_charge(pool: PgPool) {
         let f = seed_full_fixture(&pool).await;
         let app = crate::router(crate::state::RelayState::new(pool.clone(), config_v2_on()));
         let res = app.oneshot(a2a_send_request(&f)).await.unwrap();
         assert_eq!(res.status(), StatusCode::OK);
-        // The park path counted this invocation against the caller's account,
-        // in the same transaction as the relay_invocations row.
-        let used = sqlx::query_scalar!(
-            r#"SELECT invocations FROM usage_counters
-               WHERE account_id = $1
-                 AND period_start = date_trunc('month', now() AT TIME ZONE 'UTC')::date"#,
-            f.caller_account_id,
+        // The park wrote the invocation and its charge in one statement,
+        // against the caller's account.
+        assert_eq!(queued_charges(&pool, f.caller_account_id).await, 1);
+        let orphaned: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM credit_charge_queue q
+              WHERE NOT EXISTS (SELECT 1 FROM relay_invocations i WHERE i.id = q.invocation_id)",
         )
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert_eq!(used, 1);
+        assert_eq!(
+            orphaned, 0,
+            "every queued charge matches its invocation row"
+        );
     }
 
     /// Promote the fixture's target agent to push mode by giving it
@@ -1327,6 +1303,8 @@ mod tests {
             .unwrap();
         assert_eq!(row.status, "succeeded");
         assert_eq!(row.http_status, Some(200));
+        // The forwarder queued the charge with the row, against the caller.
+        assert_eq!(queued_charges(&pool, f.caller_account_id).await, 1);
     }
 
     /// Push-mode call where upstream is unreachable returns
@@ -1340,7 +1318,7 @@ mod tests {
             .ensure_active_key()
             .await
             .unwrap();
-        let app = crate::router(crate::state::RelayState::new(pool, config_v2_on()));
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config_v2_on()));
         let res = app
             .oneshot(req(
                 &path_for(&f),
@@ -1353,6 +1331,8 @@ mod tests {
         assert_eq!(res.status(), StatusCode::BAD_GATEWAY);
         let body = parse_body(res).await;
         assert_eq!(body["error"]["data"]["code"], "chk.target.unreachable");
+        // Every accepted attempt is charged, failed ones included.
+        assert_eq!(queued_charges(&pool, f.caller_account_id).await, 1);
     }
 
     // ── D5d: tasks/get end-to-end ─────────────────────────

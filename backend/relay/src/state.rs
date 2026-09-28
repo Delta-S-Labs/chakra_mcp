@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
 use sqlx::PgPool;
+use uuid::Uuid;
 
 use chakramcp_shared::config::SharedConfig;
 
 use crate::compliance::ComplianceChecker;
 use crate::events::UsageRecorder;
-use crate::limits::RateLimiter;
+use crate::limits::{CreditCache, CreditsConfig, LimitOutcome, RateLimiter};
 
 #[derive(Clone)]
 pub struct RelayState {
@@ -29,12 +30,20 @@ pub struct RelayState {
     /// one via [`RelayState::with_usage_recorder`] whose background writer
     /// does the DB work, so no request waits on usage metering.
     pub usage: UsageRecorder,
+    /// Credit switches (who's out of credits, per-account rate overrides),
+    /// kept current by the credits worker. The default was never refreshed,
+    /// so nobody is blocked; production shares one with the worker via
+    /// [`RelayState::with_credit_cache`].
+    pub credit_cache: Arc<CreditCache>,
+    /// Credit defaults (grant, cost, tick, default rate limit).
+    pub credits: CreditsConfig,
 }
 
 impl RelayState {
-    /// Construct with rate limiting disabled (Noop) and enforcement off
-    /// (shadow). Keeps the two-arg signature every existing caller (incl.
-    /// tests) relies on; production chains the builders below.
+    /// Construct with rate limiting disabled (Noop), enforcement off
+    /// (shadow), and credit switches that block nobody. Keeps the two-arg
+    /// signature every existing caller (incl. tests) relies on; production
+    /// chains the builders below.
     pub fn new(db: PgPool, config: SharedConfig) -> Self {
         Self {
             db,
@@ -43,7 +52,36 @@ impl RelayState {
             limits_enforce: false,
             compliance: None,
             usage: UsageRecorder::noop(),
+            credit_cache: Arc::new(CreditCache::default()),
+            credits: CreditsConfig::default(),
         }
+    }
+
+    /// The usage-limit gate for `account_id` on `surface`: the outcome to
+    /// refuse with, or `None` to proceed. In-memory only (plus the Redis
+    /// rate check) — see [`crate::limits::enforce`].
+    pub async fn enforce_limits(&self, account_id: Uuid, surface: &str) -> Option<LimitOutcome> {
+        crate::limits::enforce(
+            &self.rate_limiter,
+            &self.credit_cache,
+            self.credits.default_rate_per_min,
+            account_id,
+            self.limits_enforce,
+            surface,
+        )
+        .await
+    }
+
+    /// Share the credit switches the worker keeps current.
+    pub fn with_credit_cache(mut self, cache: Arc<CreditCache>) -> Self {
+        self.credit_cache = cache;
+        self
+    }
+
+    /// Set the credit defaults (production reads them from the environment).
+    pub fn with_credits_config(mut self, credits: CreditsConfig) -> Self {
+        self.credits = credits;
+        self
     }
 
     /// Replace the rate limiter (production wiring reads `REDIS_URL`).
