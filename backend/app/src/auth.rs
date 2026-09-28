@@ -107,7 +107,13 @@ async fn is_token_revoked(db: &PgPool, jti: Uuid) -> Result<bool, ApiError> {
     Ok(row.is_some())
 }
 
-/// Convenience: same as `AuthUser` but rejects non-admins.
+/// Same as `AuthUser`, but only the operator, signed in as themselves.
+///
+/// Delegated credentials never pass, whatever their admin flag says: an API
+/// key, or a token minted for an OAuth client or a paired agent, acts on the
+/// operator's behalf and must not carry operator powers (it could move
+/// credits on any account). New delegated tokens are minted without the
+/// flag; the `minted_jti` check also covers ones issued before that.
 #[derive(Debug, Clone)]
 pub struct AdminUser(pub AuthUser);
 
@@ -119,11 +125,30 @@ impl FromRequestParts<AppState> for AdminUser {
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
         let user = AuthUser::from_request_parts(parts, state).await?;
-        if !user.is_admin {
+        if !user.is_admin || user.api_key_id.is_some() {
             return Err(ApiError::Forbidden);
+        }
+        if let Some(jti) = user.jti {
+            if is_delegated_token(&state.db, jti).await? {
+                return Err(ApiError::Forbidden);
+            }
         }
         Ok(Self(user))
     }
+}
+
+/// Whether this JWT was minted for an OAuth client or a device pairing.
+async fn is_delegated_token(db: &PgPool, jti: Uuid) -> Result<bool, ApiError> {
+    Ok(sqlx::query_scalar!(
+        r#"
+        SELECT EXISTS (SELECT 1 FROM oauth_authorizations WHERE minted_jti = $1)
+            OR EXISTS (SELECT 1 FROM oauth_device_codes WHERE minted_jti = $1)
+            AS "delegated!"
+        "#,
+        jti,
+    )
+    .fetch_one(db)
+    .await?)
 }
 
 /// Hash an API key with SHA-256 and return the lowercase hex digest.

@@ -253,6 +253,15 @@ pub async fn admin_update_settings(
 
     let mut tx = state.db.begin().await?;
     sqlx::query(SET_LOCK_TIMEOUT).execute(&mut *tx).await?;
+    // Make sure there's a row to lock: two first-time changes to a wallet-less
+    // account would otherwise both read "no overrides" and the second write
+    // would undo the first. (A no-op rolls this back.)
+    sqlx::query!(
+        "INSERT INTO credit_wallets (account_id) VALUES ($1) ON CONFLICT DO NOTHING",
+        account_id,
+    )
+    .execute(&mut *tx)
+    .await?;
     let current = sqlx::query!(
         r#"
         SELECT monthly_free_grant_mc, rate_limit_per_min, unlimited
@@ -339,13 +348,18 @@ pub async fn admin_update_settings(
     ))
 }
 
-/// The account's credit picture. `admin` adds who made each change.
+/// The account's credit picture, read from one snapshot so the balance,
+/// spend and history agree. `admin` adds who made each change.
 pub(crate) async fn load_view(
     db: &PgPool,
     cfg: &CreditsConfig,
     account_id: Uuid,
     admin: bool,
 ) -> ApiResult<CreditsView> {
+    let mut tx = db.begin().await?;
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        .execute(&mut *tx)
+        .await?;
     let wallet = sqlx::query!(
         r#"
         SELECT balance_mc, monthly_free_grant_mc, rate_limit_per_min,
@@ -354,7 +368,7 @@ pub(crate) async fn load_view(
         "#,
         account_id,
     )
-    .fetch_optional(db)
+    .fetch_optional(&mut *tx)
     .await?;
     // Month boundaries on the database clock, which stamps `charged_at`.
     let month = sqlx::query!(
@@ -370,7 +384,7 @@ pub(crate) async fn load_view(
         "#,
         account_id,
     )
-    .fetch_one(db)
+    .fetch_one(&mut *tx)
     .await?;
     let daily = sqlx::query_as!(
         DailySpend,
@@ -384,7 +398,7 @@ pub(crate) async fn load_view(
         "#,
         account_id,
     )
-    .fetch_all(db)
+    .fetch_all(&mut *tx)
     .await?;
     let ledger = sqlx::query!(
         r#"
@@ -396,8 +410,9 @@ pub(crate) async fn load_view(
         account_id,
         LEDGER_LIMIT,
     )
-    .fetch_all(db)
+    .fetch_all(&mut *tx)
     .await?;
+    tx.commit().await?;
 
     let (balance_mc, grant_override, rate_override, period, unlimited) = match &wallet {
         Some(w) => (
@@ -988,6 +1003,174 @@ mod tests {
         .unwrap();
         assert_eq!(balance, 100_000 - 300 + 5_000 - 1_200);
         assert_eq!(balance, reconciled);
+    }
+
+    /// A pool with room for real concurrency (the test pool may be small).
+    async fn wide_pool(pool: &PgPool) -> PgPool {
+        sqlx::postgres::PgPoolOptions::new()
+            .max_connections(4)
+            .connect_with(pool.connect_options().as_ref().clone())
+            .await
+            .unwrap()
+    }
+
+    /// Consent to an OAuth client as `session`, then redeem the code: the
+    /// access token a third-party client would hold.
+    async fn oauth_client_token(pool: &PgPool, session: &str, agent: Uuid) -> String {
+        use base64::Engine;
+        use sha2::{Digest, Sha256};
+
+        sqlx::query(
+            "INSERT INTO oauth_clients (id, client_id, client_name, redirect_uris)
+             VALUES ($1, 'mcp_test', 'Test', $2)",
+        )
+        .bind(Uuid::now_v7())
+        .bind(vec!["https://app.test/cb".to_string()])
+        .execute(pool)
+        .await
+        .unwrap();
+        let verifier = "verifier-0123456789012345678901234567890123456789";
+        let challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(Sha256::digest(verifier.as_bytes()));
+        let (status, issued) = call(
+            pool,
+            Method::POST,
+            "/oauth/issue-code",
+            session,
+            Some(json!({
+                "client_id": "mcp_test",
+                "redirect_uri": "https://app.test/cb",
+                "code_challenge": challenge,
+                "agent_scope": "selected",
+                "selected_agent_ids": [agent],
+            })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{issued}");
+        let form = format!(
+            "grant_type=authorization_code&code={}&client_id=mcp_test\
+             &redirect_uri=https%3A%2F%2Fapp.test%2Fcb&code_verifier={verifier}",
+            issued["code"].as_str().unwrap()
+        );
+        let res = crate::router(crate::AppState::new(pool.clone(), test_config()))
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/oauth/token")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .body(Body::from(form))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body: Value =
+            serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        body["access_token"].as_str().unwrap().to_owned()
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn delegated_credentials_never_act_as_admin(pool: PgPool) {
+        let (_, _, victim) = seed_user_with_personal(&pool, "victim").await;
+        // The operator: an admin in the database, signed in interactively.
+        let (admin_id, session, email) = admin(&pool).await;
+        sqlx::query("UPDATE users SET is_admin = true WHERE id = $1")
+            .bind(admin_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let admin_account: Uuid =
+            sqlx::query_scalar("SELECT account_id FROM account_memberships WHERE user_id = $1")
+                .bind(admin_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let agent = seed_agent(&pool, admin_account, "ops-agent", admin_id).await;
+        let ledger = format!("/v1/admin/accounts/{victim}/credits/ledger");
+        let grant = json!({ "kind": "grant", "amount_mc": 1_000_000 });
+
+        // A token the operator consented to for an OAuth client, even one
+        // scoped to a single agent.
+        let client_token = oauth_client_token(&pool, &session, agent).await;
+        let claims = jwt::decode_jwt(&client_token, TEST_SECRET).unwrap();
+        assert!(
+            !claims.is_admin,
+            "delegated tokens are minted without admin"
+        );
+
+        // A delegated token minted before that, still carrying the flag: its
+        // jti is on the pairing that minted it.
+        let pairing = seed_approved_device_flow(&pool, admin_id, agent).await;
+        let old = jwt::UserClaims::new(admin_id, email, true, 1);
+        sqlx::query("UPDATE oauth_device_codes SET minted_jti = $1 WHERE id = $2")
+            .bind(old.jti)
+            .bind(pairing)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let old_token = jwt::encode_jwt(&old, TEST_SECRET).unwrap();
+
+        // The operator's API key.
+        let (_, api_key) = seed_api_key(&pool, admin_id, "ops").await;
+
+        for (who, token) in [
+            ("oauth client", &client_token),
+            ("pre-fix pairing token", &old_token),
+            ("api key", &api_key),
+        ] {
+            let (status, _) = call(&pool, Method::POST, &ledger, token, Some(grant.clone())).await;
+            assert_eq!(status, StatusCode::FORBIDDEN, "{who} moved credits");
+            let (status, _) = call(&pool, Method::GET, "/v1/admin/orgs", token, None).await;
+            assert_eq!(status, StatusCode::FORBIDDEN, "{who} read the admin list");
+        }
+        let wallets: i64 = sqlx::query_scalar("SELECT count(*) FROM credit_wallets")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(wallets, 0);
+
+        // The operator's own session still works.
+        let (status, view) = call(&pool, Method::POST, &ledger, &session, Some(grant)).await;
+        assert_eq!(status, StatusCode::OK, "{view}");
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn concurrent_first_settings_changes_both_stick(pool: PgPool) {
+        let (_, admin_token, _) = admin(&pool).await;
+        let wide = wide_pool(&pool).await;
+        for run in 0..5 {
+            let (_, _, account) = seed_user_with_personal(&pool, &format!("race{run}")).await;
+            let path = format!("/v1/admin/accounts/{account}/credits");
+            let (grant, rate) = tokio::join!(
+                call(
+                    &wide,
+                    Method::PATCH,
+                    &path,
+                    &admin_token,
+                    Some(json!({ "monthly_free_grant_mc": 5_000 })),
+                ),
+                call(
+                    &wide,
+                    Method::PATCH,
+                    &path,
+                    &admin_token,
+                    Some(json!({ "rate_limit_per_min": 10 })),
+                ),
+            );
+            assert_eq!((grant.0, rate.0), (StatusCode::OK, StatusCode::OK));
+            let stored: (Option<i64>, Option<i32>) = sqlx::query_as(
+                "SELECT monthly_free_grant_mc, rate_limit_per_min FROM credit_wallets WHERE account_id = $1",
+            )
+            .bind(account)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(
+                stored,
+                (Some(5_000), Some(10)),
+                "run {run}: a change was lost"
+            );
+        }
     }
 
     #[sqlx::test(migrations = "../migrations")]

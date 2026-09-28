@@ -524,19 +524,13 @@ async fn token_authorization_code(
     // the relay validates it via the existing Bearer path. We build
     // claims *before* the consume UPDATE so its jti can be persisted
     // alongside `used_at` for the /v1/pairings revoke flow.
-    let user = sqlx::query!(
-        r#"SELECT email, is_admin FROM users WHERE id = $1"#,
-        row.user_id,
-    )
-    .fetch_one(&mut *tx)
-    .await?;
+    let user = sqlx::query!(r#"SELECT email FROM users WHERE id = $1"#, row.user_id)
+        .fetch_one(&mut *tx)
+        .await?;
 
-    let claims = jwt::UserClaims::new(
-        row.user_id,
-        user.email,
-        user.is_admin,
-        ACCESS_TOKEN_TTL_HOURS,
-    );
+    // Never admin: this token acts for the user through a third-party
+    // client. Operator powers stay with the operator's own sign-in.
+    let claims = jwt::UserClaims::new(row.user_id, user.email, false, ACCESS_TOKEN_TTL_HOURS);
 
     sqlx::query!(
         r#"
@@ -671,12 +665,9 @@ async fn token_device_code(state: &AppState, req: &TokenRequest) -> axum::respon
     };
     let approved_agent_id = row.approved_agent_id;
 
-    let user = match sqlx::query!(
-        r#"SELECT email, is_admin FROM users WHERE id = $1"#,
-        approved_user_id,
-    )
-    .fetch_one(&mut *tx)
-    .await
+    let user = match sqlx::query!(r#"SELECT email FROM users WHERE id = $1"#, approved_user_id,)
+        .fetch_one(&mut *tx)
+        .await
     {
         Ok(u) => u,
         Err(e) => return ApiError::Database(e).into_response(),
@@ -707,13 +698,10 @@ async fn token_device_code(state: &AppState, req: &TokenRequest) -> axum::respon
     // Build the JWT claims *before* the consume UPDATE so we can store
     // its jti alongside `consumed_at`. The /v1/pairings revoke path
     // uses `minted_jti` to insert into `revoked_tokens`, killing the
-    // token before its natural 24h expiry.
-    let claims = jwt::UserClaims::new(
-        approved_user_id,
-        user.email,
-        user.is_admin,
-        ACCESS_TOKEN_TTL_HOURS,
-    );
+    // token before its natural 24h expiry. Never admin: a paired agent
+    // acts for the user, and operator powers stay with the operator's own
+    // sign-in.
+    let claims = jwt::UserClaims::new(approved_user_id, user.email, false, ACCESS_TOKEN_TTL_HOURS);
 
     if let Err(e) = sqlx::query!(
         r#"

@@ -451,11 +451,15 @@ switches go stale, and their recovery.
   the defaults the relay enforces.
 - **P3 — Admin credit management (built):** `GET` / `PATCH
   /v1/admin/accounts/{id}/credits` and `POST /v1/admin/accounts/{id}/credits/ledger`,
-  behind `AdminUser` (the `ADMIN_EMAIL` user). A **grant** (`admin_grant`, > 0) or an
+  behind `AdminUser`: the `ADMIN_EMAIL` user **signed in interactively**. Delegated
+  credentials never pass — API keys, and tokens minted for OAuth clients or device
+  pairings (now minted without the admin flag; older ones are caught by their
+  `minted_jti`) — since they could otherwise move credits on any account. A **grant** (`admin_grant`, > 0) or an
   **adjustment** (`adjustment`, either sign, note required — e.g. correcting after a
   refund) is one statement: wallet upsert + ledger row with the resulting balance, so
   the reconciliation invariant holds. **Settings** — monthly-grant and rate-limit
-  overrides (`null` = back to the default) and `unlimited` — write a zero-delta
+  overrides (`null` = back to the default) and `unlimited`, serialised by locking the
+  wallet row (created first if missing) — write a zero-delta
   `adjustment` row with `metadata.kind = "settings"` and `{from, to}` per change, so
   an account's history explains its limits too. Every row carries the admin's id and
   email in `metadata.admin`; bounds: 1 billion credits per entry, notes ≤ 500 chars,
