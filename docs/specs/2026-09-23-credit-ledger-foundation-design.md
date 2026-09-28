@@ -311,7 +311,7 @@ settings must never silently fall back). `LIMITS_ENFORCE` is unchanged.
 
 Both binaries run `sqlx::migrate!` **at boot**, and sqlx refuses to start when the
 DB has a migration the binary doesn't know. CD also migrates before restarting.
-Three PRs, merged one at a time (CD's concurrency group drops a middle deploy).
+Four PRs, merged one at a time (CD's concurrency group drops a middle deploy).
 
 **Before merging PR1:** run the guard's query against prod and confirm 0:
 `SELECT count(*) FROM accounts a JOIN plans p ON p.id = a.plan_id WHERE p.name <> 'free';`
@@ -322,13 +322,19 @@ Three PRs, merged one at a time (CD's concurrency group drops a middle deploy).
 `credit_ledger`, `credit_charge_queue`, `invocation_charges` + indexes. Touches
 neither `relay_invocations` nor `accounts`; no backfill.
 
+**`0035_credits_hardening.sql` (PR1b — additive, live before PR2):**
+`credit_charge_queue SET (vacuum_truncate = false)` — the worker drains the queue
+to empty every tick, so VACUUM would otherwise truncate its tail pages each run
+under an ACCESS EXCLUSIVE lock that the hot-path inserts queue behind; plus
+`CHECK (rate_limit_per_min > 0)` and `CHECK (monthly_free_grant_mc >= 0)`.
+
 **PR2 (swap — no migration):** worker, cache, config, the four enqueueing
 statements, error renames. First tick after deploy: wallets appear as accounts
 invoke; each is granted one month (everyone starts fresh — current-month usage
 under the old quota is not carried over).
 
-**`0035_credits_contract.sql` (PR3, after PR2 is live):** drop `accounts.plan_id`,
-`plans`, `usage_counters`. **Must-succeed deploy:** once 0035 is applied, the PR2
+**`0036_credits_contract.sql` (PR3, after PR2 is live):** drop `accounts.plan_id`,
+`plans`, `usage_counters`. **Must-succeed deploy:** once 0036 is applied, the PR2
 binary can no longer boot.
 
 **Rollback.** Revert *code*, never migration files — a binary missing an applied
@@ -362,7 +368,7 @@ blocked-set size, and duration; warn when the queue grows across consecutive tic
 - **Migration:** the guard test uses `#[sqlx::test(migrations = false)]` with
   `Migrator::run_to(33)` then `run_to(34)` and runtime `sqlx::query` (so `.sqlx`
   stays unchanged; it's the one allowed `plans` reference after PR2); a fresh DB
-  migrates `0001→0035` cleanly.
+  migrates `0001→0036` cleanly.
 - **Live Redis** rate path stays green.
 
 ## Prerequisites (decided 2026-09-25, outside credits) — shipped

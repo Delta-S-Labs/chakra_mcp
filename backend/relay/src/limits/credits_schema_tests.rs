@@ -1,7 +1,8 @@
-//! Migration 0034 (credits, expand): the plan-tier guard and the new tables.
+//! Migrations 0034 (credits, expand) and 0035 (hardening): the plan-tier
+//! guard, the new tables and their constraints.
 //!
 //! Runtime `sqlx::query` only, no macros: the guard tests touch
-//! `plans`/`plan_id`, which migration 0035 drops, and runtime queries stay
+//! `plans`/`plan_id`, which migration 0036 drops, and runtime queries stay
 //! out of the `.sqlx` cache.
 
 use chrono::NaiveDate;
@@ -28,7 +29,7 @@ fn account_slug(account_id: Uuid) -> String {
     format!("credits-{}", &account_id.simple().to_string()[..12])
 }
 
-/// An account on the default plan. Valid before and after 0035.
+/// An account on the default plan. Valid before and after 0036.
 async fn seed_account(pool: &PgPool) -> Uuid {
     let owner = seed_user(pool).await;
     let account_id = Uuid::now_v7();
@@ -45,7 +46,7 @@ async fn seed_account(pool: &PgPool) -> Uuid {
     account_id
 }
 
-/// An account on a named plan. Only valid before 0035 drops `plans`.
+/// An account on a named plan. Only valid before 0036 drops `plans`.
 async fn seed_account_on_plan(pool: &PgPool, plan: &str) {
     let owner = seed_user(pool).await;
     let account_id = Uuid::now_v7();
@@ -216,4 +217,65 @@ async fn an_invocation_is_queued_and_charged_at_most_once(pool: PgPool) {
     };
     charge().execute(&pool).await.unwrap();
     assert!(charge().execute(&pool).await.is_err(), "charged twice");
+}
+
+async fn set_overrides(
+    pool: &PgPool,
+    account: Uuid,
+    rate_limit_per_min: Option<i32>,
+    monthly_free_grant_mc: Option<i64>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO credit_wallets (account_id, rate_limit_per_min, monthly_free_grant_mc)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (account_id) DO UPDATE
+            SET rate_limit_per_min = EXCLUDED.rate_limit_per_min,
+                monthly_free_grant_mc = EXCLUDED.monthly_free_grant_mc",
+    )
+    .bind(account)
+    .bind(rate_limit_per_min)
+    .bind(monthly_free_grant_mc)
+    .execute(pool)
+    .await
+    .map(|_| ())
+}
+
+#[sqlx::test(migrations = "../migrations")]
+async fn wallet_overrides_reject_nonsense(pool: PgPool) {
+    let account = seed_account(&pool).await;
+    // NULL means "use the default"; a zero grant is a legitimate override.
+    set_overrides(&pool, account, None, None).await.unwrap();
+    set_overrides(&pool, account, Some(1), Some(0))
+        .await
+        .unwrap();
+
+    for rate in [0, -5] {
+        assert!(
+            set_overrides(&pool, account, Some(rate), None)
+                .await
+                .is_err(),
+            "a rate limit of {rate} would refuse every call"
+        );
+    }
+    assert!(
+        set_overrides(&pool, account, None, Some(-1)).await.is_err(),
+        "a negative grant would debit the account every month"
+    );
+}
+
+#[sqlx::test(migrations = "../migrations")]
+async fn vacuum_never_truncates_the_queue(pool: PgPool) {
+    // Truncation takes an ACCESS EXCLUSIVE lock that would stall the
+    // invocation path's queue inserts.
+    let options: Vec<String> = sqlx::query_scalar(
+        "SELECT unnest(reloptions) FROM pg_class
+          WHERE oid = 'credit_charge_queue'::regclass",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert!(
+        options.iter().any(|o| o == "vacuum_truncate=false"),
+        "{options:?}"
+    );
 }

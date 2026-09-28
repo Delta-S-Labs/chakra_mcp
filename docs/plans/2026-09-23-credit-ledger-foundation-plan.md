@@ -12,9 +12,10 @@ in-memory switches; everything else runs in parallel.
 |----|----|----|----|
 | 1 | **PR-A** — usage middleware off the hot path | ✅ shipped (#323) | — |
 | 2 | **PR-B** — refuse queued invocations to push-mode agents | ✅ shipped (#324) | — |
-| 3 | **PR1** — expand migration `0034` | yes (migration) | prod guard = 0 (confirmed 2026-09-26) |
-| 4 | **PR2** — swap to async credits | yes (binary only) | PR1 live |
-| 5 | **PR3** — contract migration `0035` | yes (migration, must succeed) | PR2 live |
+| 3 | **PR1** — expand migration `0034` | ✅ shipped (#325) | prod guard = 0 (confirmed 2026-09-26) |
+| 4 | **PR1b** — hardening migration `0035` | yes (migration) | PR1 live |
+| 5 | **PR2** — swap to async credits | yes (binary only) | PR1b live |
+| 6 | **PR3** — contract migration `0036` | yes (migration, must succeed) | PR2 live |
 
 (`0033` is #312's `grant_purpose`, which landed after this plan was first drafted.)
 
@@ -105,6 +106,23 @@ queries keep `.sqlx` unchanged.
 
 ---
 
+## PR1b — Hardening migration
+
+Found in PR2's review; it has to be live before PR2 starts writing the queue.
+
+**File:** `backend/migrations/0035_credits_hardening.sql`
+1. `ALTER TABLE credit_charge_queue SET (vacuum_truncate = false);` — the worker
+   drains the queue to empty every tick, so VACUUM would truncate its tail pages
+   each run, and truncation takes an ACCESS EXCLUSIVE lock that the hot-path
+   inserts wait behind. The ALTER itself takes only SHARE UPDATE EXCLUSIVE.
+2. `CHECK (rate_limit_per_min > 0)` and `CHECK (monthly_free_grant_mc >= 0)` on
+   `credit_wallets`, before P3's admin writes can set a nonsense override.
+
+**Tests:** the queue's reloptions include `vacuum_truncate=false`; a 0 or negative
+rate limit and a negative grant are rejected, NULL and a 0 grant are accepted.
+
+---
+
 ## PR2 — Swap to async credits
 
 **Files:**
@@ -150,13 +168,13 @@ created and granted as accounts invoke, and an exhausted test account is denied.
 
 ## PR3 — Contract migration
 
-**File:** `backend/migrations/0035_credits_contract.sql` — drop `accounts.plan_id`,
+**File:** `backend/migrations/0036_credits_contract.sql` — drop `accounts.plan_id`,
 `plans`, `usage_counters`.
 
 **Must-succeed:** once applied, the PR2 binary can no longer boot. Merge only with PR2
 live and healthy.
 
-**Tests:** a fresh DB migrates `0001..0035` cleanly; full suite green; `.sqlx`
+**Tests:** a fresh DB migrates `0001..0036` cleanly; full suite green; `.sqlx`
 unchanged.
 
 ---
