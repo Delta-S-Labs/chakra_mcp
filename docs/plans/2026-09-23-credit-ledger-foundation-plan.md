@@ -183,32 +183,28 @@ created and granted as accounts invoke, and an exhausted test account is denied.
 **Must-succeed:** once applied, the PR2 binary can no longer boot. Merge only with PR2
 live and healthy.
 
-**Locking (from PR2's review):** the `accounts` DROP COLUMN needs ACCESS EXCLUSIVE,
-and while it waits, every `accounts` reader queues behind it — invocation-path reads
-included. Wrap it in a retry loop with a short lock timeout instead of the 5 s one:
+**Locking (from PR2's review):** every drop needs ACCESS EXCLUSIVE on `accounts` —
+`DROP TABLE usage_counters` too, since its foreign key's triggers live on `accounts`
+(checked on PG 16: both time out behind a plain `SELECT` of `accounts`). A lock
+request that *waits* queues every later `accounts` reader behind it, invocation-path
+reads included. So the migration never waits long: in a PL/pgSQL loop it sets
+`lock_timeout = '100ms'`, locks the unused `usage_counters` and `plans` first and
+`accounts` last (so once `accounts` is held nothing is left to wait for), runs all
+three drops (`IF EXISTS`, catalog-only, milliseconds), and on
+`lock_not_available` / `deadlock_detected` backs off `min(0.05 s × attempt, 1 s)` and
+retries — 50 attempts, then `RAISE` (the transaction rolls back and CD's migrate step
+fails with the old relay still serving). Measured with a 1.5 s read of `accounts` in
+flight: the naive `ALTER` held a new reader for 930 ms; the loop kept readers under
+~100 ms of lock wait and applied in 1.3 s once the long read ended.
 
-```sql
-DO $$
-DECLARE attempt int := 0;
-BEGIN
-    LOOP
-        BEGIN
-            SET LOCAL lock_timeout = '100ms';
-            ALTER TABLE accounts DROP COLUMN plan_id;
-            EXIT;
-        EXCEPTION WHEN lock_not_available THEN
-            attempt := attempt + 1;
-            IF attempt >= 50 THEN RAISE; END IF;
-            PERFORM pg_sleep(least(0.05 * attempt, 1));
-        END;
-    END LOOP;
-END $$;
-```
-
-The `plans` / `usage_counters` drops touch tables nothing reads any more.
-
-**Tests:** a fresh DB migrates `0001..0036` cleanly; full suite green; `.sqlx`
-unchanged.
+**Tests:** plan objects gone after a full migrate; an account's wallet survives the
+contract (from 0035 with data); readers never park behind the migration's lock while
+it waits out a long read (mutation-checked: the naive `ALTER` makes a reader wait
+4.7 s; with no lock timeout at all the reader's own 1 s timeout fails the test fast
+instead of hanging); full suite green; `.sqlx` unchanged (`prepare --check` against
+the post-0036 schema). Independent review: **Ship** — under ~7k reads/s it applied in
+18 ms; with a long read in flight readers peaked at 114 ms; if the lock never clears it
+gives up after ~45 s and rolls back intact.
 
 ---
 

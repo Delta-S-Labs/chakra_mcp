@@ -372,13 +372,15 @@ under the old quota is not carried over).
 
 **`0036_credits_contract.sql` (PR3, after PR2 is live):** drop `accounts.plan_id`,
 `plans`, `usage_counters`. **Must-succeed deploy:** once 0036 is applied, the PR2
-binary can no longer boot. **Lock carefully:** `DROP COLUMN` on `accounts` needs
-ACCESS EXCLUSIVE, and while it *waits* every reader of `accounts` — invocation-path
-reads included — queues behind it (reproduced: a worker charge waiting on a held
-wallet lock kept an `ALTER TABLE accounts` waiting, and an `accounts` read waited
-744 ms behind that). Use a short `lock_timeout` (~100 ms) in a retry loop — a
-PL/pgSQL `EXCEPTION WHEN lock_not_available` block with backoff — not the 5 s the
-additive migrations use.
+binary can no longer boot. **Lock carefully:** every drop needs ACCESS EXCLUSIVE on
+`accounts` (`usage_counters` too — its foreign key's triggers live there), and while a
+lock request *waits*, every reader of `accounts` — invocation-path reads included —
+queues behind it (reproduced: a worker charge waiting on a held wallet lock kept an
+`ALTER TABLE accounts` waiting, and an `accounts` read waited 744 ms behind that). So
+0036 takes the lock in a retry loop — `lock_timeout = '100ms'`, back off, retry (50
+attempts, ~45 s, then roll back) — never holding readers for more than one short
+attempt. It locks the unused tables first and `accounts` last, then does all three
+drops under those locks.
 
 **Rollback.** Revert *code*, never migration files — a binary missing an applied
 migration refuses to boot (or ship the revert with `set_ignore_missing(true)`).
