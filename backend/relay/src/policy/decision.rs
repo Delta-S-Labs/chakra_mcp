@@ -57,10 +57,10 @@ pub enum DenyReason {
     FriendshipRequired,
     GrantRequired,
     TargetUnreachable,
-    /// Caller's account is over its plan's per-minute rate limit.
+    /// Caller's account is over its per-minute rate limit.
     RateLimited,
-    /// Caller's account has hit its plan's monthly invocation quota.
-    QuotaExceeded,
+    /// Caller's account is out of credits.
+    InsufficientCredits,
     /// The System One compliance check (SYSTEM_ONE_CHECKS) judged the
     /// request outside the capability / grant / friendship, or abusive.
     ComplianceDenied,
@@ -93,9 +93,9 @@ impl DenyReason {
             | Self::CapabilityNotOnTarget => -32006,
             // -32007 / -32008: usage limits (both map to HTTP 429 in
             // a2a::jsonrpc_to_http). Distinct codes so clients can tell
-            // "slow down" from "out of quota".
+            // "slow down" from "out of credits".
             Self::RateLimited => -32007,
-            Self::QuotaExceeded => -32008,
+            Self::InsufficientCredits => -32008,
             // -32009: System One compliance denial (→ HTTP 403).
             Self::ComplianceDenied => -32009,
         }
@@ -119,7 +119,7 @@ impl DenyReason {
             Self::GrantRequired => "chk.policy.grant_required",
             Self::TargetUnreachable => "chk.target.unreachable",
             Self::RateLimited => "chk.limit.rate",
-            Self::QuotaExceeded => "chk.limit.quota",
+            Self::InsufficientCredits => "chk.limit.credits",
             Self::ComplianceDenied => "chk.policy.compliance_denied",
         }
     }
@@ -142,7 +142,7 @@ impl DenyReason {
             Self::GrantRequired => "grant required",
             Self::TargetUnreachable => "target unreachable",
             Self::RateLimited => "rate limit exceeded",
-            Self::QuotaExceeded => "monthly quota exceeded",
+            Self::InsufficientCredits => "insufficient credits",
             Self::ComplianceDenied => "request failed the System One compliance check",
         }
     }

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH due AS (\n            SELECT account_id,\n                   (CASE WHEN free_grant_period IS NULL THEN 1\n                         ELSE LEAST(12,\n                                ((EXTRACT(YEAR FROM $1::date) - EXTRACT(YEAR FROM free_grant_period)) * 12\n                               + (EXTRACT(MONTH FROM $1::date) - EXTRACT(MONTH FROM free_grant_period)))::int)\n                    END)::bigint * COALESCE(monthly_free_grant_mc, $2::bigint) AS delta\n              FROM credit_wallets\n             WHERE free_grant_period IS NULL OR free_grant_period < $1::date\n               FOR UPDATE\n        ), upd AS (\n            UPDATE credit_wallets w\n               SET balance_mc = w.balance_mc + due.delta,\n                   free_grant_period = $1::date,\n                   updated_at = now()\n              FROM due\n             WHERE w.account_id = due.account_id\n               AND (w.free_grant_period IS NULL OR w.free_grant_period < $1::date)\n            RETURNING w.account_id, due.delta, w.balance_mc\n        )\n        INSERT INTO credit_ledger (account_id, delta_mc, reason, balance_after_mc, metadata)\n        SELECT account_id, delta, 'free_grant', balance_mc, jsonb_build_object('period', $1::date)\n          FROM upd\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Date",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e6522715c20ea78cd3cdb4036246c368efcc53121d64873ce2421cf7983339d2"
+}

@@ -58,10 +58,12 @@ writes, refund automation, free/paid buckets, a free-balance cap.
 
 ### Hot path (per invocation)
 
-1. **Rate limit** — unchanged: one Redis `INCR`, fail-open. The per-account limit
+1. **Credit switch** — `cache.is_blocked(account_id)`, in memory. A stale cache
+   (no successful refresh for > 3 ticks) reports *nobody blocked* — fail open.
+   Checked first, so a blocked account costs no Redis call and uses no rate
+   budget.
+2. **Rate limit** — unchanged: one Redis `INCR`, fail-open. The per-account limit
    comes from an in-memory override cache (no DB read).
-2. **Credit switch** — `cache.is_blocked(account_id)`, in memory. A stale cache
-   (worker dead for > 3 ticks) reports *nobody blocked* — fail open.
 3. **Row write** — each metered site's existing `relay_invocations` INSERT becomes
    **one statement** that also enqueues the charge. The id is the app-minted
    UUIDv7 the site already has:
@@ -81,20 +83,34 @@ statement.
 
 ### Background worker
 
-A **supervised** tokio task in the relay process (spawned by both the `relay` and
-`server` mains), ticking every `CREDITS_SWEEP_INTERVAL_SECS` (default **5**). Per
-tick, **one instance** runs the accounting steps; **each step is its own short
+Two **supervised** tokio loops in the relay process (spawned by both the `relay`
+and `server` mains), each ticking every `CREDITS_SWEEP_INTERVAL_SECS` (default
+**5**):
+
+- **accounting** — steps 1–2 below;
+- **switches** — step 3.
+
+They run **independently**, so a stalled charge or grant can never stop the
+switches refreshing (which would make them fail open). They share a **pool of
+their own** (two connections, the app pool's settings), so the worker never takes
+a connection from the invocation path. **Every transaction bounds its lock waits**
+with `SET LOCAL lock_timeout = '1s'` (transaction-scoped, so safe behind a
+transaction-pooling proxy): a wallet row held elsewhere — an admin mid-edit —
+costs that pass, and the work is retried next tick instead of hanging. The worker
+never touches `relay_invocations`.
+
+Per accounting pass, **one instance** runs the steps; **each step is its own short
 transaction** that first takes `SELECT pg_try_advisory_xact_lock(<key>)` as a
-separate statement (skip if not acquired). The worker never touches
-`relay_invocations`.
+separate statement (skip if not acquired). A failed step's transaction is rolled
+back immediately, releasing the lock for the pass's next step.
 
 1. **Charge** — drain up to 1,000 queue rows, record each charge, debit wallets:
    ```sql
    WITH drained AS (
      DELETE FROM credit_charge_queue
-      WHERE invocation_id IN (SELECT invocation_id FROM credit_charge_queue
-                               ORDER BY invocation_id LIMIT $1
-                               FOR UPDATE SKIP LOCKED)
+      WHERE invocation_id = ANY(ARRAY(SELECT invocation_id FROM credit_charge_queue
+                                       ORDER BY invocation_id LIMIT $1
+                                       FOR UPDATE SKIP LOCKED))
      RETURNING invocation_id, account_id
    ), charged AS (
      INSERT INTO invocation_charges (invocation_id, account_id, cost_mc)
@@ -114,9 +130,13 @@ separate statement (skip if not acquired). The worker never touches
      SET balance_mc = credit_wallets.balance_mc + EXCLUDED.balance_mc, updated_at = now();
    ```
    The upsert creates a wallet at an account's first charge (period NULL → granted
-   in step 2 of the same tick). Loop while a full batch was drained, within a time
-   budget. If an account is deleted mid-statement the FK fails, the transaction
-   rolls back, and the next tick records that charge as 0 — self-healing.
+   in step 2 of the same pass). Loop while a full batch was drained, within a time
+   budget (2 s, never more than one tick). If an account is deleted mid-statement
+   the FK fails, the transaction rolls back, and the next pass records that charge
+   as 0 — self-healing. `= ANY(ARRAY(…))` runs the row pick once and deletes by
+   primary key; with `IN (…)`, PG 16 plans a hash semi-join over a full scan of the
+   queue for every batch (checked at a 300k backlog: 22 ms vs 3 ms per batch), which
+   makes draining a backlog quadratic.
 
 2. **Grant** — `$1` = the current UTC first-of-month (computed once per tick),
    `$2` = the default grant:
@@ -146,19 +166,23 @@ separate statement (skip if not acquired). The worker never touches
    subquery rewrite double-grants under overlapping runs — this shape was tested
    against both.)
 
-Then **every instance**:
+On **every instance**, the switches loop:
 
 3. **Refresh** — `blocked` = wallets
    `WHERE NOT unlimited AND free_grant_period IS NOT NULL AND balance_mc < cost`
    (never-granted wallets are never falsely blocked); `rate_overrides` = wallets
    with non-NULL `rate_limit_per_min`. Swapped in atomically with a `refreshed_at`
-   stamp.
+   stamp. Plain reads never wait on row locks; the lock timeout covers table locks
+   (DDL). A failed refresh keeps the last snapshot until it goes stale; the moment
+   it does, the loop logs an **error** (enforcement is off until a refresh
+   succeeds), and logs recovery.
 
-**Supervision.** Each step's errors are logged and the loop continues; the task is
-re-spawned if it panics. Config is validated at startup (every value parses and is
-> 0 — a zero interval would panic `tokio::time::interval`). One refresh runs
-**synchronously before the server accepts traffic**, so a deploy never opens a
-window where blocked accounts are let through.
+**Supervision.** Each step's errors are logged and the loop continues; a loop that
+panics — or, somehow, returns — is restarted after 1 s (never a tight respawn).
+Config is validated at startup: every value parses and is > 0 (a zero interval
+would panic `tokio::time::interval`), and the tick is at most 300 s (the fail-open
+window is 3× the tick). One refresh runs **synchronously before the server accepts
+traffic**, so a deploy never opens a window where blocked accounts are let through.
 
 `unlimited` affects only the switch: unlimited wallets are still charged and
 granted (the ledger invariant holds universally), but never blocked.
@@ -171,11 +195,22 @@ granted (the ledger invariant holds universally), but never blocked.
 - **Worker down.** Invocations are unaffected. The queue grows and is charged on
   recovery (no lost charges). After 3 missed refreshes the switch fails **open**
   (nobody blocked) rather than freezing whoever was blocked.
+- **Accounting stalled** (a held wallet lock, a slow statement). Balances stop
+  moving, so existing blocks hold and new ones wait — a bounded revenue leak, never
+  a fail-open: the switches loop keeps refreshing on its own.
 - **No contention with invocations.** The worker never reads or writes
-  `relay_invocations`; a queue row is touched only by the worker, after commit.
+  `relay_invocations`; a queue row is touched only by the worker, after commit; and
+  the worker has its own connections.
 - **Queue churn.** Insert-then-delete creates dead tuples; the queue table gets
   aggressive autovacuum reloptions (a fixed dead-tuple threshold, not a fraction of
-  table size).
+  table size) and `vacuum_truncate = false` (0035): the drain empties the table's
+  tail every tick, and truncating it would take an ACCESS EXCLUSIVE lock that the
+  hot-path inserts queue behind.
+- **Uncharged edges.** A push call whose upstream answers but whose body can't be
+  read is still recorded (`failed`) and charged. A call cut off mid-flight —
+  handler cancelled, process restarted during the upstream request — writes no row
+  and is not charged; the row is written after the upstream returns so the hot path
+  stays one statement.
 - **Top-ups / admin grants (P3/P4)** take effect at the next refresh (≤ 5 s), or
   immediately via an in-process refresh.
 
@@ -266,8 +301,8 @@ used only by the quota path being replaced.
 
 `limits::enforce` stays un-bypassable at the three enforce call sites (`a2a.rs`,
 and `invoke.rs`'s trusted and public paths — the MCP `invoke` tool goes through
-the trusted one) but no longer touches the DB: rate check (Redis, limit
-from the override cache) → credit switch. Shadow mode (`LIMITS_ENFORCE=false`) is
+the trusted one) but no longer touches the DB: credit switch → rate check (Redis,
+limit from the override cache). Shadow mode (`LIMITS_ENFORCE=false`) is
 unchanged: a blocked account logs `limit.would_block` and is allowed; the worker
 charges and grants regardless.
 
@@ -344,22 +379,31 @@ PR1's tables are inert without PR2. PR3 is forward-only → restore from backup.
 **Rollout.** Optional safety bake: set `LIMITS_ENFORCE=false` before PR2, watch the
 worker's tick logs, re-enable.
 
-**Observability.** Each tick logs queue depth, rows drained, charges, grants,
-blocked-set size, and duration; warn when the queue grows across consecutive ticks.
+**Observability.** Each accounting pass logs rows drained, wallet debits, grants,
+queue depth, and duration; warn when the queue grows across consecutive passes.
+The switches loop logs when the blocked-set size changes, an error when the
+switches go stale, and their recovery.
 
 ## Testing
 
 - **Charge:** each queued row drained exactly once; charges recorded at `cost`;
   wallets debited by per-account totals; a wallet created at an account's first
   charge; a deleted account's charge recorded as 0 with no debit; re-running is a
-  no-op; concurrent drains (exercise `SKIP LOCKED` *without* the advisory lock)
-  never double-charge.
+  no-op; a backlog drains across batches; while one drain holds rows, a second
+  (without the advisory lock, under a short `lock_timeout`) takes the rest instead
+  of waiting (`SKIP LOCKED`); a second instance skips a pass while the advisory
+  lock is held.
 - **Grant:** NULL → 1 month; same month → no-op; rollover; a 34-month gap → 12;
   exact `balance_after_mc`; two overlapping runs don't double-grant.
-- **Switch/refresh:** blocked cases (incl. never-granted and unlimited); a stale
-  cache reports nobody blocked; the startup refresh runs before serving.
-- **Supervision/config:** a failing step doesn't kill the loop; 0 or unparseable
-  values fail startup.
+- **Switch/refresh:** blocked cases (incl. never-granted and unlimited); rate
+  overrides load; a stale cache reports nobody blocked; failed refreshes keep the
+  snapshot until stale, then fail open, then recover; the startup refresh runs
+  before serving.
+- **Lock bounds:** a wallet row held by another session costs the charge one pass
+  (lock timeout), grants still land, the switches still refresh, and the next pass
+  charges it.
+- **Supervision/config:** a loop that panics or returns is restarted after a
+  pause; 0, unparseable, or over-300 s values fail startup.
 - **Enforce:** deny / shadow-allow / per-account rate override.
 - **Four sites:** each writes exactly one queue row with the expected account in the
   same statement; exhausted denial per surface (A2A + `/v1/invoke` → 429, MCP →

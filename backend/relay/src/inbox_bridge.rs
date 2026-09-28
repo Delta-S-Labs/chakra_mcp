@@ -123,12 +123,16 @@ pub async fn park(
     // `minted_jti` is the dual: NULL on the ck_ path, set on the JWT
     // path so the per-pair dashboard can attribute this row to the
     // device-flow / oauth-code pair that minted the token.
-    // Row write + monthly-quota increment in one transaction, so the counter
-    // can never drift from the relay_invocations ledger. Counts against the
-    // caller's account (the initiator; grantee side of the grant).
-    let mut tx = db.begin().await?;
+    // One statement writes the row and queues its credit charge (drained by
+    // the credits worker), so the charge exists exactly when the row does and
+    // costs no extra round trip. Charged at admission, against the caller's
+    // account (the initiator; grantee side of the grant).
     sqlx::query!(
         r#"
+        WITH charge AS (
+            INSERT INTO credit_charge_queue (invocation_id, account_id)
+            VALUES ($1, $11)
+        )
         INSERT INTO relay_invocations
             (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
              capability_name, invoked_by_user_id, status, elapsed_ms,
@@ -145,11 +149,10 @@ pub async fn park(
         params,
         authz.api_key_id,
         authz.minted_jti,
+        authz.caller_account_id,
     )
-    .execute(&mut *tx)
+    .execute(db)
     .await?;
-    crate::limits::quota::increment(&mut *tx, authz.caller_account_id).await?;
-    tx.commit().await?;
 
     Ok(Parked {
         task_id,

@@ -44,6 +44,21 @@ async fn main() -> Result<()> {
         None
     };
 
+    // Credits: validated settings (bad values stop startup), one refresh of
+    // the switches before serving so a deploy never lets an out-of-credits
+    // account through, then the worker that keeps them current.
+    let credits = chakramcp_relay::limits::CreditsConfig::from_env()?;
+    let credit_cache = std::sync::Arc::new(chakramcp_relay::limits::CreditCache::new(
+        credits.stale_after(),
+    ));
+    if let Err(e) = credit_cache
+        .refresh(&pool, credits.cost_per_invocation_mc)
+        .await
+    {
+        tracing::warn!(error = %e, "initial credit refresh failed; the worker will retry");
+    }
+    chakramcp_relay::limits::credits::spawn_worker(&pool, credit_cache.clone(), credits);
+
     let state = RelayState::new(pool, cfg.clone())
         .with_rate_limiter(chakramcp_relay::limits::RateLimiter::from_redis_url(
             env::var("REDIS_URL").ok().as_deref(),
@@ -51,6 +66,8 @@ async fn main() -> Result<()> {
         .with_limits_enforce(chakramcp_relay::limits::enforce_flag(
             env::var("LIMITS_ENFORCE").ok().as_deref(),
         ))
+        .with_credits_config(credits)
+        .with_credit_cache(credit_cache)
         .with_compliance(chakramcp_relay::compliance::ComplianceChecker::from_env());
     // Usage metering runs on a background writer so requests never wait on it.
     let usage = chakramcp_relay::events::UsageRecorder::spawn(state.clone());

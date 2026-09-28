@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT account_id, rate_limit_per_min AS \"rate_limit_per_min!\"\n              FROM credit_wallets\n             WHERE rate_limit_per_min IS NOT NULL\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "credit_wallets",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "rate_limit_per_min!",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "credit_wallets",
+            "name": "rate_limit_per_min"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "60363fadfec35d19084787f33d618866ac0f0b1b12845cc921d09fedcf4a47b7"
+}

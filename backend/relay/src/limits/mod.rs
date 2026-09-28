@@ -1,135 +1,83 @@
-//! Usage limits — per-account rate limiting (Redis) + monthly invocation
-//! quotas (Postgres), governed by named plans.
+//! Usage limits: a per-account rate limit (Redis) and credits.
 //!
-//! Design: `docs/specs/2026-07-23-usage-quotas-rate-limiting-design.md`.
+//! Design: `docs/specs/2026-09-23-credit-ledger-foundation-design.md`.
+//! Credits replaced the per-plan monthly quota of
+//! `docs/specs/2026-07-23-usage-quotas-rate-limiting-design.md`.
 //!
-//! This module is the shared primitive the invocation surfaces call:
-//!   * [`check`] — read-only rate + quota gate, keyed on the caller's account.
-//!   * [`enforce`] — [`check`] plus shadow-mode policy (deny vs log-and-allow).
-//!   * [`quota::increment`] — bump the monthly counter in the row-write txn.
-//!
-//! Wired into the A2A surface as of PR 3a; legacy `/v1/invoke` + MCP follow.
+//! [`enforce`] is the one gate every invocation surface calls. It never
+//! touches the database: the credit switch is an in-memory lookup kept
+//! current by [`credits::worker`], and the rate limit is one Redis call
+//! (fail-open).
 
-pub mod quota;
+pub mod credits;
 pub mod rate;
 
 #[cfg(test)]
 mod credits_schema_tests;
 
+pub use credits::{CreditCache, CreditsConfig};
 pub use rate::{RateLimiter, RateOutcome};
 
-use sqlx::PgPool;
 use uuid::Uuid;
 
-/// Combined result of the two checks at an invocation surface.
+/// Why an invocation is refused (or, in shadow mode, would have been).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LimitOutcome {
-    Allowed,
+    /// Over the per-minute rate limit.
     RateLimited,
-    QuotaExceeded,
+    /// Out of credits.
+    InsufficientCredits,
 }
 
-/// Map a limit hit to the HTTP error the REST/MCP surfaces return.
-/// `enforce()` never yields `Allowed` as a hit, so it maps defensively to an
-/// internal error rather than a 429.
+/// Map a refusal to the HTTP error the REST and MCP surfaces return.
 impl From<LimitOutcome> for chakramcp_shared::error::ApiError {
     fn from(outcome: LimitOutcome) -> Self {
         use chakramcp_shared::error::ApiError;
         match outcome {
             LimitOutcome::RateLimited => ApiError::RateLimited,
-            LimitOutcome::QuotaExceeded => ApiError::QuotaExceeded,
-            LimitOutcome::Allowed => {
-                ApiError::Internal(anyhow::anyhow!("LimitOutcome::Allowed is not an error"))
-            }
+            LimitOutcome::InsufficientCredits => ApiError::InsufficientCredits,
         }
     }
 }
 
-/// The limit knobs resolved from an account's plan.
-#[derive(Debug, Clone, Copy)]
-pub struct PlanLimits {
-    pub rate_limit_per_min: i32,
-    /// `None` = unlimited.
-    pub monthly_invocation_quota: Option<i64>,
-}
-
-/// Resolve the plan limits for `account_id`. Every account has a plan
-/// (`accounts.plan_id` is NOT NULL DEFAULT free as of migration 0032), so a
-/// missing row is a real error rather than a silent fall-through.
-pub async fn resolve_plan(db: &PgPool, account_id: Uuid) -> Result<PlanLimits, sqlx::Error> {
-    let row = sqlx::query!(
-        r#"
-        SELECT p.rate_limit_per_min, p.monthly_invocation_quota
-          FROM accounts a
-          JOIN plans p ON p.id = a.plan_id
-         WHERE a.id = $1
-        "#,
-        account_id,
-    )
-    .fetch_one(db)
-    .await?;
-    Ok(PlanLimits {
-        rate_limit_per_min: row.rate_limit_per_min,
-        monthly_invocation_quota: row.monthly_invocation_quota,
-    })
-}
-
-/// Read-only rate + quota gate for a caller account. Runs the (cheap) rate
-/// check first, then the quota check. Records one rate hit as a side effect
-/// of the rate check (fixed-window `INCR`); the durable quota counter is only
-/// bumped by [`quota::increment`] on a successful invocation, never here.
+/// The usage-limit gate: the outcome to refuse with, or `None` to proceed.
+/// With `enforce` false (shadow mode) an over-limit call is logged as
+/// `limit.would_block` and allowed. `surface` labels the logs.
 ///
-/// The caller decides what to do with a non-`Allowed` outcome (deny vs
-/// shadow-log) — this function neither enforces nor logs.
-pub async fn check(
-    db: &PgPool,
-    limiter: &RateLimiter,
-    account_id: Uuid,
-) -> Result<LimitOutcome, sqlx::Error> {
-    let plan = resolve_plan(db, account_id).await?;
-
-    if limiter.check(account_id, plan.rate_limit_per_min).await == RateOutcome::Limited {
-        return Ok(LimitOutcome::RateLimited);
-    }
-
-    if let Some(quota) = plan.monthly_invocation_quota {
-        if quota::current_month(db, account_id).await? >= quota {
-            return Ok(LimitOutcome::QuotaExceeded);
-        }
-    }
-
-    Ok(LimitOutcome::Allowed)
-}
-
-/// [`check`] plus shadow-mode policy. Returns `Some(outcome)` the caller
-/// should **deny** with, or `None` to **proceed** (under limit, or over but
-/// in shadow mode). When over-limit and `enforce` is false, logs a
-/// structured `limit.would_block` event and allows the call. `surface`
-/// labels the call site (`"a2a"`, `"v1_invoke"`, `"mcp"`) for the logs.
+/// The credit switch is checked first: it's an in-memory lookup, so an
+/// exhausted account is refused without a Redis round trip.
 pub async fn enforce(
-    db: &PgPool,
     limiter: &RateLimiter,
+    credits: &CreditCache,
+    default_rate_per_min: i32,
     account_id: Uuid,
     enforce: bool,
     surface: &str,
-) -> Result<Option<LimitOutcome>, sqlx::Error> {
-    match check(db, limiter, account_id).await? {
-        LimitOutcome::Allowed => Ok(None),
-        hit => {
-            if enforce {
-                Ok(Some(hit))
-            } else {
-                tracing::info!(
-                    event = "limit.would_block",
-                    kind = ?hit,
-                    account = %account_id,
-                    surface,
-                    "usage limit would block (shadow mode)"
-                );
-                Ok(None)
-            }
+) -> Option<LimitOutcome> {
+    if credits.is_blocked(account_id) {
+        if enforce {
+            return Some(LimitOutcome::InsufficientCredits);
         }
+        would_block(LimitOutcome::InsufficientCredits, account_id, surface);
     }
+    let per_min = credits.rate_limit_for(account_id, default_rate_per_min);
+    if limiter.check(account_id, per_min).await == RateOutcome::Limited {
+        if enforce {
+            return Some(LimitOutcome::RateLimited);
+        }
+        would_block(LimitOutcome::RateLimited, account_id, surface);
+    }
+    None
+}
+
+fn would_block(kind: LimitOutcome, account: Uuid, surface: &str) {
+    tracing::info!(
+        event = "limit.would_block",
+        ?kind,
+        %account,
+        surface,
+        "usage limit would block (shadow mode)"
+    );
 }
 
 /// Parse the `LIMITS_ENFORCE` env value: truthy → enforce, anything else
@@ -143,210 +91,129 @@ pub fn enforce_flag(val: Option<&str>) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{HashMap, HashSet};
+    use std::sync::{Arc, Mutex};
+
     use super::*;
 
-    async fn seed_account_on_plan(pool: &PgPool, plan_name: &str) -> Uuid {
-        let user_id = Uuid::now_v7();
-        sqlx::query!(
-            "INSERT INTO users (id, email, display_name) VALUES ($1, $2, 'limit-test')",
-            user_id,
-            format!("limit-{}@t.local", user_id.simple()),
-        )
-        .execute(pool)
-        .await
-        .unwrap();
-        let account_id = Uuid::now_v7();
-        sqlx::query!(
-            r#"INSERT INTO accounts (id, slug, display_name, account_type, owner_user_id, plan_id)
-               VALUES ($1, $2, 'limit-test', 'individual', $3, (SELECT id FROM plans WHERE name = $4))"#,
-            account_id,
-            format!("limit-{}", &account_id.simple().to_string()[..12]),
-            user_id,
-            plan_name,
-        )
-        .execute(pool)
-        .await
-        .unwrap();
-        account_id
-    }
-
     fn counting_limiter() -> RateLimiter {
-        RateLimiter::Counting(std::sync::Arc::new(std::sync::Mutex::new(
-            std::collections::HashMap::new(),
-        )))
+        RateLimiter::Counting(Arc::new(Mutex::new(HashMap::new())))
     }
 
-    #[sqlx::test(migrations = "../migrations")]
-    async fn resolve_plan_reads_the_accounts_plan(pool: PgPool) {
-        let acct = seed_account_on_plan(&pool, "pro").await;
-        let limits = resolve_plan(&pool, acct).await.unwrap();
-        assert_eq!(limits.rate_limit_per_min, 600);
-        assert_eq!(limits.monthly_invocation_quota, Some(50000));
+    fn blocking(account: Uuid) -> CreditCache {
+        let cache = CreditCache::default();
+        cache.replace(HashSet::from([account]), HashMap::new());
+        cache
     }
 
-    #[sqlx::test(migrations = "../migrations")]
-    async fn default_account_resolves_to_free(pool: PgPool) {
-        // Seeded without an explicit plan → migration default (free).
-        let user_id = Uuid::now_v7();
-        sqlx::query!(
-            "INSERT INTO users (id, email, display_name) VALUES ($1, $2, 'free-test')",
-            user_id,
-            format!("free-{}@t.local", user_id.simple()),
+    #[tokio::test]
+    async fn an_account_with_credits_proceeds() {
+        let acct = Uuid::now_v7();
+        let outcome = enforce(
+            &RateLimiter::Noop,
+            &CreditCache::default(),
+            60,
+            acct,
+            true,
+            "t",
         )
-        .execute(&pool)
-        .await
-        .unwrap();
-        let account_id = Uuid::now_v7();
-        sqlx::query!(
-            r#"INSERT INTO accounts (id, slug, display_name, account_type, owner_user_id)
-               VALUES ($1, $2, 'free-test', 'individual', $3)"#,
-            account_id,
-            format!("free-{}", &account_id.simple().to_string()[..12]),
-            user_id,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-        let limits = resolve_plan(&pool, account_id).await.unwrap();
-        assert_eq!(limits.rate_limit_per_min, 60);
-        assert_eq!(limits.monthly_invocation_quota, Some(1000));
+        .await;
+        assert_eq!(outcome, None);
     }
 
-    #[sqlx::test(migrations = "../migrations")]
-    async fn check_allows_under_both_limits(pool: PgPool) {
-        let acct = seed_account_on_plan(&pool, "free").await;
-        assert_eq!(
-            check(&pool, &RateLimiter::Noop, acct).await.unwrap(),
-            LimitOutcome::Allowed
-        );
+    #[tokio::test]
+    async fn an_exhausted_account_is_refused_when_enforcing() {
+        let acct = Uuid::now_v7();
+        let outcome = enforce(&RateLimiter::Noop, &blocking(acct), 60, acct, true, "t").await;
+        assert_eq!(outcome, Some(LimitOutcome::InsufficientCredits));
     }
 
-    #[sqlx::test(migrations = "../migrations")]
-    async fn check_flags_rate_before_quota(pool: PgPool) {
-        // free = 60/min. The counting limiter trips on the 61st hit.
-        let acct = seed_account_on_plan(&pool, "free").await;
-        let rl = counting_limiter();
+    #[tokio::test]
+    async fn shadow_mode_only_logs() {
+        let acct = Uuid::now_v7();
+        let limiter = counting_limiter();
+        let cache = blocking(acct);
+        // Out of credits and, past 60 calls, over the rate limit too.
+        for _ in 0..70 {
+            assert_eq!(enforce(&limiter, &cache, 60, acct, false, "t").await, None);
+        }
+    }
+
+    #[tokio::test]
+    async fn the_rate_limit_trips_after_per_min_hits() {
+        let acct = Uuid::now_v7();
+        let limiter = counting_limiter();
+        let cache = CreditCache::default();
         for _ in 0..60 {
-            assert_eq!(
-                check(&pool, &rl, acct).await.unwrap(),
-                LimitOutcome::Allowed
-            );
+            assert_eq!(enforce(&limiter, &cache, 60, acct, true, "t").await, None);
         }
         assert_eq!(
-            check(&pool, &rl, acct).await.unwrap(),
-            LimitOutcome::RateLimited
-        );
-    }
-
-    #[sqlx::test(migrations = "../migrations")]
-    async fn check_flags_quota_when_counter_at_limit(pool: PgPool) {
-        // free monthly quota = 1000; push the counter to the cap.
-        let acct = seed_account_on_plan(&pool, "free").await;
-        sqlx::query!(
-            r#"INSERT INTO usage_counters (account_id, period_start, invocations)
-               VALUES ($1, date_trunc('month', now() AT TIME ZONE 'UTC')::date, 1000)"#,
-            acct,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-        assert_eq!(
-            check(&pool, &RateLimiter::Noop, acct).await.unwrap(),
-            LimitOutcome::QuotaExceeded
-        );
-    }
-
-    #[sqlx::test(migrations = "../migrations")]
-    async fn enterprise_quota_is_unlimited(pool: PgPool) {
-        let acct = seed_account_on_plan(&pool, "enterprise").await;
-        // Even with a huge counter, NULL quota never trips.
-        sqlx::query!(
-            r#"INSERT INTO usage_counters (account_id, period_start, invocations)
-               VALUES ($1, date_trunc('month', now() AT TIME ZONE 'UTC')::date, 999999999)"#,
-            acct,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-        assert_eq!(
-            check(&pool, &RateLimiter::Noop, acct).await.unwrap(),
-            LimitOutcome::Allowed
-        );
-    }
-
-    async fn seed_at_quota(pool: &PgPool, acct: Uuid) {
-        sqlx::query!(
-            r#"INSERT INTO usage_counters (account_id, period_start, invocations)
-               VALUES ($1, date_trunc('month', now() AT TIME ZONE 'UTC')::date, 1000)"#,
-            acct,
-        )
-        .execute(pool)
-        .await
-        .unwrap();
-    }
-
-    #[sqlx::test(migrations = "../migrations")]
-    async fn enforce_shadow_allows_when_over_limit(pool: PgPool) {
-        let acct = seed_account_on_plan(&pool, "free").await;
-        seed_at_quota(&pool, acct).await;
-        // Shadow mode (enforce=false): over quota → still None (proceed).
-        assert_eq!(
-            enforce(&pool, &RateLimiter::Noop, acct, false, "test")
-                .await
-                .unwrap(),
-            None
-        );
-    }
-
-    #[sqlx::test(migrations = "../migrations")]
-    async fn enforce_denies_quota_when_enforcing(pool: PgPool) {
-        let acct = seed_account_on_plan(&pool, "free").await;
-        seed_at_quota(&pool, acct).await;
-        assert_eq!(
-            enforce(&pool, &RateLimiter::Noop, acct, true, "test")
-                .await
-                .unwrap(),
-            Some(LimitOutcome::QuotaExceeded)
-        );
-    }
-
-    #[sqlx::test(migrations = "../migrations")]
-    async fn enforce_denies_rate_when_enforcing(pool: PgPool) {
-        // free = 60/min; trip the counting limiter, then the 61st enforces.
-        let acct = seed_account_on_plan(&pool, "free").await;
-        let rl = counting_limiter();
-        for _ in 0..60 {
-            assert_eq!(enforce(&pool, &rl, acct, true, "test").await.unwrap(), None);
-        }
-        assert_eq!(
-            enforce(&pool, &rl, acct, true, "test").await.unwrap(),
+            enforce(&limiter, &cache, 60, acct, true, "t").await,
             Some(LimitOutcome::RateLimited)
         );
     }
 
-    /// End-to-end live: `enforce` over **real Redis + real Postgres**. Proves
-    /// the whole stack the prod relay runs — plan resolution from PG, the real
-    /// Redis fixed-window limiter, and the enforce/deny decision — not the
-    /// in-memory mock. Skips cleanly when no Redis is reachable (e.g. CI
-    /// without a Redis service); run locally with a `redis:7-alpine` up.
-    #[sqlx::test(migrations = "../migrations")]
-    async fn enforce_denies_rate_live_redis(pool: PgPool) {
+    #[tokio::test]
+    async fn a_rate_override_replaces_the_default() {
+        let acct = Uuid::now_v7();
+        let limiter = counting_limiter();
+        let cache = CreditCache::default();
+        cache.replace(HashSet::new(), HashMap::from([(acct, 3)]));
+        for _ in 0..3 {
+            assert_eq!(enforce(&limiter, &cache, 60, acct, true, "t").await, None);
+        }
+        assert_eq!(
+            enforce(&limiter, &cache, 60, acct, true, "t").await,
+            Some(LimitOutcome::RateLimited)
+        );
+    }
+
+    #[tokio::test]
+    async fn an_exhausted_account_never_reaches_the_rate_limiter() {
+        let acct = Uuid::now_v7();
+        let limiter = counting_limiter();
+        let cache = blocking(acct);
+        for _ in 0..100 {
+            assert_eq!(
+                enforce(&limiter, &cache, 1, acct, true, "t").await,
+                Some(LimitOutcome::InsufficientCredits)
+            );
+        }
+        // None of those 100 refusals consumed rate budget.
+        let cleared = CreditCache::default();
+        assert_eq!(enforce(&limiter, &cleared, 1, acct, true, "t").await, None);
+    }
+
+    /// The rate limit over a real Redis. Skips cleanly without one.
+    #[tokio::test]
+    async fn enforce_denies_rate_live_redis() {
         let Some(redis_pool) = rate::test_redis_pool().await else {
             return;
         };
-        let rl = RateLimiter::Redis(redis_pool);
-        // free = 60/min: 60 allowed, the 61st denied — over live Redis + PG.
-        let acct = seed_account_on_plan(&pool, "free").await;
+        let limiter = RateLimiter::Redis(redis_pool);
+        let cache = CreditCache::default();
+        let acct = Uuid::now_v7();
         for i in 0..60 {
             assert_eq!(
-                enforce(&pool, &rl, acct, true, "test-live").await.unwrap(),
+                enforce(&limiter, &cache, 60, acct, true, "test-live").await,
                 None,
                 "hit {i} should be under the limit"
             );
         }
         assert_eq!(
-            enforce(&pool, &rl, acct, true, "test-live").await.unwrap(),
+            enforce(&limiter, &cache, 60, acct, true, "test-live").await,
             Some(LimitOutcome::RateLimited)
         );
+    }
+
+    #[test]
+    fn enforce_flag_accepts_only_truthy_values() {
+        for on in ["true", "1", "yes", "on", " TRUE "] {
+            assert!(enforce_flag(Some(on)), "{on:?}");
+        }
+        for off in ["false", "0", "", "nope"] {
+            assert!(!enforce_flag(Some(off)), "{off:?}");
+        }
+        assert!(!enforce_flag(None));
     }
 }

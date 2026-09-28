@@ -582,17 +582,12 @@ pub(crate) async fn authorize_and_enqueue_trusted(
         return reject(StatusCode::CONFLICT, PUSH_TARGET_ERROR.into()).await;
     }
 
-    // Per-account usage limits (rate + monthly quota), keyed on the caller's
-    // (grantee's) account. Shadow mode logs a would-block and proceeds;
-    // enforcing returns 429 with an `account_*` code.
-    if let Some(outcome) = crate::limits::enforce(
-        &state.db,
-        &state.rate_limiter,
-        row.grantee_account_id,
-        state.limits_enforce,
-        limits_source,
-    )
-    .await?
+    // Per-account usage limits (rate + credits), keyed on the caller's
+    // (grantee's) account. In-memory only. Shadow mode logs a would-block
+    // and proceeds; enforcing returns 429 with an `account_*` code.
+    if let Some(outcome) = state
+        .enforce_limits(row.grantee_account_id, limits_source)
+        .await
     {
         return Err(outcome.into());
     }
@@ -669,12 +664,16 @@ pub(crate) async fn authorize_and_enqueue_trusted(
     // `minted_jti` is the dual: NULL on the ck_ path, set on the JWT
     // path so the per-pair dashboard can attribute the call back to
     // the device-flow / oauth-code row that minted this token.
-    // Row write + quota increment in one transaction (counts against the
-    // grantee/caller account, one per row-write).
+    // One statement writes the row and queues its credit charge (drained by
+    // the credits worker), so the charge exists exactly when the row does and
+    // costs no extra round trip. Charged against the grantee/caller account.
     let id = Uuid::now_v7();
-    let mut tx = state.db.begin().await?;
     sqlx::query!(
         r#"
+        WITH charge AS (
+            INSERT INTO credit_charge_queue (invocation_id, account_id)
+            VALUES ($1, $12)
+        )
         INSERT INTO relay_invocations
             (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
              capability_name, invoked_by_user_id, status, input_preview,
@@ -692,11 +691,10 @@ pub(crate) async fn authorize_and_enqueue_trusted(
         user.api_key_id,
         user.minted_jti,
         trust_snapshot,
+        row.grantee_account_id,
     )
-    .execute(&mut *tx)
+    .execute(&state.db)
     .await?;
-    crate::limits::quota::increment(&mut *tx, row.grantee_account_id).await?;
-    tx.commit().await?;
 
     Ok(TrustedOutcome::Enqueued { invocation_id: id })
 }
@@ -810,18 +808,13 @@ async fn invoke_public(
             .into_response());
     }
 
-    // Per-account usage limits (rate + monthly quota), keyed on the invoker's
+    // Per-account usage limits (rate + credits), keyed on the invoker's
     // account. Independent of the per-capability public quota above: a public
-    // invoke must pass both. Shadow mode logs a would-block and proceeds;
-    // enforcing returns 429 with an `account_*` code.
-    if let Some(outcome) = crate::limits::enforce(
-        &state.db,
-        &state.rate_limiter,
-        invoker.account_id,
-        state.limits_enforce,
-        "v1_invoke_public",
-    )
-    .await?
+    // invoke must pass both. In-memory only. Shadow mode logs a would-block
+    // and proceeds; enforcing returns 429 with an `account_*` code.
+    if let Some(outcome) = state
+        .enforce_limits(invoker.account_id, "v1_invoke_public")
+        .await
     {
         return Err(outcome.into());
     }
@@ -870,11 +863,15 @@ async fn invoke_public(
     // Enqueue with grant_id = NULL. Same audit columns as the trusted
     // path; the friendship/grant context bundled into the eventual
     // inbox-pull row will be `null` (the inbox handler tolerates it).
-    // Row write + quota increment in one transaction.
+    // One statement writes the row and queues its credit charge (drained by
+    // the credits worker), against the invoker's account.
     let id = Uuid::now_v7();
-    let mut tx = state.db.begin().await?;
     sqlx::query!(
         r#"
+        WITH charge AS (
+            INSERT INTO credit_charge_queue (invocation_id, account_id)
+            VALUES ($1, $11)
+        )
         INSERT INTO relay_invocations
             (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
              capability_name, invoked_by_user_id, status, input_preview,
@@ -891,11 +888,10 @@ async fn invoke_public(
         user.api_key_id,
         user.minted_jti,
         trust_snapshot,
+        invoker.account_id,
     )
-    .execute(&mut *tx)
+    .execute(&state.db)
     .await?;
-    crate::limits::quota::increment(&mut *tx, invoker.account_id).await?;
-    tx.commit().await?;
 
     Ok((
         StatusCode::ACCEPTED,
@@ -1720,9 +1716,75 @@ mod legacy_v01_contract_tests {
         assert_eq!(status, "rejected");
     }
 
-    /// Full flow mirrors what `chakramcp.AsyncChakraMCP.invoke_and_wait`
-    /// + `chakramcp.AsyncChakraMCP.inbox.serve` do at the wire level.
-    /// If this test passes, the scheduler-demo passes.
+    /// A trusted `/v1/invoke` from the fixture's grantee agent.
+    fn trusted_invoke(f: &DemoFixture) -> Request<Body> {
+        Request::builder()
+            .method("POST")
+            .uri("/v1/invoke")
+            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::AUTHORIZATION, format!("Bearer {}", f.caller_token))
+            .body(Body::from(
+                serde_json::to_vec(&serde_json::json!({
+                    "grant_id": f.grant_id,
+                    "grantee_agent_id": f.grantee_agent_id,
+                    "input": {"duration_min": 30}
+                }))
+                .unwrap(),
+            ))
+            .unwrap()
+    }
+
+    async fn grantee_account(pool: &PgPool, f: &DemoFixture) -> Uuid {
+        sqlx::query_scalar("SELECT account_id FROM agents WHERE id = $1")
+            .bind(f.grantee_agent_id)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+
+    /// The trusted path (shared with the MCP `invoke` tool) queues the
+    /// charge with the row, against the caller's (grantee's) account.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn trusted_invoke_queues_one_charge(pool: PgPool) {
+        let f = seed_demo(&pool).await;
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        let res = app.oneshot(trusted_invoke(&f)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::ACCEPTED);
+        let body: serde_json::Value =
+            serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        let id: Uuid = body["invocation_id"].as_str().unwrap().parse().unwrap();
+
+        let queued: Vec<(Uuid, Uuid)> =
+            sqlx::query_as("SELECT invocation_id, account_id FROM credit_charge_queue")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(queued, vec![(id, grantee_account(&pool, &f).await)]);
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn trusted_invoke_refused_when_out_of_credits(pool: PgPool) {
+        let f = seed_demo(&pool).await;
+        let credits =
+            crate::limits::credits::exhausted_cache(&pool, grantee_account(&pool, &f).await).await;
+        let app = crate::router(
+            crate::state::RelayState::new(pool.clone(), config())
+                .with_limits_enforce(true)
+                .with_credit_cache(credits),
+        );
+        let res = app.oneshot(trusted_invoke(&f)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
+        let body: serde_json::Value =
+            serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        assert_eq!(body["error"]["code"], "account_credits_exhausted");
+
+        let queued: i64 = sqlx::query_scalar("SELECT count(*) FROM credit_charge_queue")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(queued, 0, "refused before anything was queued");
+    }
+
     #[sqlx::test(migrations = "../migrations")]
     async fn invoke_to_push_agent_is_refused_not_parked(pool: PgPool) {
         let f = seed_demo(&pool).await;
@@ -1771,6 +1833,9 @@ mod legacy_v01_contract_tests {
         assert_eq!(statuses, vec!["rejected".to_owned()]);
     }
 
+    /// Full flow mirrors what `chakramcp.AsyncChakraMCP.invoke_and_wait`
+    /// and `chakramcp.AsyncChakraMCP.inbox.serve` do at the wire level.
+    /// If this test passes, the scheduler-demo passes.
     #[sqlx::test(migrations = "../migrations")]
     async fn v01_pull_mode_full_lifecycle(pool: PgPool) {
         let f = seed_demo(&pool).await;
@@ -2540,11 +2605,11 @@ mod public_invoke_tests {
     // ─── Usage limits on the legacy public path (PR3b) ───────
 
     #[sqlx::test(migrations = "../migrations")]
-    async fn public_invoke_enforce_over_account_quota_returns_429(pool: PgPool) {
+    async fn public_invoke_refused_when_account_out_of_credits(pool: PgPool) {
         let f = seed_public(&pool, 5, false).await;
-        // Push the invoker's account over the free-plan monthly quota (1000).
-        // The per-capability public quota (5) still passes at 0 prior invokes,
-        // so it's the per-account cap that trips — proving they compose.
+        // The invoker's account is out of credits. The per-capability public
+        // quota (5) still passes at 0 prior invokes, so it's the account's
+        // credits that refuse the call — proving the two compose.
         let acct = sqlx::query_scalar!(
             "SELECT account_id FROM agents WHERE id = $1",
             f.invoker_agent
@@ -2552,16 +2617,11 @@ mod public_invoke_tests {
         .fetch_one(&pool)
         .await
         .unwrap();
-        sqlx::query!(
-            r#"INSERT INTO usage_counters (account_id, period_start, invocations)
-               VALUES ($1, date_trunc('month', now() AT TIME ZONE 'UTC')::date, 1000)"#,
-            acct
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
+        let credits = crate::limits::credits::exhausted_cache(&pool, acct).await;
         let app = crate::router(
-            crate::state::RelayState::new(pool.clone(), config()).with_limits_enforce(true),
+            crate::state::RelayState::new(pool.clone(), config())
+                .with_limits_enforce(true)
+                .with_credit_cache(credits),
         );
         let res = app
             .oneshot(invoke_req(
@@ -2577,12 +2637,12 @@ mod public_invoke_tests {
         assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
         let body: Value =
             serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
-        assert_eq!(body["error"]["code"], "account_monthly_quota_exhausted");
+        assert_eq!(body["error"]["code"], "account_credits_exhausted");
         let _ = (f.granter_user, f.invoker_user, f.granter_agent);
     }
 
     #[sqlx::test(migrations = "../migrations")]
-    async fn public_invoke_increments_account_counter(pool: PgPool) {
+    async fn public_invoke_queues_one_charge(pool: PgPool) {
         let f = seed_public(&pool, 5, false).await;
         let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
         let res = app
@@ -2597,7 +2657,11 @@ mod public_invoke_tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::ACCEPTED);
-        // The enqueue counted this invocation against the invoker's account.
+        let body: Value =
+            serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        let id: Uuid = body["invocation_id"].as_str().unwrap().parse().unwrap();
+        // The enqueue queued exactly this invocation's charge, against the
+        // invoker's account, in the same statement as its row.
         let acct = sqlx::query_scalar!(
             "SELECT account_id FROM agents WHERE id = $1",
             f.invoker_agent
@@ -2605,16 +2669,12 @@ mod public_invoke_tests {
         .fetch_one(&pool)
         .await
         .unwrap();
-        let used = sqlx::query_scalar!(
-            r#"SELECT invocations FROM usage_counters
-               WHERE account_id = $1
-                 AND period_start = date_trunc('month', now() AT TIME ZONE 'UTC')::date"#,
-            acct
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(used, 1);
+        let queued: Vec<(Uuid, Uuid)> =
+            sqlx::query_as("SELECT invocation_id, account_id FROM credit_charge_queue")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(queued, vec![(id, acct)]);
         let _ = (f.granter_user, f.invoker_user, f.granter_agent);
     }
 
