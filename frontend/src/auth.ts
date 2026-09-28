@@ -113,15 +113,23 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         return true;
       }
 
+      const secret = process.env.UPSERT_SHARED_SECRET;
+      if (!secret) {
+        console.error("[auth] UPSERT_SHARED_SECRET is not set; provider sign-in is disabled");
+        return false;
+      }
       try {
-        const result = await upsertUser({
-          email: user.email,
-          name: user.name ?? user.email,
-          avatar_url: user.image ?? null,
-          provider: account.provider,
-          provider_user_id: account.providerAccountId,
-          raw_profile: profile ?? null,
-        });
+        const result = await upsertUser(
+          {
+            email: user.email,
+            name: user.name ?? user.email,
+            avatar_url: user.image ?? null,
+            provider: account.provider,
+            provider_user_id: account.providerAccountId,
+            raw_profile: profile ?? null,
+          },
+          secret,
+        );
         // Stash backend response on `user` so the jwt callback can
         // pick it up on first sign-in.
         (user as unknown as Record<string, unknown>).backendToken = result.token;

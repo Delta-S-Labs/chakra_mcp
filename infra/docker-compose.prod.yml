@@ -85,6 +85,10 @@ services:
     environment:
       DATABASE_URL: postgres://chakramcp:${POSTGRES_PASSWORD}@pg:5432/chakramcp
       REDIS_URL: redis://redis:6379
+      # Shared with the frontend's server-side sign-in callback (set the same
+      # value in Netlify's env): the only caller allowed to turn a
+      # Google/GitHub identity into a session. Unset = that sign-in is off.
+      UPSERT_SHARED_SECRET: ${UPSERT_SHARED_SECRET:-}
       # Usage-limit enforcement. Default true = ENFORCING: over-limit calls are
       # denied (429: over the per-minute rate limit, or the account is out of
       # credits). To fall back to shadow mode (log `limit.would_block`, still

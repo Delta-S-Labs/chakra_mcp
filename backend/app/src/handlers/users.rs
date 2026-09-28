@@ -1,4 +1,5 @@
 use axum::extract::State;
+use axum::http::HeaderMap;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -59,13 +60,37 @@ pub struct MeResponse {
     pub survey_required: bool,
 }
 
+/// Header carrying the secret shared with the frontend's sign-in callback.
+pub const UPSERT_SECRET_HEADER: &str = "x-chakramcp-upsert-secret";
+
+/// Equal-length comparison that doesn't stop at the first differing byte.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
 // ─────────────────────────────────────────────────────────
 // POST /v1/users/upsert — called by frontend signIn callback
 // ─────────────────────────────────────────────────────────
 pub async fn upsert(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<UpsertRequest>,
 ) -> ApiResult<Json<UpsertResponse>> {
+    // This trusts the email in the body and returns a session for it, so
+    // only the frontend's server-side sign-in callback (which got the email
+    // from Google/GitHub) may call it; it proves itself with the shared
+    // secret. Unconfigured means no one may.
+    let Some(expected) = state.upsert_secret.as_deref() else {
+        tracing::error!("UPSERT_SHARED_SECRET is not set: refusing provider sign-in");
+        return Err(ApiError::Unauthorized);
+    };
+    let presented = headers
+        .get(UPSERT_SECRET_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if !constant_time_eq(presented.as_bytes(), expected.as_bytes()) {
+        return Err(ApiError::Unauthorized);
+    }
     if req.email.trim().is_empty() {
         return Err(ApiError::InvalidRequest("email is required".into()));
     }
@@ -302,4 +327,78 @@ fn personal_account_slug(email: &str) -> String {
         s.push_str("user");
     }
     format!("{}-{}", s, &Uuid::now_v7().simple().to_string()[..8])
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::body::Body;
+    use axum::http::{header, Request, StatusCode};
+    use serde_json::json;
+    use sqlx::PgPool;
+    use tower::ServiceExt;
+
+    use super::UPSERT_SECRET_HEADER;
+    use crate::tests_support::test_config;
+
+    const SECRET: &str = "callback-secret-callback-secret-0123456789";
+
+    async fn upsert(
+        pool: &PgPool,
+        configured: Option<&str>,
+        presented: Option<&str>,
+    ) -> StatusCode {
+        let state = crate::AppState::new(pool.clone(), test_config())
+            .with_upsert_secret(configured.map(str::to_owned));
+        let mut req = Request::builder()
+            .method("POST")
+            .uri("/v1/users/upsert")
+            .header(header::CONTENT_TYPE, "application/json");
+        if let Some(secret) = presented {
+            req = req.header(UPSERT_SECRET_HEADER, secret);
+        }
+        let body = json!({
+            "email": "someone@example.test",
+            "name": "Someone",
+            "provider": "github",
+            "provider_user_id": "12345",
+        });
+        crate::router(state)
+            .oneshot(req.body(Body::from(body.to_string())).unwrap())
+            .await
+            .unwrap()
+            .status()
+    }
+
+    async fn users(pool: &PgPool) -> i64 {
+        sqlx::query_scalar("SELECT count(*) FROM users WHERE email = 'someone@example.test'")
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+
+    /// The upsert trusts the email it's given, so only the frontend's
+    /// sign-in callback, holding the shared secret, may call it.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn sign_in_needs_the_callback_secret(pool: PgPool) {
+        for (configured, presented, why) in [
+            (None, Some(SECRET), "no secret configured"),
+            (Some(SECRET), None, "no secret presented"),
+            (Some(SECRET), Some("wrong"), "wrong secret"),
+            (Some(SECRET), Some(&SECRET[1..]), "a prefix of the secret"),
+            (Some("   "), Some("   "), "blank counts as unset"),
+        ] {
+            assert_eq!(
+                upsert(&pool, configured, presented).await,
+                StatusCode::UNAUTHORIZED,
+                "{why}"
+            );
+        }
+        assert_eq!(users(&pool).await, 0, "no session minted, no user created");
+
+        assert_eq!(
+            upsert(&pool, Some(SECRET), Some(SECRET)).await,
+            StatusCode::OK
+        );
+        assert_eq!(users(&pool).await, 1);
+    }
 }

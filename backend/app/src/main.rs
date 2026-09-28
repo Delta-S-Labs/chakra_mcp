@@ -19,7 +19,8 @@ async fn main() -> Result<()> {
     let pool: PgPool = db::connect(&cfg.database_url).await?;
     sqlx::migrate!("../migrations").run(&pool).await?;
 
-    let state = AppState::new(pool, cfg.clone());
+    let state =
+        AppState::new(pool, cfg.clone()).with_upsert_secret(env::var("UPSERT_SHARED_SECRET").ok());
     let app = router(state);
 
     let port: u16 = env::var("APP_PORT")
