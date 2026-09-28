@@ -232,19 +232,28 @@ jobs:
           echo "token=$token" >> "$GITHUB_OUTPUT"
 
       # ─── Run migrations BEFORE restart (if any new) ────────────
+      # Both remote steps run the image built by THIS run (its :<sha>
+      # tag), never whatever `:latest` resolves to on the VM. A shell
+      # variable overrides the VM's .env, whose CHAKRAMCP_IMAGE is
+      # `:latest`. A failed pull fails the step: before, `pull || true`
+      # could silently migrate with a stale local image, leaving the new
+      # migration to run at the relay's boot instead.
       - name: Run migrations
         if: needs.detect.outputs.migrations == 'true'
         env:
           ECR_PASSWORD: ${{ steps.ecr_token.outputs.token }}
         run: |
+          : "${IMAGE_TAG:?IMAGE_TAG is not set}"
           ssh -i ~/.ssh/lightsail ubuntu@"$LIGHTSAIL_HOST" \
-              "ECR_PASSWORD='${ECR_PASSWORD}' bash -s" <<'REMOTE'
+              "ECR_PASSWORD='${ECR_PASSWORD}' CHAKRAMCP_IMAGE='${IMAGE_TAG}' bash -s" <<'REMOTE'
           set -e
+          : "${CHAKRAMCP_IMAGE:?CHAKRAMCP_IMAGE is not set}"
           echo "$ECR_PASSWORD" | docker login \
               --username AWS \
               --password-stdin 877326604850.dkr.ecr.us-east-1.amazonaws.com
           cd /opt/chakramcp
-          docker compose pull migrate || true
+          echo "migrating with $CHAKRAMCP_IMAGE"
+          docker compose --profile migrate pull migrate
           docker compose --profile migrate run --rm migrate
           REMOTE
 
@@ -253,17 +262,26 @@ jobs:
         env:
           ECR_PASSWORD: ${{ steps.ecr_token.outputs.token }}
         run: |
+          : "${IMAGE_TAG:?IMAGE_TAG is not set}"
           ssh -i ~/.ssh/lightsail ubuntu@"$LIGHTSAIL_HOST" \
-              "ECR_PASSWORD='${ECR_PASSWORD}' bash -s" <<'REMOTE'
+              "ECR_PASSWORD='${ECR_PASSWORD}' CHAKRAMCP_IMAGE='${IMAGE_TAG}' bash -s" <<'REMOTE'
           set -e
+          : "${CHAKRAMCP_IMAGE:?CHAKRAMCP_IMAGE is not set}"
           echo "$ECR_PASSWORD" | docker login \
               --username AWS \
               --password-stdin 877326604850.dkr.ecr.us-east-1.amazonaws.com
           cd /opt/chakramcp
+          echo "deploying $CHAKRAMCP_IMAGE"
           docker compose pull relay
           docker compose up -d --force-recreate relay
           sleep 8
           docker compose ps relay --format '  {{.Service}} · {{.Status}}'
+          # Fail if the relay isn't running exactly the image just built
+          # (compared by image ID, which is format-stable across versions).
+          want=$(docker image inspect --format '{{.Id}}' "$CHAKRAMCP_IMAGE")
+          have=$(docker inspect --format '{{.Image}}' "$(docker compose ps -q relay)")
+          [ "$want" = "$have" ] || { echo "relay runs $have, expected $want ($CHAKRAMCP_IMAGE)"; exit 1; }
+          echo "  relay runs $CHAKRAMCP_IMAGE (${want:7:12})"
           REMOTE
 
       # ─── Sanity check ──────────────────────────────────────────
