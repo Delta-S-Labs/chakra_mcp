@@ -1,9 +1,10 @@
 # Credit ledger foundation — design (Phase 1 of quota productization)
 
 _Drafted 2026-09-23. Revised 2026-09-25: fully asynchronous accounting, charge
-queue, review fixes. Status: proposed. Supersedes the quota model from
-`2026-07-23-usage-quotas-rate-limiting-design.md` (the "prior quota project"),
-which is live and enforcing in prod._
+queue, review fixes. Status: **shipped** 2026-09-28 (#323–#329, review follow-ups in
+#327/#328). Supersedes the quota model from
+`2026-07-23-usage-quotas-rate-limiting-design.md` (the "prior quota project"), which
+#326 retired; migration 0036 dropped its `plans` / `usage_counters` tables._
 
 _Phase labels **P1–P6** refer to the phases of quota productization (P1 = this
 spec). The superseded project is always the "prior quota project," never "P5"._
