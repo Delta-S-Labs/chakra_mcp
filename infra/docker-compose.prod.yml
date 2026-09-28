@@ -5,7 +5,10 @@
 #
 # Env (write to .env next to this file BEFORE first-up):
 #   CHAKRAMCP_IMAGE       — registry URL of the image we built locally
-#                           (e.g. 877326604850.dkr.ecr.us-east-1.amazonaws.com/chakramcp-server:latest)
+#                           (e.g. 877326604850.dkr.ecr.us-east-1.amazonaws.com/chakramcp-server:latest).
+#                           CD overrides it per deploy with the build's exact
+#                           `:<sha>` tag for both `migrate` and `relay`, so a
+#                           deploy never runs a stale `:latest`.
 #   POSTGRES_PASSWORD     — random 32+ chars (rotated per env)
 #   JWT_SECRET            — random 64+ chars (NEVER reuse from dev)
 #   ADMIN_EMAIL           — kaustav@chakramcp.com
