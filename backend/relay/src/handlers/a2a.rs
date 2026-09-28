@@ -543,7 +543,7 @@ fn discovery_disabled() -> Response {
 /// - -32002 (friendship) / -32003 (grant) / -32009 (compliance) → 403
 /// - -32005 (unreachable) → 503
 /// - -32006 (target tombstoned/missing) → 404
-/// - -32007 (rate) / -32008 (quota) → 429
+/// - -32007 (rate) / -32008 (credits) → 429
 fn jsonrpc_to_http(code: i32) -> StatusCode {
     match code {
         -32000 | -32001 => StatusCode::UNAUTHORIZED,
@@ -1100,8 +1100,10 @@ mod tests {
             crate::state::RelayState::new(pool.clone(), config_v2_on()).with_credit_cache(credits),
         );
         let res = app.oneshot(a2a_send_request(&f)).await.unwrap();
-        // Out of credits, but shadow mode logs a would-block and still parks.
+        // Out of credits, but shadow mode logs a would-block and still parks
+        // — and still charges.
         assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(queued_charges(&pool, f.caller_account_id).await, 1);
     }
 
     #[sqlx::test(migrations = "../migrations")]

@@ -57,7 +57,7 @@ async fn main() -> Result<()> {
     {
         tracing::warn!(error = %e, "initial credit refresh failed; the worker will retry");
     }
-    chakramcp_relay::limits::credits::spawn_worker(pool.clone(), credit_cache.clone(), credits);
+    chakramcp_relay::limits::credits::spawn_worker(&pool, credit_cache.clone(), credits);
 
     let state = RelayState::new(pool, cfg.clone())
         .with_rate_limiter(chakramcp_relay::limits::RateLimiter::from_redis_url(

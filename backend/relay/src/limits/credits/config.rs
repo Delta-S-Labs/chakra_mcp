@@ -12,7 +12,8 @@ pub struct CreditsConfig {
     pub default_monthly_free_mc: i64,
     /// Flat cost of one accepted invocation (milli-credits).
     pub cost_per_invocation_mc: i64,
-    /// How often the worker charges, grants and refreshes the switches.
+    /// How often the worker charges and grants, and (separately) refreshes
+    /// the switches.
     pub sweep_interval: Duration,
     /// Rate limit for wallets with no override (invocations per minute).
     pub default_rate_per_min: i32,
@@ -30,15 +31,30 @@ impl Default for CreditsConfig {
     }
 }
 
+/// Longest allowed worker tick. Anything slower leaves the switches minutes
+/// behind, and the fail-open window is a multiple of it.
+const MAX_SWEEP_INTERVAL_SECS: u64 = 300;
+
 impl CreditsConfig {
     /// Read from the environment. Unset → default; set but unparseable or
-    /// not positive → error. Money settings must never silently fall back.
+    /// not positive (or a tick over five minutes) → error. Money settings
+    /// must never silently fall back.
     pub fn from_env() -> anyhow::Result<Self> {
         Self::from_lookup(|key| std::env::var(key).ok())
     }
 
     fn from_lookup(get: impl Fn(&str) -> Option<String>) -> anyhow::Result<Self> {
         let defaults = Self::default();
+        let sweep_secs = positive(
+            &get,
+            "CREDITS_SWEEP_INTERVAL_SECS",
+            defaults.sweep_interval.as_secs(),
+        )?;
+        if sweep_secs > MAX_SWEEP_INTERVAL_SECS {
+            bail!(
+                "CREDITS_SWEEP_INTERVAL_SECS must be at most {MAX_SWEEP_INTERVAL_SECS} (got {sweep_secs})"
+            );
+        }
         Ok(Self {
             default_monthly_free_mc: positive(
                 &get,
@@ -50,11 +66,7 @@ impl CreditsConfig {
                 "CREDITS_COST_PER_INVOCATION_MC",
                 defaults.cost_per_invocation_mc,
             )?,
-            sweep_interval: Duration::from_secs(positive(
-                &get,
-                "CREDITS_SWEEP_INTERVAL_SECS",
-                defaults.sweep_interval.as_secs(),
-            )?),
+            sweep_interval: Duration::from_secs(sweep_secs),
             default_rate_per_min: positive(
                 &get,
                 "LIMITS_DEFAULT_RATE_PER_MIN",
@@ -67,7 +79,7 @@ impl CreditsConfig {
     /// unknown and nobody is blocked (fail open), rather than freezing
     /// whoever was blocked when the worker stopped.
     pub fn stale_after(&self) -> Duration {
-        self.sweep_interval * 3
+        self.sweep_interval.saturating_mul(3)
     }
 }
 
@@ -134,5 +146,13 @@ mod tests {
         // A zero interval would panic tokio's interval timer.
         assert!(from(&[("CREDITS_SWEEP_INTERVAL_SECS", "0")]).is_err());
         assert!(from(&[("LIMITS_DEFAULT_RATE_PER_MIN", "0")]).is_err());
+    }
+
+    #[test]
+    fn the_tick_is_capped() {
+        assert!(from(&[("CREDITS_SWEEP_INTERVAL_SECS", "300")]).is_ok());
+        assert!(from(&[("CREDITS_SWEEP_INTERVAL_SECS", "301")]).is_err());
+        // Would overflow `Duration * 3` if it got through.
+        assert!(from(&[("CREDITS_SWEEP_INTERVAL_SECS", &u64::MAX.to_string())]).is_err());
     }
 }

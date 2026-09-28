@@ -45,10 +45,20 @@ impl CreditCache {
     /// down), nobody is blocked.
     pub fn is_blocked(&self, account: Uuid) -> bool {
         let snapshot = self.snapshot.read().unwrap_or_else(PoisonError::into_inner);
-        match snapshot.refreshed_at {
-            Some(at) if at.elapsed() <= self.stale_after => snapshot.blocked.contains(&account),
-            _ => false,
-        }
+        self.is_fresh(&snapshot) && snapshot.blocked.contains(&account)
+    }
+
+    /// Whether the switches are unknown — never loaded, or not refreshed
+    /// within `stale_after` — so nobody is blocked.
+    pub fn is_stale(&self) -> bool {
+        let snapshot = self.snapshot.read().unwrap_or_else(PoisonError::into_inner);
+        !self.is_fresh(&snapshot)
+    }
+
+    fn is_fresh(&self, snapshot: &Snapshot) -> bool {
+        snapshot
+            .refreshed_at
+            .is_some_and(|at| at.elapsed() <= self.stale_after)
     }
 
     /// The account's per-minute rate limit: its override, else `default`.
@@ -93,6 +103,12 @@ impl CreditCache {
         db: &PgPool,
         cost_per_invocation_mc: i64,
     ) -> Result<(), sqlx::Error> {
+        // Plain reads never wait on row locks, but they do queue behind a
+        // table lock (DDL); give up after the lock timeout instead.
+        let mut tx = db.begin().await?;
+        sqlx::query(super::SET_LOCK_TIMEOUT)
+            .execute(&mut *tx)
+            .await?;
         let blocked = sqlx::query_scalar!(
             r#"
             SELECT account_id FROM credit_wallets
@@ -102,7 +118,7 @@ impl CreditCache {
             "#,
             cost_per_invocation_mc,
         )
-        .fetch_all(db)
+        .fetch_all(&mut *tx)
         .await?;
         let rate_overrides = sqlx::query!(
             r#"
@@ -111,8 +127,9 @@ impl CreditCache {
              WHERE rate_limit_per_min IS NOT NULL
             "#,
         )
-        .fetch_all(db)
+        .fetch_all(&mut *tx)
         .await?;
+        tx.commit().await?;
         self.replace(
             blocked.into_iter().collect(),
             rate_overrides
@@ -154,7 +171,9 @@ mod tests {
 
     #[test]
     fn never_refreshed_blocks_nobody() {
-        assert!(!CreditCache::default().is_blocked(Uuid::now_v7()));
+        let cache = CreditCache::default();
+        assert!(cache.is_stale());
+        assert!(!cache.is_blocked(Uuid::now_v7()));
     }
 
     #[test]
@@ -173,6 +192,7 @@ mod tests {
         let out = Uuid::now_v7();
         cache.replace(HashSet::from([out]), HashMap::new());
         std::thread::sleep(Duration::from_millis(10));
+        assert!(cache.is_stale());
         assert!(
             !cache.is_blocked(out),
             "a dead worker must not freeze blocks"
@@ -238,5 +258,22 @@ mod tests {
         assert!(!cache.is_blocked(can_pay));
         assert!(!cache.is_blocked(unlimited));
         assert!(!cache.is_blocked(never_granted));
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn refresh_loads_rate_overrides(pool: PgPool) {
+        let custom = wallet(&pool, 1_000, true, false).await;
+        let plain = wallet(&pool, 1_000, true, false).await;
+        sqlx::query("UPDATE credit_wallets SET rate_limit_per_min = 7 WHERE account_id = $1")
+            .bind(custom)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let cache = CreditCache::default();
+        cache.refresh(&pool, 100).await.unwrap();
+
+        assert_eq!(cache.rate_limit_for(custom, 60), 7);
+        assert_eq!(cache.rate_limit_for(plain, 60), 60);
     }
 }

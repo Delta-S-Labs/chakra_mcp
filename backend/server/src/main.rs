@@ -206,7 +206,7 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
     {
         tracing::warn!(error = %e, "initial credit refresh failed; the worker will retry");
     }
-    chakramcp_relay::limits::credits::spawn_worker(pool.clone(), credit_cache.clone(), credits);
+    chakramcp_relay::limits::credits::spawn_worker(&pool, credit_cache.clone(), credits);
 
     let app_state = AppState::new(pool.clone(), cfg.shared.clone());
     let relay_state = RelayState::new(pool, cfg.shared.clone())

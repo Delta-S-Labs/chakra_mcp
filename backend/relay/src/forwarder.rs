@@ -120,10 +120,27 @@ pub async fn forward_push(
                 .get(header::CONTENT_TYPE)
                 .and_then(|v| v.to_str().ok())
                 .map(|s| s.to_string());
-            let body = resp
-                .bytes()
-                .await
-                .map_err(|e| ForwardError::Transport(e.to_string()))?;
+            // The upstream took the call even if its body can't be read, so
+            // it's recorded (and charged) either way.
+            let body = match resp.bytes().await {
+                Ok(body) => body,
+                Err(e) => {
+                    persist_invocation(
+                        db,
+                        invocation_id,
+                        authz,
+                        capability_name,
+                        "failed",
+                        Some(status as i32),
+                        elapsed_ms,
+                        Some(format!("upstream body read error: {e}")),
+                        preview_request(&request_body),
+                        None,
+                    )
+                    .await?;
+                    return Err(ForwardError::Transport(e.to_string()));
+                }
+            };
             persist_invocation(
                 db,
                 invocation_id,
@@ -648,6 +665,64 @@ mod tests {
             .unwrap();
         assert_eq!(row.status, "failed");
         assert_eq!(row.http_status, Some(500));
+    }
+
+    /// An upstream that answers 200 and then hangs up partway through the body.
+    async fn start_truncating_upstream() -> String {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0u8; 16 * 1024];
+            let _ = sock.read(&mut buf).await;
+            sock.write_all(
+                b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\
+                  content-length: 64\r\n\r\n{\"partial\":",
+            )
+            .await
+            .unwrap();
+            sock.shutdown().await.unwrap();
+            // Hold the socket until the client gives up on the body.
+            let _ = sock.read(&mut buf).await;
+        });
+        format!("http://{addr}/a2a/jsonrpc")
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn a_truncated_upstream_body_is_still_recorded_and_charged(pool: PgPool) {
+        let url = start_truncating_upstream().await;
+        let authz = seed_authorized_for_upstream(&pool, &url).await;
+        let keystore = KeyStore::new(pool.clone());
+        let _ = keystore.ensure_active_key().await.unwrap();
+        let http = reqwest::Client::new();
+
+        let r = forward_push(
+            &pool,
+            &keystore,
+            &http,
+            &authz,
+            "do",
+            Bytes::from_static(b"{}"),
+            &req_headers(),
+        )
+        .await;
+        assert!(matches!(r, Err(ForwardError::Transport(_))), "{r:?}");
+
+        // The upstream took the call, so it's audited and queued for its charge.
+        let (id, status, http_status, error): (Uuid, String, Option<i32>, Option<String>) =
+            sqlx::query_as("SELECT id, status, http_status, error_message FROM relay_invocations")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!((status.as_str(), http_status), ("failed", Some(200)));
+        assert!(error.unwrap().contains("body"));
+        let queued: Vec<(Uuid, Uuid)> =
+            sqlx::query_as("SELECT invocation_id, account_id FROM credit_charge_queue")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(queued, vec![(id, authz.caller_account_id)]);
     }
 
     #[sqlx::test(migrations = "../migrations")]

@@ -126,16 +126,19 @@ rate limit and a negative grant are rejected, NULL and a 0 grant are accepted.
 ## PR2 — Swap to async credits
 
 **Files:**
-- `relay/src/limits/credits/config.rs` — `CreditsConfig` (`Default`, `from_env`,
-  `validate`: every value parses and is > 0, else startup fails).
+- `relay/src/limits/credits/config.rs` — `CreditsConfig` (`Default`, `from_env`:
+  every value parses and is > 0 and the tick is ≤ 300 s, else startup fails).
 - `relay/src/limits/credits/cache.rs` — blocked set + rate overrides + `refreshed_at`;
   `is_blocked` returns `false` when the cache is older than 3 intervals.
-- `relay/src/limits/credits/worker.rs` — supervised loop: charge (spec SQL, batches of
-  1,000, loop within a time budget) and grant (spec SQL), each its own transaction
-  that first takes `pg_try_advisory_xact_lock` as a separate statement; refresh on
-  every instance; per-step errors logged; re-spawn on panic; per-tick logs.
-- `relay/src/limits/mod.rs` — `enforce` with no DB: rate (Redis, cached per-account
-  limit) → `is_blocked`; drop `resolve_plan`/`PlanLimits`; `QuotaExceeded` →
+- `relay/src/limits/credits/worker.rs` — two supervised loops on the worker's own
+  two-connection pool, every transaction under `SET LOCAL lock_timeout = '1s'`:
+  **accounting** — charge (spec SQL, batches of 1,000, loop within a time budget)
+  and grant (spec SQL), each its own transaction that first takes
+  `pg_try_advisory_xact_lock` as a separate statement and rolls back at once on
+  failure; **switches** — refresh on every instance, error log when stale.
+  Per-step errors logged; a loop that panics or returns restarts after 1 s.
+- `relay/src/limits/mod.rs` — `enforce` with no DB: `is_blocked` → rate (Redis,
+  cached per-account limit); drop `resolve_plan`/`PlanLimits`; `QuotaExceeded` →
   `InsufficientCredits`.
 - `relay/src/limits/quota.rs` — delete.
 - `relay/src/state.rs` — cache + `CreditsConfig` via builders (defaults in `new`).
@@ -154,8 +157,14 @@ rate limit and a negative grant are rejected, NULL and a 0 grant are accepted.
   guard test.
 - `backend/.sqlx/**` — regenerate.
 
-**Tests:** per the spec's Testing section (charge, grant, switch/refresh,
-supervision/config, enforce, four sites, invariant, live Redis).
+**Tests:** per the spec's Testing section (charge, grant, switch/refresh, lock
+bounds, supervision/config, enforce, four sites, invariant, live Redis).
+
+**Review fixes folded in (2026-09-28):** the two-loop split, own pool, lock
+timeout and immediate rollback; `= ANY(ARRAY(…))` drain; tick cap +
+`saturating_mul`; unconditional restart pause; a push call whose upstream body
+can't be read is still recorded and charged; MCP invoke integration tests;
+doc-comment placement that failed `clippy --all-targets`.
 
 **Rollout:** optional — set `LIMITS_ENFORCE=false` before merging, watch the tick
 logs, re-enable. Release note: `chk.limit.credits` / `account_credits_exhausted`

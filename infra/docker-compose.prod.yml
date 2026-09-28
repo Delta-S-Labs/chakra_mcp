@@ -83,11 +83,13 @@ services:
       DATABASE_URL: postgres://chakramcp:${POSTGRES_PASSWORD}@pg:5432/chakramcp
       REDIS_URL: redis://redis:6379
       # Usage-limit enforcement. Default true = ENFORCING: over-limit calls are
-      # denied (429 / rate + monthly quota per the account's plan). To fall back
-      # to shadow mode (log `limit.would_block`, still serve), set
-      # LIMITS_ENFORCE=false in the host env. Takes effect on the next
-      # `docker compose up -d relay` (which also starts Redis — until it's up,
-      # rate limiting fails open and only the Postgres-backed quota enforces).
+      # denied (429: over the per-minute rate limit, or the account is out of
+      # credits). To fall back to shadow mode (log `limit.would_block`, still
+      # serve), set LIMITS_ENFORCE=false in the host env. Takes effect on the
+      # next `docker compose up -d relay` (which also starts Redis — until it's
+      # up, rate limiting fails open; the credit switches don't use Redis).
+      # Credit amounts use the built-in defaults unless CREDITS_* is set (see
+      # docs/specs/2026-09-23-credit-ledger-foundation-design.md).
       LIMITS_ENFORCE: ${LIMITS_ENFORCE:-true}
       # System One compliance checks (TypeSafe Jev) — off unless the host env
       # sets SYSTEM_ONE_CHECKS=true and TYPESAFE_AI_KEY. Fail-open: a TypeSafe

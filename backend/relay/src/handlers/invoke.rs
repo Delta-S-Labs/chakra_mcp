@@ -1716,9 +1716,7 @@ mod legacy_v01_contract_tests {
         assert_eq!(status, "rejected");
     }
 
-    /// Full flow mirrors what `chakramcp.AsyncChakraMCP.invoke_and_wait`
-    /// + `chakramcp.AsyncChakraMCP.inbox.serve` do at the wire level.
-    /// If this test passes, the scheduler-demo passes.
+    /// A trusted `/v1/invoke` from the fixture's grantee agent.
     fn trusted_invoke(f: &DemoFixture) -> Request<Body> {
         Request::builder()
             .method("POST")
@@ -1835,6 +1833,9 @@ mod legacy_v01_contract_tests {
         assert_eq!(statuses, vec!["rejected".to_owned()]);
     }
 
+    /// Full flow mirrors what `chakramcp.AsyncChakraMCP.invoke_and_wait`
+    /// and `chakramcp.AsyncChakraMCP.inbox.serve` do at the wire level.
+    /// If this test passes, the scheduler-demo passes.
     #[sqlx::test(migrations = "../migrations")]
     async fn v01_pull_mode_full_lifecycle(pool: PgPool) {
         let f = seed_demo(&pool).await;

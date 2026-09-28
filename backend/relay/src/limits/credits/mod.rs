@@ -21,3 +21,9 @@ pub use worker::spawn_worker;
 
 #[cfg(test)]
 pub(crate) use cache::exhausted_cache;
+
+/// Every credits transaction gives up on a lock after a second, so a row or
+/// table held elsewhere (an admin editing a wallet, a migration) delays the
+/// work by a tick instead of stalling it. `SET LOCAL` scopes it to the
+/// transaction, which keeps it safe behind a transaction-pooling proxy.
+const SET_LOCK_TIMEOUT: &str = "SET LOCAL lock_timeout = '1s'";

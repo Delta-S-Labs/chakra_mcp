@@ -1711,7 +1711,6 @@ mod manage_agents_tests {
         (user_id, account_id, token)
     }
 
-    /// POST a tools/call to /mcp and return the parsed JSON-RPC `result`.
     /// MCP (via the shared trusted path) refuses an out-of-credits caller with
     /// a client-side back-off error rather than a JSON-RPC 429.
     #[test]
@@ -1733,8 +1732,18 @@ mod manage_agents_tests {
         state.with_usage_recorder(usage)
     }
 
+    /// POST a tools/call to /mcp and return the parsed JSON-RPC `result`.
     async fn call(pool: &PgPool, token: &str, name: &str, arguments: Value) -> Value {
-        let state = recording_state(pool);
+        call_on(recording_state(pool), token, name, arguments).await
+    }
+
+    /// [`call`] against a given relay state.
+    async fn call_on(
+        state: crate::state::RelayState,
+        token: &str,
+        name: &str,
+        arguments: Value,
+    ) -> Value {
         let app = crate::router(state.clone());
         let res = app
             .oneshot(
@@ -2499,6 +2508,66 @@ mod manage_agents_tests {
         let (status, err, _, _) = invocation_row(&pool, &grant).await;
         assert_eq!(status, "rejected");
         assert!(err.unwrap().contains("friendship"));
+    }
+
+    async fn agent_account(pool: &PgPool, agent: &str) -> Uuid {
+        sqlx::query_scalar("SELECT account_id FROM agents WHERE id = $1")
+            .bind(agent.parse::<Uuid>().unwrap())
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn invoke_queues_one_charge(pool: PgPool) {
+        let (token, a, grant, _) = seed_granted_pair(&pool).await;
+        let inv: Uuid = ok(&call(
+            &pool,
+            &token,
+            "invoke",
+            json!({ "grant_id": grant, "grantee_agent_id": a, "input": { "q": 1 } }),
+        )
+        .await)["invocation_id"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+
+        // Charged to the invoking (grantee) agent's account.
+        let queued: Vec<(Uuid, Uuid)> =
+            sqlx::query_as("SELECT invocation_id, account_id FROM credit_charge_queue")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(queued, vec![(inv, agent_account(&pool, &a).await)]);
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn invoke_refused_when_out_of_credits(pool: PgPool) {
+        let (token, a, grant, _) = seed_granted_pair(&pool).await;
+        let credits =
+            crate::limits::credits::exhausted_cache(&pool, agent_account(&pool, &a).await).await;
+        let state = recording_state(&pool)
+            .with_limits_enforce(true)
+            .with_credit_cache(credits);
+
+        let res = call_on(
+            state,
+            &token,
+            "invoke",
+            json!({ "grant_id": grant, "grantee_agent_id": a, "input": { "q": 1 } }),
+        )
+        .await;
+        assert_eq!(res["isError"], json!(true), "invoke: {res}");
+        assert_eq!(
+            res["content"][0]["text"],
+            json!("Error: insufficient credits")
+        );
+        let queued: i64 = sqlx::query_scalar("SELECT count(*) FROM credit_charge_queue")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(queued, 0, "refused before anything was queued");
     }
 
     #[sqlx::test(migrations = "../migrations")]

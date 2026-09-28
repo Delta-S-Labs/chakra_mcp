@@ -1,16 +1,25 @@
-//! The credits worker: charges queued invocations, applies monthly free
-//! grants, and refreshes the in-memory switches. It runs beside the
-//! invocation path and never touches `relay_invocations`, so nothing it does
-//! can make an invocation wait.
+//! The credits worker: two loops beside the invocation path.
+//!
+//! - **Accounting** charges queued invocations and applies monthly free
+//!   grants.
+//! - **Switches** reloads who is blocked (and the rate overrides) into the
+//!   [`CreditCache`] the invocation path reads.
+//!
+//! The loops run independently on the worker's own connections: a stalled
+//! charge or grant can't stop the switches refreshing (which would make them
+//! fail open), and the worker never takes a connection from the invocation
+//! path. Every transaction gives up on a lock after a second. Nothing here
+//! touches `relay_invocations`, so nothing here can make an invocation wait.
 
+use std::future::Future;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use chrono::{Datelike, NaiveDate, Utc};
-use sqlx::{PgConnection, PgPool};
-use tokio::task::JoinHandle;
+use sqlx::postgres::PgPoolOptions;
+use sqlx::{PgConnection, PgPool, Postgres, Transaction};
 
-use super::{CreditCache, CreditsConfig};
+use super::{CreditCache, CreditsConfig, SET_LOCK_TIMEOUT};
 
 /// `pg_try_advisory_xact_lock` key: only one instance does the accounting
 /// at a time (row locks already prevent double charges; this avoids
@@ -21,43 +30,85 @@ const ACCOUNTING_LOCK_KEY: i64 = 0x4352_4544_4954_5331; // "CREDITS1"
 /// and the row locks it holds — stays short.
 const CHARGE_BATCH: i64 = 1_000;
 
-/// Upper bound on charging per tick; a deep backlog continues next tick.
+/// Upper bound on charging per accounting pass (never more than one tick),
+/// so the pass gets to grants; a deep backlog continues next pass.
 const CHARGE_BUDGET: Duration = Duration::from_secs(2);
 
-/// Spawn the worker. It runs forever; if it ever panics it's restarted, so
-/// blocking can't silently freeze (the switches also fail open when stale).
-pub fn spawn_worker(db: PgPool, cache: Arc<CreditCache>, cfg: CreditsConfig) -> JoinHandle<()> {
-    tokio::spawn(async move {
-        loop {
-            let run = tokio::spawn(run(db.clone(), cache.clone(), cfg));
-            if let Err(e) = run.await {
-                tracing::error!(error = %e, "credits worker stopped unexpectedly; restarting");
-                tokio::time::sleep(Duration::from_secs(1)).await;
-            }
-        }
-    })
+/// Pause before restarting a loop that stopped.
+const RESTART_DELAY: Duration = Duration::from_secs(1);
+
+/// Start the worker's two loops on a pool of their own. Each is restarted
+/// if it ever stops, and the switches fail open when stale, so a dead loop
+/// can't freeze anyone's block.
+pub fn spawn_worker(db: &PgPool, cache: Arc<CreditCache>, cfg: CreditsConfig) {
+    let db = worker_pool(db);
+    let accounting_db = db.clone();
+    supervise("accounting", RESTART_DELAY, move || {
+        accounting_loop(accounting_db.clone(), cfg)
+    });
+    supervise("switches", RESTART_DELAY, move || {
+        switches_loop(db.clone(), cache.clone(), cfg)
+    });
 }
 
-async fn run(db: PgPool, cache: Arc<CreditCache>, cfg: CreditsConfig) {
-    let mut ticker = tokio::time::interval(cfg.sweep_interval);
+/// One connection per loop, with the app pool's connection settings.
+fn worker_pool(db: &PgPool) -> PgPool {
+    PgPoolOptions::new()
+        .max_connections(2)
+        .acquire_timeout(Duration::from_secs(5))
+        .connect_lazy_with(db.connect_options().as_ref().clone())
+}
+
+/// Keep `task` running: whenever it ends (it shouldn't) or panics, log it
+/// and start a fresh one after `delay`.
+fn supervise<F, Fut>(name: &'static str, delay: Duration, task: F)
+where
+    F: Fn() -> Fut + Send + 'static,
+    Fut: Future<Output = ()> + Send + 'static,
+{
+    tokio::spawn(async move {
+        loop {
+            match tokio::spawn(task()).await {
+                Ok(()) => tracing::error!(worker = name, "credits loop exited; restarting"),
+                Err(e) => {
+                    tracing::error!(worker = name, error = %e, "credits loop crashed; restarting")
+                }
+            }
+            tokio::time::sleep(delay).await;
+        }
+    });
+}
+
+fn ticker(period: Duration) -> tokio::time::Interval {
+    let mut ticker = tokio::time::interval(period);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    ticker
+}
+
+async fn accounting_loop(db: PgPool, cfg: CreditsConfig) {
+    let mut ticker = ticker(cfg.sweep_interval);
     let mut last_depth = None;
     loop {
         ticker.tick().await;
-        tick(&db, &cache, &cfg, &mut last_depth).await;
+        account(&db, &cfg, &mut last_depth).await;
     }
 }
 
-/// One pass: charge the queue, apply due grants, refresh the switches.
-/// A failing step is logged and never stops the others.
-pub(crate) async fn tick(
-    db: &PgPool,
-    cache: &CreditCache,
-    cfg: &CreditsConfig,
-    last_depth: &mut Option<i64>,
-) {
+async fn switches_loop(db: PgPool, cache: Arc<CreditCache>, cfg: CreditsConfig) {
+    let mut ticker = ticker(cfg.sweep_interval);
+    let mut stale = false;
+    loop {
+        ticker.tick().await;
+        refresh_switches(&db, &cache, cfg.cost_per_invocation_mc, &mut stale).await;
+    }
+}
+
+/// One accounting pass: charge the queue, then apply due grants. A failing
+/// step is logged and never stops the other.
+pub(crate) async fn account(db: &PgPool, cfg: &CreditsConfig, last_depth: &mut Option<i64>) {
     let started = Instant::now();
-    let charged = charge_all(db, cfg.cost_per_invocation_mc).await;
+    let budget = CHARGE_BUDGET.min(cfg.sweep_interval);
+    let charged = charge_all(db, cfg.cost_per_invocation_mc, budget).await;
     let granted = match grant_due(db, cfg.default_monthly_free_mc, current_month()).await {
         Ok(granted) => granted.unwrap_or(0),
         Err(e) => {
@@ -65,9 +116,6 @@ pub(crate) async fn tick(
             0
         }
     };
-    if let Err(e) = cache.refresh(db, cfg.cost_per_invocation_mc).await {
-        tracing::warn!(error = %e, "credit switch refresh failed");
-    }
     let depth = match queue_depth(db).await {
         Ok(depth) => Some(depth),
         Err(e) => {
@@ -76,20 +124,18 @@ pub(crate) async fn tick(
         }
     };
 
-    let blocked = cache.blocked_count();
     let took_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
     if charged.rows > 0 || granted > 0 {
         tracing::info!(
             charged = charged.rows,
             wallet_debits = charged.debits,
             granted,
-            blocked,
             queue = ?depth,
             took_ms,
-            "credits tick"
+            "credits accounting"
         );
     } else {
-        tracing::debug!(blocked, queue = ?depth, took_ms, "credits tick (idle)");
+        tracing::debug!(queue = ?depth, took_ms, "credits accounting (idle)");
     }
     if let (Some(previous), Some(now)) = (*last_depth, depth) {
         if now > previous && now >= CHARGE_BATCH {
@@ -103,6 +149,40 @@ pub(crate) async fn tick(
     *last_depth = depth;
 }
 
+/// Reload the switches. After a failed refresh the last snapshot stands
+/// until it goes stale; from then on nobody is blocked (fail open), which is
+/// logged as an error because enforcement is off until a refresh succeeds.
+/// `stale` carries that state between calls.
+pub(crate) async fn refresh_switches(
+    db: &PgPool,
+    cache: &CreditCache,
+    cost_per_invocation_mc: i64,
+    stale: &mut bool,
+) {
+    let before = cache.blocked_count();
+    match cache.refresh(db, cost_per_invocation_mc).await {
+        Ok(()) => {
+            let blocked = cache.blocked_count();
+            if std::mem::take(stale) {
+                tracing::info!(blocked, "credit switches refreshed; enforcement is back on");
+            } else if blocked != before {
+                tracing::info!(blocked, "credit switches changed");
+            }
+        }
+        Err(e) if cache.is_stale() => {
+            if std::mem::replace(stale, true) {
+                tracing::warn!(error = %e, "credit switch refresh failed; still stale");
+            } else {
+                tracing::error!(
+                    error = %e,
+                    "credit switches are stale: nobody is blocked until a refresh succeeds"
+                );
+            }
+        }
+        Err(e) => tracing::warn!(error = %e, "credit switch refresh failed"),
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ChargeTotals {
     /// Queue rows drained and charged.
@@ -112,8 +192,8 @@ pub(crate) struct ChargeTotals {
 }
 
 /// Drain the queue in short batches until it's empty, another instance holds
-/// the lock, or this tick's budget is spent.
-async fn charge_all(db: &PgPool, cost_mc: i64) -> ChargeTotals {
+/// the lock, a batch fails, or `budget` is spent.
+async fn charge_all(db: &PgPool, cost_mc: i64, budget: Duration) -> ChargeTotals {
     let started = Instant::now();
     let mut totals = ChargeTotals::default();
     loop {
@@ -121,7 +201,7 @@ async fn charge_all(db: &PgPool, cost_mc: i64) -> ChargeTotals {
             Ok(Some(batch)) => {
                 totals.rows += batch.rows;
                 totals.debits += batch.debits;
-                if batch.rows < CHARGE_BATCH || started.elapsed() > CHARGE_BUDGET {
+                if batch.rows < CHARGE_BATCH || started.elapsed() > budget {
                     break;
                 }
             }
@@ -137,19 +217,21 @@ async fn charge_all(db: &PgPool, cost_mc: i64) -> ChargeTotals {
 
 /// One batch in its own transaction; `None` if another instance holds the lock.
 async fn charge_batch(db: &PgPool, cost_mc: i64) -> Result<Option<ChargeTotals>, sqlx::Error> {
-    let mut tx = db.begin().await?;
-    if !try_accounting_lock(&mut tx).await? {
+    let Some(mut tx) = begin_accounting(db).await? else {
         return Ok(None);
-    }
-    let totals = charge_rows(&mut tx, CHARGE_BATCH, cost_mc).await?;
-    tx.commit().await?;
-    Ok(Some(totals))
+    };
+    let result = charge_rows(&mut tx, CHARGE_BATCH, cost_mc).await;
+    finish(tx, result).await.map(Some)
 }
 
 /// Drain up to `batch` queue rows, record a charge for each, and debit each
 /// account's wallet by its total — one statement, so charges and balances
 /// can never diverge. A wallet is created at an account's first charge; a
 /// charge for an account deleted since is recorded as 0 with no debit.
+///
+/// `= ANY(ARRAY(…))` runs the row pick once and then deletes by primary key;
+/// with `IN (…)` the planner can choose a hash join over the whole queue,
+/// which makes draining a backlog quadratic.
 async fn charge_rows(
     conn: &mut PgConnection,
     batch: i64,
@@ -159,10 +241,10 @@ async fn charge_rows(
         r#"
         WITH drained AS (
             DELETE FROM credit_charge_queue
-             WHERE invocation_id IN (SELECT invocation_id FROM credit_charge_queue
-                                      ORDER BY invocation_id
-                                      LIMIT $1
-                                      FOR UPDATE SKIP LOCKED)
+             WHERE invocation_id = ANY(ARRAY(SELECT invocation_id FROM credit_charge_queue
+                                              ORDER BY invocation_id
+                                              LIMIT $1
+                                              FOR UPDATE SKIP LOCKED))
             RETURNING invocation_id, account_id
         ), charged AS (
             INSERT INTO invocation_charges (invocation_id, account_id, cost_mc)
@@ -206,13 +288,11 @@ async fn grant_due(
     default_grant_mc: i64,
     period: NaiveDate,
 ) -> Result<Option<u64>, sqlx::Error> {
-    let mut tx = db.begin().await?;
-    if !try_accounting_lock(&mut tx).await? {
+    let Some(mut tx) = begin_accounting(db).await? else {
         return Ok(None);
-    }
-    let granted = grant_rows(&mut tx, period, default_grant_mc).await?;
-    tx.commit().await?;
-    Ok(Some(granted))
+    };
+    let result = grant_rows(&mut tx, period, default_grant_mc).await;
+    finish(tx, result).await.map(Some)
 }
 
 /// Grant every wallet not yet granted for `period` (a first-of-month date):
@@ -261,15 +341,42 @@ async fn grant_rows(
     Ok(result.rows_affected())
 }
 
-/// Take the accounting lock for the current transaction, as its own
-/// statement (so it's held before any statement whose snapshot matters).
-async fn try_accounting_lock(conn: &mut PgConnection) -> Result<bool, sqlx::Error> {
-    sqlx::query_scalar!(
+/// Begin an accounting transaction: bound its lock waits, then take the
+/// accounting lock (try-only, as its own statement, so it's held before any
+/// statement whose snapshot matters). `None` if another instance holds it.
+async fn begin_accounting(
+    db: &PgPool,
+) -> Result<Option<Transaction<'static, Postgres>>, sqlx::Error> {
+    let mut tx = db.begin().await?;
+    sqlx::query(SET_LOCK_TIMEOUT).execute(&mut *tx).await?;
+    let locked = sqlx::query_scalar!(
         r#"SELECT pg_try_advisory_xact_lock($1) AS "locked!""#,
         ACCOUNTING_LOCK_KEY,
     )
-    .fetch_one(&mut *conn)
-    .await
+    .fetch_one(&mut *tx)
+    .await?;
+    Ok(locked.then_some(tx))
+}
+
+/// Commit on success. On failure roll back right away: a dropped
+/// transaction is only rolled back once its connection is reused, and until
+/// then it would keep the accounting lock from the pass's next step.
+async fn finish<T>(
+    tx: Transaction<'static, Postgres>,
+    result: Result<T, sqlx::Error>,
+) -> Result<T, sqlx::Error> {
+    match result {
+        Ok(value) => {
+            tx.commit().await?;
+            Ok(value)
+        }
+        Err(e) => {
+            if let Err(rollback) = tx.rollback().await {
+                tracing::warn!(error = %rollback, "credits rollback failed");
+            }
+            Err(e)
+        }
+    }
 }
 
 async fn queue_depth(db: &PgPool) -> Result<i64, sqlx::Error> {
@@ -287,7 +394,6 @@ pub(crate) fn current_month() -> NaiveDate {
 #[cfg(test)]
 mod tests {
     use chrono::Months;
-    use sqlx::postgres::PgPoolOptions;
     use uuid::Uuid;
 
     use super::*;
@@ -317,16 +423,18 @@ mod tests {
         account
     }
 
-    async fn enqueue(pool: &PgPool, account: Uuid, n: usize) {
-        for _ in 0..n {
-            sqlx::query(
-                "INSERT INTO credit_charge_queue (invocation_id, account_id) VALUES ($1, $2)",
-            )
-            .bind(Uuid::now_v7())
+    async fn enqueue_id(pool: &PgPool, invocation: Uuid, account: Uuid) {
+        sqlx::query("INSERT INTO credit_charge_queue (invocation_id, account_id) VALUES ($1, $2)")
+            .bind(invocation)
             .bind(account)
             .execute(pool)
             .await
             .unwrap();
+    }
+
+    async fn enqueue(pool: &PgPool, account: Uuid, n: usize) {
+        for _ in 0..n {
+            enqueue_id(pool, Uuid::now_v7(), account).await;
         }
     }
 
@@ -340,6 +448,19 @@ mod tests {
 
     async fn count(pool: &PgPool, sql: &'static str) -> i64 {
         sqlx::query_scalar(sql).fetch_one(pool).await.unwrap()
+    }
+
+    /// A wallet granted this month holding `balance_mc`.
+    async fn granted_wallet(pool: &PgPool, account: Uuid, balance_mc: i64) {
+        sqlx::query(
+            "INSERT INTO credit_wallets (account_id, balance_mc, free_grant_period) VALUES ($1, $2, $3)",
+        )
+        .bind(account)
+        .bind(balance_mc)
+        .bind(current_month())
+        .execute(pool)
+        .await
+        .unwrap();
     }
 
     /// A second pool on the same test database with room for real
@@ -358,7 +479,7 @@ mod tests {
         enqueue(&pool, a, 3).await;
         enqueue(&pool, b, 1).await;
 
-        let charged = charge_all(&pool, COST).await;
+        let charged = charge_all(&pool, COST, CHARGE_BUDGET).await;
         assert_eq!(charged.rows, 4);
         assert_eq!(
             count(&pool, "SELECT count(*) FROM credit_charge_queue").await,
@@ -377,8 +498,30 @@ mod tests {
         assert_eq!(balance(&pool, b).await, Some(-100));
 
         // Nothing left to do: a second pass is a no-op.
-        assert_eq!(charge_all(&pool, COST).await, ChargeTotals::default());
+        assert_eq!(
+            charge_all(&pool, COST, CHARGE_BUDGET).await,
+            ChargeTotals::default()
+        );
         assert_eq!(balance(&pool, a).await, Some(-300));
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn a_backlog_drains_in_batches(pool: PgPool) {
+        let account = seed_account(&pool).await;
+        sqlx::query(
+            "INSERT INTO credit_charge_queue (invocation_id, account_id)
+             SELECT gen_random_uuid(), $1 FROM generate_series(1, 2500)",
+        )
+        .bind(account)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // A generous budget: this is about batching, not the time cap.
+        let charged = charge_all(&pool, COST, Duration::from_secs(60)).await;
+        assert_eq!(charged.rows, 2500);
+        assert_eq!(charged.debits, 3, "one debit per account per batch");
+        assert_eq!(balance(&pool, account).await, Some(-2500 * COST));
     }
 
     #[sqlx::test(migrations = "../migrations")]
@@ -386,7 +529,7 @@ mod tests {
         let gone = Uuid::now_v7(); // never existed / since deleted
         enqueue(&pool, gone, 2).await;
 
-        assert_eq!(charge_all(&pool, COST).await.rows, 2);
+        assert_eq!(charge_all(&pool, COST, CHARGE_BUDGET).await.rows, 2);
         let recorded: i64 = sqlx::query_scalar(
             "SELECT count(*) FROM invocation_charges WHERE account_id = $1 AND cost_mc = 0",
         )
@@ -406,28 +549,116 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "../migrations")]
-    async fn concurrent_drains_never_double_charge(pool: PgPool) {
-        let account = seed_account(&pool).await;
-        enqueue(&pool, account, 50).await;
+    async fn a_second_drain_skips_locked_rows_instead_of_waiting(pool: PgPool) {
+        // Explicit, ordered ids: the first drain's batch is exactly the
+        // first account's rows, so the two drains share no wallet either.
+        let (first_acct, second_acct) = (seed_account(&pool).await, seed_account(&pool).await);
+        for i in 1..=10u128 {
+            let account = if i <= 5 { first_acct } else { second_acct };
+            enqueue_id(&pool, Uuid::from_u128(i), account).await;
+        }
 
-        // Two overlapping transactions draining without the advisory lock:
-        // SKIP LOCKED alone must keep them from charging the same row.
         let wide = concurrent_pool(&pool).await;
-        let drain = |db: PgPool| async move {
-            let mut tx = db.begin().await.unwrap();
-            let charged = charge_rows(&mut tx, CHARGE_BATCH, COST).await.unwrap();
-            tokio::time::sleep(Duration::from_millis(50)).await; // hold the locks
-            tx.commit().await.unwrap();
-            charged.rows
-        };
-        let (first, second) = tokio::join!(drain(wide.clone()), drain(wide.clone()));
+        let mut first = wide.begin().await.unwrap();
+        assert_eq!(charge_rows(&mut first, 5, COST).await.unwrap().rows, 5);
 
-        assert_eq!(first + second, 50);
+        // `first` still holds its rows. Without the advisory lock, a second
+        // drain must take the rest without waiting on them: SKIP LOCKED.
+        let mut second = wide.begin().await.unwrap();
+        sqlx::query("SET LOCAL lock_timeout = '200ms'")
+            .execute(&mut *second)
+            .await
+            .unwrap();
+        let charged = charge_rows(&mut second, CHARGE_BATCH, COST)
+            .await
+            .expect("skips the locked rows rather than waiting on them");
+        assert_eq!(charged.rows, 5);
+        second.commit().await.unwrap();
+        first.commit().await.unwrap();
+
         assert_eq!(
             count(&pool, "SELECT count(*) FROM invocation_charges").await,
-            50
+            10
         );
-        assert_eq!(balance(&pool, account).await, Some(-50 * COST));
+        assert_eq!(balance(&pool, first_acct).await, Some(-5 * COST));
+        assert_eq!(balance(&pool, second_acct).await, Some(-5 * COST));
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn a_second_instance_skips_while_one_is_accounting(pool: PgPool) {
+        let account = seed_account(&pool).await;
+        enqueue(&pool, account, 3).await;
+        let wide = concurrent_pool(&pool).await;
+
+        // Instance A is mid-pass, holding the accounting lock.
+        let a = begin_accounting(&wide)
+            .await
+            .unwrap()
+            .expect("lock is free");
+        // Instance B doesn't wait for it; it skips this pass.
+        let started = Instant::now();
+        assert_eq!(charge_batch(&wide, COST).await.unwrap(), None);
+        assert_eq!(
+            grant_due(&wide, GRANT, current_month()).await.unwrap(),
+            None
+        );
+        assert!(started.elapsed() < Duration::from_secs(1));
+        a.rollback().await.unwrap();
+
+        // Lock released: B's next pass does the work.
+        assert_eq!(charge_all(&wide, COST, CHARGE_BUDGET).await.rows, 3);
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn a_locked_wallet_costs_a_pass_not_a_hang(pool: PgPool) {
+        let cfg = CreditsConfig::default();
+        // A charge is queued for a wallet another session has locked (an
+        // admin mid-edit, say)...
+        let busy = seed_account(&pool).await;
+        granted_wallet(&pool, busy, 1_000).await;
+        enqueue(&pool, busy, 1).await;
+        // ...while another account is due its first grant.
+        let newcomer = seed_account(&pool).await;
+        set_period(&pool, newcomer, None).await;
+
+        let wide = concurrent_pool(&pool).await;
+        let mut admin = wide.begin().await.unwrap();
+        sqlx::query("SELECT 1 FROM credit_wallets WHERE account_id = $1 FOR UPDATE")
+            .bind(busy)
+            .execute(&mut *admin)
+            .await
+            .unwrap();
+
+        // The charge gives up after the lock timeout; the grant still lands.
+        tokio::time::timeout(Duration::from_secs(5), account(&wide, &cfg, &mut None))
+            .await
+            .expect("a held row lock must not stall the pass");
+        assert_eq!(
+            count(&pool, "SELECT count(*) FROM credit_charge_queue").await,
+            1,
+            "left for the next pass"
+        );
+        assert_eq!(balance(&pool, newcomer).await, Some(GRANT));
+
+        // Row locks don't hold up the switches either.
+        let cache = CreditCache::default();
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            cache.refresh(&wide, cfg.cost_per_invocation_mc),
+        )
+        .await
+        .expect("refresh doesn't wait on row locks")
+        .unwrap();
+        assert!(!cache.is_stale());
+
+        // Once the lock is gone, the next pass charges it.
+        admin.rollback().await.unwrap();
+        account(&wide, &cfg, &mut None).await;
+        assert_eq!(
+            count(&pool, "SELECT count(*) FROM credit_charge_queue").await,
+            0
+        );
+        assert_eq!(balance(&pool, busy).await, Some(1_000 - COST));
     }
 
     async fn set_period(pool: &PgPool, account: Uuid, period: Option<NaiveDate>) {
@@ -544,28 +775,22 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "../migrations")]
-    async fn a_tick_charges_grants_and_flips_the_switches(pool: PgPool) {
+    async fn a_pass_charges_and_grants_then_the_switches_flip(pool: PgPool) {
         let cfg = CreditsConfig::default();
         let cache = CreditCache::default();
 
         // A new account's first invocations: its wallet is created by the
-        // charge and granted in the same tick, so it's never falsely blocked.
+        // charge and granted in the same pass, so it's never falsely blocked.
         let newcomer = seed_account(&pool).await;
         enqueue(&pool, newcomer, 2).await;
 
         // An account granted this month that has spent almost everything.
         let spent = seed_account(&pool).await;
-        sqlx::query(
-            "INSERT INTO credit_wallets (account_id, balance_mc, free_grant_period) VALUES ($1, 150, $2)",
-        )
-        .bind(spent)
-        .bind(current_month())
-        .execute(&pool)
-        .await
-        .unwrap();
+        granted_wallet(&pool, spent, 150).await;
         enqueue(&pool, spent, 1).await;
 
-        tick(&pool, &cache, &cfg, &mut None).await;
+        account(&pool, &cfg, &mut None).await;
+        refresh_switches(&pool, &cache, cfg.cost_per_invocation_mc, &mut false).await;
 
         assert_eq!(balance(&pool, newcomer).await, Some(GRANT - 2 * COST));
         assert!(!cache.is_blocked(newcomer));
@@ -577,15 +802,38 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "../migrations")]
+    async fn failed_refreshes_fail_open_once_stale_then_recover(pool: PgPool) {
+        let broke = seed_account(&pool).await;
+        granted_wallet(&pool, broke, 0).await;
+        let cache = CreditCache::new(Duration::from_millis(500));
+        let mut stale = false;
+        refresh_switches(&pool, &cache, COST, &mut stale).await;
+        assert!(cache.is_blocked(broke) && !stale);
+
+        // The database goes away: the last snapshot stands until it's stale...
+        let gone = concurrent_pool(&pool).await;
+        gone.close().await;
+        refresh_switches(&gone, &cache, COST, &mut stale).await;
+        assert!(cache.is_blocked(broke) && !stale, "still fresh");
+        tokio::time::sleep(Duration::from_millis(600)).await;
+        refresh_switches(&gone, &cache, COST, &mut stale).await;
+        assert!(stale, "flagged (and logged) as stale");
+        assert!(!cache.is_blocked(broke), "stale switches fail open");
+
+        // ...and the next good refresh restores enforcement.
+        refresh_switches(&pool, &cache, COST, &mut stale).await;
+        assert!(!stale && cache.is_blocked(broke));
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
     async fn balances_reconcile_with_ledger_and_charges(pool: PgPool) {
         let cfg = CreditsConfig::default();
-        let cache = CreditCache::default();
         let (a, b) = (seed_account(&pool).await, seed_account(&pool).await);
         enqueue(&pool, a, 7).await;
-        tick(&pool, &cache, &cfg, &mut None).await;
+        account(&pool, &cfg, &mut None).await;
         enqueue(&pool, a, 3).await;
         enqueue(&pool, b, 4).await;
-        tick(&pool, &cache, &cfg, &mut None).await;
+        account(&pool, &cfg, &mut None).await;
 
         for account in [a, b] {
             // SUM(bigint) is numeric in Postgres: cast back for decoding.
@@ -599,5 +847,43 @@ mod tests {
             .unwrap();
             assert_eq!(balance(&pool, account).await, Some(reconciled));
         }
+    }
+
+    #[tokio::test]
+    async fn a_loop_that_crashes_or_exits_is_restarted_after_a_pause() {
+        let delay = Duration::from_millis(20);
+        let starts = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let log = starts.clone();
+        supervise("test", delay, move || {
+            let run = {
+                let mut starts = log.lock().unwrap();
+                starts.push(Instant::now());
+                starts.len() - 1
+            };
+            let tx = tx.clone();
+            async move {
+                match run {
+                    0 => panic!("first run crashes"),
+                    1 => {} // second run returns early
+                    _ => {
+                        tx.send(()).unwrap();
+                        std::future::pending::<()>().await; // third runs on
+                    }
+                }
+            }
+        });
+        tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .expect("restarted after a crash and after an exit")
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let starts = starts.lock().unwrap();
+        assert_eq!(starts.len(), 3, "a running loop is left alone");
+        // Paused before each restart, including after a clean exit, so a
+        // loop that keeps returning can't spin.
+        assert!(starts[1] - starts[0] >= delay);
+        assert!(starts[2] - starts[1] >= delay);
     }
 }
