@@ -1,0 +1,195 @@
+{{- include "chakramcp.validate" . }}
+{{- $fullname := include "chakramcp.fullname" . }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "chakramcp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: relay
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "chakramcp.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: relay
+  template:
+    metadata:
+      labels:
+        {{- include "chakramcp.labels" . | nindent 8 }}
+        app.kubernetes.io/component: relay
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        {{- if or (include "chakramcp.externalDatabaseFromValues" .) (include "chakramcp.externalRedisFromValues" .) }}
+        checksum/connections: {{ printf "%s|%s" .Values.externalDatabase.url .Values.externalRedis.url | sha256sum }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "chakramcp.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.postgresql.enabled }}
+      # The server exits if Postgres isn't reachable as it boots; on a fresh
+      # install that would cost a few restarts.
+      initContainers:
+        - name: wait-for-postgresql
+          image: "{{ .Values.postgresql.image.repository }}:{{ .Values.postgresql.image.tag }}"
+          imagePullPolicy: {{ .Values.postgresql.image.pullPolicy }}
+          command:
+            - sh
+            - -c
+            - until pg_isready -q -h "$0" -p 5432 -U "$1" -d "$2"; do sleep 2; done
+            - {{ include "chakramcp.postgresql.fullname" . }}
+            - {{ .Values.postgresql.auth.username }}
+            - {{ .Values.postgresql.auth.database }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 64Mi
+      {{- end }}
+      containers:
+        - name: chakramcp
+          image: "{{ .Values.image.repository }}:{{ include "chakramcp.imageTag" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: app
+              containerPort: 8080
+            - name: relay
+              containerPort: 8090
+            {{- if .Values.metrics.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+            {{- end }}
+          env:
+            {{- if .Values.postgresql.enabled }}
+            # No password in the URL: sqlx reads PGPASSWORD, so any
+            # password works without URL-encoding.
+            - name: DATABASE_URL
+              value: {{ printf "postgres://%s@%s:5432/%s" .Values.postgresql.auth.username (include "chakramcp.postgresql.fullname" .) .Values.postgresql.auth.database | quote }}
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "chakramcp.postgresql.secretName" . }}
+                  key: {{ .Values.postgresql.auth.secretKey }}
+            {{- else if .Values.externalDatabase.existingSecret }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.externalDatabase.existingSecret }}
+                  key: {{ .Values.externalDatabase.secretKey }}
+            {{- else }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "chakramcp.connectionsSecretName" . }}
+                  key: DATABASE_URL
+            {{- end }}
+            {{- if .Values.redis.enabled }}
+            - name: REDIS_URL
+              value: {{ printf "redis://%s:6379" (include "chakramcp.redis.fullname" .) | quote }}
+            {{- else if .Values.externalRedis.url }}
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "chakramcp.connectionsSecretName" . }}
+                  key: REDIS_URL
+            {{- end }}
+            - name: APP_PORT
+              value: "8080"
+            - name: RELAY_PORT
+              value: "8090"
+            {{- with include "chakramcp.publicUrl" (list . .Values.config.appPublicUrl .Values.ingress.hosts.app) }}
+            - name: APP_PUBLIC_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with include "chakramcp.publicUrl" (list . .Values.config.relayPublicUrl .Values.ingress.hosts.relay) }}
+            - name: RELAY_PUBLIC_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.config.frontendPublicUrl | default (include "chakramcp.publicUrl" (list . .Values.config.appPublicUrl .Values.ingress.hosts.app)) }}
+            - name: FRONTEND_PUBLIC_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.config.adminEmail }}
+            - name: ADMIN_EMAIL
+              value: {{ . | quote }}
+            {{- end }}
+            - name: LIMITS_ENFORCE
+              value: {{ .Values.config.limitsEnforce | quote }}
+            - name: DISCOVERY_V2
+              value: {{ .Values.config.discoveryV2 | quote }}
+            - name: RUST_LOG
+              value: {{ .Values.config.rustLog | quote }}
+            - name: LOG_FORMAT
+              value: json
+            {{- if .Values.metrics.enabled }}
+            - name: METRICS_ADDR
+              value: {{ printf "0.0.0.0:%v" .Values.metrics.port | quote }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          envFrom:
+            - secretRef:
+                name: {{ include "chakramcp.appSecretName" . }}
+            {{- with .Values.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          # Migrations run as the server boots, before it listens: the
+          # startup probe allows them 5 minutes.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: relay
+            periodSeconds: 5
+            failureThreshold: 60
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: relay
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          # /readyz queries Postgres.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: relay
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

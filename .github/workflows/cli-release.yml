@@ -6,7 +6,9 @@ name: CLI Release
 # Homebrew tap and publishes the npm wrapper. It also publishes the
 # public server image, ghcr.io/delta-s-labs/chakramcp-server:X.Y.Z (plus
 # :X.Y and :latest for non-pre-releases), from the release's own linux
-# server binaries: one release versions the CLI, the server and the image.
+# server binaries, and the Helm chart, oci://ghcr.io/delta-s-labs/charts/
+# chakramcp X.Y.Z, which installs that image: one release versions the
+# CLI, the server, the image and the chart.
 #
 # Manual trigger (`workflow_dispatch`) is supported for re-runs;
 # provide the version (e.g. `0.1.0`) and the workflow will operate as
@@ -467,3 +469,32 @@ jobs:
           # shellcheck disable=SC2046 # one image reference per digest file
           docker buildx imagetools create "${tags[@]}" $(printf "$IMAGE@sha256:%s " *)
           docker buildx imagetools inspect "$IMAGE:$VERSION"
+
+  # The Helm chart, versioned with the release and defaulting to its image
+  # (appVersion), so it runs after the image tags exist.
+  chart:
+    name: Publish the Helm chart
+    needs: [resolve-version, image-merge]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: azure/setup-helm@v5
+        with:
+          version: v3.22.0
+
+      - name: Package and push
+        env:
+          VERSION: ${{ needs.resolve-version.outputs.version }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # A no-op until the chart has dependencies; `helm package` fails on
+          # a declared dependency missing from charts/, even a disabled one.
+          helm dependency build charts/chakramcp
+          helm package charts/chakramcp --version "$VERSION" --app-version "$VERSION" -d "$RUNNER_TEMP/chart"
+          echo "$TOKEN" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+          helm push "$RUNNER_TEMP/chart/chakramcp-$VERSION.tgz" oci://ghcr.io/delta-s-labs/charts

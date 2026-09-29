@@ -1,0 +1,40 @@
+ChakraMCP ({{ include "chakramcp.imageTag" . }}) is starting as {{ .Release.Name }} in {{ .Release.Namespace }}.
+{{- $fullname := include "chakramcp.fullname" . }}
+{{- $pgGenerated := and .Values.postgresql.enabled (not .Values.postgresql.auth.existingSecret) }}
+
+Reach it:
+{{- if .Values.ingress.enabled }}
+  App API:  {{ include "chakramcp.publicUrl" (list . .Values.config.appPublicUrl .Values.ingress.hosts.app) }}
+  Relay:    {{ include "chakramcp.publicUrl" (list . .Values.config.relayPublicUrl .Values.ingress.hosts.relay) }}  (MCP clients: /mcp)
+{{- else }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ $fullname }} 8080:app 8090:relay
+  App API: http://localhost:8080   Relay: http://localhost:8090 (MCP clients: /mcp)
+{{- end }}
+
+Check it: helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
+{{- if not .Values.secrets.existingSecret }}
+
+JWT_SECRET was generated into the Secret {{ $fullname }}-secrets.
+{{- end }}
+{{- if $pgGenerated }}
+The Postgres password was generated into the Secret {{ include "chakramcp.postgresql.secretName" . }}.
+{{- end }}
+{{- if or (not .Values.secrets.existingSecret) $pgGenerated }}
+Both are kept across upgrades and after `helm uninstall`. GitOps tools (Argo CD,
+Flux, helm template) can't keep generated values: with them, set
+secrets.existingSecret{{ if $pgGenerated }} and postgresql.auth.existingSecret{{ end }}.
+{{- end }}
+{{- if .Values.postgresql.enabled }}
+
+The bundled Postgres is for evaluation and small installs (one pod, no
+backups). For production, use externalDatabase.
+{{- end }}
+{{- if and (not .Values.redis.enabled) (not .Values.externalRedis.url) }}
+
+No Redis is configured: rate limiting fails open.
+{{- end }}
+
+Upgrade by rolling forward: `helm rollback` past a release that added a
+database migration fails, because the server won't boot on a migration it
+doesn't know. Guide:
+https://github.com/Delta-S-Labs/chakra_mcp/blob/main/docs/self-hosting/kubernetes.md

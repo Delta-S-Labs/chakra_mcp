@@ -1,0 +1,146 @@
+name: Chart CI
+
+# Checks the Helm chart (charts/chakramcp):
+#   1. lint and render it with every values file in ci/ (installable) and
+#      ci-template/ (render-only), and validate the manifests with
+#      kubeconform against a current and an older Kubernetes;
+#   2. install every ci/ values file on kind with chart-testing (ct), in a
+#      namespace enforcing the restricted Pod Security profile, and run
+#      `helm test` against each release.
+# The :edge image is pulled with this workflow's token and loaded into
+# kind, so the install works whatever the package's visibility.
+#
+# Runs on every PR so it can be a required check; the steps skip
+# themselves when nothing under charts/ (or this workflow) changed.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    paths:
+      - "charts/**"
+      - ".github/workflows/chart-ci.yml"
+
+concurrency:
+  group: chart-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: read  # the :edge image, while its package is private
+
+env:
+  CHART: charts/chakramcp
+  IMAGE: ghcr.io/delta-s-labs/chakramcp-server:edge
+
+jobs:
+  chart:
+    name: Chart lint, render + kind install
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: changes
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            chart:
+              - 'charts/**'
+              - '.github/workflows/chart-ci.yml'
+
+      - name: Nothing to check
+        if: steps.changes.outputs.chart != 'true'
+        run: echo "No chart changes; skipping."
+
+      - uses: azure/setup-helm@v5
+        if: steps.changes.outputs.chart == 'true'
+        with:
+          version: v3.22.0
+
+      # ─── 1. Static checks ─────────────────────────────────
+      - name: Lint and render every values file
+        if: steps.changes.outputs.chart == 'true'
+        run: |
+          set -euo pipefail
+          helm dependency build "$CHART"
+          mkdir -p "$RUNNER_TEMP/rendered"
+          for values in "$CHART"/ci/*.yaml "$CHART"/ci-template/*.yaml; do
+            echo "::group::$values"
+            helm lint "$CHART" -f "$values"
+            helm template ci "$CHART" -f "$values" > "$RUNNER_TEMP/rendered/$(basename "$(dirname "$values")")-$(basename "$values")"
+            echo "::endgroup::"
+          done
+
+      - name: Invalid values are refused
+        if: steps.changes.outputs.chart == 'true'
+        run: |
+          set -uo pipefail
+          refuse() { # expected message, helm args...
+            local want=$1; shift
+            if helm template ci "$CHART" "$@" >/dev/null 2>err.txt; then
+              echo "::error::rendered with $*"; exit 1
+            fi
+            grep -F -- "$want" err.txt || { cat err.txt; exit 1; }
+          }
+          refuse "externalDatabase" --set postgresql.enabled=false
+          refuse "ingress/hosts" --set ingress.enabled=true
+          refuse "pullPolicy" --set image.pullPolicy=Sometimes
+
+      - name: Validate the manifests (kubeconform)
+        if: steps.changes.outputs.chart == 'true'
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          v=v0.8.0
+          base=https://github.com/yannh/kubeconform/releases/download/$v
+          curl -fsSLO "$base/kubeconform-linux-amd64.tar.gz"
+          curl -fsSLO "$base/CHECKSUMS"
+          grep ' kubeconform-linux-amd64.tar.gz$' CHECKSUMS | sha256sum -c -
+          tar xzf kubeconform-linux-amd64.tar.gz kubeconform
+          for k8s in 1.37.0 1.33.0; do
+            ./kubeconform -strict -summary -kubernetes-version "$k8s" rendered/*.yaml
+          done
+
+      # ─── 2. Install on kind ───────────────────────────────
+      - uses: helm/kind-action@v1
+        if: steps.changes.outputs.chart == 'true'
+
+      - uses: docker/login-action@v4
+        if: steps.changes.outputs.chart == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Load the image and create the test namespace
+        if: steps.changes.outputs.chart == 'true'
+        run: |
+          set -euo pipefail
+          docker pull "$IMAGE"
+          kind load docker-image "$IMAGE" --name chart-testing
+          kubectl create namespace chakramcp-ci
+          kubectl label namespace chakramcp-ci pod-security.kubernetes.io/enforce=restricted
+          # For ci/existing-secrets-values.yaml. The Postgres password is full
+          # of URL-special characters: the server must get it as PGPASSWORD.
+          kubectl -n chakramcp-ci create secret generic chakramcp-ci-postgres \
+            --from-literal='password=p@ss:w/rd#?%&=+ word'
+          kubectl -n chakramcp-ci create secret generic chakramcp-ci-app \
+            --from-literal=JWT_SECRET="$(openssl rand -hex 32)"
+
+      - uses: helm/chart-testing-action@v2
+        if: steps.changes.outputs.chart == 'true'
+
+      - name: Install and test (ct)
+        if: steps.changes.outputs.chart == 'true'
+        run: >-
+          ct install --charts "$CHART" --namespace chakramcp-ci
+          --helm-extra-args "--timeout 600s"
+
+      - name: Cluster state (on failure)
+        if: failure() && steps.changes.outputs.chart == 'true'
+        run: |
+          kubectl -n chakramcp-ci get all,pvc,secret
+          kubectl -n chakramcp-ci get events --sort-by=.lastTimestamp | tail -40
+          kubectl -n chakramcp-ci logs -l app.kubernetes.io/component=relay --tail 60 --all-containers || true

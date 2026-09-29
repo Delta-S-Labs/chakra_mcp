@@ -1,0 +1,5 @@
+# Test values and chart CI inputs aren't part of the package.
+ci/
+ci-template/
+*.tgz
+.DS_Store

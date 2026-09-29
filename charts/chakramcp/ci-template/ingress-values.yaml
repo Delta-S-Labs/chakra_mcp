@@ -1,0 +1,18 @@
+# Template-only: an Ingress with TLS from cert-manager, two replicas.
+replicaCount: 2
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+  hosts:
+    app: app.example.com
+    relay: relay.example.com
+  tls:
+    - secretName: chakramcp-tls
+      hosts: [app.example.com, relay.example.com]
+config:
+  adminEmail: admin@example.com
+extraEnv:
+  - name: CAPTCHA_ENABLED
+    value: "false"

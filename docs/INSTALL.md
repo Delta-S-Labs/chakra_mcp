@@ -337,8 +337,9 @@ provenance and an SBOM.
 Postgres, Redis and Caddy on one host, from the Compose files in
 `infra/`: the files production runs. It optionally adds Prometheus, Loki
 and Grafana with ChakraMCP's dashboards and alerts. Start with
-[`compose.md`](./self-hosting/compose.md). A Helm chart for Kubernetes
-is in progress.
+[`compose.md`](./self-hosting/compose.md). For Kubernetes, the Helm chart
+in [`charts/chakramcp`](../charts/chakramcp) has its own guide:
+[`kubernetes.md`](./self-hosting/kubernetes.md).
 
 Production's own pipeline (build → private ECR → SSH to Lightsail →
 migrate → restart, with [`infra/Dockerfile.thin`](../infra/Dockerfile.thin))
