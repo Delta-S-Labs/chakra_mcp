@@ -15,7 +15,9 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use chakramcp_shared::telemetry::names;
 use chrono::{Datelike, NaiveDate, Utc};
+use metrics::{counter, gauge};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{PgConnection, PgPool, Postgres, Transaction};
 
@@ -39,16 +41,20 @@ const RESTART_DELAY: Duration = Duration::from_secs(1);
 
 /// Start the worker's two loops on a pool of their own. Each is restarted
 /// if it ever stops, and the switches fail open when stale, so a dead loop
-/// can't freeze anyone's block.
-pub fn spawn_worker(db: &PgPool, cache: Arc<CreditCache>, cfg: CreditsConfig) {
+/// can't freeze anyone's block. Returns that pool, for the metrics sampler.
+pub fn spawn_worker(db: &PgPool, cache: Arc<CreditCache>, cfg: CreditsConfig) -> PgPool {
+    // Lets the staleness alert work out the switches' age from outside.
+    gauge!(names::CREDITS_STALE_AFTER_SECONDS).set(cfg.stale_after().as_secs_f64());
     let db = worker_pool(db);
     let accounting_db = db.clone();
     supervise("accounting", RESTART_DELAY, move || {
         accounting_loop(accounting_db.clone(), cfg)
     });
+    let switches_db = db.clone();
     supervise("switches", RESTART_DELAY, move || {
-        switches_loop(db.clone(), cache.clone(), cfg)
+        switches_loop(switches_db.clone(), cache.clone(), cfg)
     });
+    db
 }
 
 /// One connection per loop, with the app pool's connection settings.
@@ -108,14 +114,15 @@ async fn switches_loop(db: PgPool, cache: Arc<CreditCache>, cfg: CreditsConfig) 
 pub(crate) async fn account(db: &PgPool, cfg: &CreditsConfig, last_depth: &mut Option<i64>) {
     let started = Instant::now();
     let budget = CHARGE_BUDGET.min(cfg.sweep_interval);
-    let charged = charge_all(db, cfg.cost_per_invocation_mc, budget).await;
-    let granted = match grant_due(db, cfg.default_monthly_free_mc, current_month()).await {
-        Ok(granted) => granted.unwrap_or(0),
-        Err(e) => {
-            tracing::warn!(error = %e, "credit grants failed");
-            0
-        }
-    };
+    let (charged, charge_end) = charge_pass(db, cfg.cost_per_invocation_mc, budget).await;
+    let (granted, grants_ok) =
+        match grant_due(db, cfg.default_monthly_free_mc, current_month()).await {
+            Ok(granted) => (granted.unwrap_or(0), true),
+            Err(e) => {
+                tracing::warn!(error = %e, "credit grants failed");
+                (0, false)
+            }
+        };
     let depth = match queue_depth(db).await {
         Ok(depth) => Some(depth),
         Err(e) => {
@@ -123,6 +130,7 @@ pub(crate) async fn account(db: &PgPool, cfg: &CreditsConfig, last_depth: &mut O
             None
         }
     };
+    record_accounting(charged, charge_end, grants_ok, depth);
 
     let took_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
     if charged.rows > 0 || granted > 0 {
@@ -167,6 +175,7 @@ pub(crate) async fn refresh_switches(
         Ok(result) => result.map_err(|e| e.to_string()),
         Err(_) => Err(format!("timed out after {:?}", cfg.sweep_interval)),
     };
+    record_refresh(cache, refreshed.is_ok());
     match refreshed {
         Ok(()) => {
             let blocked = cache.blocked_count();
@@ -198,28 +207,75 @@ pub(crate) struct ChargeTotals {
     pub debits: i64,
 }
 
+/// How a charging pass ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PassEnd {
+    /// Drained the queue, or spent the budget.
+    Done,
+    /// Another instance holds the accounting lock.
+    LockHeld,
+    /// A batch failed.
+    Failed,
+}
+
 /// Drain the queue in short batches until it's empty, another instance holds
 /// the lock, a batch fails, or `budget` is spent.
-async fn charge_all(db: &PgPool, cost_mc: i64, budget: Duration) -> ChargeTotals {
+async fn charge_pass(db: &PgPool, cost_mc: i64, budget: Duration) -> (ChargeTotals, PassEnd) {
     let started = Instant::now();
     let mut totals = ChargeTotals::default();
-    loop {
+    let end = loop {
         match charge_batch(db, cost_mc).await {
             Ok(Some(batch)) => {
                 totals.rows += batch.rows;
                 totals.debits += batch.debits;
                 if batch.rows < CHARGE_BATCH || started.elapsed() > budget {
-                    break;
+                    break PassEnd::Done;
                 }
             }
-            Ok(None) => break, // another instance is doing the accounting
+            Ok(None) => break PassEnd::LockHeld, // another instance is accounting
             Err(e) => {
                 tracing::warn!(error = %e, "credit charge failed");
-                break;
+                break PassEnd::Failed;
             }
         }
+    };
+    (totals, end)
+}
+
+#[cfg(test)]
+async fn charge_all(db: &PgPool, cost_mc: i64, budget: Duration) -> ChargeTotals {
+    charge_pass(db, cost_mc, budget).await.0
+}
+
+/// An accounting pass's metrics: `error` if charging or grants failed,
+/// `skipped` if another instance held the lock and nothing was charged.
+fn record_accounting(charged: ChargeTotals, end: PassEnd, grants_ok: bool, depth: Option<i64>) {
+    let result = match end {
+        PassEnd::Failed => "error",
+        _ if !grants_ok => "error",
+        PassEnd::LockHeld if charged.rows == 0 => "skipped",
+        _ => "ok",
+    };
+    counter!(names::CREDITS_ACCOUNTING_RUNS_TOTAL, "result" => result).increment(1);
+    counter!(names::CREDITS_CHARGES_TOTAL).increment(u64::try_from(charged.rows).unwrap_or(0));
+    if let Some(depth) = depth {
+        gauge!(names::CREDITS_QUEUE_DEPTH).set(depth as f64);
     }
-    totals
+}
+
+/// A switch refresh's metrics.
+fn record_refresh(cache: &CreditCache, ok: bool) {
+    counter!(
+        names::CREDITS_SWITCH_REFRESHES_TOTAL,
+        "result" => if ok { "ok" } else { "error" }
+    )
+    .increment(1);
+    if ok {
+        gauge!(names::CREDITS_SWITCHES_LAST_REFRESH_TIMESTAMP_SECONDS)
+            .set(Utc::now().timestamp_millis() as f64 / 1000.0);
+        gauge!(names::CREDITS_BLOCKED_ACCOUNTS).set(cache.blocked_count() as f64);
+    }
+    gauge!(names::CREDITS_SWITCHES_STALE).set(if cache.is_stale() { 1.0 } else { 0.0 });
 }
 
 /// One batch in its own transaction; `None` if another instance holds the lock.
@@ -411,6 +467,7 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
+    use crate::telemetry::testing::Recorded;
 
     const COST: i64 = 100;
     const GRANT: i64 = 100_000;
@@ -617,6 +674,12 @@ mod tests {
             None
         );
         assert!(started.elapsed() < Duration::from_secs(1));
+        // A whole pass by B while A holds the lock is counted as skipped.
+        let m = Recorded::start();
+        super::account(&wide, &CreditsConfig::default(), &mut None).await;
+        let runs = names::CREDITS_ACCOUNTING_RUNS_TOTAL;
+        assert_eq!(m.counter(runs, &[("result", "skipped")]), 1);
+        assert_eq!(m.counter(names::CREDITS_CHARGES_TOTAL, &[]), 0);
         a.rollback().await.unwrap();
 
         // Lock released: B's next pass does the work.
@@ -790,6 +853,7 @@ mod tests {
 
     #[sqlx::test(migrations = "../migrations")]
     async fn a_pass_charges_and_grants_then_the_switches_flip(pool: PgPool) {
+        let m = Recorded::start();
         let cfg = CreditsConfig::default();
         let cache = CreditCache::default();
 
@@ -813,10 +877,29 @@ mod tests {
             cache.is_blocked(spent),
             "50 mc can't pay for another invocation"
         );
+
+        assert_eq!(
+            m.counter(names::CREDITS_ACCOUNTING_RUNS_TOTAL, &[("result", "ok")]),
+            1
+        );
+        assert_eq!(m.counter(names::CREDITS_CHARGES_TOTAL, &[]), 3);
+        assert_eq!(m.gauge(names::CREDITS_QUEUE_DEPTH, &[]), Some(0.0));
+        assert_eq!(
+            m.counter(names::CREDITS_SWITCH_REFRESHES_TOTAL, &[("result", "ok")]),
+            1
+        );
+        assert_eq!(m.gauge(names::CREDITS_BLOCKED_ACCOUNTS, &[]), Some(1.0));
+        assert_eq!(m.gauge(names::CREDITS_SWITCHES_STALE, &[]), Some(0.0));
+        let refreshed_at = m
+            .gauge(names::CREDITS_SWITCHES_LAST_REFRESH_TIMESTAMP_SECONDS, &[])
+            .expect("set on a successful refresh");
+        let age = Utc::now().timestamp_millis() as f64 / 1000.0 - refreshed_at;
+        assert!((0.0..60.0).contains(&age), "{age}");
     }
 
     #[sqlx::test(migrations = "../migrations")]
     async fn failed_refreshes_fail_open_once_stale_then_recover(pool: PgPool) {
+        let m = Recorded::start();
         let broke = seed_account(&pool).await;
         granted_wallet(&pool, broke, 0).await;
         let cfg = CreditsConfig::default();
@@ -834,10 +917,15 @@ mod tests {
         refresh_switches(&gone, &cache, &cfg, &mut stale).await;
         assert!(stale, "flagged (and logged) as stale");
         assert!(!cache.is_blocked(broke), "stale switches fail open");
+        assert_eq!(m.gauge(names::CREDITS_SWITCHES_STALE, &[]), Some(1.0));
 
         // ...and the next good refresh restores enforcement.
         refresh_switches(&pool, &cache, &cfg, &mut stale).await;
         assert!(!stale && cache.is_blocked(broke));
+        assert_eq!(m.gauge(names::CREDITS_SWITCHES_STALE, &[]), Some(0.0));
+        let refreshes = names::CREDITS_SWITCH_REFRESHES_TOTAL;
+        assert_eq!(m.counter(refreshes, &[("result", "ok")]), 2);
+        assert_eq!(m.counter(refreshes, &[("result", "error")]), 2);
     }
 
     #[sqlx::test(migrations = "../migrations")]

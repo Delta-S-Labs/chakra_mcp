@@ -96,6 +96,7 @@ async fn check_redis(pool: &deadpool_redis::Pool, account: Uuid, per_min: i32) -
         Ok(c) => c,
         Err(e) => {
             tracing::warn!(error = %e, "redis unavailable for rate check; failing open");
+            record_redis_error();
             return RateOutcome::Allowed;
         }
     };
@@ -110,9 +111,15 @@ async fn check_redis(pool: &deadpool_redis::Pool, account: Uuid, per_min: i32) -
         }
         Err(e) => {
             tracing::warn!(error = %e, "redis rate check failed; failing open");
+            record_redis_error();
             RateOutcome::Allowed
         }
     }
+}
+
+/// Count a Redis error that made the limiter fail open.
+fn record_redis_error() {
+    metrics::counter!(chakramcp_shared::telemetry::names::RATE_LIMITER_ERRORS_TOTAL).increment(1);
 }
 
 /// Test-only: a **live** Redis pool for integration tests, or `None` (with a

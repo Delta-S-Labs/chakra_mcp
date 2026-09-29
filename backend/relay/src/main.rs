@@ -14,12 +14,21 @@ use chakramcp_relay::{
     },
     router, RelayState,
 };
-use chakramcp_shared::{config::SharedConfig, db, tracing_init};
+use chakramcp_shared::{config::SharedConfig, db, telemetry};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cfg = SharedConfig::from_env()?;
-    tracing_init::init(&cfg.log_filter);
+    telemetry::init_tracing(&cfg.log_filter, env::var("LOG_FORMAT").ok().as_deref());
+    // Metrics are opt-in (METRICS_ADDR): nothing listens unless it's set.
+    let metrics_addr = telemetry::parse_metrics_addr(env::var("METRICS_ADDR").ok().as_deref())?;
+    if let Some(addr) = metrics_addr {
+        let build = telemetry::BuildInfo {
+            version: env!("CARGO_PKG_VERSION"),
+            git_sha: option_env!("GIT_SHA").unwrap_or("unknown"),
+        };
+        telemetry::install_metrics(addr, build).await?;
+    }
 
     let pool: PgPool = db::connect(&cfg.database_url).await?;
     // The app crate owns migrations — when the two services share a
@@ -57,7 +66,14 @@ async fn main() -> Result<()> {
     {
         tracing::warn!(error = %e, "initial credit refresh failed; the worker will retry");
     }
-    chakramcp_relay::limits::credits::spawn_worker(&pool, credit_cache.clone(), credits);
+    let worker_pool =
+        chakramcp_relay::limits::credits::spawn_worker(&pool, credit_cache.clone(), credits);
+    if metrics_addr.is_some() {
+        telemetry::spawn_sampler(vec![
+            ("main", pool.clone()),
+            ("credits_worker", worker_pool),
+        ]);
+    }
 
     let state = RelayState::new(pool, cfg.clone())
         .with_rate_limiter(chakramcp_relay::limits::RateLimiter::from_redis_url(

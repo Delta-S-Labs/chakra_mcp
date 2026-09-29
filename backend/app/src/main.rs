@@ -9,14 +9,26 @@ use anyhow::Result;
 use sqlx::PgPool;
 
 use chakramcp_app::{router, AppState};
-use chakramcp_shared::{config::SharedConfig, db, tracing_init};
+use chakramcp_shared::{config::SharedConfig, db, telemetry};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cfg = SharedConfig::from_env()?;
-    tracing_init::init(&cfg.log_filter);
+    telemetry::init_tracing(&cfg.log_filter, env::var("LOG_FORMAT").ok().as_deref());
+    // Metrics are opt-in (METRICS_ADDR): nothing listens unless it's set.
+    let metrics_addr = telemetry::parse_metrics_addr(env::var("METRICS_ADDR").ok().as_deref())?;
+    if let Some(addr) = metrics_addr {
+        let build = telemetry::BuildInfo {
+            version: env!("CARGO_PKG_VERSION"),
+            git_sha: option_env!("GIT_SHA").unwrap_or("unknown"),
+        };
+        telemetry::install_metrics(addr, build).await?;
+    }
 
     let pool: PgPool = db::connect(&cfg.database_url).await?;
+    if metrics_addr.is_some() {
+        telemetry::spawn_sampler(vec![("main", pool.clone())]);
+    }
     sqlx::migrate!("../migrations").run(&pool).await?;
 
     let state =

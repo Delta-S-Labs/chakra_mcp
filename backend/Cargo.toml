@@ -57,6 +57,12 @@ dotenvy = "0.15"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 thiserror = "2"
+# Metrics (Prometheus). `/metrics` is served by our own axum router (see
+# shared::telemetry), so the exporter's built-in HTTP listener stays off.
+metrics = "0.24"
+metrics-exporter-prometheus = { version = "0.18", default-features = false }
+metrics-process = "2"
+metrics-util = { version = "0.20", default-features = false, features = ["debugging"] }
 anyhow = "1"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 

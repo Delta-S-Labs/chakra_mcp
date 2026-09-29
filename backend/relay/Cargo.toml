@@ -39,7 +39,9 @@ tracing-subscriber = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 dotenvy = { workspace = true }
+metrics = { workspace = true }
 
 [dev-dependencies]
+metrics-util = { workspace = true }
 tower = { workspace = true }
 http-body-util = "0.1"

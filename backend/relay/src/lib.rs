@@ -9,7 +9,6 @@ use axum::response::Response;
 use axum::routing::{get, patch, post};
 use axum::Router;
 use tower_http::cors::{Any, CorsLayer};
-use tower_http::trace::TraceLayer;
 
 pub mod agent_card;
 pub mod auth;
@@ -22,6 +21,7 @@ pub mod jwt_mint;
 pub mod limits;
 pub mod policy;
 pub mod state;
+pub mod telemetry;
 
 pub use state::RelayState;
 
@@ -76,7 +76,7 @@ pub fn router(state: RelayState) -> Router {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    Router::new()
+    let router = Router::new()
         // ─── Public ────────────────────────────────────
         .route("/healthz", get(handlers::health::healthz))
         .route("/readyz", get(handlers::health::readyz))
@@ -186,6 +186,6 @@ pub fn router(state: RelayState) -> Router {
         )
         .layer(from_fn_with_state(state.clone(), usage_middleware))
         .with_state(state)
-        .layer(cors)
-        .layer(TraceLayer::new_for_http())
+        .layer(cors);
+    chakramcp_shared::telemetry::instrument(router, "relay")
 }

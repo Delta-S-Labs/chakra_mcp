@@ -1,7 +1,12 @@
 # Production stack on a single Lightsail instance:
 #   caddy   → TLS termination + reverse proxy (ports 80/443 → relay/app)
-#   relay   → chakramcp-server, exposes :8080 (app) + :8090 (relay)
+#   relay   → chakramcp-server, exposes :8080 (app) + :8090 (relay), and
+#             Prometheus metrics on :9464 (internal only — never published)
 #   pg      → Postgres 16 with persistent volume
+#
+# Every service logs through Docker's journald driver (see x-logging), so
+# journald handles rotation and the observability stack
+# (infra/observability/) reads container logs from the journal.
 #
 # Env (write to .env next to this file BEFORE first-up):
 #   CHAKRAMCP_IMAGE       — registry URL of the image we built locally
@@ -25,10 +30,22 @@
 #   docker compose -f docker-compose.prod.yml pull
 #   docker compose -f docker-compose.prod.yml up -d
 
+# Container logs → the host journal. non-blocking: if the log pipeline ever
+# stalls, lines are dropped rather than blocking a container's stdout (so
+# logging can never slow the relay). The compose service name is attached
+# to every entry as COM_DOCKER_COMPOSE_SERVICE.
+x-logging: &logging
+  driver: journald
+  options:
+    mode: non-blocking
+    max-buffer-size: 4m
+    labels: com.docker.compose.service
+
 services:
   pg:
     image: postgres:16-alpine
     restart: unless-stopped
+    logging: *logging
     environment:
       POSTGRES_USER: chakramcp
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -49,6 +66,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    logging: *logging
     command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -66,6 +84,7 @@ services:
   migrate:
     profiles: ["migrate"]
     image: ${CHAKRAMCP_IMAGE}
+    logging: *logging
     depends_on:
       pg: { condition: service_healthy }
     environment:
@@ -79,6 +98,7 @@ services:
   relay:
     image: ${CHAKRAMCP_IMAGE}
     restart: unless-stopped
+    logging: *logging
     depends_on:
       pg: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -119,6 +139,11 @@ services:
       FRONTEND_PUBLIC_URL: ${FRONTEND_PUBLIC_URL:-${APP_PUBLIC_URL}}
       DISCOVERY_V2: "true"
       RUST_LOG: info,chakramcp_app=info,chakramcp_relay=info,sqlx=warn
+      # One JSON object per log line (request_id, route, … on each), for Loki.
+      LOG_FORMAT: json
+      # Prometheus metrics for the observability stack's collector. Reachable
+      # only on the Docker networks: not published, not routed by Caddy.
+      METRICS_ADDR: "0.0.0.0:9464"
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
@@ -140,6 +165,7 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    logging: *logging
     depends_on:
       relay: { condition: service_healthy }
     ports:
@@ -150,10 +176,16 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data       # certs persisted here
       - caddy_config:/config
-    networks: [internal]
+    # observability: so Caddy can front Grafana (infra/observability/).
+    networks: [internal, observability]
 
 networks:
   internal:
+    driver: bridge
+  # The observability stack's own network (Prometheus, Loki, Grafana,
+  # Alloy). Declared here so Caddy's definition never changes when the
+  # stack is added or removed.
+  observability:
     driver: bridge
 
 volumes:

@@ -130,7 +130,9 @@ jobs:
         working-directory: backend
         env:
           SQLX_OFFLINE: "true"
-        run: cargo build --release --bin chakramcp-server --locked
+        # GIT_SHA (the image tag's short sha) is baked into the binary and
+        # reported as chakramcp_build_info{git_sha} for deploy markers.
+        run: GIT_SHA="${GITHUB_SHA:0:7}" cargo build --release --bin chakramcp-server --locked
 
       # ─── Stage binary where Dockerfile.thin expects it ────────
       - name: Stage binary

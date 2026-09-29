@@ -275,6 +275,12 @@ async fn persist_invocation(
     )
     .execute(db)
     .await?;
+    crate::telemetry::record_invocation_outcome(
+        crate::telemetry::Mode::Push,
+        status,
+        elapsed_ms,
+        1,
+    );
     Ok(())
 }
 
@@ -564,6 +570,7 @@ mod tests {
 
     #[sqlx::test(migrations = "../migrations")]
     async fn forwards_request_with_minted_jwt(pool: PgPool) {
+        let m = crate::telemetry::testing::Recorded::start();
         let upstream = start_upstream(|_| {
             (
                 StatusCode::OK,
@@ -626,6 +633,16 @@ mod tests {
         assert_eq!(row.status, "succeeded");
         assert_eq!(row.http_status, Some(200));
         assert_eq!(row.capability_name, "do");
+
+        // Counted and timed as a push invocation.
+        use chakramcp_shared::telemetry::names;
+        let succeeded = [("mode", "push"), ("status", "succeeded")];
+        assert_eq!(m.counter(names::INVOCATIONS_TOTAL, &succeeded), 1);
+        let push = [("mode", "push")];
+        assert_eq!(
+            m.histogram_count(names::INVOCATION_DURATION_SECONDS, &push),
+            1
+        );
 
         // Silence unused-warning on signing_key.
         let _ = signing_key;
@@ -727,6 +744,7 @@ mod tests {
 
     #[sqlx::test(migrations = "../migrations")]
     async fn unreachable_upstream_returns_transport_error(pool: PgPool) {
+        let m = crate::telemetry::testing::Recorded::start();
         let unreachable = "http://127.0.0.1:1/a2a/jsonrpc";
         let authz = seed_authorized_for_upstream(&pool, unreachable).await;
         let keystore = KeyStore::new(pool.clone());
@@ -752,6 +770,9 @@ mod tests {
             .unwrap();
         assert_eq!(row.status, "failed");
         assert!(row.error_message.is_some());
+        let failed = [("mode", "push"), ("status", "failed")];
+        let invocations = chakramcp_shared::telemetry::names::INVOCATIONS_TOTAL;
+        assert_eq!(m.counter(invocations, &failed), 1);
     }
 
     #[sqlx::test(migrations = "../migrations")]

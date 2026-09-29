@@ -92,7 +92,14 @@ pub async fn handle(
             return StatusCode::NO_CONTENT.into_response();
         }
         "tools/list" => Ok(tools_list_result()),
-        "tools/call" => call_tool(&state, &user, req.params).await,
+        "tools/call" => {
+            let result = call_tool(&state, &user, req.params).await;
+            if result.is_err() {
+                // Refused before any tool ran: unknown tool or malformed params.
+                crate::telemetry::record_tool_call(crate::telemetry::UNKNOWN_TOOL, false);
+            }
+            result
+        }
         "ping" => Ok(json!({})),
         _ => Err(rpc_err(
             ERR_METHOD_NOT_FOUND,
@@ -576,6 +583,7 @@ async fn call_tool(state: &RelayState, user: &AuthUser, params: Value) -> Result
     // Meter every MCP tool call (reads + writes). Queued for the background
     // writer, so the response never waits on it. Audit for write tools is
     // recorded inside each tool impl / bridged REST handler.
+    crate::telemetry::record_tool_call(&tool, ok);
     state.usage.record(crate::events::UsageEvent {
         actor: crate::events::UsageActor::User(user.clone()),
         account_id: None,
@@ -1115,7 +1123,7 @@ async fn respond(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, Api
         .num_milliseconds()
         .clamp(0, i32::MAX as i64) as i32;
 
-    sqlx::query!(
+    let finished = sqlx::query!(
         r#"
         UPDATE relay_invocations
         SET status = $2, elapsed_ms = $3, error_message = $4, output_preview = $5
@@ -1128,7 +1136,14 @@ async fn respond(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, Api
         a.output.unwrap_or(Value::Null),
     )
     .execute(db)
-    .await?;
+    .await?
+    .rows_affected();
+    crate::telemetry::record_invocation_outcome(
+        crate::telemetry::Mode::Pull,
+        &a.status,
+        i64::from(elapsed_ms),
+        finished,
+    );
 
     Ok(json!({ "invocation_id": a.invocation_id, "status": a.status, "elapsed_ms": elapsed_ms }))
 }
@@ -2188,6 +2203,7 @@ mod manage_agents_tests {
         // A human_in_loop capability (message_owner) cannot be completed
         // over MCP without confirmed_by_human=true — the agent must not
         // auto-answer it.
+        let m = crate::telemetry::testing::Recorded::start();
         let (_uid, account_id, token) = seed_user_with_jwt(&pool).await;
         let mk = |slug: &str| json!({ "account_id": account_id, "slug": slug, "display_name": slug, "visibility": "network" });
         let a = ok(&call(&pool, &token, "create_agent", mk("hitl-a")).await)["id"]
@@ -2270,6 +2286,41 @@ mod manage_agents_tests {
             good["isError"],
             json!(false),
             "confirmed HITL respond should succeed: {good}"
+        );
+
+        // Tool calls by result, and the one completed pull invocation.
+        use chakramcp_shared::telemetry::names;
+        let calls = names::MCP_TOOL_CALLS_TOTAL;
+        assert_eq!(
+            m.counter(calls, &[("tool", "respond"), ("result", "error")]),
+            1
+        );
+        assert_eq!(
+            m.counter(calls, &[("tool", "respond"), ("result", "ok")]),
+            1
+        );
+        let succeeded = [("mode", "pull"), ("status", "succeeded")];
+        assert_eq!(m.counter(names::INVOCATIONS_TOTAL, &succeeded), 1);
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn unknown_tools_are_counted_as_unknown(pool: PgPool) {
+        let m = crate::telemetry::testing::Recorded::start();
+        let (_uid, _account_id, token) = seed_user_with_jwt(&pool).await;
+        call(&pool, &token, "definitely_not_a_tool", json!({})).await;
+        call(&pool, &token, "another_made_up_name", json!({})).await;
+
+        let calls = chakramcp_shared::telemetry::names::MCP_TOOL_CALLS_TOTAL;
+        let unknown = [
+            ("tool", crate::telemetry::UNKNOWN_TOOL),
+            ("result", "error"),
+        ];
+        assert_eq!(m.counter(calls, &unknown), 2);
+        let invented = [("tool", "definitely_not_a_tool"), ("result", "error")];
+        assert_eq!(
+            m.counter(calls, &invented),
+            0,
+            "raw names never become labels"
         );
     }
 

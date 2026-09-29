@@ -477,7 +477,7 @@ pub async fn revoke(
     )
     .execute(&mut *tx)
     .await?;
-    sqlx::query!(
+    let cancelled = sqlx::query!(
         r#"
         UPDATE relay_invocations
         SET status = 'rejected',
@@ -487,8 +487,15 @@ pub async fn revoke(
         id,
     )
     .execute(&mut *tx)
-    .await?;
+    .await?
+    .rows_affected();
     tx.commit().await?;
+    crate::telemetry::record_invocation_outcome(
+        crate::telemetry::Mode::Pull,
+        "rejected",
+        0,
+        cancelled,
+    );
 
     crate::events::record_audit(
         &state.db,
@@ -675,6 +682,7 @@ mod revoke_cancels_pending_tests {
 
     #[sqlx::test(migrations = "../migrations")]
     async fn revoke_cancels_pending_but_leaves_in_progress_and_terminal(pool: PgPool) {
+        let m = crate::telemetry::testing::Recorded::start();
         let (grant, alice_user, _bob_user, alice_agent, bob_agent) =
             seed_pair_with_grant(&pool).await;
 
@@ -720,6 +728,11 @@ mod revoke_cancels_pending_tests {
         assert_eq!(invocation_status(&pool, in_progress).await, "in_progress");
         // succeeded row: untouched (terminal — already done).
         assert_eq!(invocation_status(&pool, succeeded).await, "succeeded");
+
+        // Only the one cancelled row is counted, as a pull rejection.
+        let rejected = [("mode", "pull"), ("status", "rejected")];
+        let invocations = chakramcp_shared::telemetry::names::INVOCATIONS_TOTAL;
+        assert_eq!(m.counter(invocations, &rejected), 1);
     }
 
     #[sqlx::test(migrations = "../migrations")]
