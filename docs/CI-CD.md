@@ -121,6 +121,31 @@ Useful when:
 - A deploy failed mid-step and you fixed the env without
   triggering a re-merge.
 
+## Public image
+
+`ghcr.io/delta-s-labs/chakramcp-server` (linux/amd64 + linux/arm64), for
+self-hosters. Production keeps its private ECR image.
+
+- **`:edge` / `:sha-<7>`**: [`image.yml`](../.github/workflows/image.yml),
+  on every push to main that changes `backend/**`, the Dockerfile or the
+  workflow. PRs that change the Dockerfile or workflow build both
+  architectures without pushing.
+- **`:X.Y.Z` (+ `:X.Y`, `:latest` for final releases)**: the `image` and
+  `image-merge` jobs of `cli-release.yml`, from the release's own linux
+  server binaries.
+
+Each architecture builds natively (`ubuntu-22.04` / `ubuntu-22.04-arm`,
+whose glibc 2.35 is older than the `debian:bookworm-slim` base's 2.36),
+pushes a single-platform image by digest, and a merge job joins them into
+the multi-arch tags. There's no emulation anywhere. Images carry build
+provenance and an SBOM. Builds set `CHAKRAMCP_VERSION` (`edge` or the
+release) and `GIT_SHA`, which `chakramcp-server --version` and the
+`chakramcp_build_info` metric report.
+
+**One-time:** after the first push, make the package public
+(GitHub → the org's Packages → `chakramcp-server` → Package settings →
+Change visibility) if it didn't inherit the repo's visibility.
+
 ## Observability
 
 Metrics, logs, dashboards and Telegram alerts for production. Design:

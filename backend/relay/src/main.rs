@@ -24,7 +24,7 @@ async fn main() -> Result<()> {
     let metrics_addr = telemetry::parse_metrics_addr(env::var("METRICS_ADDR").ok().as_deref())?;
     if let Some(addr) = metrics_addr {
         let build = telemetry::BuildInfo {
-            version: env!("CARGO_PKG_VERSION"),
+            version: option_env!("CHAKRAMCP_VERSION").unwrap_or(env!("CARGO_PKG_VERSION")),
             git_sha: option_env!("GIT_SHA").unwrap_or("unknown"),
         };
         telemetry::install_metrics(addr, build).await?;

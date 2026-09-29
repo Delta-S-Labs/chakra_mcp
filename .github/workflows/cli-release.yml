@@ -3,7 +3,10 @@ name: CLI Release
 # Triggered by pushing a tag of the form `cli-vX.Y.Z`. Cuts a GitHub
 # Release with cross-compiled binaries for mac (arm + intel), linux
 # (x64 + arm64), and windows (x64), then optionally updates the
-# Homebrew tap and publishes the npm wrapper.
+# Homebrew tap and publishes the npm wrapper. It also publishes the
+# public server image, ghcr.io/delta-s-labs/chakramcp-server:X.Y.Z (plus
+# :X.Y and :latest for non-pre-releases), from the release's own linux
+# server binaries: one release versions the CLI, the server and the image.
 #
 # Manual trigger (`workflow_dispatch`) is supported for re-runs;
 # provide the version (e.g. `0.1.0`) and the workflow will operate as
@@ -153,7 +156,10 @@ jobs:
           # chakramcp-app — those are checked at compile time against
           # a live DATABASE_URL OR an offline cache. We use offline.
           SQLX_OFFLINE: "true"
-        run: $CARGO build -p chakramcp-server --release --target ${{ matrix.target }}
+          # Reported by `chakramcp-server --version` and the
+          # chakramcp_build_info metric (with GIT_SHA below).
+          CHAKRAMCP_VERSION: ${{ needs.resolve-version.outputs.version }}
+        run: GIT_SHA="${GITHUB_SHA:0:7}" $CARGO build -p chakramcp-server --release --target ${{ matrix.target }}
 
       - name: Package (unix tarballs — CLI + server)
         if: matrix.archive == 'tar.gz'
@@ -346,3 +352,118 @@ jobs:
             exit 1
           fi
           npm publish --access public
+
+  # ─── Public server image (ghcr.io/delta-s-labs/chakramcp-server) ───
+  # Same approach as image.yml: each architecture builds a single-platform
+  # image natively from this release's linux server binary and pushes it by
+  # digest; image-merge joins them into the versioned tags.
+  image:
+    name: Image (${{ matrix.arch }})
+    needs: [resolve-version, build]
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - arch: arm64
+            runner: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+    runs-on: ${{ matrix.runner }}
+    env:
+      IMAGE: ghcr.io/delta-s-labs/chakramcp-server
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ matrix.target }}
+          path: artifacts
+
+      - name: Unpack the server binary
+        run: |
+          set -euo pipefail
+          ver="${{ needs.resolve-version.outputs.version }}"
+          mkdir -p "$RUNNER_TEMP/ctx/dist"
+          tar -xzf "artifacts/chakramcp-server-${ver}-${{ matrix.target }}.tar.gz" -C "$RUNNER_TEMP/ctx/dist"
+          test -x "$RUNNER_TEMP/ctx/dist/chakramcp-server"
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ runner.temp }}/ctx
+          file: infra/Dockerfile.release
+          platforms: linux/${{ matrix.arch }}
+          build-args: |
+            VERSION=${{ needs.resolve-version.outputs.version }}
+            REVISION=${{ github.sha }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          provenance: mode=max
+          sbom: true
+
+      - name: Export the digest
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          digest="${{ steps.build.outputs.digest }}"
+          touch "$RUNNER_TEMP/digests/${digest#sha256:}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: image-digests-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  image-merge:
+    name: Tag the release image
+    needs: [resolve-version, image]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/delta-s-labs/chakramcp-server
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: image-digests-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # X.Y.Z always; X.Y and latest only for final releases, so a
+      # pre-release (e.g. 0.2.0-rc.1) never moves them.
+      - name: Create the multi-arch tags
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          VERSION: ${{ needs.resolve-version.outputs.version }}
+        run: |
+          set -euo pipefail
+          tags=(-t "$IMAGE:$VERSION")
+          case "$VERSION" in
+            *-*) echo "pre-release: only $VERSION is tagged" ;;
+            *) tags+=(-t "$IMAGE:${VERSION%.*}" -t "$IMAGE:latest") ;;
+          esac
+          # shellcheck disable=SC2046 # one image reference per digest file
+          docker buildx imagetools create "${tags[@]}" $(printf "$IMAGE@sha256:%s " *)
+          docker buildx imagetools inspect "$IMAGE:$VERSION"
