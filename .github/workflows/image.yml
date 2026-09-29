@@ -1,0 +1,165 @@
+name: Image (edge)
+
+# Publishes ghcr.io/delta-s-labs/chakramcp-server:edge (and :sha-<7>) for
+# linux/amd64 + linux/arm64 on every push to main that changes the backend.
+# Versioned tags come from cli-release.yml, with the same build steps.
+#
+# No emulation: each architecture builds the binary and a single-platform
+# image natively (ubuntu-22.04 / ubuntu-22.04-arm; their glibc 2.35 is older
+# than the debian:bookworm-slim base's 2.36), pushes it by digest, and the
+# merge job joins the digests into one multi-arch tag. A newer push cancels
+# an older run before its merge step, so :edge only ever moves forward.
+#
+# On a PR that changes this workflow or the Dockerfile, both architectures
+# are built but nothing is pushed.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "infra/Dockerfile.release"
+      - ".github/workflows/image.yml"
+  pull_request:
+    paths:
+      - "infra/Dockerfile.release"
+      - ".github/workflows/image.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: image-${{ github.event_name == 'pull_request' && github.ref || 'edge' }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/delta-s-labs/chakramcp-server
+
+jobs:
+  build:
+    name: Build (${{ matrix.arch }})
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-22.04
+          - arch: arm64
+            runner: ubuntu-22.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+          key: image-${{ matrix.arch }}
+
+      - name: Build chakramcp-server
+        working-directory: backend
+        env:
+          SQLX_OFFLINE: "true"
+          CHAKRAMCP_VERSION: edge
+        run: GIT_SHA="${GITHUB_SHA:0:7}" cargo build --release --locked --bin chakramcp-server
+
+      - name: Stage the build context
+        run: |
+          mkdir -p "$RUNNER_TEMP/ctx/dist"
+          cp backend/target/release/chakramcp-server "$RUNNER_TEMP/ctx/dist/"
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build (and, on main, push by digest)
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ runner.temp }}/ctx
+          file: infra/Dockerfile.release
+          platforms: linux/${{ matrix.arch }}
+          build-args: |
+            VERSION=edge
+            REVISION=${{ github.sha }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }}
+          provenance: mode=max
+          sbom: true
+
+      - name: Export the digest
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          digest="${{ steps.build.outputs.digest }}"
+          touch "$RUNNER_TEMP/digests/${digest#sha256:}"
+
+      - uses: actions/upload-artifact@v7
+        if: github.event_name != 'pull_request'
+        with:
+          name: digests-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: Tag :edge
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create the multi-arch tags
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          set -euo pipefail
+          sha="${GITHUB_SHA:0:7}"
+          # shellcheck disable=SC2046 # one image reference per digest file
+          docker buildx imagetools create \
+            -t "$IMAGE:edge" -t "$IMAGE:sha-$sha" \
+            $(printf "$IMAGE@sha256:%s " *)
+          docker buildx imagetools inspect "$IMAGE:sha-$sha"
+
+  verify:
+    name: Verify (${{ matrix.runner }})
+    needs: merge
+    strategy:
+      matrix:
+        runner: [ubuntu-22.04, ubuntu-22.04-arm]
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run the pushed image
+        run: |
+          set -euo pipefail
+          out=$(docker run --rm "$IMAGE:sha-${GITHUB_SHA:0:7}" --version)
+          echo "$out"
+          [ "$out" = "chakramcp-server edge" ] || { echo "::error::unexpected version: $out"; exit 1; }

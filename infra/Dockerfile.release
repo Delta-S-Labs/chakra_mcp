@@ -1,0 +1,46 @@
+# The public image, ghcr.io/delta-s-labs/chakramcp-server (linux/amd64 +
+# linux/arm64), for self-hosters. Built by .github/workflows/image.yml
+# (:edge on every backend push to main) and cli-release.yml (versioned tags)
+# from a prebuilt binary: each architecture is built natively on its own
+# runner and the per-arch images are joined into one tag by digest, so no
+# step here runs under emulation. Production's private image is
+# Dockerfile.thin.
+#
+# Build context: a directory containing dist/chakramcp-server (this file is
+# passed with -f), e.g.
+#   docker buildx build -f infra/Dockerfile.release <ctx-dir>
+
+FROM debian:bookworm-slim
+
+ARG VERSION=dev
+ARG REVISION=unknown
+
+LABEL org.opencontainers.image.title="chakramcp-server" \
+      org.opencontainers.image.description="ChakraMCP: the relay and app API in one server" \
+      org.opencontainers.image.source="https://github.com/Delta-S-Labs/chakra_mcp" \
+      org.opencontainers.image.url="https://github.com/Delta-S-Labs/chakra_mcp/tree/main/docs/self-hosting" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}"
+
+# ca-certificates for outbound TLS (rustls), wget for the healthcheck. No
+# OpenSSL: the server doesn't link it.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates wget \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10001 --shell /usr/sbin/nologin chakra
+
+COPY --chmod=0755 dist/chakramcp-server /usr/local/bin/chakramcp-server
+
+USER chakra
+WORKDIR /home/chakra
+
+# 8080 app API, 8090 relay, 9464 Prometheus metrics (only when METRICS_ADDR
+# is set; keep it off the public internet).
+EXPOSE 8080 8090 9464
+
+HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=4 \
+    CMD wget -qO- http://127.0.0.1:8090/healthz || exit 1
+
+ENTRYPOINT ["/usr/local/bin/chakramcp-server"]
+CMD ["start"]

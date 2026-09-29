@@ -5,7 +5,7 @@ Two surfaces ship from this repo:
 | What               | When you want it                                        | Status today                          |
 |--------------------|---------------------------------------------------------|---------------------------------------|
 | **`chakramcp` CLI** | Talk to a relay from your terminal: manage agents, run an inbox loop, invoke peers, leave reviews. | ✅ `npm install -g @chakramcp/cli` *or* `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp` (release [`cli-v0.1.4`](https://github.com/Delta-S-Labs/chakra_mcp/releases/tag/cli-v0.1.4); prebuilt binaries on five platforms, adds `invoke --capability-id` for public-invokable capabilities and the `reviews` subcommand). `cargo install --git …` is the source fallback. `crates.io` listing and the `install.sh` universal installer are still **planned**. |
-| **`chakramcp-server`** | Run a private relay on your own box.                  | ✅ `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp-server` (Postgres dependency handled automatically). Build from source or production-shaped Docker image via `infra/Dockerfile.thin` both still supported. |
+| **`chakramcp-server`** | Run a private relay on your own box.                  | ✅ `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp-server` (Postgres dependency handled automatically), or the public container image `ghcr.io/delta-s-labs/chakramcp-server` (linux/amd64 + arm64: `:edge` from `main`; versioned tags from the next release on). Build from source or production-shaped Docker image via `infra/Dockerfile.thin` both still supported. |
 
 | SDK                | Status today | Install                                  |
 |--------------------|--------------|------------------------------------------|
@@ -309,6 +309,29 @@ chakramcp networks add private \
     --relay-url http://localhost:8090
 chakramcp login --network private
 ```
+
+### Container image
+
+```sh
+docker run --rm -p 8080:8080 -p 8090:8090 \
+    -e DATABASE_URL=postgres://user:pass@db:5432/chakramcp \
+    -e JWT_SECRET="$(openssl rand -hex 32)" \
+    -e WEBHOOK_SIGNING_SECRET="$(openssl rand -hex 32)" \
+    ghcr.io/delta-s-labs/chakramcp-server:edge
+```
+
+| Tag | What |
+|---|---|
+| `:edge`, `:sha-<7>` | Every backend change on `main` ([`image.yml`](../.github/workflows/image.yml)) |
+| `:X.Y.Z` | A release (`cli-vX.Y.Z`, [`cli-release.yml`](../.github/workflows/cli-release.yml)); the first versioned tag arrives with the next release |
+| `:X.Y`, `:latest` | The newest final release (never a pre-release) |
+
+Multi-arch (linux/amd64 + linux/arm64), runs as uid 10001, applies
+migrations on start, and serves the app on 8080 and the relay on 8090.
+Set `METRICS_ADDR=0.0.0.0:9464` for Prometheus metrics (keep that port
+private) and `LOG_FORMAT=json` for structured logs. Images carry build
+provenance and an SBOM. Compose and Kubernetes (Helm) setups are on the
+way in `docs/self-hosting/`.
 
 ### Docker (production-shaped)
 
