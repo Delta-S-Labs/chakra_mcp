@@ -78,13 +78,15 @@ Today self-hosters have only `brew install chakramcp-server`, a source build, or
 
 The same files serve production and self-hosters, and they keep their names: `infra/docker-compose.prod.yml` (which CD copies to `docker-compose.yml` on the VM), `infra/Caddyfile` and `infra/observability/`. Every new setting defaults to something that works for a self-hoster. Production's current behaviour moves into the VM's `.env` **before** the PR merges (§8).
 
-**Scripts.** `deploy.sh` and `smoke-test.py` take the base file name from `COMPOSE_BASE`, defaulting to `docker-compose.yml` as on the VM. Self-hosters running from a checkout's `infra/` set `COMPOSE_BASE=docker-compose.prod.yml`.
+**Scripts.** `deploy.sh` and `smoke-test.py` take the base file name from `COMPOSE_BASE`, defaulting to `docker-compose.yml` as on the VM. Self-hosters running from a checkout's `infra/` set `COMPOSE_BASE=docker-compose.prod.yml`. `deploy.sh` passes `-f "$COMPOSE_BASE" -f observability/compose.yml` to `ensure-monitor-role.sh`, which forwards its arguments to Compose. Without them, Compose finds no default file in a checkout.
 
 ### 4.1 Base (`infra/docker-compose.prod.yml`, `infra/Caddyfile`, new `infra/.env.example`)
 
-- **Image.** `image: ${CHAKRAMCP_IMAGE:-ghcr.io/delta-s-labs/chakramcp-server:latest}` for `relay` and `migrate`. Production sets its ECR image, as today, and CD still pins the exact sha.
+- **Image.** `image: ${CHAKRAMCP_IMAGE:-ghcr.io/delta-s-labs/chakramcp-server:edge}` for `relay` and `migrate`. It becomes `:latest` in PR-5: that tag exists only after the first versioned release. Production sets its ECR image, as today, and CD still pins the exact sha.
 - **Log driver.** `x-logging` uses `driver: ${LOG_DRIVER:-journald}`, which needs a host with systemd's journald, as production has.
-  - On Docker Desktop or hosts without journald, `LOG_DRIVER=json-file` makes the base services start. Logs then stay out of Loki, since Alloy reads the journal.
+  - On Docker Desktop or hosts without journald, `LOG_DRIVER=json-file` makes the services start. The overlay's own logging block reads `LOG_DRIVER` too; anchors don't cross files.
+  - With `json-file`, observability still runs: metrics, dashboards and alerts work, but Loki stays empty, because Alloy reads the journal. Alloy's journal source reports an error in its own UI, and the docs say so. The implementation verifies that Alloy tolerates a host without a journal.
+  - json-file logs don't rotate by default; the docs point to Docker's daemon-level `log-opts` (`max-size`/`max-file`).
   - The `mode` and `labels` options work with both drivers.
 - **Caddy hostnames come from the environment.** The `caddy` service's environment gets:
   - `APP_DOMAIN: ${APP_DOMAIN:?}` and `RELAY_DOMAIN: ${RELAY_DOMAIN:?}` (required);
@@ -118,7 +120,7 @@ The same files serve production and self-hosters, and they keep their names: `in
 
 **Alert delivery: `ALERT_CHANNEL`** is one of `none` (the default), `telegram`, `slack`, `email` or `webhook`.
 - **Channel files.** Each channel is a file in `infra/observability/grafana/channels/`:
-  - its contact point, under a fixed uid (`chakramcp-telegram`, `chakramcp-slack`, …), with settings read from env: `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID`, `SLACK_WEBHOOK_URL`, `ALERT_EMAIL_TO` plus `GF_SMTP_*`, `ALERT_WEBHOOK_URL`;
+  - its contact point, under a fixed uid of the form `<channel>-chakramcp` (`telegram-chakramcp` is production's existing uid, so it's kept, not recreated), with settings read from env: `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID`, `SLACK_WEBHOOK_URL`, `ALERT_EMAIL_TO` plus `GF_SMTP_*`, `ALERT_WEBHOOK_URL`;
   - the root policy pointing at it;
   - `deleteContactPoints` for the **other** channels' uids, so switching channels removes the old one (file provisioning never deletes on its own).
 - **`none.yml`** deletes all the channel contact points and runs `resetPolicies: [1]`. Alerts then show in Grafana only.
@@ -127,7 +129,7 @@ The same files serve production and self-hosters, and they keep their names: `in
 - **Deploys.**
   - CD's hash loop adds `grafana/channels`, and `deploy.sh` recreates Grafana when it changes, because a single-file mount doesn't see rsync's replaced file.
   - Changing `ALERT_CHANNEL` changes the mount source, so Compose recreates Grafana by itself.
-- **Production** sets `ALERT_CHANNEL=telegram`. Its current `notifications.yml` becomes `channels/telegram.yml`, with the same uid, settings, template and policy.
+- **Production** sets `ALERT_CHANNEL=telegram`. Its current `notifications.yml` becomes `channels/telegram.yml`, with the same uid (`telegram-chakramcp`), name, settings and policy; the template moves to `templates.yml`. A different uid would add a second integration to the existing contact point, and every alert would arrive twice.
 
 **HTTPS probes: `PROBE_TARGETS`**, a JSON list such as `[{"name":"relay","address":"https://relay.example.com/healthz"}]`.
 - Alloy reads it with `encoding.from_json(coalesce(sys.env("PROBE_TARGETS"), "[]"))` into `prometheus.exporter.blackbox`'s `targets`.
@@ -144,7 +146,14 @@ From a checkout's `infra/`:
 2. `docker compose -f docker-compose.prod.yml up -d`.
 3. `COMPOSE_BASE=docker-compose.prod.yml observability/scripts/deploy.sh "alloy prometheus loki grafana/provisioning grafana/dashboards grafana/channels"`, the same script CD runs. It creates the Postgres monitoring role, brings the stack up, and verifies the configs loaded.
 
-Upgrades: `git pull`, then the same two commands. `docs/self-hosting/compose.md` walks through it.
+**Upgrades:**
+1. `git pull`.
+2. `docker compose -f docker-compose.prod.yml pull`: `up -d` alone never re-pulls a tag it already has.
+3. `docker compose -f docker-compose.prod.yml up -d`.
+4. `docker compose -f docker-compose.prod.yml restart caddy` if the Caddyfile changed. `git pull` writes a new file, and Caddy's single-file mount still sees the old one; production's CD copies in place with `scp`, so it doesn't hit this.
+5. Step 3 of the first start.
+
+`docs/self-hosting/compose.md` walks through it.
 
 ### 4.4 CI
 
@@ -182,12 +191,13 @@ Upgrades: `git pull`, then the same two commands. `docs/self-hosting/compose.md`
 | Postgres | `postgresql.enabled=true`: a StatefulSet from `postgres:16-alpine` with a PVC (`persistence.size`, `storageClass`). The password comes from `postgresql.auth.existingSecret`/`key`, or is generated and kept with `lookup`. | `postgresql.enabled=false` plus `externalDatabase.url`, or `existingSecret`/`key` |
 | Redis | `redis.enabled=true`: a Deployment from `redis:7-alpine` with Phase 1's flags (no persistence, `maxmemory` + LRU) | `redis.enabled=false` plus `externalRedis.url`. Unset means rate limiting fails open, as today. |
 
-- **GitOps.** `helm template`/Argo can't `lookup`, so every generated value would change on each render. The docs and `NOTES.txt` say GitOps users must set **both** `secrets.existingSecret` and `postgresql.auth.existingSecret`.
+- **GitOps.** `helm template`/Argo can't `lookup`, so every generated value would change on each render. The docs and `NOTES.txt` say GitOps users must set `secrets.existingSecret` and `postgresql.auth.existingSecret`, and in bundled mode Grafana's `admin.existingSecret`.
 - The bundled Postgres is labelled "for evaluation and small installs". The chart README recommends a managed or operator-run Postgres for production.
 
 ### 5.3 Observability: integration (on by default)
 
 **Scraping.** A `ServiceMonitor`, rendered only when the `monitoring.coreos.com/v1` API exists, scrapes the metrics port and relabels `job` to `chakramcp`.
+- It sets **`honorLabels: true`**. The HTTP metrics carry their own `service` label (`app`/`relay`), and the operator's `service` target label would otherwise rename it to `exported_service`, merging app and relay on the Overview.
 - Its labels come from `observability.serviceMonitor.labels`.
 - The docs spell out that kube-prometheus-stack only picks up ServiceMonitors carrying its `release: <name>` label (`serviceMonitorSelectorNilUsesHelmValues`).
 
@@ -205,9 +215,9 @@ Upgrades: `git pull`, then the same two commands. `docs/self-hosting/compose.md`
 | `error-log-spike` | only with `observability.loki.enabled` |
 | `postgres-down`, `certificate-expiring`, `disk-filling`, `memory-low`, `oom-kill`, `crash-loop`, `monitoring-blind` | no: they need the Compose exporters or probes, and would fire permanently without them |
 
-- **The alerts sidecar.** kube-prometheus-stack's Grafana has its alerts sidecar **off** by default, and it searches only its own namespace. The docs say to set `grafana.sidecar.alerts.enabled=true` (with `searchNamespace: ALL`), or to put the ConfigMap in Grafana's namespace with `observability.alertRules.namespace`.
+- **The alerts sidecar.** kube-prometheus-stack's Grafana has its alerts sidecar **off** by default, and it searches only its own namespace. The docs say to set `grafana.sidecar.alerts.enabled=true` **and** either `searchNamespace: ALL` or `observability.alertRules.namespace` (to put the ConfigMap in Grafana's namespace).
 - **Datasource UIDs** are values (`observability.datasources.prometheus`, default `prometheus` like kube-prometheus-stack; `.loki`, default `loki`), substituted into the synced JSON and YAML at render time.
-- **Asset sync.** `infra/observability/scripts/sync-chart-assets.sh` writes `charts/chakramcp/files/`: the Overview and Logs dashboards, and the filtered rules. CI re-runs it and fails on any difference.
+- **Asset sync.** `infra/observability/scripts/sync-chart-assets.sh` writes `charts/chakramcp/files/`: the Overview and Logs dashboards, and the filtered rules. It also writes an Overview variant **without** its Loki-backed panel, used when `observability.loki.enabled=false`, so the panel doesn't show a datasource error. CI re-runs it and fails on any difference.
 
 ### 5.4 Observability: bundled (off by default; `observability.bundled.enabled=true`)
 
@@ -216,12 +226,12 @@ Upgrades: `git pull`, then the same two commands. `docs/self-hosting/compose.md`
 | Component | Chart | Settings |
 |---|---|---|
 | Prometheus | `prometheus-community/prometheus` | server only, with Alertmanager, pushgateway, node-exporter and kube-state-metrics off; `--web.enable-remote-write-receiver`; 15-day retention |
-| Loki | the community-maintained Loki chart (moved in March 2026, alongside Grafana; the exact repo is verified at implementation) | single binary, filesystem, 14-day retention; memcached caches, gateway and canary off |
+| Loki | `oci://ghcr.io/grafana-community/helm-charts` → `loki` (moved there on 16 March 2026) | single binary, filesystem, 14-day retention; memcached caches, gateway and canary off |
 | Grafana | `oci://ghcr.io/grafana-community/helm-charts` → `grafana` (the old `grafana/helm-charts` copy is frozen since January 2026) | datasources with the UIDs above; dashboard **and alert** sidecars on; sign-in and alert channel values mirroring §4.2 (`grafana.ini` auth sections; the channel's contact point from a Secret) |
 | Alloy | `grafana/alloy` | **one replica as a Deployment**, clustering off, with the chart's config (below) |
 
 **Alloy's Kubernetes config** is its own small file, since discovery differs from Compose:
-- **Metrics:** `discovery.kubernetes` finds the chart's pods by release labels, scrapes their metrics port as `job="chakramcp"`, and remote-writes to the bundled Prometheus. It's the only scraper, because there's no Prometheus Operator in bundled mode, so the ServiceMonitor doesn't apply.
+- **Metrics:** `discovery.kubernetes` finds the chart's pods by release labels, scrapes their metrics port as `job="chakramcp"`, and remote-writes to the bundled Prometheus. It adds no `service` target label, which would clash with the metrics' own. It's the only scraper, because there's no Prometheus Operator in bundled mode, so the ServiceMonitor doesn't apply.
 - **Logs:** `loki.source.kubernetes` tails the release namespace's pods through the API. It sets `service` from `app.kubernetes.io/component` and applies the same JSON `level` extraction as Compose.
 - **One replica:** with a DaemonSet, every pod would tail every pod's logs and multiply them by the node count.
 - In bundled mode, `observability.loki.enabled` is implied.
@@ -254,7 +264,7 @@ Runs on PRs and path-gated (`charts/**`, the synced sources, the workflow):
   - the asset-sync check.
 - **Install on `kind`** with `ct install`, using the `:edge` image. `ct` installs every file in `ci/`, so only installable variants live there; template-only variants such as external DB or CRDs live in `ci-template/`.
   - `ci/default-values.yaml`: wait for readiness, then `helm test`;
-  - `ci/bundled-values.yaml`: assert that Grafana is up, the dashboards and rules are provisioned, and Prometheus has `up{job="chakramcp"} == 1`.
+  - `ci/bundled-values.yaml`: assert that Grafana is up, the dashboards and rules are provisioned, and Prometheus has `up{job="chakramcp"} == 1`. These run as **`helm test` hook pods**, since `ct install` uninstalls when it finishes.
 
 Once it's stable, it's added to the required checks (ask the user then).
 
@@ -295,7 +305,7 @@ Once it's stable, it's added to the required checks (ask the user then).
    - **After merge:** CD recreates Caddy once with its new environment, a brief blip. Then run the §7 checks.
 3. **PR-3, the chart core:** §5.1, §5.2 and §5.5, `chart-ci.yml` (default install), the `cli-release.yml` `chart` job, and `docs/self-hosting/kubernetes.md`.
 4. **PR-4, chart observability:** §5.3 and §5.4, the asset sync, the bundled kind test, a Dependabot `helm` entry for the pinned subcharts, and the Kubernetes parts of `observability.md`.
-5. **The first versioned release:** cut the tag (ask the user for the version), then check the versioned image and the OCI chart, and make the chart package public.
+5. **The first versioned release:** cut the tag (ask the user for the version), then check the versioned image and the OCI chart, and make the chart package public. Switch the Compose default image, and the docs, from `:edge` to `:latest`.
 
 ## 9. Risks
 
@@ -305,7 +315,7 @@ Once it's stable, it's added to the required checks (ask the user then).
 | CD applies an env-driven Caddyfile to a container without that env | CD recreates Caddy when its definition changes (`up -d --no-deps caddy`) before the hash-gated reload |
 | The GHCR packages stay private | A one-time manual toggle per package, verified after the first push |
 | Old glibc or emulation problems in the image | Native builds on `ubuntu-22.04`/`-arm` (glibc 2.35 ≤ bookworm 2.36), merged by digest; no QEMU |
-| Subchart sources move again or break | Current homes pinned in Chart.yaml; Dependabot's `helm` ecosystem; the bundled kind test |
+| Subchart sources move again or break | Current homes pinned in Chart.yaml; Dependabot's `helm` ecosystem, whose support for `oci://` dependencies has open issues, so PR-4 checks it raises PRs and otherwise documents manual bumps; the bundled kind test |
 | Generated secrets change under GitOps | `existingSecret` for the app secrets **and** the Postgres password, required for GitOps and documented |
 | An existing kube-prometheus-stack ignores the chart's pieces | ServiceMonitor labels are a setting; the docs cover the `release` label and enabling the alerts sidecar |
 | Kubernetes alerts that can never be satisfied | An explicit Kubernetes rule set; the Loki-dependent pieces are gated |
