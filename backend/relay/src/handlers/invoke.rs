@@ -281,6 +281,12 @@ async fn record_terminal(
     )
     .execute(db)
     .await?;
+    crate::telemetry::record_invocation_outcome(
+        crate::telemetry::Mode::Pull,
+        status,
+        i64::from(elapsed_ms),
+        1,
+    );
     Ok(id)
 }
 
@@ -1215,7 +1221,7 @@ pub async fn report_result(
         .clamp(0, i32::MAX as i64) as i32;
     let output_preview = req.output.as_ref().map(truncate_for_audit);
 
-    sqlx::query!(
+    let finished = sqlx::query!(
         r#"
         UPDATE relay_invocations
         SET status = $2,
@@ -1231,7 +1237,14 @@ pub async fn report_result(
         output_preview.unwrap_or(Value::Null),
     )
     .execute(&state.db)
-    .await?;
+    .await?
+    .rows_affected();
+    crate::telemetry::record_invocation_outcome(
+        crate::telemetry::Mode::Pull,
+        &req.status,
+        i64::from(elapsed_ms),
+        finished,
+    );
 
     let r = fetch_one(&state.db, user.user_id, id).await?;
     Ok(Json(r).into_response())
@@ -2075,6 +2088,7 @@ mod legacy_v01_contract_tests {
     /// an end-to-end JWT call.
     #[sqlx::test(migrations = "../migrations")]
     async fn record_terminal_leaves_api_key_id_null_for_jwt_callers(pool: PgPool) {
+        let m = crate::telemetry::testing::Recorded::start();
         let f = seed_demo(&pool).await;
         let id = super::record_terminal(
             &pool,
@@ -2104,6 +2118,16 @@ mod legacy_v01_contract_tests {
         assert!(
             row_key_id.is_none(),
             "JWT-authed callers must leave api_key_id NULL; got {row_key_id:?}",
+        );
+
+        // Counted as a rejection, but kept out of the latency histogram.
+        use chakramcp_shared::telemetry::names;
+        let rejected = [("mode", "pull"), ("status", "rejected")];
+        assert_eq!(m.counter(names::INVOCATIONS_TOTAL, &rejected), 1);
+        let pull = [("mode", "pull")];
+        assert_eq!(
+            m.histogram_count(names::INVOCATION_DURATION_SECONDS, &pull),
+            0
         );
     }
 }
@@ -2260,6 +2284,7 @@ mod hitl_gate_tests {
 
     #[sqlx::test(migrations = "../migrations")]
     async fn respond_with_confirmed_by_human_true_on_hitl_succeeds(pool: PgPool) {
+        let m = crate::telemetry::testing::Recorded::start();
         let f = seed_demo(&pool).await;
         let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
         let (invocation_id, alice_ck) = invoke_and_claim(&pool, &app, &f, true).await;
@@ -2288,6 +2313,20 @@ mod hitl_gate_tests {
         .await
         .unwrap();
         assert_eq!(row_status, "succeeded");
+
+        // Counted once as a pull success; a repeat post changes nothing.
+        use chakramcp_shared::telemetry::names;
+        let succeeded = [("mode", "pull"), ("status", "succeeded")];
+        assert_eq!(m.counter(names::INVOCATIONS_TOTAL, &succeeded), 1);
+        let repeat = serde_json::json!({ "status": "succeeded", "confirmed_by_human": true });
+        let (again, _) = post_result(&app, invocation_id, &alice_ck, repeat).await;
+        assert!(!again.is_success());
+        assert_eq!(m.counter(names::INVOCATIONS_TOTAL, &succeeded), 1);
+        let pull = [("mode", "pull")];
+        assert_eq!(
+            m.histogram_count(names::INVOCATION_DURATION_SECONDS, &pull),
+            1
+        );
     }
 
     #[sqlx::test(migrations = "../migrations")]

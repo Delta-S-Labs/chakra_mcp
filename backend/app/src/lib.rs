@@ -5,7 +5,6 @@
 use axum::routing::{delete, get, post};
 use axum::Router;
 use tower_http::cors::{Any, CorsLayer};
-use tower_http::trace::TraceLayer;
 
 pub mod auth;
 pub mod handlers;
@@ -25,7 +24,7 @@ pub fn router(state: AppState) -> Router {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    Router::new()
+    let router = Router::new()
         // ─── Public ────────────────────────────────────
         .route("/healthz", get(handlers::health::healthz))
         .route("/readyz", get(handlers::health::readyz))
@@ -118,6 +117,6 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/admin/orgs", get(handlers::admin::list_orgs))
         .route("/v1/admin/api-keys", get(handlers::admin::list_api_keys))
         .with_state(state)
-        .layer(cors)
-        .layer(TraceLayer::new_for_http())
+        .layer(cors);
+    chakramcp_shared::telemetry::instrument(router, "app")
 }

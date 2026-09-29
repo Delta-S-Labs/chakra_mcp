@@ -25,7 +25,13 @@ use tokio::signal;
 
 use chakramcp_app::{router as app_router, AppState};
 use chakramcp_relay::{router as relay_router, RelayState};
-use chakramcp_shared::{config::SharedConfig, db, tracing_init};
+use chakramcp_shared::{config::SharedConfig, db, telemetry};
+
+/// The commit this binary was built from; CD sets `GIT_SHA` for the build.
+const GIT_SHA: &str = match option_env!("GIT_SHA") {
+    Some(sha) => sha,
+    None => "unknown",
+};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -134,7 +140,13 @@ fn init(
          relay_port = 8090\n\
          \n\
          # Logging filter (RUST_LOG syntax).\n\
-         log_filter = \"info,chakramcp_app=debug,chakramcp_relay=debug,sqlx=warn\"\n",
+         log_filter = \"info,chakramcp_app=debug,chakramcp_relay=debug,sqlx=warn\"\n\
+         # Log line format: text (default) or json.\n\
+         # log_format = \"json\"\n\
+         \n\
+         # Serve Prometheus metrics at http://<addr>/metrics (off when unset).\n\
+         # Keep it private: bind to localhost or an internal network.\n\
+         # metrics_addr = \"127.0.0.1:9464\"\n",
     );
     fs::write(&path, body).with_context(|| format!("writing {}", path.display()))?;
     #[cfg(unix)]
@@ -152,7 +164,7 @@ fn init(
 
 async fn migrate(explicit_path: Option<PathBuf>) -> Result<()> {
     let cfg = load_config(explicit_path)?;
-    tracing_init::init(&cfg.shared.log_filter);
+    telemetry::init_tracing(&cfg.shared.log_filter, cfg.log_format.as_deref());
     let pool = db::connect(&cfg.shared.database_url).await?;
     sqlx::migrate!("../migrations")
         .run(&pool)
@@ -169,7 +181,15 @@ async fn migrate(explicit_path: Option<PathBuf>) -> Result<()> {
 
 async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
     let cfg = load_config(explicit_path)?;
-    tracing_init::init(&cfg.shared.log_filter);
+    telemetry::init_tracing(&cfg.shared.log_filter, cfg.log_format.as_deref());
+    // Metrics are opt-in (METRICS_ADDR): nothing listens unless it's set.
+    if let Some(addr) = cfg.metrics_addr {
+        let build = telemetry::BuildInfo {
+            version: env!("CARGO_PKG_VERSION"),
+            git_sha: GIT_SHA,
+        };
+        telemetry::install_metrics(addr, build).await?;
+    }
 
     let pool: PgPool = db::connect(&cfg.shared.database_url).await?;
     sqlx::migrate!("../migrations").run(&pool).await?;
@@ -206,7 +226,14 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
     {
         tracing::warn!(error = %e, "initial credit refresh failed; the worker will retry");
     }
-    chakramcp_relay::limits::credits::spawn_worker(&pool, credit_cache.clone(), credits);
+    let worker_pool =
+        chakramcp_relay::limits::credits::spawn_worker(&pool, credit_cache.clone(), credits);
+    if cfg.metrics_addr.is_some() {
+        telemetry::spawn_sampler(vec![
+            ("main", pool.clone()),
+            ("credits_worker", worker_pool),
+        ]);
+    }
 
     let app_state = AppState::new(pool.clone(), cfg.shared.clone())
         .with_upsert_secret(std::env::var("UPSERT_SHARED_SECRET").ok());
@@ -275,6 +302,10 @@ struct ServerConfig {
     shared: SharedConfig,
     app_port: u16,
     relay_port: u16,
+    /// Where to serve `/metrics`; `None` = no metrics listener.
+    metrics_addr: Option<SocketAddr>,
+    /// `text` (default) or `json`; see `telemetry::LogFormat`.
+    log_format: Option<String>,
 }
 
 #[derive(Debug, Default, serde::Deserialize)]
@@ -290,6 +321,8 @@ struct ServerFile {
     app_port: Option<u16>,
     relay_port: Option<u16>,
     log_filter: Option<String>,
+    metrics_addr: Option<String>,
+    log_format: Option<String>,
 }
 
 fn load_config(explicit_path: Option<PathBuf>) -> Result<ServerConfig> {
@@ -390,6 +423,14 @@ fn load_config(explicit_path: Option<PathBuf>) -> Result<ServerConfig> {
         .or(from_file.relay_port)
         .unwrap_or(8090);
 
+    let metrics_addr = telemetry::parse_metrics_addr(
+        std::env::var("METRICS_ADDR")
+            .ok()
+            .or(from_file.metrics_addr)
+            .as_deref(),
+    )?;
+    let log_format = std::env::var("LOG_FORMAT").ok().or(from_file.log_format);
+
     Ok(ServerConfig {
         shared: SharedConfig {
             database_url,
@@ -404,6 +445,8 @@ fn load_config(explicit_path: Option<PathBuf>) -> Result<ServerConfig> {
         },
         app_port,
         relay_port,
+        metrics_addr,
+        log_format,
     })
 }
 

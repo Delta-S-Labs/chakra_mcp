@@ -55,6 +55,7 @@ pub async fn enforce(
     surface: &str,
 ) -> Option<LimitOutcome> {
     if credits.is_blocked(account_id) {
+        record_refusal(LimitOutcome::InsufficientCredits, enforce);
         if enforce {
             return Some(LimitOutcome::InsufficientCredits);
         }
@@ -62,12 +63,27 @@ pub async fn enforce(
     }
     let per_min = credits.rate_limit_for(account_id, default_rate_per_min);
     if limiter.check(account_id, per_min).await == RateOutcome::Limited {
+        record_refusal(LimitOutcome::RateLimited, enforce);
         if enforce {
             return Some(LimitOutcome::RateLimited);
         }
         would_block(LimitOutcome::RateLimited, account_id, surface);
     }
     None
+}
+
+/// Count a refusal (or, in shadow mode, a would-be refusal).
+fn record_refusal(kind: LimitOutcome, enforced: bool) {
+    let kind = match kind {
+        LimitOutcome::RateLimited => "rate",
+        LimitOutcome::InsufficientCredits => "credits",
+    };
+    metrics::counter!(
+        chakramcp_shared::telemetry::names::LIMIT_REFUSALS_TOTAL,
+        "kind" => kind,
+        "enforced" => if enforced { "true" } else { "false" }
+    )
+    .increment(1);
 }
 
 fn would_block(kind: LimitOutcome, account: Uuid, surface: &str) {
@@ -95,6 +111,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use super::*;
+    use crate::telemetry::testing::Recorded;
 
     fn counting_limiter() -> RateLimiter {
         RateLimiter::Counting(Arc::new(Mutex::new(HashMap::new())))
@@ -106,8 +123,17 @@ mod tests {
         cache
     }
 
+    fn refusals(m: &Recorded, kind: &str, enforced: &str) -> u64 {
+        let labels = [("kind", kind), ("enforced", enforced)];
+        m.counter(
+            chakramcp_shared::telemetry::names::LIMIT_REFUSALS_TOTAL,
+            &labels,
+        )
+    }
+
     #[tokio::test]
     async fn an_account_with_credits_proceeds() {
+        let m = Recorded::start();
         let acct = Uuid::now_v7();
         let outcome = enforce(
             &RateLimiter::Noop,
@@ -119,13 +145,19 @@ mod tests {
         )
         .await;
         assert_eq!(outcome, None);
+        // The allowed path records nothing.
+        for (kind, enforced) in [("credits", "true"), ("rate", "true")] {
+            assert_eq!(refusals(&m, kind, enforced), 0);
+        }
     }
 
     #[tokio::test]
     async fn an_exhausted_account_is_refused_when_enforcing() {
+        let m = Recorded::start();
         let acct = Uuid::now_v7();
         let outcome = enforce(&RateLimiter::Noop, &blocking(acct), 60, acct, true, "t").await;
         assert_eq!(outcome, Some(LimitOutcome::InsufficientCredits));
+        assert_eq!(refusals(&m, "credits", "true"), 1);
     }
 
     #[tokio::test]
@@ -134,9 +166,14 @@ mod tests {
         let limiter = counting_limiter();
         let cache = blocking(acct);
         // Out of credits and, past 60 calls, over the rate limit too.
+        let m = Recorded::start();
         for _ in 0..70 {
             assert_eq!(enforce(&limiter, &cache, 60, acct, false, "t").await, None);
         }
+        // Counted as would-be refusals, never as enforced ones.
+        assert_eq!(refusals(&m, "credits", "false"), 70);
+        assert_eq!(refusals(&m, "rate", "false"), 10);
+        assert_eq!(refusals(&m, "credits", "true"), 0);
     }
 
     #[tokio::test]
