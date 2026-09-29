@@ -75,7 +75,7 @@ groups:
     execErrState: Error
     for: 5m
     annotations:
-      summary: 'More than 5% of requests are failing with 5xx ({{ humanizePercentage $values.A.Value }}).'
+      summary: 'More than 5% of requests are failing with 5xx{{ with $values.A }} ({{ humanizePercentage .Value }}){{ end }}.'
     labels:
       severity: critical
     isPaused: false
@@ -145,7 +145,7 @@ groups:
     execErrState: Error
     for: 1h
     annotations:
-      summary: '{{ $labels.job }}: TLS certificate expires in {{ humanize $values.A.Value }} days.'
+      summary: '{{ $labels.job }}: the TLS certificate expires in{{ with $values.A }} {{ humanize .Value }}{{ end }} days.'
     labels:
       severity: warning
     isPaused: false
@@ -220,7 +220,7 @@ groups:
     execErrState: Error
     for: 15m
     annotations:
-      summary: '{{ humanize $values.A.Value }} credit charges are queued; the worker is falling behind.'
+      summary: '{{ with $values.A }}{{ humanize .Value }} c{{ else }}C{{ end }}redit charges are queued; the worker is falling behind.'
     labels:
       severity: warning
     isPaused: false
@@ -260,7 +260,7 @@ groups:
     execErrState: Error
     for: 10m
     annotations:
-      summary: 'The VM''s disk is {{ humanizePercentage $values.A.Value }} full.'
+      summary: 'The VM''s disk is{{ with $values.A }} {{ humanizePercentage .Value }}{{ else }} nearly{{ end }} full.'
     labels:
       severity: warning
     isPaused: false
@@ -295,7 +295,7 @@ groups:
     execErrState: Error
     for: 10m
     annotations:
-      summary: 'Only {{ humanizePercentage $values.A.Value }} of the VM''s memory is available.'
+      summary: 'The VM is low on memory{{ with $values.A }}: {{ humanizePercentage .Value }} available{{ end }}.'
     labels:
       severity: warning
     isPaused: false
@@ -365,7 +365,7 @@ groups:
     execErrState: Error
     for: 0s
     annotations:
-      summary: '{{ $labels.service }} restarted {{ humanize $values.A.Value }} times in 15 minutes (deploys excluded).'
+      summary: '{{ $labels.service }} restarted{{ with $values.A }} {{ humanize .Value }} times{{ end }} in 15 minutes (deploys excluded).'
     labels:
       severity: warning
     isPaused: false
@@ -439,7 +439,7 @@ groups:
     execErrState: Error
     for: 5m
     annotations:
-      summary: 'The relay logged {{ humanize $values.A.Value }} errors in 5 minutes.'
+      summary: 'The relay logged{{ with $values.A }} {{ humanize .Value }}{{ else }} many{{ end }} errors in 5 minutes.'
     labels:
       severity: warning
     isPaused: false

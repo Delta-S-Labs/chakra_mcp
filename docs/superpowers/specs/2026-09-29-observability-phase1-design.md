@@ -54,7 +54,7 @@ The credits PRs (#334 backend, #335 UI) merge after this lands, so they ship wit
 | **Alloy** | The only collector. It scrapes every metrics source, runs the built-in exporters (host, Postgres, Redis, HTTPS probes), reads container logs from the host journal, and forwards metrics to Prometheus and logs to Loki. | internal, observability | 192 MB |
 | **Prometheus** | Metrics store and query engine. Receives remote-write only; scrapes nothing itself. | observability | 256 MB |
 | **Loki** | Log store (single binary, filesystem). | observability | 192 MB |
-| **Grafana** | Dashboards and alerting. The only component reachable from outside, through Caddy. | observability | 384 MB (Grafana 13 settles around 215 MB and peaks near 260 MB at startup; at 192 MB it was OOM-killed) |
+| **Grafana** | Dashboards and alerting. The only component reachable from outside, through Caddy. | observability | 512 MB (in prod Grafana 13 holds ~250 MB of heap plus ~120 MB of its mapped binary; at 192 MB it was OOM-killed, and at 384 MB it sat at the cap) |
 
 - Each service also gets `GOMEMLIMIT` below its cap (and above its live heap), so it garbage-collects before the kernel kills it. Caps total about 1 GB. Measured steady use is about 410 MB: Grafana 236, Alloy 82, Loki 60, Prometheus 34.
 - Images are pinned to exact versions, resolved when the stack is built.
@@ -220,6 +220,7 @@ Alloy's configuration (`infra/observability/alloy/config.alloy`) has these pipel
 **Grafana sign-in**
 - GitHub OAuth is the only way in: `disable_login_form = true` and `auto_login = true`, so the login page goes straight to GitHub.
 - Uses the `chakramcp-grafana` OAuth app, whose callback is `https://grafana.chakramcp.com/login/github`. Its credentials are in the VM `.env` and were verified against GitHub.
+- Scopes are `user:email,read:org`. `read:org` is required: at every sign-in Grafana lists the user's team memberships (`/user/teams`), which 404s without it and fails the login.
 - **The allowlist is not in the repo.** `role_attribute_path` comes from the VM `.env` (`GRAFANA_ROLE_ATTRIBUTE_PATH`). Compose refuses to start Grafana without it (`${VAR:?}`), and with `role_attribute_strict = true` an empty or non-matching role refuses the login.
   - Our value matches the operator's **numeric GitHub user id**, which is immutable, unlike a login that can be renamed and re-registered, **or** their e-mail. The e-mail only matches while it is public on the GitHub profile, which GitHub only allows for verified addresses. The result is `GrafanaAdmin`, with `allow_assign_grafana_admin = true`.
   - Every other account maps to an empty role and is refused.

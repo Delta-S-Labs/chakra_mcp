@@ -113,11 +113,13 @@ services:
     restart: unless-stopped
     logging: *logging
     depends_on: [prometheus, loki]
-    # Grafana 13 settles around 215 MB and peaks near 260 MB while starting
-    # (measured); GOMEMLIMIT must stay above its live heap or GC spins.
-    mem_limit: 384m
+    # Grafana 13 needs ~250 MB of heap plus ~120 MB of its mapped binary in
+    # prod (it sat at a 384 MB cap, evicting its own code pages).
+    # GOMEMLIMIT keeps the heap in check but must stay above the live heap,
+    # or GC spins.
+    mem_limit: 512m
     environment:
-      GOMEMLIMIT: 280MiB
+      GOMEMLIMIT: 256MiB
       GF_LOG_LEVEL: warn
       GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-https://grafana.chakramcp.com}
       GF_SECURITY_ADMIN_USER: admin
@@ -129,7 +131,9 @@ services:
       GF_AUTH_GITHUB_ENABLED: "true"
       GF_AUTH_GITHUB_CLIENT_ID: ${GRAFANA_GITHUB_CLIENT_ID:?set GRAFANA_GITHUB_CLIENT_ID in .env}
       GF_AUTH_GITHUB_CLIENT_SECRET: ${GRAFANA_GITHUB_CLIENT_SECRET:?set GRAFANA_GITHUB_CLIENT_SECRET in .env}
-      GF_AUTH_GITHUB_SCOPES: "read:user user:email"
+      # read:org is required: at every sign-in Grafana lists the user's team
+      # memberships (/user/teams), which 404s without it and fails the login.
+      GF_AUTH_GITHUB_SCOPES: "user:email,read:org"
       GF_AUTH_GITHUB_ALLOW_SIGN_UP: "true"
       GF_AUTH_GITHUB_AUTO_LOGIN: "true"
       # Who may sign in. Strict: anyone the expression doesn't map to a role
