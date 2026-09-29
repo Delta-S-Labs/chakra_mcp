@@ -492,8 +492,11 @@ jobs:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          # A no-op until the chart has dependencies; `helm package` fails on
-          # a declared dependency missing from charts/, even a disabled one.
+          # The bundled observability subcharts, from Chart.lock (the OCI
+          # ones need no repo). `helm package` fails on a declared dependency
+          # missing from charts/, even a disabled one.
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo add grafana https://grafana.github.io/helm-charts
           helm dependency build charts/chakramcp
           helm package charts/chakramcp --version "$VERSION" --app-version "$VERSION" -d "$RUNNER_TEMP/chart"
           echo "$TOKEN" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin

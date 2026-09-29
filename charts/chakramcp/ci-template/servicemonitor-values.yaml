@@ -1,0 +1,14 @@
+# Template-only, rendered with the ServiceMonitor API available: the pieces
+# for kube-prometheus-stack, with Loki, custom datasource UIDs, and the
+# alert rules in Grafana's namespace.
+observability:
+  serviceMonitor:
+    labels:
+      release: kube-prometheus-stack
+  loki:
+    enabled: true
+  datasources:
+    prometheus: kps-prometheus
+    loki: loki-logs
+  alertRules:
+    namespace: monitoring

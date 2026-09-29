@@ -68,6 +68,15 @@ updates:
     open-pull-requests-limit: 4
     labels: ["deps", "observability"]
 
+  # The Helm chart's bundled observability subcharts (Chart.yaml + Chart.lock).
+  # Dependabot's support for oci:// dependencies (Loki, Grafana) is uneven:
+  # if those never get PRs, bump them by hand (docs/CI-CD.md, Helm chart).
+  - package-ecosystem: helm
+    directory: "/charts/chakramcp"
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 4
+    labels: ["deps", "chart"]
+
   # Workflow + action pins.
   - package-ecosystem: github-actions
     directory: "/"

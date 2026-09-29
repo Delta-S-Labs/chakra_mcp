@@ -1,0 +1,22 @@
+# No alert channel (the default): alerts show in Grafana only. Resets the
+# notification policies to Grafana's default before removing any channel's
+# contact point, which a policy may still use.
+# Selected by ALERT_CHANNEL (compose mounts this file over
+# provisioning/alerting/channel.yml). Each channel file deletes the other
+# channels' contact points, because file provisioning never removes one on
+# its own. Settings come from the container environment (the .env):
+# Grafana expands $VARS in contact-point settings, not in rules or templates.
+apiVersion: 1
+
+resetPolicies:
+  - 1
+
+deleteContactPoints:
+  - orgId: 1
+    uid: telegram-chakramcp
+  - orgId: 1
+    uid: slack-chakramcp
+  - orgId: 1
+    uid: email-chakramcp
+  - orgId: 1
+    uid: webhook-chakramcp

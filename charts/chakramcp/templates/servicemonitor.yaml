@@ -1,0 +1,32 @@
+{{- $sm := .Values.observability.serviceMonitor }}
+{{- if and .Values.metrics.enabled $sm.enabled (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1/ServiceMonitor") }}
+# For a Prometheus Operator (e.g. kube-prometheus-stack), which selects
+# ServiceMonitors by label: kube-prometheus-stack wants release: <its name>.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "chakramcp.fullname" . }}
+  labels:
+    {{- include "chakramcp.labels" . | nindent 4 }}
+    {{- with $sm.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  namespaceSelector:
+    matchNames: [{{ .Release.Namespace | quote }}]
+  selector:
+    matchLabels:
+      {{- include "chakramcp.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: relay
+  endpoints:
+    - port: metrics
+      interval: {{ $sm.interval }}
+      # The HTTP metrics carry their own `service` label (app, relay). The
+      # operator's `service` target label would rename it to
+      # exported_service, merging the two on the dashboards.
+      honorLabels: true
+      relabelings:
+        # The dashboards and alert rules query job="chakramcp".
+        - targetLabel: job
+          replacement: chakramcp
+{{- end }}

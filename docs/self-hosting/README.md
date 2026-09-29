@@ -20,8 +20,9 @@ You build it from public pieces:
 | **Kubernetes** | A cluster, with the Helm chart in `charts/chakramcp` | [kubernetes.md](kubernetes.md) |
 | **A single binary** | A laptop or a quick trial (Homebrew or a source build) | [INSTALL.md](../INSTALL.md#self-hosted-server-chakramcp-server) |
 
-Observability (Prometheus, Loki, Grafana and Alloy, with ChakraMCP's
-dashboards and alerts) is an optional layer on the Compose setup:
+Observability (ChakraMCP's dashboards and alerts on Prometheus, Loki and
+Grafana) is optional on both: a stack next to Compose, or on Kubernetes
+either your own kube-prometheus-stack or a bundled stack. See
 [observability.md](observability.md).
 
 ## Host requirements (Compose)

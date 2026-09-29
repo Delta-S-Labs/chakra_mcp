@@ -99,8 +99,9 @@ bundled Postgres password too. Both are kept across upgrades and after
 
 **GitOps** (Argo CD, Flux, `helm template`): these can't read the cluster
 while rendering, so generated values would change on every sync. Set
-`secrets.existingSecret`, and with the bundled Postgres,
-`postgresql.auth.existingSecret`.
+`secrets.existingSecret`; with the bundled Postgres,
+`postgresql.auth.existingSecret`; and with the bundled observability stack,
+`grafana.admin.existingSecret`.
 
 ## Upgrades and rollbacks
 
@@ -130,7 +131,9 @@ kubectl -n chakramcp delete pvc data-chakramcp-postgresql-0
 
 ## Observability
 
-The server exposes Prometheus metrics on its `metrics` port (9464) and
-logs JSON to stdout. Chart pieces for Prometheus and Grafana (a
-ServiceMonitor, the dashboards and the alert rules), and an optional
-bundled stack, are in progress.
+The chart ships ChakraMCP's dashboards and alert rules. With your own
+Prometheus and Grafana (e.g. kube-prometheus-stack), that's a
+ServiceMonitor plus ConfigMaps for Grafana's sidecars. Alternatively,
+`observability.bundled.enabled=true` installs a small Prometheus, Loki,
+Grafana and Alloy stack. Both are in
+[observability.md](observability.md#kubernetes).

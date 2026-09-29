@@ -1,7 +1,8 @@
 # chakramcp Helm chart
 
 ChakraMCP (the relay and app API, one `chakramcp-server` process) on
-Kubernetes, with optional bundled Postgres and Redis. The full guide, with
+Kubernetes, with optional bundled Postgres and Redis, and ChakraMCP's
+dashboards and alerts for your Grafana or a bundled observability stack. The full guide, with
 Ingress, TLS, secrets, GitOps and upgrades, is
 [docs/self-hosting/kubernetes.md](../../docs/self-hosting/kubernetes.md).
 
@@ -63,6 +64,14 @@ non-root user with a read-only root filesystem.
 | `redis.enabled` | `true` | A bundled Redis for rate-limit counters (no persistence, LRU-bounded) |
 | `redis.image.*`, `redis.maxmemory`, `redis.resources` | `redis:7-alpine`, `128mb`, … | |
 | `externalRedis.url` | `""` | With `redis.enabled=false`. Without any Redis, rate limiting fails open. |
+| `observability.serviceMonitor.enabled`, `.labels`, `.interval` | `true`, `{}`, `15s` | A ServiceMonitor, rendered only when the Prometheus Operator's API exists. kube-prometheus-stack needs `labels: {release: <its release>}`. |
+| `observability.dashboards.enabled`, `.labels`, `.namespace` | `true`, `grafana_dashboard: "1"`, the release's | Dashboard ConfigMaps for Grafana's sidecar |
+| `observability.alertRules.enabled`, `.labels`, `.namespace` | `true`, `grafana_alert: "1"`, the release's | The Kubernetes alert rules, for Grafana's alerts sidecar |
+| `observability.loki.enabled` | `false` | Your Grafana has a Loki with the chart's log labels: adds the Logs dashboard and the log rule. Implied by `bundled`. |
+| `observability.datasources.prometheus`, `.loki` | `prometheus`, `loki` | Your datasources' UIDs |
+| `observability.bundled.enabled` | `false` | Install Prometheus, Loki, Grafana and Alloy with the chart |
+| `observability.alertChannel` | `none` | Bundled Grafana: `none`, `telegram`, `slack`, `email` or `webhook`, with settings from the Secret `chakramcp-alerts` |
+| `prometheus`, `loki`, `grafana`, `alloy` | small single-node stack | The bundled subcharts' own values |
 
 `values.schema.json` checks the values: an Ingress needs both hosts, and
 turning off the bundled Postgres needs an external database.

@@ -1,0 +1,71 @@
+{{- if .Values.observability.bundled.enabled }}
+{{- $fullname := include "chakramcp.fullname" . }}
+{{- $grafana := include "chakramcp.subchartFullname" (list . "grafana") }}
+{{- $prometheus := printf "%s-server" (include "chakramcp.subchartFullname" (list . "prometheus")) }}
+{{- $loki := include "chakramcp.subchartFullname" (list . "loki") }}
+# `helm test`, bundled stack: the server is scraped and its logs reach Loki,
+# and Grafana has the dashboards and alert rules. Retries for up to 3
+# minutes while the first scrapes and log batches land.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ $fullname }}-test-observability
+  labels:
+    {{- include "chakramcp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    {{- toYaml .Values.podSecurityContext | nindent 4 }}
+  containers:
+    - name: test
+      image: "{{ .Values.image.repository }}:{{ include "chakramcp.imageTag" . }}"
+      imagePullPolicy: {{ .Values.image.pullPolicy }}
+      env:
+        - name: GRAFANA_USER
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.grafana.admin.existingSecret | default $grafana }}
+              key: {{ .Values.grafana.admin.userKey | default "admin-user" }}
+        - name: GRAFANA_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.grafana.admin.existingSecret | default $grafana }}
+              key: {{ .Values.grafana.admin.passwordKey | default "admin-password" }}
+      command:
+        - sh
+        - -ec
+        - |
+          retry() { # name, command...
+            name=$1; shift
+            for _ in $(seq 1 36); do
+              if "$@" >/dev/null 2>&1; then echo "ok   $name"; return 0; fi
+              sleep 5
+            done
+            echo "FAIL $name"; "$@" || true; exit 1
+          }
+          grafana() {
+            wget -qO- --auth-no-challenge --user "$GRAFANA_USER" --password "$GRAFANA_PASSWORD" "http://{{ $grafana }}$1"
+          }
+          prometheus_has() { # PromQL (URL-encoded), text to find
+            wget -qO- "http://{{ $prometheus }}/api/v1/query?query=$1" | grep -q "$2"
+          }
+          scraped() { prometheus_has 'up%7Bjob%3D%22chakramcp%22%7D%3D%3D1' '"job":"chakramcp"'; }
+          build_info() { prometheus_has chakramcp_build_info '"version"'; }
+          relay_logs() { wget -qO- "http://{{ $loki }}:3100/loki/api/v1/label/level/values" | grep -q '"info"'; }
+          dashboard() { grafana "/api/dashboards/uid/$1"; }
+          five_rules() { [ "$(grafana /api/v1/provisioning/alert-rules | grep -o '"uid"' | wc -l)" -eq 5 ]; }
+
+          retry 'Prometheus: up{job="chakramcp"} == 1' scraped
+          retry 'Prometheus: chakramcp_build_info' build_info
+          retry 'Loki: relay logs with a level' relay_logs
+          retry 'Grafana: Overview dashboard' dashboard chakramcp-overview
+          retry 'Grafana: Logs dashboard' dashboard chakramcp-logs
+          retry 'Grafana: 5 alert rules' five_rules
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+{{- end }}

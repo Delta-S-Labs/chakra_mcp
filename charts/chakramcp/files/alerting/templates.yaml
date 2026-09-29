@@ -1,0 +1,13 @@
+# The alert message, shared by every channel (grafana/channels/).
+apiVersion: 1
+
+templates:
+  - orgId: 1
+    name: chakramcp
+    template: |
+      {{ define "chakramcp.message" -}}
+      {{ if gt (len .Alerts.Firing) 0 }}🔴 FIRING{{ else }}✅ RESOLVED{{ end }} — {{ .CommonLabels.alertname }}
+      {{ range .Alerts -}}
+      {{ if .Annotations.summary }}• {{ .Annotations.summary }}{{ end }}
+      {{ end -}}
+      {{ end }}

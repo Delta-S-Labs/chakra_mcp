@@ -111,3 +111,31 @@ tersely. Included by the Deployment. */}}
 {{- fail "ingress.enabled=true needs both ingress.hosts.app and ingress.hosts.relay" }}
 {{- end }}
 {{- end }}
+
+{{/* Observability */}}
+{{- define "chakramcp.lokiEnabled" -}}
+{{- if or .Values.observability.loki.enabled .Values.observability.bundled.enabled }}true{{ end }}
+{{- end }}
+
+{{/* A synced asset with the configured datasource UIDs in place of the
+source's `prometheus` and `loki`. */}}
+{{- define "chakramcp.withDatasources" -}}
+{{- $root := index . 0 }}{{- $text := index . 1 }}
+{{- $ds := $root.Values.observability.datasources }}
+{{- $text
+  | replace "\"uid\": \"prometheus\"" (printf "\"uid\": %q" $ds.prometheus)
+  | replace "\"uid\": \"loki\"" (printf "\"uid\": %q" $ds.loki)
+  | replace "datasourceUid: prometheus" (printf "datasourceUid: %q" $ds.prometheus)
+  | replace "datasourceUid: loki" (printf "datasourceUid: %q" $ds.loki) }}
+{{- end }}
+
+{{/* A bundled subchart's fullname, by the charts' shared rule: the release
+name alone when it already contains the chart's name. */}}
+{{- define "chakramcp.subchartFullname" -}}
+{{- $root := index . 0 }}{{- $chart := index . 1 }}
+{{- $override := (index $root.Values $chart).fullnameOverride }}
+{{- if $override }}{{ $override | trunc 63 | trimSuffix "-" }}
+{{- else if contains $chart $root.Release.Name }}{{ $root.Release.Name | trunc 63 | trimSuffix "-" }}
+{{- else }}{{ printf "%s-%s" $root.Release.Name $chart | trunc 63 | trimSuffix "-" }}
+{{- end }}
+{{- end }}

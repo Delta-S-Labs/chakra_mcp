@@ -6,147 +6,436 @@
     "image": {
       "type": "object",
       "properties": {
-        "repository": { "type": "string", "minLength": 1 },
-        "tag": { "type": "string" },
-        "pullPolicy": { "enum": ["Always", "IfNotPresent", "Never"] }
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tag": {
+          "type": "string"
+        },
+        "pullPolicy": {
+          "enum": [
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ]
+        }
       }
     },
-    "imagePullSecrets": { "type": "array" },
-    "nameOverride": { "type": "string" },
-    "fullnameOverride": { "type": "string" },
-    "replicaCount": { "type": "integer", "minimum": 0 },
+    "imagePullSecrets": {
+      "type": "array"
+    },
+    "nameOverride": {
+      "type": "string"
+    },
+    "fullnameOverride": {
+      "type": "string"
+    },
+    "replicaCount": {
+      "type": "integer",
+      "minimum": 0
+    },
     "config": {
       "type": "object",
       "properties": {
-        "appPublicUrl": { "type": "string", "pattern": "^(https?://.+)?$" },
-        "relayPublicUrl": { "type": "string", "pattern": "^(https?://.+)?$" },
-        "frontendPublicUrl": { "type": "string", "pattern": "^(https?://.+)?$" },
-        "adminEmail": { "type": "string" },
-        "limitsEnforce": { "type": "boolean" },
-        "discoveryV2": { "type": "boolean" },
-        "rustLog": { "type": "string" }
+        "appPublicUrl": {
+          "type": "string",
+          "pattern": "^(https?://.+)?$"
+        },
+        "relayPublicUrl": {
+          "type": "string",
+          "pattern": "^(https?://.+)?$"
+        },
+        "frontendPublicUrl": {
+          "type": "string",
+          "pattern": "^(https?://.+)?$"
+        },
+        "adminEmail": {
+          "type": "string"
+        },
+        "limitsEnforce": {
+          "type": "boolean"
+        },
+        "discoveryV2": {
+          "type": "boolean"
+        },
+        "rustLog": {
+          "type": "string"
+        }
       }
     },
     "secrets": {
       "type": "object",
-      "properties": { "existingSecret": { "type": "string" } }
+      "properties": {
+        "existingSecret": {
+          "type": "string"
+        }
+      }
     },
-    "extraEnv": { "type": "array" },
-    "extraEnvFrom": { "type": "array" },
+    "extraEnv": {
+      "type": "array"
+    },
+    "extraEnvFrom": {
+      "type": "array"
+    },
     "metrics": {
       "type": "object",
       "properties": {
-        "enabled": { "type": "boolean" },
-        "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+        "enabled": {
+          "type": "boolean"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
       }
     },
     "service": {
       "type": "object",
       "properties": {
-        "type": { "enum": ["ClusterIP", "NodePort", "LoadBalancer"] },
-        "appPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
-        "relayPort": { "type": "integer", "minimum": 1, "maximum": 65535 }
+        "type": {
+          "enum": [
+            "ClusterIP",
+            "NodePort",
+            "LoadBalancer"
+          ]
+        },
+        "appPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "relayPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
       }
     },
     "ingress": {
       "type": "object",
       "properties": {
-        "enabled": { "type": "boolean" },
-        "className": { "type": "string" },
-        "annotations": { "type": "object" },
+        "enabled": {
+          "type": "boolean"
+        },
+        "className": {
+          "type": "string"
+        },
+        "annotations": {
+          "type": "object"
+        },
         "hosts": {
           "type": "object",
           "properties": {
-            "app": { "type": "string" },
-            "relay": { "type": "string" }
+            "app": {
+              "type": "string"
+            },
+            "relay": {
+              "type": "string"
+            }
           }
         },
-        "tls": { "type": "array" }
+        "tls": {
+          "type": "array"
+        }
       },
-      "if": { "properties": { "enabled": { "const": true } }, "required": ["enabled"] },
+      "if": {
+        "properties": {
+          "enabled": {
+            "const": true
+          }
+        },
+        "required": [
+          "enabled"
+        ]
+      },
       "then": {
         "description": "An Ingress needs both hosts.",
         "properties": {
           "hosts": {
             "properties": {
-              "app": { "minLength": 1 },
-              "relay": { "minLength": 1 }
+              "app": {
+                "minLength": 1
+              },
+              "relay": {
+                "minLength": 1
+              }
             },
-            "required": ["app", "relay"]
+            "required": [
+              "app",
+              "relay"
+            ]
           }
         },
-        "required": ["hosts"]
+        "required": [
+          "hosts"
+        ]
       }
     },
-    "serviceAccount": { "type": "object" },
-    "podAnnotations": { "type": "object" },
-    "podLabels": { "type": "object" },
-    "podSecurityContext": { "type": "object" },
-    "securityContext": { "type": "object" },
-    "resources": { "type": "object" },
-    "nodeSelector": { "type": "object" },
-    "tolerations": { "type": "array" },
-    "affinity": { "type": "object" },
+    "serviceAccount": {
+      "type": "object"
+    },
+    "podAnnotations": {
+      "type": "object"
+    },
+    "podLabels": {
+      "type": "object"
+    },
+    "podSecurityContext": {
+      "type": "object"
+    },
+    "securityContext": {
+      "type": "object"
+    },
+    "resources": {
+      "type": "object"
+    },
+    "nodeSelector": {
+      "type": "object"
+    },
+    "tolerations": {
+      "type": "array"
+    },
+    "affinity": {
+      "type": "object"
+    },
     "postgresql": {
       "type": "object",
       "properties": {
-        "enabled": { "type": "boolean" },
-        "image": { "type": "object" },
+        "enabled": {
+          "type": "boolean"
+        },
+        "image": {
+          "type": "object"
+        },
         "auth": {
           "type": "object",
           "properties": {
-            "username": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
-            "database": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
-            "existingSecret": { "type": "string" },
-            "secretKey": { "type": "string", "minLength": 1 }
+            "username": {
+              "type": "string",
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+            },
+            "database": {
+              "type": "string",
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+            },
+            "existingSecret": {
+              "type": "string"
+            },
+            "secretKey": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         },
         "persistence": {
           "type": "object",
           "properties": {
-            "enabled": { "type": "boolean" },
-            "size": { "type": "string", "minLength": 1 },
-            "storageClass": { "type": "string" }
+            "enabled": {
+              "type": "boolean"
+            },
+            "size": {
+              "type": "string",
+              "minLength": 1
+            },
+            "storageClass": {
+              "type": "string"
+            }
           }
         },
-        "resources": { "type": "object" }
+        "resources": {
+          "type": "object"
+        }
       }
     },
     "externalDatabase": {
       "type": "object",
       "properties": {
-        "url": { "type": "string", "pattern": "^(postgres(ql)?://.+)?$" },
-        "existingSecret": { "type": "string" },
-        "secretKey": { "type": "string", "minLength": 1 }
+        "url": {
+          "type": "string",
+          "pattern": "^(postgres(ql)?://.+)?$"
+        },
+        "existingSecret": {
+          "type": "string"
+        },
+        "secretKey": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "redis": {
       "type": "object",
       "properties": {
-        "enabled": { "type": "boolean" },
-        "image": { "type": "object" },
-        "maxmemory": { "type": "string" },
-        "resources": { "type": "object" }
+        "enabled": {
+          "type": "boolean"
+        },
+        "image": {
+          "type": "object"
+        },
+        "maxmemory": {
+          "type": "string"
+        },
+        "resources": {
+          "type": "object"
+        }
       }
     },
     "externalRedis": {
       "type": "object",
       "properties": {
-        "url": { "type": "string", "pattern": "^(rediss?://.+)?$" }
+        "url": {
+          "type": "string",
+          "pattern": "^(rediss?://.+)?$"
+        }
       }
+    },
+    "observability": {
+      "type": "object",
+      "properties": {
+        "serviceMonitor": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "labels": {
+              "type": "object"
+            },
+            "interval": {
+              "type": "string",
+              "pattern": "^[0-9]+(ms|s|m|h)$"
+            }
+          }
+        },
+        "dashboards": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "labels": {
+              "type": "object"
+            },
+            "namespace": {
+              "type": "string"
+            }
+          }
+        },
+        "alertRules": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "labels": {
+              "type": "object"
+            },
+            "namespace": {
+              "type": "string"
+            }
+          }
+        },
+        "loki": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            }
+          }
+        },
+        "datasources": {
+          "type": "object",
+          "properties": {
+            "prometheus": {
+              "type": "string",
+              "minLength": 1
+            },
+            "loki": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "bundled": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            }
+          }
+        },
+        "alertChannel": {
+          "enum": [
+            "none",
+            "telegram",
+            "slack",
+            "email",
+            "webhook"
+          ]
+        }
+      }
+    },
+    "prometheus": {
+      "type": "object",
+      "description": "The bundled prometheus subchart's own values."
+    },
+    "loki": {
+      "type": "object",
+      "description": "The bundled loki subchart's own values."
+    },
+    "grafana": {
+      "type": "object",
+      "description": "The bundled grafana subchart's own values."
+    },
+    "alloy": {
+      "type": "object",
+      "description": "The bundled alloy subchart's own values."
     }
   },
   "if": {
-    "properties": { "postgresql": { "properties": { "enabled": { "const": false } }, "required": ["enabled"] } },
-    "required": ["postgresql"]
+    "properties": {
+      "postgresql": {
+        "properties": {
+          "enabled": {
+            "const": false
+          }
+        },
+        "required": [
+          "enabled"
+        ]
+      }
+    },
+    "required": [
+      "postgresql"
+    ]
   },
   "then": {
     "description": "Without the bundled Postgres, set externalDatabase.url or externalDatabase.existingSecret.",
     "properties": {
       "externalDatabase": {
         "anyOf": [
-          { "properties": { "url": { "minLength": 1 } }, "required": ["url"] },
-          { "properties": { "existingSecret": { "minLength": 1 } }, "required": ["existingSecret"] }
+          {
+            "properties": {
+              "url": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "url"
+            ]
+          },
+          {
+            "properties": {
+              "existingSecret": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "existingSecret"
+            ]
+          }
         ]
       }
     }

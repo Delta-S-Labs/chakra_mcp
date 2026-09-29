@@ -157,10 +157,14 @@ Change visibility) if it didn't inherit the repo's visibility.
 
 `charts/chakramcp` ([guide](self-hosting/kubernetes.md)).
 
-- **`chart-ci.yml`** runs on every PR and skips itself unless `charts/**`
-  or the workflow changed:
+- **`chart-ci.yml`** runs on every PR and skips itself unless `charts/**`,
+  the dashboards and rules in `infra/observability/grafana/`, or the
+  workflow changed:
+  - check that `charts/chakramcp/files/` matches its source: run
+    `infra/observability/scripts/sync-chart-assets.sh` after changing a
+    dashboard or rule;
   - lint and render with each values file in `ci/` (installable) and
-    `ci-template/` (render-only);
+    `ci-template/` (render-only, with the ServiceMonitor API);
   - check that invalid values are refused;
   - validate the manifests with kubeconform against Kubernetes 1.37 and
     1.33;
@@ -172,6 +176,13 @@ Change visibility) if it didn't inherit the repo's visibility.
   to `oci://ghcr.io/delta-s-labs/charts`. It runs after the image tags
   exist. No `:edge` chart is published: unreleased changes install from
   a checkout.
+- **Subcharts** (the bundled observability stack) are pinned in
+  `Chart.yaml` and `Chart.lock`. The vendored `charts/` directory isn't
+  committed; `helm dependency build` fetches it after `helm repo add` for
+  prometheus-community and grafana (Loki and Grafana are OCI). Dependabot
+  watches them, but its support for `oci://` dependencies is uneven. If
+  Loki or Grafana never get PRs, bump them by hand: edit the versions,
+  `helm dependency update charts/chakramcp`, and commit `Chart.lock`.
 - **One-time:** the chart package needs the same public-visibility toggle
   as the image.
 

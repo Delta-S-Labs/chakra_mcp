@@ -1,0 +1,35 @@
+# Alerts go to Slack, through an incoming webhook: SLACK_WEBHOOK_URL.
+# Selected by ALERT_CHANNEL (compose mounts this file over
+# provisioning/alerting/channel.yml). Each channel file deletes the other
+# channels' contact points, because file provisioning never removes one on
+# its own. Settings come from the container environment (the .env):
+# Grafana expands $VARS in contact-point settings, not in rules or templates.
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: slack
+    receivers:
+      - uid: slack-chakramcp
+        type: slack
+        disableResolveMessage: false
+        settings:
+          url: "$SLACK_WEBHOOK_URL"
+          title: '{{ .CommonLabels.alertname }}'
+          text: '{{ template "chakramcp.message" . }}'
+
+policies:
+  - orgId: 1
+    receiver: slack
+    group_by: ["alertname"]
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h
+
+deleteContactPoints:
+  - orgId: 1
+    uid: telegram-chakramcp
+  - orgId: 1
+    uid: email-chakramcp
+  - orgId: 1
+    uid: webhook-chakramcp
