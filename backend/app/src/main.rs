@@ -31,8 +31,10 @@ async fn main() -> Result<()> {
     }
     sqlx::migrate!("../migrations").run(&pool).await?;
 
-    let state =
-        AppState::new(pool, cfg.clone()).with_upsert_secret(env::var("UPSERT_SHARED_SECRET").ok());
+    let credits = chakramcp_shared::credits::CreditsConfig::from_env()?;
+    let state = AppState::new(pool, cfg.clone())
+        .with_upsert_secret(env::var("UPSERT_SHARED_SECRET").ok())
+        .with_credits_config(credits);
     let app = router(state);
 
     let port: u16 = env::var("APP_PORT")

@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT balance_mc, monthly_free_grant_mc, rate_limit_per_min,\n               free_grant_period, unlimited\n          FROM credit_wallets WHERE account_id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "balance_mc",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "credit_wallets",
+            "name": "balance_mc"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "monthly_free_grant_mc",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "credit_wallets",
+            "name": "monthly_free_grant_mc"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "rate_limit_per_min",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "credit_wallets",
+            "name": "rate_limit_per_min"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "free_grant_period",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "credit_wallets",
+            "name": "free_grant_period"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "unlimited",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "credit_wallets",
+            "name": "unlimited"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "e2bf0c62d3a042d5c1745a728f12d529796ccf7be5cf37884b944222fd0f23d5"
+}

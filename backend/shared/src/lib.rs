@@ -10,6 +10,7 @@
 
 pub mod auto_friendship;
 pub mod config;
+pub mod credits;
 pub mod db;
 pub mod error;
 pub mod jwt;

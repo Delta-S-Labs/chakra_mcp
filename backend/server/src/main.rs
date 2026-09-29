@@ -236,7 +236,8 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
     }
 
     let app_state = AppState::new(pool.clone(), cfg.shared.clone())
-        .with_upsert_secret(std::env::var("UPSERT_SHARED_SECRET").ok());
+        .with_upsert_secret(std::env::var("UPSERT_SHARED_SECRET").ok())
+        .with_credits_config(credits);
     if app_state.upsert_secret.is_none() {
         tracing::warn!("UPSERT_SHARED_SECRET is not set: Google/GitHub sign-in is disabled");
     }

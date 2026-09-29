@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT monthly_free_grant_mc, rate_limit_per_min, unlimited\n          FROM credit_wallets WHERE account_id = $1\n           FOR UPDATE\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "monthly_free_grant_mc",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "credit_wallets",
+            "name": "monthly_free_grant_mc"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "rate_limit_per_min",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "credit_wallets",
+            "name": "rate_limit_per_min"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "unlimited",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "credit_wallets",
+            "name": "unlimited"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "13596dead4dc714e07ae86a6f34ab20138827daf8c5d968f7158e4177247b967"
+}

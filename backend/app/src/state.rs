@@ -3,6 +3,7 @@ use std::sync::Arc;
 use sqlx::PgPool;
 
 use chakramcp_shared::config::SharedConfig;
+use chakramcp_shared::credits::CreditsConfig;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -12,6 +13,9 @@ pub struct AppState {
     /// caller allowed to exchange a provider identity for a session
     /// (`UPSERT_SHARED_SECRET`). `None` refuses every such sign-in.
     pub upsert_secret: Option<Arc<str>>,
+    /// The global credit defaults, for showing effective grants and limits.
+    /// Must match what the relay enforces: both mains read the same env.
+    pub credits: CreditsConfig,
 }
 
 impl AppState {
@@ -20,6 +24,7 @@ impl AppState {
             db,
             config: Arc::new(config),
             upsert_secret: None,
+            credits: CreditsConfig::default(),
         }
     }
 
@@ -29,6 +34,11 @@ impl AppState {
             .map(|s| s.trim().to_owned())
             .filter(|s| !s.is_empty())
             .map(Arc::from);
+        self
+    }
+
+    pub fn with_credits_config(mut self, credits: CreditsConfig) -> Self {
+        self.credits = credits;
         self
     }
 

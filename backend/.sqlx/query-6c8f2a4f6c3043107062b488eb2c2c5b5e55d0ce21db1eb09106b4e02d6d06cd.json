@@ -1,0 +1,37 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT (charged_at AT TIME ZONE 'UTC')::date AS \"day!\",\n               count(*) AS \"invocations!\",\n               SUM(cost_mc)::bigint AS \"spent_mc!\"\n          FROM invocation_charges\n         WHERE account_id = $1 AND charged_at >= now() - interval '30 days'\n         GROUP BY 1 ORDER BY 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "day!",
+        "type_info": "Date",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "invocations!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "spent_mc!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "6c8f2a4f6c3043107062b488eb2c2c5b5e55d0ce21db1eb09106b4e02d6d06cd"
+}

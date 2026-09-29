@@ -97,7 +97,8 @@ impl CreditCache {
     /// Reload the switches from `credit_wallets`. An account is blocked when
     /// it can't afford one more invocation — unless it's unlimited or has
     /// never been granted (a wallet the worker created moments ago must not
-    /// be blocked before its first grant lands).
+    /// be blocked before its first grant lands). Keep this in step with
+    /// `chakramcp_shared::credits::is_blocked`, which the app shows owners.
     pub async fn refresh(
         &self,
         db: &PgPool,
