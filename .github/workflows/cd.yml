@@ -282,6 +282,11 @@ jobs:
           have=$(docker inspect --format '{{.Image}}' "$(docker compose ps -q relay)")
           [ "$want" = "$have" ] || { echo "relay runs $have, expected $want ($CHAKRAMCP_IMAGE)"; exit 1; }
           echo "  relay runs $CHAKRAMCP_IMAGE (${want:7:12})"
+          # Point the VM's local :latest at what's now running. .env keeps
+          # CHAKRAMCP_IMAGE=…:latest, so a manual `docker compose up -d relay`
+          # would otherwise recreate the relay from whatever :latest was
+          # last pulled, an older build.
+          docker tag "$CHAKRAMCP_IMAGE" "${CHAKRAMCP_IMAGE%:*}:latest"
           REMOTE
 
       # ─── Sanity check ──────────────────────────────────────────
