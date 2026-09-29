@@ -11,6 +11,12 @@
 	email kaustav@chakramcp.com
 	# Increase if you start hitting LE rate limits during testing.
 	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+
+	# Prometheus metrics per host (unknown hosts are grouped as "_other"),
+	# served on the internal :2020 site below for the observability stack.
+	metrics {
+		per_host
+	}
 }
 
 relay.chakramcp.com {
@@ -35,6 +41,27 @@ app.chakramcp.com {
 	handle_errors {
 		respond "{err.status_code} {err.status_text}"
 	}
+}
+
+# Grafana (infra/observability/). GitHub sign-in is the only way in from
+# outside: password (Basic) auth is refused here, so the break-glass admin
+# works only from inside the VM. Grafana's own /metrics is for the
+# collector, not the internet.
+grafana.chakramcp.com {
+	encode zstd gzip
+	@basic header_regexp Authorization (?i)^basic[[:space:]]
+	respond @basic 403
+	respond /metrics 404
+	reverse_proxy grafana:3000
+	handle_errors {
+		respond "{err.status_code} {err.status_text}"
+	}
+}
+
+# Caddy's own metrics for the collector. Internal only: this port isn't
+# published, so it's reachable just from the Docker networks.
+:2020 {
+	metrics
 }
 
 # Catch-all for unknown hosts so we don't auto-issue certs for

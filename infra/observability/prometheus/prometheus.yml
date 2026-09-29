@@ -1,0 +1,6 @@
+# Prometheus only stores and queries metrics here: Alloy scrapes every
+# source and remote-writes into it (--web.enable-remote-write-receiver), so
+# there are no scrape jobs. Alert rules live in Grafana
+# (grafana/provisioning/alerting/).
+global:
+  evaluation_interval: 1m

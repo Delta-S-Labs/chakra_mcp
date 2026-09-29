@@ -54,9 +54,9 @@ The credits PRs (#334 backend, #335 UI) merge after this lands, so they ship wit
 | **Alloy** | The only collector. It scrapes every metrics source, runs the built-in exporters (host, Postgres, Redis, HTTPS probes), reads container logs from the host journal, and forwards metrics to Prometheus and logs to Loki. | internal, observability | 192 MB |
 | **Prometheus** | Metrics store and query engine. Receives remote-write only; scrapes nothing itself. | observability | 256 MB |
 | **Loki** | Log store (single binary, filesystem). | observability | 192 MB |
-| **Grafana** | Dashboards and alerting. The only component reachable from outside, through Caddy. | observability | 192 MB |
+| **Grafana** | Dashboards and alerting. The only component reachable from outside, through Caddy. | observability | 384 MB (Grafana 13 settles around 215 MB and peaks near 260 MB at startup; at 192 MB it was OOM-killed) |
 
-- Each service also gets `GOMEMLIMIT` at about 80% of its cap, so it garbage-collects before the kernel kills it. Caps total about 830 MB; expected steady use is about 420 MB.
+- Each service also gets `GOMEMLIMIT` below its cap (and above its live heap), so it garbage-collects before the kernel kills it. Caps total about 1 GB. Measured steady use is about 410 MB: Grafana 236, Alloy 82, Loki 60, Prometheus 34.
 - Images are pinned to exact versions, resolved when the stack is built.
 - **The `observability` network and Caddy's membership of it are declared in the base compose file** (`infra/docker-compose.prod.yml`, PR-A). The overlay therefore never changes a base service's definition, and CD's relay deploys and the observability deploys never recreate each other's containers.
   - Grafana is on `observability` only; Caddy bridges `internal` and `observability`.
@@ -70,6 +70,8 @@ The credits PRs (#334 backend, #335 UI) merge after this lands, so they ship wit
 - its only host mounts are the journal directories and `/etc/machine-id`, read-only.
 
 It runs as uid 0 with every capability dropped. The journal files are `root:systemd-journal 0640`, so owning them is enough to read them, and nothing else from the host is mounted.
+
+Its data lives at `/alloy-data`, a root-owned volume. Without capabilities, root can't enter the image's own `/var/lib/alloy`, which belongs to the `alloy` user.
 
 Reading container configuration (`docker inspect`) would expose every service's secrets through their environment variables. That is why logs come from the journal rather than the Docker API (§4.4, §5).
 
@@ -175,7 +177,9 @@ Alloy's configuration (`infra/observability/alloy/config.alloy`) has these pipel
 | Redis | built-in `prometheus.exporter.redis` | 30 s |
 | HTTPS probes | built-in `prometheus.exporter.blackbox`, `http_2xx` against `https://relay.chakramcp.com/healthz`, `https://app.chakramcp.com/healthz`, `https://chakramcp.com/` and `https://grafana.chakramcp.com/api/health`; this also gives certificate expiry | 60 s |
 | The stack itself | Alloy's own metrics and the Prometheus, Loki and Grafana `/metrics` endpoints, through a **keep-list** (process memory/CPU, `up`, and a few health series such as Prometheus head series and Loki ingestion errors) | 30 s |
-| Logs | `loki.source.journal` → `loki.process` → Loki. It keeps container entries (those with the compose-service field) and kernel messages (`_TRANSPORT=kernel`, so OOM-killer reports are searchable), and drops the rest. The component's `matches` argument can only AND conditions, so this OR is done with relabel/drop rules. | streaming |
+| Logs | `loki.source.journal` → `loki.process` → Loki. It keeps container entries (those with the compose-service field) and kernel messages (`_TRANSPORT=kernel`), and drops the rest. Of the kernel messages it keeps only OOM-killer reports: the rest include audit records of every sudo/PAM session, command lines and all. The component's `matches` argument can only AND conditions, so this OR is done with relabel/drop rules. | streaming |
+
+**Job names.** Alloy's built-in exporters label their series `job="integrations/unix"`, `integrations/postgres`, `integrations/redis`, `integrations/self` and `integrations/blackbox/<probe>`. Dashboards and alert rules query those names.
 
 **Host metrics without host mounts**
 - CPU, memory, load, pressure, `/proc/vmstat` (including `oom_kill`) and disk I/O are not namespaced, so the container's own `/proc` reports the host's values.
@@ -208,7 +212,9 @@ Alloy's configuration (`infra/observability/alloy/config.alloy`) has these pipel
 **DNS.** An `A` record `grafana.chakramcp.com → 54.84.88.246` in Netlify DNS, which hosts the `chakramcp.com` zone (NS1 name servers). It must exist **before PR-B merges**, because CD reloads Caddy with the new site on merge (§9.4).
 
 **Caddy** gains:
-- a `grafana.chakramcp.com` site that proxies to `grafana:3000`, and answers 403 to any request whose `Authorization` header starts with `Basic`, matched case-insensitively (`header_regexp`, `(?i)^basic\s`), so password auth only works from inside the VM;
+- a `grafana.chakramcp.com` site that proxies to `grafana:3000`, and:
+  - answers 403 to any request whose `Authorization` header starts with `Basic`, matched case-insensitively (`header_regexp`, `(?i)^basic[[:space:]]`), so password auth only works from inside the VM;
+  - answers 404 on `/metrics`, since Grafana's own metrics are for the collector, not the internet;
 - the `metrics` global option (per-host) and the internal `:2020` metrics site.
 
 **Grafana sign-in**
@@ -369,7 +375,7 @@ infra/
        - So the password reaches the server only once, at creation. This matters because Postgres logs a failing statement word for word, and those logs now reach Loki.
        - Rotating the password is a manual runbook step.
     3. Run `up -d` for exactly `alloy prometheus loki grafana` with the two-file form. Compose recreates a service only when its definition or image changed.
-    4. For services whose config hash changed, apply the change, **reloading instead of restarting wherever possible**, so config deploys never look like crashes (§8):
+    4. For services whose config hash changed, apply the change, **reloading instead of restarting wherever possible**, so config deploys never look like crashes (§8). Steps 2–5 are `infra/observability/scripts/deploy.sh`, which the CI smoke test runs too. HTTP calls go through Grafana's `curl`: Loki's and Alloy's images have no client, and the static busybox `wget` in Prometheus's image can't resolve Docker DNS names.
 
        | Service | How a config change is applied |
        |---|---|
@@ -455,13 +461,12 @@ It runs on PRs that touch `infra/**` or the workflow itself. It is path-gated in
 ### 10.3 Local (Mac)
 
 `infra/observability/compose.dev.yml` is an override that:
-- switches every service back to the `json-file` log driver;
-- resets Alloy's journal and `/etc/machine-id` mounts with Compose's `!reset` tag, since those paths don't exist on macOS;
-- publishes Grafana on `127.0.0.1:3000` with the login form on and a throwaway admin password, and GitHub auth off;
-- runs the relay from a locally built image;
+- publishes Grafana on `127.0.0.1:13000` with the login form on, the throwaway `ci.env` admin password, and GitHub auth off;
+- publishes Prometheus, Loki and Alloy's UI on localhost too;
+- lets Alloy reach a natively-run `chakramcp-server` as `relay`, through `host-gateway`;
 - leaves Caddy out: start the services explicitly.
 
-Metrics, dashboards and alert rules can be exercised locally. The log pipeline is inactive, because Docker Desktop has no journald; the CI smoke test and production cover it.
+Metrics, dashboards and alert rules can be exercised locally. With a runtime that has journald (Linux, colima), the whole log pipeline works too. On Docker Desktop, which has no journald, logs must be switched to json-file and stay out of Loki; the CI smoke test and production cover that pipeline.
 
 ### 10.4 In production after PR-B
 

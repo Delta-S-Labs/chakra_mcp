@@ -58,6 +58,16 @@ updates:
     open-pull-requests-limit: 3
     labels: ["deps", "go", "sdk-go"]
 
+  # Observability stack images, pinned in infra/observability/compose.yml.
+  # Patch bumps auto-merge (dependabot-auto-merge.yml) and CD deploys them:
+  # that's how security fixes reach the internet-facing Grafana quickly.
+  # Minor and major bumps wait for review.
+  - package-ecosystem: docker-compose
+    directory: "/infra/observability"
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 4
+    labels: ["deps", "observability"]
+
   # Workflow + action pins.
   - package-ecosystem: github-actions
     directory: "/"

@@ -1,0 +1,282 @@
+// The ChakraMCP collector (design §5): scrapes every metrics source and
+// remote-writes to Prometheus; reads container logs from the host journal
+// and pushes them to Loki. It has no Docker access and no host filesystem
+// beyond the journal — see ../compose.yml.
+
+logging {
+	level  = "warn"
+	format = "logfmt"
+}
+
+// ─── Destinations ────────────────────────────────────────
+
+prometheus.remote_write "local" {
+	endpoint {
+		url = "http://prometheus:9090/api/v1/write"
+	}
+}
+
+loki.write "local" {
+	endpoint {
+		url = "http://loki:3100/loki/api/v1/push"
+	}
+}
+
+// ─── ChakraMCP backend and Caddy ─────────────────────────
+
+prometheus.scrape "chakramcp" {
+	targets         = [{"__address__" = "relay:9464"}]
+	job_name        = "chakramcp"
+	scrape_interval = "15s"
+	forward_to      = [prometheus.remote_write.local.receiver]
+}
+
+prometheus.scrape "caddy" {
+	targets         = [{"__address__" = "caddy:2020"}]
+	job_name        = "caddy"
+	scrape_interval = "15s"
+	forward_to      = [prometheus.remote_write.local.receiver]
+}
+
+// ─── Host ────────────────────────────────────────────────
+// No host mounts: CPU, memory, load, pressure, vmstat (incl. oom_kill) and
+// disk I/O aren't namespaced, so the container's own /proc reports the
+// host's values. Disk usage comes from Alloy's data volume, which lives on
+// the host's root disk; network counters would only be the container's, so
+// they're left out (Caddy's metrics cover traffic).
+
+prometheus.exporter.unix "host" {
+	set_collectors = ["cpu", "diskstats", "filesystem", "loadavg", "meminfo", "pressure", "vmstat", "uname"]
+}
+
+prometheus.scrape "host" {
+	targets         = prometheus.exporter.unix.host.targets
+	job_name        = "host"
+	scrape_interval = "30s"
+	forward_to      = [prometheus.relabel.host.receiver]
+}
+
+// Keep one filesystem — the data volume, i.e. the host root disk — and
+// label it mountpoint="/".
+prometheus.relabel "host" {
+	rule {
+		source_labels = ["__name__", "mountpoint"]
+		regex         = "node_filesystem_.+;/alloy-data"
+		target_label  = "__tmp_root_disk"
+		replacement   = "1"
+	}
+
+	rule {
+		source_labels = ["__name__", "__tmp_root_disk"]
+		regex         = "node_filesystem_.+;"
+		action        = "drop"
+	}
+
+	rule {
+		source_labels = ["__tmp_root_disk"]
+		regex         = "1"
+		target_label  = "mountpoint"
+		replacement   = "/"
+	}
+
+	// Metric relabeling doesn't drop __ labels by itself.
+	rule {
+		action = "labeldrop"
+		regex  = "__tmp_root_disk"
+	}
+
+	// A stable instance (the default is the container's hostname, which
+	// changes whenever Alloy is recreated).
+	rule {
+		target_label = "instance"
+		replacement  = "host"
+	}
+	forward_to = [prometheus.remote_write.local.receiver]
+}
+
+// ─── Postgres and Redis ──────────────────────────────────
+
+prometheus.exporter.postgres "pg" {
+	// pg_settings_* are ~200 static series; nothing here uses them.
+	disable_settings_metrics = true
+	data_source_names        = [string.format("postgresql://chakramcp_monitor:%s@pg:5432/chakramcp?sslmode=disable", sys.env("PG_MONITOR_PASSWORD"))]
+	// An exclusive list: naming only `postmaster` would switch every other
+	// collector off. These are the exporter's defaults (pinned version) plus
+	// `postmaster`, for pg_postmaster_start_time_seconds (restart detection).
+	enabled_collectors = [
+		"database",
+		"locks",
+		"replication",
+		"replication_slot",
+		"roles",
+		"stat_bgwriter",
+		"stat_database",
+		"stat_progress_vacuum",
+		"stat_user_tables",
+		"statio_user_tables",
+		"wal",
+		"postmaster",
+	]
+}
+
+prometheus.scrape "pg" {
+	targets         = prometheus.exporter.postgres.pg.targets
+	job_name        = "postgres"
+	scrape_interval = "30s"
+	forward_to      = [prometheus.remote_write.local.receiver]
+}
+
+prometheus.exporter.redis "redis" {
+	redis_addr = "redis:6379"
+}
+
+prometheus.scrape "redis" {
+	targets         = prometheus.exporter.redis.redis.targets
+	job_name        = "redis"
+	scrape_interval = "30s"
+	forward_to      = [prometheus.remote_write.local.receiver]
+}
+
+// ─── HTTPS probes (uptime, latency, certificate expiry) ──
+// Run from this VM, so they test DNS, TLS, Caddy and the backend — not
+// reachability from the internet (the GitHub Actions uptime check does
+// that).
+
+prometheus.exporter.blackbox "probes" {
+	config = "{ modules: { http_2xx: { prober: http, timeout: 10s, http: { preferred_ip_protocol: ip4, valid_status_codes: [200], fail_if_not_ssl: true } } } }"
+
+	target {
+		name    = "relay"
+		address = "https://relay.chakramcp.com/healthz"
+		module  = "http_2xx"
+	}
+
+	target {
+		name    = "app"
+		address = "https://app.chakramcp.com/healthz"
+		module  = "http_2xx"
+	}
+
+	target {
+		name    = "frontend"
+		address = "https://chakramcp.com/"
+		module  = "http_2xx"
+	}
+
+	target {
+		name    = "grafana"
+		address = "https://grafana.chakramcp.com/api/health"
+		module  = "http_2xx"
+	}
+}
+
+prometheus.scrape "probes" {
+	targets         = prometheus.exporter.blackbox.probes.targets
+	job_name        = "probes"
+	scrape_interval = "60s"
+	scrape_timeout  = "15s"
+	forward_to      = [prometheus.remote_write.local.receiver]
+}
+
+// ─── The stack itself (keep-list: a few health series each) ─
+
+prometheus.exporter.self "alloy" { }
+
+prometheus.scrape "stack" {
+	targets = array.concat(
+		prometheus.exporter.self.alloy.targets,
+		[
+			{"__address__" = "prometheus:9090", "job" = "prometheus"},
+			{"__address__" = "loki:3100", "job" = "loki"},
+			{"__address__" = "grafana:3000", "job" = "grafana"},
+		],
+	)
+	job_name        = "alloy"
+	scrape_interval = "30s"
+	forward_to      = [prometheus.relabel.stack.receiver]
+}
+
+prometheus.relabel "stack" {
+	// Alloy's own series: a stable instance instead of the container hostname.
+	rule {
+		source_labels = ["job"]
+		regex         = "integrations/self"
+		target_label  = "instance"
+		replacement   = "alloy"
+	}
+
+	rule {
+		source_labels = ["__name__"]
+		regex         = "up|process_(resident_memory_bytes|cpu_seconds_total|start_time_seconds)|go_memstats_heap_inuse_bytes|alloy_build_info|alloy_config_last_load_successful|alloy_component_controller_running_components|prometheus_remote_storage_(samples_failed_total|samples_pending)|prometheus_tsdb_head_series|prometheus_config_last_reload_successful|loki_ingester_memory_streams|loki_distributor_lines_received_total|loki_write_dropped_entries_total|grafana_build_info|grafana_alerting_notification_latency_seconds_count|grafana_alerting_notifications_failed_total|grafana_alerting_notifications_total"
+		action        = "keep"
+	}
+	forward_to = [prometheus.remote_write.local.receiver]
+}
+
+// ─── Logs: the host journal → Loki ───────────────────────
+// Keeps container entries (Docker's journald driver adds the compose
+// service as COM_DOCKER_COMPOSE_SERVICE) and kernel messages, so an
+// OOM-killer report is searchable; everything else on the host is dropped.
+
+loki.relabel "journal" {
+	forward_to = []
+
+	rule {
+		source_labels = ["__journal_com_docker_compose_service"]
+		target_label  = "service"
+	}
+
+	rule {
+		source_labels = ["__journal__transport"]
+		regex         = "kernel"
+		target_label  = "service"
+		replacement   = "kernel"
+	}
+
+	rule {
+		source_labels = ["service"]
+		regex         = ".+"
+		action        = "keep"
+	}
+}
+
+loki.source.journal "host" {
+	relabel_rules = loki.relabel.journal.rules
+	max_age       = "12h"
+	forward_to    = [loki.process.logs.receiver]
+}
+
+loki.process "logs" {
+	// Kernel messages are only here for OOM-killer reports. The rest (notably
+	// audit records of every sudo/PAM session, command lines included) stay
+	// out of Loki.
+	stage.match {
+		selector = "{service=\"kernel\"} !~ \"(?i)out of memory|oom|killed process\""
+		action   = "drop"
+	}
+
+	// The relay and Caddy log JSON: lift `level` into a (lower-case) label.
+	stage.match {
+		selector = "{service=~\"relay|migrate|caddy\"}"
+
+		stage.json {
+			expressions = {level = "level"}
+		}
+
+		stage.template {
+			source   = "level"
+			template = "{{ ToLower .Value }}"
+		}
+
+		stage.labels {
+			values = {level = ""}
+		}
+	}
+
+	// Labels stay `service` and `level` only.
+	stage.label_keep {
+		values = ["service", "level"]
+	}
+
+	forward_to = [loki.write.local.receiver]
+}

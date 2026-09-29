@@ -1,0 +1,125 @@
+name: Observability CI
+
+# Checks the observability stack (infra/observability/, plus the prod compose
+# file and Caddyfile it layers on):
+#   1. every config through its own tool (compose, Caddy, Alloy, Prometheus,
+#      Loki, Grafana provisioning, the shell scripts);
+#   2. a smoke test: the real stack on this runner — which, unlike Docker
+#      Desktop, has journald — deployed by the same script CD runs on the VM
+#      (scripts/deploy.sh), then checked for metrics, logs and provisioning.
+#
+# Runs on every PR so it can be a required check; the steps skip themselves
+# when nothing under infra/ (or this workflow) changed.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - ".github/workflows/observability-ci.yml"
+
+concurrency:
+  group: observability-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Observability config + smoke test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: changes
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            infra:
+              - 'infra/**'
+              - '.github/workflows/observability-ci.yml'
+
+      - name: Nothing to check
+        if: steps.changes.outputs.infra != 'true'
+        run: echo "No infra/ changes; skipping."
+
+      # ─── 1. Static checks ─────────────────────────────────
+      - name: Compose files
+        if: steps.changes.outputs.infra == 'true'
+        working-directory: infra
+        run: |
+          set -euo pipefail
+          env=(--env-file observability/ci.env)
+          docker compose -f docker-compose.prod.yml "${env[@]}" config -q
+          docker compose -f docker-compose.prod.yml -f observability/compose.yml "${env[@]}" config -q
+          docker compose -p dev -f docker-compose.prod.yml -f observability/compose.yml \
+            -f observability/compose.dev.yml "${env[@]}" config -q
+          # Pinned images, for the tool checks below.
+          images=$(docker compose -f docker-compose.prod.yml -f observability/compose.yml "${env[@]}" config --images)
+          for name in alloy prometheus loki; do
+            echo "$(echo "$name" | tr '[:lower:]' '[:upper:]')_IMAGE=$(echo "$images" | grep -m1 "/$name:")" >> "$GITHUB_ENV"
+          done
+
+      - name: Caddyfile
+        if: steps.changes.outputs.infra == 'true'
+        run: |
+          docker run --rm -v "$PWD/infra/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine \
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+
+      - name: Alloy config (valid, formatted)
+        if: steps.changes.outputs.infra == 'true'
+        run: |
+          set -euo pipefail
+          dir="$PWD/infra/observability/alloy"
+          docker run --rm -e PG_MONITOR_PASSWORD=ci -v "$dir:/etc/alloy:ro" "$ALLOY_IMAGE" validate /etc/alloy/config.alloy
+          docker run --rm -v "$dir:/etc/alloy:ro" "$ALLOY_IMAGE" fmt /etc/alloy/config.alloy \
+            | diff -u infra/observability/alloy/config.alloy - \
+            || { echo "::error::config.alloy isn't formatted: run alloy fmt"; exit 1; }
+
+      - name: Prometheus and Loki configs
+        if: steps.changes.outputs.infra == 'true'
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint promtool -v "$PWD/infra/observability/prometheus:/etc/prometheus:ro" \
+            "$PROMETHEUS_IMAGE" check config /etc/prometheus/prometheus.yml
+          docker run --rm -v "$PWD/infra/observability/loki:/etc/loki:ro" \
+            "$LOKI_IMAGE" -config.file=/etc/loki/loki.yml -verify-config
+
+      - name: Grafana provisioning and dashboards
+        if: steps.changes.outputs.infra == 'true'
+        run: |
+          python3 -c 'import yaml' 2>/dev/null || sudo apt-get install -y -qq python3-yaml
+          python3 infra/observability/scripts/check-grafana.py
+
+      - name: Shell scripts
+        if: steps.changes.outputs.infra == 'true'
+        run: shellcheck --severity=style infra/observability/scripts/*.sh
+
+      # ─── 2. Smoke test ────────────────────────────────────
+      # Laid out like the VM's /opt/chakramcp, so deploy.sh runs unchanged.
+      - name: Deploy the stack (as CD does on the VM)
+        if: steps.changes.outputs.infra == 'true'
+        run: |
+          set -euo pipefail
+          vm="$RUNNER_TEMP/chakramcp"
+          mkdir -p "$vm"
+          cp infra/docker-compose.prod.yml "$vm/docker-compose.yml"
+          cp -r infra/observability "$vm/observability"
+          cp infra/observability/ci.env "$vm/.env"
+          cd "$vm"
+          docker compose up -d --wait pg redis
+          observability/scripts/deploy.sh "alloy prometheus loki grafana/provisioning grafana/dashboards"
+
+      - name: Smoke test
+        if: steps.changes.outputs.infra == 'true'
+        working-directory: ${{ runner.temp }}/chakramcp
+        run: python3 observability/scripts/smoke-test.py
+
+      - name: Logs (on failure)
+        if: failure() && steps.changes.outputs.infra == 'true'
+        working-directory: ${{ runner.temp }}/chakramcp
+        run: docker compose -f docker-compose.yml -f observability/compose.yml logs --tail 60

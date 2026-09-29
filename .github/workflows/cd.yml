@@ -5,8 +5,11 @@ name: CD (deploy on merge to main)
 #   - If backend/**        changed → build + push image to ECR
 #   - If backend/migrations changed → run migrations BEFORE
 #                                     restarting the relay
-#   - If infra/**          changed → re-build the image (configs
+#   - If infra/* (top level) changed → re-build the image (configs
 #                                     baked into the runtime)
+#   - Always → sync infra/observability/ and bring the observability
+#                                     stack up to date (a no-op when
+#                                     nothing changed)
 #
 # Branch protection on `main` already enforces:
 #   - PR with required status checks green
@@ -35,7 +38,7 @@ on:
         required: true
         type: choice
         default: both
-        options: [both, frontend, backend]
+        options: [both, frontend, backend, observability]
 
 concurrency:
   group: cd-${{ github.ref }}
@@ -66,9 +69,12 @@ jobs:
           filters: |
             frontend:
               - 'frontend/**'
+            # infra/* is top-level files only (compose, Caddyfile,
+            # Dockerfiles): observability config changes don't rebuild
+            # the image or restart the relay.
             backend:
               - 'backend/**'
-              - 'infra/**'
+              - 'infra/*'
             migrations:
               - 'backend/migrations/**'
 
@@ -299,3 +305,58 @@ jobs:
             echo "  GET $ep → $code"
             [ "$code" = "200" ] || { echo "::error::$ep returned $code"; exit 1; }
           done
+
+  # ─── Observability stack (infra/observability/) ─────────────────
+  # Prometheus, Loki, Alloy and Grafana, next to the relay. Runs on every
+  # push to main — no path filter: paths-filter only sees the commits of
+  # the push being deployed, so a run the concurrency group superseded
+  # could otherwise leave a dashboard or alert change undeployed. When
+  # nothing changed it syncs, finds identical hashes and touches nothing.
+  # Waits for a backend deploy in the same push; never runs after a
+  # failed one.
+  deploy-observability:
+    name: Deploy observability stack (Lightsail)
+    needs: [detect, deploy-backend]
+    if: |
+      always() &&
+      needs.detect.result == 'success' &&
+      (needs.deploy-backend.result == 'success' || needs.deploy-backend.result == 'skipped') &&
+      contains(fromJSON('["auto", "both", "observability"]'), needs.detect.outputs.force_which)
+    runs-on: ubuntu-22.04
+    env:
+      LIGHTSAIL_HOST: 54.84.88.246
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.LIGHTSAIL_SSH_KEY }}" > ~/.ssh/lightsail
+          chmod 600 ~/.ssh/lightsail
+          ssh-keyscan -H "$LIGHTSAIL_HOST" >> ~/.ssh/known_hosts
+
+      # Hash each config directory on the VM before and after syncing, so
+      # only what changed is reloaded (scripts/deploy.sh).
+      - name: Sync config
+        id: sync
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2016 # runs on the VM, where it expands
+          hashes='cd /opt/chakramcp/observability 2>/dev/null || exit 0
+            for d in alloy prometheus loki grafana/provisioning grafana/dashboards; do
+              printf "%s %s\n" "$d" "$(find "$d" -type f -print0 2>/dev/null | sort -z | xargs -0r sha256sum | sha256sum | cut -c1-16)"
+            done'
+          before=$(ssh -i ~/.ssh/lightsail ubuntu@"$LIGHTSAIL_HOST" "$hashes")
+          rsync -a --delete -e "ssh -i ~/.ssh/lightsail" \
+            infra/observability/ ubuntu@"$LIGHTSAIL_HOST":/opt/chakramcp/observability/
+          after=$(ssh -i ~/.ssh/lightsail ubuntu@"$LIGHTSAIL_HOST" "$hashes")
+          changed=$(comm -13 <(echo "$before" | sort) <(echo "$after" | sort) | awk '{print $1}' | tr '\n' ' ')
+          echo "changed config: ${changed:-none}"
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+
+      - name: Bring the stack up to date
+        env:
+          CHANGED: ${{ steps.sync.outputs.changed }}
+        run: |
+          ssh -i ~/.ssh/lightsail ubuntu@"$LIGHTSAIL_HOST" \
+              "cd /opt/chakramcp && observability/scripts/deploy.sh '${CHANGED}'"

@@ -1,0 +1,38 @@
+# Where alerts go: Telegram, via @chakramcp_bot. The token and chat ID come
+# from the container environment (the VM's .env): Grafana expands $VARS in
+# contact-point settings (not in alert rules or templates).
+apiVersion: 1
+
+templates:
+  - orgId: 1
+    name: chakramcp
+    template: |
+      {{ define "chakramcp.telegram" -}}
+      {{ if gt (len .Alerts.Firing) 0 }}🔴 FIRING{{ else }}✅ RESOLVED{{ end }} — {{ .CommonLabels.alertname }}
+      {{ range .Alerts -}}
+      {{ if .Annotations.summary }}• {{ .Annotations.summary }}{{ end }}
+      {{ end -}}
+      {{ end }}
+
+contactPoints:
+  - orgId: 1
+    name: telegram
+    receivers:
+      - uid: telegram-chakramcp
+        type: telegram
+        disableResolveMessage: false
+        settings:
+          bottoken: "$TELEGRAM_BOT_TOKEN"
+          chatid: "$TELEGRAM_CHAT_ID"
+          # Plain text: alert text can contain <, > and &.
+          parse_mode: None
+          disable_web_page_preview: true
+          message: '{{ template "chakramcp.telegram" . }}'
+
+policies:
+  - orgId: 1
+    receiver: telegram
+    group_by: ["alertname"]
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h
