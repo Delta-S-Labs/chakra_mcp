@@ -40,7 +40,7 @@ once per clone:
 ## Post-merge: CD pipeline
 
 `.github/workflows/cd.yml` triggers on `push: main` (and manual
-dispatch). It runs three jobs:
+dispatch). It runs four jobs:
 
 1. **detect**: `dorny/paths-filter` sets booleans for `frontend`,
    `backend`, and `migrations`. The downstream jobs gate on these.
@@ -53,7 +53,9 @@ dispatch). It runs three jobs:
    the Netlify UI or via `npx netlify-cli deploy --prod --build`
    from your laptop's `netlify login` session.
 
-3. **deploy-backend**: if `backend/**` or `infra/**` changed:
+3. **deploy-backend**: if `backend/**` or a top-level `infra/*` file
+   (compose, Caddyfile, Dockerfiles) changed. `infra/observability/**`
+   deliberately doesn't trigger it:
    - `cargo build --release --bin chakramcp-server` natively on
      the ubuntu-22.04 runner (no cross-compile, runner IS x86_64).
    - `cp target/release/chakramcp-server infra/chakramcp-server`.
@@ -68,6 +70,17 @@ dispatch). It runs three jobs:
    - Probe `https://relay.chakramcp.com/healthz`, `/readyz`,
      `/v1/discovery/agents`. Fail the workflow if any return non-200.
 
+4. **deploy-observability**: on every push (after deploy-backend, or
+   when it was skipped; never after a failed one). It rsyncs
+   `infra/observability/` to `/opt/chakramcp/observability/`, hashing
+   each config directory before and after, then runs
+   `observability/scripts/deploy.sh` on the VM. That script creates
+   the Postgres monitoring role if it's missing, brings the four
+   services up, and applies only what changed, reloading instead of
+   restarting where it can. It fails the job if Prometheus or Alloy
+   rejected the new config. When nothing changed it touches nothing.
+   See [Observability](#observability).
+
 ### Required secrets
 
 Set once via `gh secret set <NAME> --repo Delta-S-Labs/chakra_mcp`:
@@ -79,6 +92,8 @@ Set once via `gh secret set <NAME> --repo Delta-S-Labs/chakra_mcp`:
 | `AWS_SECRET_ACCESS_KEY` | Pair of above | Same user |
 | `LIGHTSAIL_SSH_KEY` | Private key for `ubuntu@54.84.88.246` | Contents of `~/.ssh/lightsail-chakramcp-prod.pem` |
 | `NPM_TOKEN` | Automation token for `npm publish` | Already set: npmjs.com → Access tokens → Automation |
+| `TELEGRAM_BOT_TOKEN` | `@chakramcp_bot`'s token, for `uptime.yml` | Same value as the VM's `.env` (BotFather) |
+| `TELEGRAM_CHAT_ID` | The chat alerts go to, for `uptime.yml` | Same value as the VM's `.env` |
 
 No `NETLIFY_AUTH_TOKEN` needed: Netlify deploys via its GitHub
 integration, not via our workflow.
@@ -96,6 +111,7 @@ provider in IAM, create a role trusted by
 gh workflow run cd.yml -f which=both       # both surfaces
 gh workflow run cd.yml -f which=frontend   # only frontend
 gh workflow run cd.yml -f which=backend    # only backend
+gh workflow run cd.yml -f which=observability  # only the observability stack
 ```
 
 Useful when:
@@ -104,6 +120,93 @@ Useful when:
   and want them in the bundle).
 - A deploy failed mid-step and you fixed the env without
   triggering a re-merge.
+
+## Observability
+
+Metrics, logs, dashboards and Telegram alerts for production. Design:
+[`docs/superpowers/specs/2026-09-29-observability-phase1-design.md`](superpowers/specs/2026-09-29-observability-phase1-design.md).
+
+- **Grafana:** <https://grafana.chakramcp.com>. GitHub sign-in is the
+  only way in; the allowlist is `GRAFANA_ROLE_ATTRIBUTE_PATH` in the VM's
+  `.env`.
+- **The stack:** `infra/observability/compose.yml`, an overlay on the prod
+  compose file.
+  - **Alloy** scrapes every metrics source and reads container logs from
+    the host journal.
+  - **Prometheus** stores metrics for 15 days, capped at 2 GB.
+  - **Loki** stores logs for 14 days.
+  - **Grafana** serves the dashboards and alerts.
+- **Dashboards and alert rules** are files in `infra/observability/grafana/`.
+  Change the files, not the UI; CD deploys them.
+- **Alerts** go to Telegram via `@chakramcp_bot`.
+  `.github/workflows/uptime.yml` checks the public endpoints every
+  10 minutes from GitHub, so a dead VM still raises one.
+
+### On the VM
+
+The overlay needs both files on every compose command. Nothing in `.env`
+adds it (deliberately), so:
+
+```
+cd /opt/chakramcp
+alias obs='docker compose -f docker-compose.yml -f observability/compose.yml'
+obs ps alloy prometheus loki grafana
+obs logs --tail 50 grafana
+```
+
+A plain `docker compose` against the base file lists the observability
+containers as orphans; that's harmless. Don't use `--remove-orphans`.
+
+**`.env` keys** (mode 600; read single keys with `grep`/`cut`, and
+never `source` the file, because the allowlist value has quotes and
+backticks):
+
+| Key | What |
+|---|---|
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Where alerts go |
+| `GRAFANA_GITHUB_CLIENT_ID`, `GRAFANA_GITHUB_CLIENT_SECRET` | The `chakramcp-grafana` GitHub OAuth app (callback `https://grafana.chakramcp.com/login/github`) |
+| `GRAFANA_ROLE_ATTRIBUTE_PATH` | Who may sign in: a JMESPath over GitHub's `/user` response that yields `'GrafanaAdmin'`, or `''` to refuse. Match on the numeric `id`, written as a number literal (`` id == `123` ``). |
+| `GRAFANA_ADMIN_PASSWORD` | Break-glass admin. Basic auth is refused at Caddy, so it only works from inside the VM. |
+| `PG_MONITOR_PASSWORD` | The `chakramcp_monitor` role (`pg_monitor`: read-only statistics) that Alloy logs in as |
+
+**Break-glass access** (GitHub sign-in broken): tunnel to Grafana's
+container and sign in as `admin`.
+
+```
+ip=$(ssh ubuntu@54.84.88.246 "docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' chakramcp-grafana-1" | cut -d' ' -f1)
+ssh -L 3000:$ip:3000 ubuntu@54.84.88.246
+```
+
+Then browse to <http://localhost:3000/login?disableAutoLogin=true>. The
+login form is off, so use the API with basic auth there, or set
+`GF_AUTH_DISABLE_LOGIN_FORM=false` temporarily. The same tunnel works
+for Prometheus (`:9090`) and Loki (`:3100`).
+
+**Rotating the monitoring password:**
+1. Set `PG_MONITOR_PASSWORD` in `.env`.
+2. Run `obs exec -T pg psql -U chakramcp -d chakramcp`, then
+   `ALTER ROLE chakramcp_monitor PASSWORD '…';`
+3. Run `obs up -d --force-recreate alloy`.
+
+CD only sets the password when it creates the role.
+
+### Locally
+
+`infra/observability/compose.dev.yml` runs the stack on a laptop; its
+header has the commands. It needs a Docker runtime with journald: Linux
+or colima work, Docker Desktop doesn't. The observability CI
+(`observability-ci.yml`) validates every config and runs a smoke test of
+the real stack, deployed by the same `deploy.sh`.
+
+### If the uptime workflow stops
+
+GitHub disables scheduled workflows in public repos after 60 days
+without repository activity, and emails the owner. Re-enable it in the
+Actions tab. Test the alert path any time:
+
+```
+gh workflow run uptime.yml -f test_message=true
+```
 
 ## Dependabot
 

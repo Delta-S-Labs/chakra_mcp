@@ -1,0 +1,167 @@
+# The observability stack — Prometheus (metrics), Loki (logs), Alloy (the
+# collector) and Grafana (dashboards + alerts to Telegram). Design:
+# docs/superpowers/specs/2026-09-29-observability-phase1-design.md
+#
+# An overlay on ../docker-compose.prod.yml: it only ADDS services and
+# volumes, and uses the `internal` and `observability` networks that file
+# declares. Run it with both files, from the project directory
+# (/opt/chakramcp on the VM, where the base file is docker-compose.yml):
+#
+#   docker compose -f docker-compose.yml -f observability/compose.yml \
+#     up -d alloy prometheus loki grafana
+#
+# Relative paths below resolve against that project directory. Nothing here
+# depends_on a base service, so bringing the stack up or down never touches
+# the relay, Postgres, Redis or Caddy.
+#
+# Env (the project's .env; never committed):
+#   GRAFANA_ADMIN_PASSWORD           break-glass admin (usable only from inside the VM)
+#   GRAFANA_GITHUB_CLIENT_ID/SECRET  the GitHub OAuth app Grafana signs in with
+#   GRAFANA_ROLE_ATTRIBUTE_PATH      who may sign in: a JMESPath over GitHub's /user
+#                                    response that yields 'GrafanaAdmin', or '' to refuse
+#   GRAFANA_ROOT_URL                 default https://grafana.chakramcp.com
+#   TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID  where alerts go
+#   PG_MONITOR_PASSWORD              the chakramcp_monitor role (read-only statistics)
+
+# Same logging as the base services: the host journal, never blocking.
+# (YAML anchors don't carry across compose files.)
+x-logging: &logging
+  driver: journald
+  options:
+    mode: non-blocking
+    max-buffer-size: 4m
+    labels: com.docker.compose.service
+
+services:
+  # The only collector. Deliberately unprivileged: no Docker socket, no host
+  # filesystem beyond the journal (read-only), every capability dropped.
+  # uid 0 without capabilities can still read the journal because root owns
+  # those files; nothing else from the host is mounted. (Its data lives at
+  # /alloy-data, a root-owned volume: without capabilities, root can't enter
+  # the image's own /var/lib/alloy, which belongs to the `alloy` user.)
+  alloy:
+    image: grafana/alloy:v1.20.1
+    restart: unless-stopped
+    logging: *logging
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --storage.path=/alloy-data
+      - --server.http.listen-addr=0.0.0.0:12345
+    user: "0"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs: [/tmp]
+    mem_limit: 192m
+    environment:
+      GOMEMLIMIT: 150MiB
+      PG_MONITOR_PASSWORD: ${PG_MONITOR_PASSWORD:?set PG_MONITOR_PASSWORD in .env}
+    volumes:
+      - ./observability/alloy:/etc/alloy:ro
+      - alloy_data:/alloy-data
+      - /var/log/journal:/var/log/journal:ro
+      - /run/log/journal:/run/log/journal:ro
+      - /etc/machine-id:/etc/machine-id:ro
+    networks: [internal, observability]
+
+  # Stores and queries metrics; Alloy remote-writes into it.
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    restart: unless-stopped
+    logging: *logging
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --storage.tsdb.retention.size=2GB
+      - --web.enable-remote-write-receiver
+      # POST /-/reload, so CD applies config changes without a restart.
+      - --web.enable-lifecycle
+      - --log.level=warn
+    mem_limit: 256m
+    environment:
+      GOMEMLIMIT: 200MiB
+    volumes:
+      - ./observability/prometheus:/etc/prometheus:ro
+      - prometheus_data:/prometheus
+    networks: [observability]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9090/-/ready"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+
+  # Stores logs (14 days).
+  loki:
+    image: grafana/loki:3.7.8
+    restart: unless-stopped
+    logging: *logging
+    command: ["-config.file=/etc/loki/loki.yml"]
+    mem_limit: 192m
+    environment:
+      GOMEMLIMIT: 150MiB
+    volumes:
+      - ./observability/loki:/etc/loki:ro
+      - loki_data:/loki
+    networks: [observability]
+
+  # Dashboards and alerting. The only piece reachable from outside, through
+  # Caddy at grafana.chakramcp.com; GitHub sign-in is the only way in.
+  grafana:
+    image: grafana/grafana:13.2.3
+    restart: unless-stopped
+    logging: *logging
+    depends_on: [prometheus, loki]
+    # Grafana 13 settles around 215 MB and peaks near 260 MB while starting
+    # (measured); GOMEMLIMIT must stay above its live heap or GC spins.
+    mem_limit: 384m
+    environment:
+      GOMEMLIMIT: 280MiB
+      GF_LOG_LEVEL: warn
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-https://grafana.chakramcp.com}
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_AUTH_GITHUB_ENABLED: "true"
+      GF_AUTH_GITHUB_CLIENT_ID: ${GRAFANA_GITHUB_CLIENT_ID:?set GRAFANA_GITHUB_CLIENT_ID in .env}
+      GF_AUTH_GITHUB_CLIENT_SECRET: ${GRAFANA_GITHUB_CLIENT_SECRET:?set GRAFANA_GITHUB_CLIENT_SECRET in .env}
+      GF_AUTH_GITHUB_SCOPES: "read:user user:email"
+      GF_AUTH_GITHUB_ALLOW_SIGN_UP: "true"
+      GF_AUTH_GITHUB_AUTO_LOGIN: "true"
+      # Who may sign in. Strict: anyone the expression doesn't map to a role
+      # is refused. Kept in .env — it names the operator's account.
+      GF_AUTH_GITHUB_ROLE_ATTRIBUTE_PATH: ${GRAFANA_ROLE_ATTRIBUTE_PATH:?set GRAFANA_ROLE_ATTRIBUTE_PATH in .env}
+      GF_AUTH_GITHUB_ROLE_ATTRIBUTE_STRICT: "true"
+      GF_AUTH_GITHUB_ALLOW_ASSIGN_GRAFANA_ADMIN: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_USERS_ALLOW_ORG_CREATE: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      # false in CI: rules load but never try to notify.
+      GF_UNIFIED_ALERTING_EXECUTE_ALERTS: ${GF_UNIFIED_ALERTING_EXECUTE_ALERTS:-true}
+      # Read by provisioning/alerting (the Telegram contact point).
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set TELEGRAM_BOT_TOKEN in .env}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:?set TELEGRAM_CHAT_ID in .env}
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    networks: [observability]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  alloy_data:
+  prometheus_data:
+  loki_data:
+  grafana_data:

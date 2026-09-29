@@ -1,0 +1,67 @@
+name: Uptime
+
+# The one alert path that survives the VM going down: every monitoring piece
+# (Grafana, its alert rules, the HTTPS probes) lives on the VM itself. Every
+# 10 minutes, check the public endpoints from GitHub's network; on failure,
+# message the operator on Telegram (the same bot Grafana alerts through).
+#
+# Limits: GitHub's cron can run several minutes late, and GitHub disables
+# scheduled workflows in public repos after 60 days without repository
+# activity (it emails the owner; re-enable in the Actions tab).
+#
+# Secrets: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+    inputs:
+      test_message:
+        description: "Send a test message to Telegram (proves the alert path)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  check:
+    name: Check public endpoints
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Probe
+        id: probe
+        run: |
+          failed=""
+          for url in \
+            https://relay.chakramcp.com/healthz \
+            https://app.chakramcp.com/healthz \
+            https://grafana.chakramcp.com/api/health; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
+              --retry 2 --retry-delay 10 --retry-all-errors "$url" || true)
+            echo "$url → ${code:-no response}"
+            [ "$code" = "200" ] || failed="$failed\n• $url → ${code:-no response}"
+          done
+          echo "failed=$failed" >> "$GITHUB_OUTPUT"
+
+      - name: Alert on Telegram
+        if: steps.probe.outputs.failed != '' || inputs.test_message
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          FAILED: ${{ steps.probe.outputs.failed }}
+          TEST: ${{ inputs.test_message }}
+        run: |
+          if [ -n "$FAILED" ]; then
+            text=$(printf "🔴 ChakraMCP uptime check failed (from GitHub Actions):%b\n\nRun: %s" "$FAILED" \
+              "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID")
+          else
+            text="🧪 Test message from the ChakraMCP uptime check: this is how an outage alert arrives. All endpoints are up."
+          fi
+          curl -sS --fail -o /dev/null "https://api.telegram.org/bot${TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${CHAT}" --data-urlencode "text=${text}"
+          echo "Telegram message sent."

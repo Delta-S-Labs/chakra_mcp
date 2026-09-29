@@ -1,0 +1,2 @@
+# No plugins are provisioned; the directory exists so Grafana does not log
+# an error looking for it at startup.

@@ -1,0 +1,445 @@
+# Alert rules (spec §8), evaluated by Grafana every minute and sent to
+# Telegram (notifications.yml). Thresholds are first guesses — tune them
+# after a week of data. Grafana expands $VARS in provisioning files, so a
+# literal dollar sign (label_replace's $1, template $labels) is written $.
+apiVersion: 1
+groups:
+- orgId: 1
+  name: availability
+  folder: ChakraMCP
+  interval: 1m
+  rules:
+  - uid: backend-down
+    title: Backend down
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: 'max by (check) (label_replace(1 - probe_success{job=~"integrations/blackbox/(relay|app)"}, "check", "$1", "job", "integrations/blackbox/(.*)") or label_replace(1 - up{job="chakramcp"}, "check", "metrics scrape", "", ""))'
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+    noDataState: Alerting
+    execErrState: Error
+    for: 2m
+    annotations:
+      summary: '{{ $labels.check }} is failing (HTTPS probe from the VM, or the metrics scrape).'
+    labels:
+      severity: critical
+    isPaused: false
+  - uid: high-5xx-ratio
+    title: High 5xx ratio
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: 'sum(rate(chakramcp_http_requests_total{status=~"5.."}[5m])) / sum(rate(chakramcp_http_requests_total[5m])) and on() sum(rate(chakramcp_http_requests_total[5m])) > 0.1'
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0.05
+    noDataState: OK
+    execErrState: Error
+    for: 5m
+    annotations:
+      summary: 'More than 5% of requests are failing with 5xx ({{ humanizePercentage $values.A.Value }}).'
+    labels:
+      severity: critical
+    isPaused: false
+  - uid: postgres-down
+    title: Postgres down
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: min(pg_up)
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: lt
+            params:
+            - 1
+    noDataState: Alerting
+    execErrState: Error
+    for: 1m
+    annotations:
+      summary: Postgres is not answering the exporter.
+    labels:
+      severity: critical
+    isPaused: false
+  - uid: certificate-expiring
+    title: Certificate expiring
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: min by (job) ((probe_ssl_earliest_cert_expiry - time()) / 86400)
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: lt
+            params:
+            - 14
+    noDataState: OK
+    execErrState: Error
+    for: 1h
+    annotations:
+      summary: '{{ $labels.job }}: TLS certificate expires in {{ humanize $values.A.Value }} days.'
+    labels:
+      severity: warning
+    isPaused: false
+- orgId: 1
+  name: credits
+  folder: ChakraMCP
+  interval: 1m
+  rules:
+  - uid: credit-switches-stale
+    title: Credit switches stale
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: clamp_min(max((timestamp(chakramcp_credits_switches_last_refresh_timestamp_seconds) - chakramcp_credits_switches_last_refresh_timestamp_seconds) - on(instance, job) chakramcp_credits_stale_after_seconds), 0) + max(chakramcp_credits_switches_stale)
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+    noDataState: Alerting
+    execErrState: Error
+    for: 2m
+    annotations:
+      summary: 'The credit switches are stale: nobody is blocked (fail open) until a refresh succeeds.'
+    labels:
+      severity: critical
+    isPaused: false
+  - uid: credit-queue-backlog
+    title: Credit queue backlog
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: max(chakramcp_credits_queue_depth)
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 5000
+    noDataState: OK
+    execErrState: Error
+    for: 15m
+    annotations:
+      summary: '{{ humanize $values.A.Value }} credit charges are queued; the worker is falling behind.'
+    labels:
+      severity: warning
+    isPaused: false
+- orgId: 1
+  name: host and services
+  folder: ChakraMCP
+  interval: 1m
+  rules:
+  - uid: disk-filling
+    title: Disk filling
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: 'max(1 - node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"})'
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0.85
+    noDataState: OK
+    execErrState: Error
+    for: 10m
+    annotations:
+      summary: 'The VM''s disk is {{ humanizePercentage $values.A.Value }} full.'
+    labels:
+      severity: warning
+    isPaused: false
+  - uid: memory-low
+    title: Memory low
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: min(node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: lt
+            params:
+            - 0.1
+    noDataState: OK
+    execErrState: Error
+    for: 10m
+    annotations:
+      summary: 'Only {{ humanizePercentage $values.A.Value }} of the VM''s memory is available.'
+    labels:
+      severity: warning
+    isPaused: false
+  - uid: oom-kill
+    title: OOM kill
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: 'max(increase(node_vmstat_oom_kill[10m]))'
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+    noDataState: OK
+    execErrState: Error
+    for: 0s
+    annotations:
+      summary: The kernel killed a process for memory in the last 10 minutes (search the logs for service=kernel).
+    labels:
+      severity: warning
+    isPaused: false
+  - uid: crash-loop
+    title: Crash loop
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: 'label_replace(label_replace(changes(process_start_time_seconds{job=~"caddy|prometheus|loki|grafana|integrations/self"}[15m]), "service", "$1", "job", "(.*)"), "service", "alloy", "job", "integrations/self") or label_replace(max(changes(process_start_time_seconds{job="chakramcp"}[15m])) - (count(count_over_time(chakramcp_build_info{job="chakramcp"}[15m])) - 1), "service", "relay", "", "") or label_replace(changes(pg_postmaster_start_time_seconds[15m]), "service", "postgres", "", "") or label_replace(resets(redis_uptime_in_seconds[15m]), "service", "redis", "", "")'
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 2
+    noDataState: OK
+    execErrState: Error
+    for: 0s
+    annotations:
+      summary: '{{ $labels.service }} restarted {{ humanize $values.A.Value }} times in 15 minutes (deploys excluded).'
+    labels:
+      severity: warning
+    isPaused: false
+  - uid: monitoring-blind
+    title: Monitoring blind
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: 'max(up{job="integrations/unix"})'
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: lt
+            params:
+            - 1
+    noDataState: Alerting
+    execErrState: Error
+    for: 5m
+    annotations:
+      summary: The collector (Alloy) has stopped sending metrics.
+    labels:
+      severity: critical
+    isPaused: false
+- orgId: 1
+  name: logs
+  folder: ChakraMCP
+  interval: 1m
+  rules:
+  - uid: error-log-spike
+    title: Error-log spike
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: loki
+      model:
+        refId: A
+        expr: 'sum(count_over_time({service="relay", level="error"}[5m]))'
+        queryType: instant
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 20
+    noDataState: OK
+    execErrState: Error
+    for: 5m
+    annotations:
+      summary: 'The relay logged {{ humanize $values.A.Value }} errors in 5 minutes.'
+    labels:
+      severity: warning
+    isPaused: false

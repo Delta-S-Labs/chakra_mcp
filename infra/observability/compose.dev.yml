@@ -1,0 +1,38 @@
+# Local override for exercising the stack on a laptop. From the repo root:
+#
+#   docker compose -p chakramcp-obs-dev -f infra/docker-compose.prod.yml \
+#     -f infra/observability/compose.yml -f infra/observability/compose.dev.yml \
+#     --env-file infra/observability/ci.env \
+#     up -d pg redis alloy prometheus loki grafana
+#   (cd infra && observability/scripts/ensure-monitor-role.sh -p chakramcp-obs-dev \
+#     -f docker-compose.prod.yml -f observability/compose.yml --env-file observability/ci.env)
+#
+# Then run chakramcp-server natively with METRICS_ADDR=0.0.0.0:9464 — Alloy
+# reaches it as `relay` through host-gateway — and open
+# http://localhost:13000 (admin / the ci.env password). Prometheus is on
+# :19090, Loki on :13100, Alloy's UI on :12345 (all localhost only).
+#
+# Needs a Docker runtime with journald (Linux, colima): the containers log
+# there and Alloy reads it. Docker Desktop has no journald — there, also
+# override each service's `logging` to json-file; logs then stay out of
+# Loki, but metrics, dashboards and alert rules still work.
+
+services:
+  alloy:
+    extra_hosts:
+      - "relay:host-gateway"
+    ports: ["127.0.0.1:12345:12345"]
+
+  prometheus:
+    ports: ["127.0.0.1:19090:9090"]
+
+  loki:
+    ports: ["127.0.0.1:13100:3100"]
+
+  grafana:
+    ports: ["127.0.0.1:13000:3000"]
+    environment:
+      GF_SERVER_ROOT_URL: http://localhost:13000
+      GF_SECURITY_COOKIE_SECURE: "false"
+      GF_AUTH_DISABLE_LOGIN_FORM: "false"
+      GF_AUTH_GITHUB_ENABLED: "false"
