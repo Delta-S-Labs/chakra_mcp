@@ -30,6 +30,11 @@ def fail(msg):
     errors.append(msg)
 
 
+def read(path):
+    with open(path) as f:
+        return f.read()
+
+
 def datasource_uids(node):
     """Every datasource uid referenced anywhere in a JSON/YAML tree."""
     if isinstance(node, dict):
@@ -48,7 +53,7 @@ def datasource_uids(node):
 provisioned = {}
 for path in sorted(glob.glob(os.path.join(ROOT, "provisioning", "**", "*.y*ml"), recursive=True)):
     try:
-        provisioned[path] = yaml.safe_load(open(path))
+        provisioned[path] = yaml.safe_load(read(path))
     except yaml.YAMLError as e:
         fail(f"{path}: does not parse: {e}")
 
@@ -73,7 +78,7 @@ if len(rule_uids) != len(set(rule_uids)):
 dash_uids = []
 for path in sorted(glob.glob(os.path.join(ROOT, "dashboards", "*.json"))):
     try:
-        dash = json.load(open(path))
+        dash = json.loads(read(path))
     except json.JSONDecodeError as e:
         fail(f"{path}: does not parse: {e}")
         continue
@@ -90,8 +95,9 @@ channels = {os.path.basename(p)[:-4]: p for p in sorted(glob.glob(os.path.join(R
 if "none" not in channels:
     fail("channels/none.yml is missing (ALERT_CHANNEL's default)")
 for name, path in channels.items():
+    text = read(path)
     try:
-        doc = yaml.safe_load(open(path)) or {}
+        doc = yaml.safe_load(text) or {}
     except yaml.YAMLError as e:
         fail(f"{path}: does not parse: {e}")
         continue
@@ -107,7 +113,7 @@ for name, path in channels.items():
     others = {f"{other}-chakramcp" for other in channels if other not in ("none", name)}
     if deleted != others:
         fail(f"{path}: should delete exactly the other channels' contact points {sorted(others)}, got {sorted(map(str, deleted))}")
-    for used in re.findall(r'template "([^"]+)"', open(path).read()):
+    for used in re.findall(r'template "([^"]+)"', text):
         if used not in defined:
             fail(f"{path}: uses template {used!r}, which provisioning/alerting doesn't define")
 

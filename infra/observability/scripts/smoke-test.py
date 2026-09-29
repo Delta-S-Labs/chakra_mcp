@@ -31,9 +31,10 @@ def setting(key):
     """A setting as Compose sees it: the environment, else .env."""
     value = os.environ.get(key, "")
     if not value and os.path.exists(".env"):
-        for line in open(".env"):
-            if line.startswith(key + "="):
-                value = line.rstrip("\n").split("=", 1)[1].strip("\"'")
+        with open(".env") as env:
+            for line in env:
+                if line.startswith(key + "="):
+                    value = line.rstrip("\n").split("=", 1)[1].strip("\"'")
     return value
 
 
