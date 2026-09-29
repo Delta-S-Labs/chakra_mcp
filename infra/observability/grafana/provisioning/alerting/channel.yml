@@ -1,0 +1,4 @@
+# Placeholder. Compose mounts grafana/channels/$ALERT_CHANNEL.yml over this
+# file (a single-file mount needs a real target inside this read-only
+# directory); without that mount it provisions nothing.
+apiVersion: 1

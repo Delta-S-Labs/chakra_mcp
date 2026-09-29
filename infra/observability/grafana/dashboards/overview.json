@@ -73,8 +73,8 @@
     },
     {
       "type": "stat",
-      "title": "Relay",
-      "description": "HTTPS probe from the VM (DNS, TLS, Caddy, backend) to the relay.",
+      "title": "Probes",
+      "description": "HTTPS probes from the host (DNS, TLS, Caddy, backend): one tile per PROBE_TARGETS entry. No data when none are configured.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -85,8 +85,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "probe_success{job=\"integrations/blackbox/relay\"}",
-          "legendFormat": "",
+          "expr": "label_replace(probe_success, \"probe\", \"$1\", \"job\", \"integrations/blackbox/(.*)\")",
+          "legendFormat": "{{probe}}",
           "range": true,
           "instant": false,
           "refId": "A"
@@ -143,239 +143,8 @@
       "id": 2,
       "gridPos": {
         "h": 4,
-        "w": 3,
+        "w": 12,
         "x": 0,
-        "y": 1
-      }
-    },
-    {
-      "type": "stat",
-      "title": "App",
-      "description": "HTTPS probe from the VM (DNS, TLS, Caddy, backend) to the app.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "probe_success{job=\"integrations/blackbox/app\"}",
-          "legendFormat": "",
-          "range": true,
-          "instant": false,
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "0": {
-                  "text": "DOWN",
-                  "color": "red"
-                },
-                "1": {
-                  "text": "UP",
-                  "color": "green"
-                }
-              }
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "background",
-        "graphMode": "none",
-        "textMode": "auto",
-        "justifyMode": "center",
-        "orientation": "auto"
-      },
-      "id": 3,
-      "gridPos": {
-        "h": 4,
-        "w": 3,
-        "x": 3,
-        "y": 1
-      }
-    },
-    {
-      "type": "stat",
-      "title": "Frontend",
-      "description": "HTTPS probe from the VM (DNS, TLS, Caddy, backend) to the frontend.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "probe_success{job=\"integrations/blackbox/frontend\"}",
-          "legendFormat": "",
-          "range": true,
-          "instant": false,
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "0": {
-                  "text": "DOWN",
-                  "color": "red"
-                },
-                "1": {
-                  "text": "UP",
-                  "color": "green"
-                }
-              }
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "background",
-        "graphMode": "none",
-        "textMode": "auto",
-        "justifyMode": "center",
-        "orientation": "auto"
-      },
-      "id": 4,
-      "gridPos": {
-        "h": 4,
-        "w": 3,
-        "x": 6,
-        "y": 1
-      }
-    },
-    {
-      "type": "stat",
-      "title": "Grafana",
-      "description": "HTTPS probe from the VM (DNS, TLS, Caddy, backend) to the grafana.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "probe_success{job=\"integrations/blackbox/grafana\"}",
-          "legendFormat": "",
-          "range": true,
-          "instant": false,
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "0": {
-                  "text": "DOWN",
-                  "color": "red"
-                },
-                "1": {
-                  "text": "UP",
-                  "color": "green"
-                }
-              }
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "background",
-        "graphMode": "none",
-        "textMode": "auto",
-        "justifyMode": "center",
-        "orientation": "auto"
-      },
-      "id": 5,
-      "gridPos": {
-        "h": 4,
-        "w": 3,
-        "x": 9,
         "y": 1
       }
     },

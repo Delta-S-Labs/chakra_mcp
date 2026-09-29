@@ -6,21 +6,42 @@ call goes through `docker compose exec grafana curl`, so no ports need to be
 published. Polls until everything holds or the deadline passes:
 
 - metrics: each exporter reports real data (an exporter's own `up` stays 1
-  even when its database login fails, hence pg_up / redis_up);
+  even when its database login fails, hence pg_up / redis_up), and the
+  relay is scraped, build info included;
 - one series behind each Postgres dashboard panel (catches a collector list
   that silently drops the defaults);
-- logs: Loki holds Postgres's lines, i.e. the journald pipeline works, with
-  only the `service` / `level` labels;
-- Grafana: the three dashboards, the alert rules and the Telegram contact
-  point are provisioned.
+- logs: Loki holds Postgres's lines, i.e. the journald pipeline works, and
+  the relay's JSON lines with a `level`, with only the `service` / `level`
+  labels;
+- Grafana: the three dashboards, the alert rules and the contact point of
+  the configured ALERT_CHANNEL are provisioned (none for `none`).
+
+The base compose file is docker-compose.yml when present, else
+docker-compose.prod.yml; COMPOSE_BASE overrides it (as in deploy.sh).
 """
 import json
+import os
 import subprocess
 import sys
 import time
 import urllib.parse
 
-COMPOSE = ["docker", "compose", "-f", "docker-compose.yml", "-f", "observability/compose.yml"]
+
+def setting(key):
+    """A setting as Compose sees it: the environment, else .env."""
+    value = os.environ.get(key, "")
+    if not value and os.path.exists(".env"):
+        for line in open(".env"):
+            if line.startswith(key + "="):
+                value = line.rstrip("\n").split("=", 1)[1].strip("\"'")
+    return value
+
+
+BASE = os.environ.get("COMPOSE_BASE") or (
+    "docker-compose.yml" if os.path.exists("docker-compose.yml") else "docker-compose.prod.yml")
+COMPOSE = ["docker", "compose", "-f", BASE, "-f", "observability/compose.yml"]
+CHANNEL = setting("ALERT_CHANNEL") or "none"
+CHANNELS = ["telegram", "slack", "email", "webhook"]
 DEADLINE = time.time() + 180
 
 
@@ -43,9 +64,10 @@ def checks():
     """(name, ok) pairs for everything the stack should be doing."""
     yield "pg_up == 1", [r["value"][1] for r in prom("pg_up")] == ["1"]
     yield "redis_up == 1", [r["value"][1] for r in prom("redis_up")] == ["1"]
-    for job in ["integrations/unix", "integrations/self", "prometheus", "loki", "grafana"]:
+    for job in ["chakramcp", "integrations/unix", "integrations/self", "prometheus", "loki", "grafana"]:
         yield f'up{{job="{job}"}} == 1', [r["value"][1] for r in prom(f'up{{job="{job}"}}')] == ["1"]
     for metric in [
+        "chakramcp_build_info",
         'pg_stat_database_xact_commit{datname="chakramcp"}',
         'pg_database_size_bytes{datname="chakramcp"}',
         "pg_locks_count",
@@ -62,6 +84,9 @@ def checks():
     logs = curl("http://loki:3100/loki/api/v1/query_range?" + urllib.parse.urlencode(
         {"query": '{service="pg"}', "start": f"{now - 3600}000000000", "limit": 5}))["data"]["result"]
     yield "Loki has Postgres logs (journald pipeline)", any(s["values"] for s in logs)
+    relay = curl("http://loki:3100/loki/api/v1/query_range?" + urllib.parse.urlencode(
+        {"query": '{service="relay", level=~".+"}', "start": f"{now - 3600}000000000", "limit": 5}))["data"]["result"]
+    yield "Loki has relay logs with a level", any(s["values"] for s in relay)
     series = curl("http://loki:3100/loki/api/v1/series?" + urllib.parse.urlencode(
         {"match[]": '{service=~".+"}', "start": f"{now - 3600}000000000"})).get("data", [])
     labels = {key for s in series for key in s} - {"__stream_shard__"}
@@ -71,8 +96,10 @@ def checks():
         yield f"dashboard {uid}", curl(f"http://127.0.0.1:3000/api/dashboards/uid/{uid}", auth=True)["dashboard"]["uid"] == uid
     rules = curl("http://127.0.0.1:3000/api/v1/provisioning/alert-rules", auth=True)
     yield f"alert rules loaded ({len(rules)})", len(rules) >= 12
-    points = curl("http://127.0.0.1:3000/api/v1/provisioning/contact-points", auth=True)
-    yield "telegram contact point", any(p["type"] == "telegram" for p in points)
+    points = {p["uid"] for p in curl("http://127.0.0.1:3000/api/v1/provisioning/contact-points", auth=True)}
+    want = {f"{CHANNEL}-chakramcp"} if CHANNEL != "none" else set()
+    got = points & {f"{c}-chakramcp" for c in CHANNELS}
+    yield f"contact points for ALERT_CHANNEL={CHANNEL} (got {sorted(got)})", got == want
 
 
 while True:
