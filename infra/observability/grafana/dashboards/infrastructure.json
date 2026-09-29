@@ -975,6 +975,7 @@
               "job": true,
               "__name__": true
             },
+            "indexByName": {},
             "renameByName": {
               "Value": "restarts"
             }
@@ -1774,6 +1775,7 @@
               "job": true,
               "__name__": true
             },
+            "indexByName": {},
             "renameByName": {
               "Value": "up (1 = yes)"
             }
@@ -1898,6 +1900,7 @@
               "job": true,
               "__name__": true
             },
+            "indexByName": {},
             "renameByName": {
               "Value": "days left"
             }
