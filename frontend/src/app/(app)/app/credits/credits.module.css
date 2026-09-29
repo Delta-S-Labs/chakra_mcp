@@ -1,0 +1,70 @@
+.page { display: grid; gap: 1.6rem; }
+
+.head {
+  display: grid;
+  gap: 0.7rem;
+  max-width: 62ch;
+  padding: 0 0.5rem;
+}
+
+.title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 1;
+  letter-spacing: -0.04em;
+  margin: 0;
+  color: var(--ink);
+}
+
+.body {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  margin: 0;
+}
+
+.error {
+  padding: 0.7rem 0.95rem;
+  border: 1px solid var(--accent-coral);
+  background: color-mix(in oklab, var(--accent-coral) 14%, var(--paper-soft));
+  border-radius: 0.7rem;
+  color: oklch(38% 0.14 28);
+  font-size: 0.9rem;
+}
+
+/* ─── Account switcher ─── */
+.switcher {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.tab,
+.tabActive {
+  padding: 0.4rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  text-decoration: none;
+  background: var(--paper-soft);
+  transition: border-color 140ms, background 140ms;
+}
+
+.tab:hover {
+  border-color: color-mix(in oklab, var(--accent-coral) 50%, var(--line));
+}
+
+.tabActive {
+  color: var(--ink);
+  border-color: color-mix(in oklab, var(--accent-coral) 60%, var(--line));
+  background: color-mix(in oklab, var(--accent-butter) 45%, var(--paper-soft));
+}
+
+@media (max-width: 480px) {
+  .head { padding-left: 0.25rem; padding-right: 0.25rem; }
+}

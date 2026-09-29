@@ -106,6 +106,9 @@ export interface AdminOrg {
   member_count: number;
   owner_email: string | null;
   created_at: string;
+  /** Milli-credits; null until the account's first charge or admin change. */
+  credit_balance_mc: number | null;
+  credit_status: CreditStatus;
 }
 
 export interface AdminApiKey {
@@ -591,6 +594,108 @@ export function adminListUsers(token: string) {
 
 export function adminListOrgs(token: string) {
   return request<AdminOrg[]>("/v1/admin/orgs", { token });
+}
+
+// ─── Credits ────────────────────────────────────────────
+// Amounts are milli-credits (1 credit = 1,000 mc); format with
+// `formatCredits` from lib/format.
+
+export type CreditStatus = "active" | "blocked" | "unlimited";
+
+export interface CreditsDailySpend {
+  day: string;
+  invocations: number;
+  spent_mc: number;
+}
+
+/** A change to a setting: `null` means the global default. */
+export interface CreditsSettingChange {
+  from: number | boolean | null;
+  to: number | boolean | null;
+}
+
+export interface CreditsLedgerEntry {
+  id: string;
+  created_at: string;
+  kind: "free_grant" | "grant" | "adjustment" | "settings" | "purchase";
+  delta_mc: number;
+  balance_after_mc: number;
+  note: string | null;
+  /** Free grants: the month granted (its first day). */
+  period: string | null;
+  /** Settings changes, keyed by setting. */
+  changes: Record<string, CreditsSettingChange> | null;
+  /** Admin view only: who made the change. */
+  by?: string;
+}
+
+export interface CreditsView {
+  account_id: string;
+  /** Can dip slightly below zero: charging is asynchronous. With no
+   *  wallet yet, the grant the first invocation brings. */
+  balance_mc: number;
+  has_wallet: boolean;
+  status: CreditStatus;
+  cost_per_invocation_mc: number;
+  monthly_free_grant_mc: number;
+  monthly_free_grant_override_mc: number | null;
+  rate_limit_per_min: number;
+  rate_limit_override_per_min: number | null;
+  unlimited: boolean;
+  last_grant_period: string | null;
+  next_grant_on: string;
+  spent_this_month_mc: number;
+  invocations_this_month: number;
+  daily: CreditsDailySpend[];
+  /** Newest first. */
+  ledger: CreditsLedgerEntry[];
+}
+
+export function getOrgCredits(token: string, slug: string) {
+  return request<CreditsView>(`/v1/orgs/${encodeURIComponent(slug)}/credits`, { token });
+}
+
+export function adminGetAccountCredits(token: string, accountId: string) {
+  return request<CreditsView>(
+    `/v1/admin/accounts/${encodeURIComponent(accountId)}/credits`,
+    { token },
+  );
+}
+
+export interface CreditEntryRequest {
+  kind: "grant" | "adjustment";
+  amount_mc: number;
+  note?: string | null;
+}
+
+export function adminAddCreditEntry(
+  token: string,
+  accountId: string,
+  body: CreditEntryRequest,
+) {
+  return request<CreditsView>(
+    `/v1/admin/accounts/${encodeURIComponent(accountId)}/credits/ledger`,
+    { method: "POST", token, body: JSON.stringify(body) },
+  );
+}
+
+/** Omit a field to leave it alone; `null` resets an override to the default. */
+export interface CreditSettingsRequest {
+  monthly_free_grant_mc?: number | null;
+  rate_limit_per_min?: number | null;
+  unlimited?: boolean;
+  note?: string | null;
+}
+
+export function adminUpdateCreditSettings(
+  token: string,
+  accountId: string,
+  body: CreditSettingsRequest,
+) {
+  return request<CreditsView>(
+    `/v1/admin/accounts/${encodeURIComponent(accountId)}/credits`,
+    { method: "PATCH", token, body: JSON.stringify(body) },
+  );
 }
 
 export function adminListApiKeys(token: string) {

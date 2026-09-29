@@ -1,0 +1,266 @@
+.panel { display: grid; gap: 1.8rem; }
+
+/* ─── Balance + facts ─── */
+.summary {
+  display: grid;
+  grid-template-columns: minmax(15rem, 1fr) 2fr;
+  gap: 1rem;
+}
+
+.balanceCard {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 0.55rem;
+  padding: 1.2rem 1.3rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: color-mix(in oklab, var(--accent-butter) 18%, var(--paper-soft));
+}
+
+.label,
+.facts dt,
+.blockTitle {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin: 0;
+}
+
+.balance {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(2.2rem, 5vw, 3rem);
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.unit {
+  margin-left: 0.45rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: var(--ink-soft);
+}
+
+.hint,
+.warn {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+
+.warn {
+  padding: 0.5rem 0.7rem;
+  border: 1px solid color-mix(in oklab, var(--accent-coral) 50%, var(--line));
+  border-radius: 0.5rem;
+  background: color-mix(in oklab, var(--accent-coral) 12%, var(--paper-soft));
+  color: oklch(38% 0.14 28);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.facts > div {
+  display: grid;
+  align-content: start;
+  gap: 0.35rem;
+  padding: 0.95rem 1.05rem;
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  background: var(--paper-soft);
+}
+
+.facts dd {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.sub {
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: 0.82rem;
+  color: var(--ink-muted);
+}
+
+/* ─── Sections ─── */
+.block { display: grid; gap: 0.6rem; }
+
+.empty {
+  max-width: none; /* a box, not prose: ignore the global paragraph measure */
+  margin: 0;
+  padding: 1rem;
+  border: 1px dashed var(--line);
+  border-radius: 0.7rem;
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  color: var(--ink-muted);
+  text-align: center;
+}
+
+.footnote {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+}
+
+/* ─── Daily spend ─── */
+.daily {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0.8rem 1rem;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  background: var(--paper-soft);
+}
+
+.dayRow {
+  display: grid;
+  grid-template-columns: 4.2rem 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  font-family: var(--font-body);
+  font-size: 0.84rem;
+}
+
+.dayLabel { color: var(--ink-muted); }
+
+.barTrack {
+  height: 0.55rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--paper-warm) 45%, var(--paper-soft));
+  overflow: hidden;
+}
+
+.bar {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent-coral);
+}
+
+.dayValue {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ─── Ledger ─── */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid color-mix(in oklab, var(--line) 60%, transparent);
+}
+
+.table thead th {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  background: color-mix(in oklab, var(--paper-warm) 26%, var(--paper-soft));
+  border-bottom: 1px solid var(--line);
+}
+
+.table tbody tr:last-child td { border-bottom: none; }
+
+.num {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.minus { color: oklch(45% 0.15 28); }
+
+.when {
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.note {
+  margin-top: 0.15rem;
+  color: var(--ink-soft);
+  font-size: 0.84rem;
+}
+
+.by {
+  margin-top: 0.1rem;
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+}
+
+/* ─── Status pills (same look as the admin console) ─── */
+.pillOk,
+.pillCoral,
+.pillButter {
+  display: inline-block;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.pillOk {
+  background: color-mix(in oklab, oklch(82% 0.14 140) 38%, var(--paper-soft));
+  border: 1px solid oklch(60% 0.18 140);
+  color: oklch(32% 0.12 145);
+}
+
+.pillCoral {
+  background: color-mix(in oklab, var(--accent-coral) 22%, var(--paper-soft));
+  border: 1px solid var(--accent-coral);
+  color: oklch(38% 0.14 28);
+}
+
+.pillButter {
+  background: color-mix(in oklab, var(--accent-butter) 60%, var(--paper-soft));
+  border: 1px solid color-mix(in oklab, var(--accent-butter) 85%, var(--ink));
+  color: var(--ink);
+}
+
+@media (max-width: 720px) {
+  .summary { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 480px) {
+  .facts { grid-template-columns: 1fr; }
+  .dayRow { grid-template-columns: 3.6rem 1fr; }
+  .dayValue { grid-column: 2; }
+  .table { font-size: 0.84rem; }
+  .table th,
+  .table td { padding: 0.5rem 0.55rem; }
+}
