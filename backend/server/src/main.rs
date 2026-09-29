@@ -274,26 +274,60 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
     let app_listener = tokio::net::TcpListener::bind(app_addr).await?;
     let relay_listener = tokio::net::TcpListener::bind(relay_addr).await?;
 
-    let app_handle = tokio::spawn(async move {
-        if let Err(err) = axum::serve(app_listener, app).await {
-            tracing::error!(?err, "app server exited with error");
+    // On a shutdown signal both servers stop accepting connections and
+    // finish the requests in flight, for at most SHUTDOWN_DRAIN.
+    let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
+    let stopped = |mut rx: tokio::sync::watch::Receiver<bool>| async move {
+        let _ = rx.changed().await;
+    };
+    let mut app_handle = tokio::spawn({
+        let stop = stopped(stop_rx.clone());
+        async move {
+            if let Err(err) = axum::serve(app_listener, app)
+                .with_graceful_shutdown(stop)
+                .await
+            {
+                tracing::error!(?err, "app server exited with error");
+            }
         }
     });
-    let relay_handle = tokio::spawn(async move {
-        if let Err(err) = axum::serve(relay_listener, relay).await {
-            tracing::error!(?err, "relay server exited with error");
+    let mut relay_handle = tokio::spawn({
+        let stop = stopped(stop_rx);
+        async move {
+            if let Err(err) = axum::serve(relay_listener, relay)
+                .with_graceful_shutdown(stop)
+                .await
+            {
+                tracing::error!(?err, "relay server exited with error");
+            }
         }
     });
 
-    tokio::select! {
-        _ = signal::ctrl_c() => {
-            tracing::info!("ctrl-c received — shutting down");
+    let signalled = tokio::select! {
+        _ = shutdown_signal() => {
+            tracing::info!("shutdown signal received — finishing in-flight requests");
+            true
         }
-        _ = app_handle => {
+        _ = &mut app_handle => {
             tracing::warn!("app server stopped — initiating shutdown");
+            false
         }
-        _ = relay_handle => {
+        _ = &mut relay_handle => {
             tracing::warn!("relay server stopped — initiating shutdown");
+            false
+        }
+    };
+    let _ = stop_tx.send(true);
+    if signalled {
+        let drained = tokio::time::timeout(SHUTDOWN_DRAIN, async {
+            let _ = tokio::join!(app_handle, relay_handle);
+        })
+        .await;
+        if drained.is_err() {
+            tracing::warn!(
+                drain_seconds = SHUTDOWN_DRAIN.as_secs(),
+                "requests still open after the drain period — exiting anyway"
+            );
         }
     }
     // Stop the refresh loop cleanly so its current tick (if any)
@@ -302,6 +336,40 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
         let _ = tx.send(true);
     }
     Ok(())
+}
+
+/// How long a shutdown waits for in-flight requests: under Docker's default
+/// 10-second stop timeout (Kubernetes allows 30).
+const SHUTDOWN_DRAIN: std::time::Duration = std::time::Duration::from_secs(8);
+
+/// Resolves on SIGTERM, which `docker stop` and Kubernetes send, or on
+/// Ctrl-C. As a container's PID 1 the server gets no default SIGTERM
+/// handling, so without this it would only stop when killed.
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        let _ = signal::ctrl_c().await;
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        match signal::unix::signal(signal::unix::SignalKind::terminate()) {
+            Ok(mut sigterm) => {
+                sigterm.recv().await;
+            }
+            Err(err) => {
+                tracing::warn!(
+                    ?err,
+                    "can't listen for SIGTERM; only Ctrl-C stops the server"
+                );
+                std::future::pending::<()>().await;
+            }
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+    tokio::select! {
+        _ = ctrl_c => {}
+        _ = terminate => {}
+    }
 }
 
 // ─── Config loading ──────────────────────────────────────
