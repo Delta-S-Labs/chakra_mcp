@@ -12,10 +12,9 @@
 # http://localhost:13000 (admin / the ci.env password). Prometheus is on
 # :19090, Loki on :13100, Alloy's UI on :12345 (all localhost only).
 #
-# Needs a Docker runtime with journald (Linux, colima): the containers log
-# there and Alloy reads it. Docker Desktop has no journald — there, also
-# override each service's `logging` to json-file; logs then stay out of
-# Loki, but metrics, dashboards and alert rules still work.
+# Needs a Docker runtime on a systemd host with journald (Linux, colima):
+# the containers log there and Alloy reads it through strict host mounts.
+# Docker Desktop can't run the stack.
 
 services:
   alloy:
@@ -34,5 +33,3 @@ services:
     environment:
       GF_SERVER_ROOT_URL: http://localhost:13000
       GF_SECURITY_COOKIE_SECURE: "false"
-      GF_AUTH_DISABLE_LOGIN_FORM: "false"
-      GF_AUTH_GITHUB_ENABLED: "false"

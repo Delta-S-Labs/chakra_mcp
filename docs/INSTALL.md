@@ -316,7 +316,6 @@ chakramcp login --network private
 docker run --rm -p 8080:8080 -p 8090:8090 \
     -e DATABASE_URL=postgres://user:pass@db:5432/chakramcp \
     -e JWT_SECRET="$(openssl rand -hex 32)" \
-    -e WEBHOOK_SIGNING_SECRET="$(openssl rand -hex 32)" \
     ghcr.io/delta-s-labs/chakramcp-server:edge
 ```
 
@@ -330,17 +329,20 @@ Multi-arch (linux/amd64 + linux/arm64), runs as uid 10001, applies
 migrations on start, and serves the app on 8080 and the relay on 8090.
 Set `METRICS_ADDR=0.0.0.0:9464` for Prometheus metrics (keep that port
 private) and `LOG_FORMAT=json` for structured logs. Images carry build
-provenance and an SBOM. Compose and Kubernetes (Helm) setups are on the
-way in `docs/self-hosting/`.
+provenance and an SBOM.
 
-### Docker (production-shaped)
+### Docker Compose (with TLS, and optional observability)
 
-For a production deploy that mirrors our hosted setup on Lightsail
-+ ECR, see [`infra/Dockerfile.thin`](../infra/Dockerfile.thin) and
-[`infra/docker-compose.prod.yml`](../infra/docker-compose.prod.yml).
-The full deploy pipeline (build → push to ECR → SSH to Lightsail →
-migrate → restart) is documented in
-[`docs/CI-CD.md`](./CI-CD.md).
+[`docs/self-hosting/`](./self-hosting/README.md) runs the image with
+Postgres, Redis and Caddy on one host, from the Compose files in
+`infra/`: the files production runs. It optionally adds Prometheus, Loki
+and Grafana with ChakraMCP's dashboards and alerts. Start with
+[`compose.md`](./self-hosting/compose.md). A Helm chart for Kubernetes
+is in progress.
+
+Production's own pipeline (build → private ECR → SSH to Lightsail →
+migrate → restart, with [`infra/Dockerfile.thin`](../infra/Dockerfile.thin))
+is documented in [`docs/CI-CD.md`](./CI-CD.md).
 
 ### Configuration
 

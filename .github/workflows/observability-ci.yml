@@ -6,7 +6,9 @@ name: Observability CI
 #      Loki, Grafana provisioning, the shell scripts);
 #   2. a smoke test: the real stack on this runner — which, unlike Docker
 #      Desktop, has journald — deployed by the same script CD runs on the VM
-#      (scripts/deploy.sh), then checked for metrics, logs and provisioning.
+#      (scripts/deploy.sh) next to the relay from the public :edge image,
+#      then checked for metrics, logs and provisioning. The settings are the
+#      generic self-hoster ones (observability/ci.env), not production's.
 #
 # Runs on every PR so it can be a required check; the steps skip themselves
 # when nothing under infra/ (or this workflow) changed.
@@ -26,6 +28,7 @@ concurrency:
 
 permissions:
   contents: read
+  packages: read  # the relay image, while its package is private
 
 jobs:
   check:
@@ -55,7 +58,11 @@ jobs:
           set -euo pipefail
           env=(--env-file observability/ci.env)
           docker compose -f docker-compose.prod.yml "${env[@]}" config -q
-          docker compose -f docker-compose.prod.yml -f observability/compose.yml "${env[@]}" config -q
+          # Every alert channel production or a self-hoster may pick.
+          for channel in none telegram slack email webhook; do
+            ALERT_CHANNEL=$channel docker compose -f docker-compose.prod.yml -f observability/compose.yml \
+              "${env[@]}" config -q
+          done
           docker compose -p dev -f docker-compose.prod.yml -f observability/compose.yml \
             -f observability/compose.dev.yml "${env[@]}" config -q
           # Pinned images, for the tool checks below.
@@ -67,7 +74,8 @@ jobs:
       - name: Caddyfile
         if: steps.changes.outputs.infra == 'true'
         run: |
-          docker run --rm -v "$PWD/infra/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine \
+          docker run --rm -e APP_DOMAIN=app.chakramcp.test -e RELAY_DOMAIN=relay.chakramcp.test \
+            -e GRAFANA_DOMAIN=localhost -v "$PWD/infra/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine \
             caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
       - name: Alloy config (valid, formatted)
@@ -101,7 +109,7 @@ jobs:
 
       # ─── 2. Smoke test ────────────────────────────────────
       # Laid out like the VM's /opt/chakramcp, so deploy.sh runs unchanged.
-      - name: Deploy the stack (as CD does on the VM)
+      - name: Lay out the stack (as on the VM)
         if: steps.changes.outputs.infra == 'true'
         run: |
           set -euo pipefail
@@ -110,9 +118,44 @@ jobs:
           cp infra/docker-compose.prod.yml "$vm/docker-compose.yml"
           cp -r infra/observability "$vm/observability"
           cp infra/observability/ci.env "$vm/.env"
-          cd "$vm"
-          docker compose up -d --wait pg redis
-          observability/scripts/deploy.sh "alloy prometheus loki grafana/provisioning grafana/dashboards"
+          # Alloy's strict mount needs persistent journal storage. On a
+          # runner whose journal is volatile, the empty directory satisfies
+          # it and Alloy still reads /run/log/journal.
+          ls -ld /var/log/journal /run/log/journal || true
+          [ -d /var/log/journal ] || sudo mkdir -p /var/log/journal
+
+      - name: Preflight refuses an unsupported host
+        if: steps.changes.outputs.infra == 'true'
+        working-directory: ${{ runner.temp }}/chakramcp
+        run: |
+          set -uo pipefail
+          expect_refusal() { # message, env...
+            local want=$1; shift
+            if env "$@" observability/scripts/deploy.sh 2>err.txt; then
+              echo "::error::deploy.sh ran with $*"; exit 1
+            fi
+            grep -F -- "$want" err.txt || { cat err.txt; exit 1; }
+          }
+          expect_refusal "LOG_DRIVER is json-file" LOG_DRIVER=json-file
+          expect_refusal "has no /nonexistent/journal" JOURNAL_DIR=/nonexistent/journal
+          expect_refusal "has no /nonexistent/machine-id" MACHINE_ID_FILE=/nonexistent/machine-id
+          expect_refusal "ALERT_CHANNEL=pager is not one of" ALERT_CHANNEL=pager
+          [ -z "$(docker compose ps -q)" ] || { echo "::error::preflight started containers"; exit 1; }
+
+      - uses: docker/login-action@v4
+        if: steps.changes.outputs.infra == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Deploy the stack (as CD does on the VM)
+        if: steps.changes.outputs.infra == 'true'
+        working-directory: ${{ runner.temp }}/chakramcp
+        run: |
+          set -euo pipefail
+          docker compose up -d --wait pg redis relay
+          observability/scripts/deploy.sh "alloy prometheus loki grafana/provisioning grafana/dashboards grafana/channels"
 
       - name: Smoke test
         if: steps.changes.outputs.infra == 'true'

@@ -78,7 +78,7 @@ Today self-hosters have only `brew install chakramcp-server`, a source build, or
 
 The same files serve production and self-hosters, and they keep their names: `infra/docker-compose.prod.yml` (which CD copies to `docker-compose.yml` on the VM), `infra/Caddyfile` and `infra/observability/`. Every new setting defaults to something that works for a self-hoster. Production's current behaviour moves into the VM's `.env` **before** the PR merges (§8).
 
-**Scripts.** `deploy.sh` and `smoke-test.py` take the base file name from `COMPOSE_BASE`, defaulting to `docker-compose.yml` as on the VM. Self-hosters running from a checkout's `infra/` set `COMPOSE_BASE=docker-compose.prod.yml`. `deploy.sh` passes `-f "$COMPOSE_BASE" -f observability/compose.yml` to `ensure-monitor-role.sh`, which forwards its arguments to Compose. Without them, Compose finds no default file in a checkout.
+**Scripts.** `deploy.sh` and `smoke-test.py` use `docker-compose.yml` when it exists (the VM) and `docker-compose.prod.yml` otherwise (a checkout's `infra/`); `COMPOSE_BASE` overrides the choice. `deploy.sh` passes `-f "$COMPOSE_BASE" -f observability/compose.yml` to `ensure-monitor-role.sh`, which forwards its arguments to Compose. Without them, Compose finds no default file in a checkout.
 
 ### 4.1 Base (`infra/docker-compose.prod.yml`, `infra/Caddyfile`, new `infra/.env.example`)
 
@@ -86,7 +86,7 @@ The same files serve production and self-hosters, and they keep their names: `in
 - **Log driver.** `x-logging` uses `driver: ${LOG_DRIVER:-journald}`, which needs a host with systemd's journald, as production has.
   - On Docker Desktop or hosts without journald, `LOG_DRIVER=json-file` makes the **base services** start. The overlay's own logging block reads `LOG_DRIVER` too; anchors don't cross files.
   - **The observability overlay needs journald.** Alloy reads container logs from the host journal through bind mounts of `/var/log/journal`, `/run/log/journal` and `/etc/machine-id`. On Docker Desktop those host paths don't exist and aren't shared, so Alloy can't start. Supported: a systemd Linux host with `LOG_DRIVER=journald` and persistent journal storage (`/var/log/journal`, the default on Ubuntu and Debian). Elsewhere, run the base services only.
-  - **`deploy.sh` checks first**, before changing anything: `LOG_DRIVER` (environment, then `.env`, default `journald`) must be `journald`, `/etc/machine-id` a file and `/var/log/journal` a directory. Otherwise it exits with the fix and a link to the docs. With volatile journal storage the fix is `mkdir /var/log/journal` and a journald restart: an explicit choice, not a side effect.
+  - **`deploy.sh` checks first**, before changing anything: `LOG_DRIVER` (environment, then `.env`, default `journald`) must be `journald`, and on the Docker host `/etc/machine-id` must be a file and `/var/log/journal` a directory. The paths are checked through a throwaway container with strict mounts, since the daemon isn't always on the machine running the script (colima, a remote daemon). Otherwise it exits with the fix and a link to the docs. With volatile journal storage the fix is `mkdir /var/log/journal` and a journald restart: an explicit choice, not a side effect.
   - **Strict mounts.** The `/etc/machine-id` and `/var/log/journal` mounts use the long syntax with `create_host_path: false`, so a manual `docker compose up` on an unsupported host fails. Otherwise Docker would create a directory at `/etc/machine-id`, or create `/var/log/journal`, which switches journald's default `Storage=auto` to persistent storage. `/run/log/journal` (tmpfs, present on systemd hosts) keeps the short syntax. Production has all three (checked 2026-09-29); the new mount definition recreates Alloy once.
   - json-file logs don't rotate by default; the docs point to Docker's daemon-level `log-opts` (`max-size`/`max-file`).
   - The `mode` and `labels` options work with both drivers.
@@ -95,7 +95,7 @@ The same files serve production and self-hosters, and they keep their names: `in
   - `GRAFANA_DOMAIN: ${GRAFANA_DOMAIN:-localhost}`.
 
   The defaults live in Compose because Caddy's `{$VAR:default}` doesn't apply to a variable that is set but empty. The Caddyfile uses plain `{$APP_DOMAIN}`, `{$RELAY_DOMAIN}` and `{$GRAFANA_DOMAIN}`. With the `localhost` default, Caddy serves the Grafana site with a local certificate and no ACME, which is harmless when observability is off.
-- **The `email` global option is removed.** It would be a parse error when empty, ACME works without it, and Let's Encrypt no longer sends expiry emails. Production loses nothing.
+- **The `email` global option is removed.** It would be a parse error when empty, ACME works without it, and Let's Encrypt no longer sends expiry emails. Production loses only Caddy's ZeroSSL fallback issuer, which Caddy adds only when an email is set (the dry run's `caddy adapt` diff shows exactly that). Let's Encrypt stays the issuer, renewals start 30 days ahead and retry, and the existing certificates stay in `caddy_data`.
 - **CD applies Caddy changes safely.** Today's step reloads the running container, which would lack the new environment.
   - The backend job now runs `docker compose up -d --no-deps caddy` after syncing. This recreates Caddy only when its definition changed, for example the new env; otherwise it's a no-op.
   - It then keeps the hash-gated `caddy reload` for Caddyfile-only changes.
@@ -146,7 +146,7 @@ The same files serve production and self-hosters, and they keep their names: `in
 From a checkout's `infra/`:
 1. `cp .env.example .env` and fill it in.
 2. `docker compose -f docker-compose.prod.yml up -d`.
-3. `COMPOSE_BASE=docker-compose.prod.yml observability/scripts/deploy.sh "alloy prometheus loki grafana/provisioning grafana/dashboards grafana/channels"`, the same script CD runs. It creates the Postgres monitoring role, brings the stack up, and verifies the configs loaded.
+3. `observability/scripts/deploy.sh "alloy prometheus loki grafana/provisioning grafana/dashboards grafana/channels"`, the same script CD runs. It creates the Postgres monitoring role, brings the stack up, and verifies the configs loaded.
 
 **Upgrades:**
 1. `git pull`.
@@ -183,7 +183,7 @@ From a checkout's `infra/`:
 - **Ingress** (optional; `className`, `annotations` such as cert-manager, `tls`) has two hosts: `hosts.app` → 8080 and `hosts.relay` → 8090.
 - **Configuration:**
   - **Env:** `LOG_FORMAT=json`, `METRICS_ADDR=0.0.0.0:9464`, public URLs, `ADMIN_EMAIL`, `LIMITS_ENFORCE`, `DISCOVERY_V2`, plus an `extraEnv` escape hatch.
-  - **Secrets:** `JWT_SECRET`, `WEBHOOK_SIGNING_SECRET` and the optional `UPSERT_SHARED_SECRET` come from `secrets.existingSecret`. Otherwise the chart generates a Secret on first install and keeps it across upgrades, using `lookup`.
+  - **Secrets:** `JWT_SECRET` and the optional `UPSERT_SHARED_SECRET` come from `secrets.existingSecret`. Otherwise the chart generates a Secret on first install and keeps it across upgrades, using `lookup`.
 - **Migrations** run at boot, as today. There is no hook Job.
 - **Rollbacks.** The docs warn that `helm rollback` across a release that added a migration fails, because the server refuses to boot on an unknown applied migration: roll forward instead.
 

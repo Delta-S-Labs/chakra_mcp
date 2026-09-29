@@ -150,7 +150,7 @@ brew services start postgresql@16 && createdb chakramcp
 
 ```bash
 docker run --rm -p 8080:8080 -p 8090:8090 \
-    -e DATABASE_URL=postgres://… -e JWT_SECRET=… -e WEBHOOK_SIGNING_SECRET=… \
+    -e DATABASE_URL=postgres://… -e JWT_SECRET=… \
     ghcr.io/delta-s-labs/chakramcp-server:edge
 ```
 
@@ -159,6 +159,10 @@ docker run --rm -p 8080:8080 -p 8090:8090 \
 with the next one. The image runs as a non-root user and exposes 8080
 (app), 8090 (relay) and, when `METRICS_ADDR` is set, 9464 (Prometheus
 metrics).
+
+**Docker Compose on one host** (TLS through Caddy, Postgres, Redis, and
+optionally Prometheus, Loki and Grafana with our dashboards and alerts):
+[`docs/self-hosting/`](docs/self-hosting/README.md).
 
 **Docker (production-shaped):**
 

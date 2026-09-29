@@ -210,6 +210,24 @@ jobs:
               infra/Caddyfile \
               ubuntu@"$LIGHTSAIL_HOST":/opt/chakramcp/Caddyfile
 
+      # Recreate caddy if its compose definition changed, e.g. new
+      # environment for the Caddyfile's {$VARS}; otherwise a no-op. It
+      # runs before the reload below, so a Caddyfile that needs new
+      # environment is never loaded into a container without it.
+      - name: Apply caddy's compose definition
+        run: |
+          ssh -i ~/.ssh/lightsail ubuntu@"$LIGHTSAIL_HOST" bash -s <<'REMOTE'
+          set -e
+          cd /opt/chakramcp
+          before=$(docker compose ps -q caddy)
+          docker compose up -d --no-deps caddy
+          if [ "$(docker compose ps -q caddy)" = "$before" ]; then
+            echo "caddy unchanged."
+          else
+            echo "caddy recreated with its new definition."
+          fi
+          REMOTE
+
       # Reload caddy in-place if its rules changed. `caddy reload`
       # is graceful (no dropped connections); skipping it when
       # nothing changed avoids the (small) brownout window.
@@ -343,7 +361,7 @@ jobs:
           set -euo pipefail
           # shellcheck disable=SC2016 # runs on the VM, where it expands
           hashes='cd /opt/chakramcp/observability 2>/dev/null || exit 0
-            for d in alloy prometheus loki grafana/provisioning grafana/dashboards; do
+            for d in alloy prometheus loki grafana/provisioning grafana/dashboards grafana/channels; do
               printf "%s %s\n" "$d" "$(find "$d" -type f -print0 2>/dev/null | sort -z | xargs -0r sha256sum | sha256sum | cut -c1-16)"
             done'
           before=$(ssh -i ~/.ssh/lightsail ubuntu@"$LIGHTSAIL_HOST" "$hashes")

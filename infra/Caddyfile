@@ -1,16 +1,16 @@
-# Caddy auto-provisions Let's Encrypt certs for any host you list.
-# Both subdomains route to the relay container's two listeners:
-#   relay.chakramcp.com  → :8090 (chakramcp-relay)
-#   app.chakramcp.com    → :8080 (chakramcp-app)
-#
-# If you only want to expose the relay (frontend on Netlify already
-# handles app.chakramcp.com via direct user signup), comment out the
-# app block. The OAuth flow needs both reachable, though.
+# Caddy auto-provisions Let's Encrypt certificates for every site below.
+# The hostnames come from the environment (docker-compose.prod.yml, from
+# .env): APP_DOMAIN → the app API (:8080), RELAY_DOMAIN → the relay (:8090),
+# GRAFANA_DOMAIN → Grafana (infra/observability/; `localhost` unless set).
+# The OAuth flow needs both the app and the relay reachable.
 
 {
-	email kaustav@chakramcp.com
-	# Increase if you start hitting LE rate limits during testing.
+	# For testing, avoid Let's Encrypt's rate limits with:
 	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+
+	# The local CA (the `localhost` Grafana default) stays inside the
+	# container.
+	skip_install_trust
 
 	# Prometheus metrics per host (unknown hosts are grouped as "_other"),
 	# served on the internal :2020 site below for the observability stack.
@@ -19,7 +19,7 @@
 	}
 }
 
-relay.chakramcp.com {
+{$RELAY_DOMAIN} {
 	encode zstd gzip
 	# Forward client IP for the relay's rate-limit / audit log.
 	reverse_proxy relay:8090 {
@@ -32,7 +32,7 @@ relay.chakramcp.com {
 	}
 }
 
-app.chakramcp.com {
+{$APP_DOMAIN} {
 	encode zstd gzip
 	reverse_proxy relay:8080 {
 		header_up X-Forwarded-Proto {scheme}
@@ -43,11 +43,10 @@ app.chakramcp.com {
 	}
 }
 
-# Grafana (infra/observability/). GitHub sign-in is the only way in from
-# outside: password (Basic) auth is refused here, so the break-glass admin
-# works only from inside the VM. Grafana's own /metrics is for the
-# collector, not the internet.
-grafana.chakramcp.com {
+# Grafana (infra/observability/). Password (Basic) auth is refused from
+# outside: people sign in through the login form or a provider, which use a
+# cookie. Grafana's own /metrics is for the collector, not the internet.
+{$GRAFANA_DOMAIN} {
 	encode zstd gzip
 	@basic header_regexp Authorization (?i)^basic[[:space:]]
 	respond @basic 403

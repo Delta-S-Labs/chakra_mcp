@@ -1,0 +1,38 @@
+# Alerts go to Telegram, via a bot: TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID.
+# Selected by ALERT_CHANNEL (compose mounts this file over
+# provisioning/alerting/channel.yml). Each channel file deletes the other
+# channels' contact points, because file provisioning never removes one on
+# its own. Settings come from the container environment (the .env):
+# Grafana expands $VARS in contact-point settings, not in rules or templates.
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: telegram
+    receivers:
+      - uid: telegram-chakramcp
+        type: telegram
+        disableResolveMessage: false
+        settings:
+          bottoken: "$TELEGRAM_BOT_TOKEN"
+          chatid: "$TELEGRAM_CHAT_ID"
+          # Plain text: alert text can contain <, > and &.
+          parse_mode: None
+          disable_web_page_preview: true
+          message: '{{ template "chakramcp.message" . }}'
+
+policies:
+  - orgId: 1
+    receiver: telegram
+    group_by: ["alertname"]
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h
+
+deleteContactPoints:
+  - orgId: 1
+    uid: slack-chakramcp
+  - orgId: 1
+    uid: email-chakramcp
+  - orgId: 1
+    uid: webhook-chakramcp

@@ -62,6 +62,11 @@ dispatch). It runs four jobs:
    - `docker build -f infra/Dockerfile.thin` → `docker push` to
      `877326604850.dkr.ecr.us-east-1.amazonaws.com/chakramcp-server`
      with tags `${sha:0:7}` + `latest`.
+   - Copy `infra/docker-compose.prod.yml` (as `docker-compose.yml`)
+     and the `Caddyfile` to `/opt/chakramcp`. `docker compose up -d
+     --no-deps caddy` then recreates Caddy only when its definition
+     changed (e.g. new environment for the Caddyfile's hostnames), and
+     `caddy reload` applies a changed Caddyfile.
    - **If migrations changed** (`backend/migrations/**`):
      `docker compose --profile migrate run --rm migrate` over SSH
      to `ubuntu@54.84.88.246` (Lightsail prod). Runs BEFORE the
@@ -77,8 +82,10 @@ dispatch). It runs four jobs:
    `observability/scripts/deploy.sh` on the VM. That script creates
    the Postgres monitoring role if it's missing, brings the four
    services up, and applies only what changed, reloading instead of
-   restarting where it can. It fails the job if Prometheus or Alloy
-   rejected the new config. When nothing changed it touches nothing.
+   restarting where it can; a changed alert channel file recreates
+   Grafana, since it's a single-file mount. It fails the job if
+   Prometheus or Alloy rejected the new config. When nothing changed it
+   touches nothing.
    See [Observability](#observability).
 
 ### Required secrets
@@ -148,12 +155,17 @@ Change visibility) if it didn't inherit the repo's visibility.
 
 ## Observability
 
-Metrics, logs, dashboards and Telegram alerts for production. Design:
-[`docs/superpowers/specs/2026-09-29-observability-phase1-design.md`](superpowers/specs/2026-09-29-observability-phase1-design.md).
+Metrics, logs, dashboards and Telegram alerts for production. Designs:
+[phase 1](superpowers/specs/2026-09-29-observability-phase1-design.md)
+and, for the self-hosting settings,
+[phase 2](superpowers/specs/2026-09-29-self-hosting-phase2-design.md).
+Self-hosters run the same files; their guide is
+[`docs/self-hosting/`](self-hosting/README.md). Everything specific to
+production is in the VM's `.env`.
 
 - **Grafana:** <https://grafana.chakramcp.com>. GitHub sign-in is the
-  only way in; the allowlist is `GRAFANA_ROLE_ATTRIBUTE_PATH` in the VM's
-  `.env`.
+  only way in (the login form is off); the allowlist is
+  `GRAFANA_ROLE_ATTRIBUTE_PATH` in the VM's `.env`.
 - **The stack:** `infra/observability/compose.yml`, an overlay on the prod
   compose file.
   - **Alloy** scrapes every metrics source and reads container logs from
@@ -163,7 +175,8 @@ Metrics, logs, dashboards and Telegram alerts for production. Design:
   - **Grafana** serves the dashboards and alerts.
 - **Dashboards and alert rules** are files in `infra/observability/grafana/`.
   Change the files, not the UI; CD deploys them.
-- **Alerts** go to Telegram via `@chakramcp_bot`.
+- **Alerts** go to Telegram via `@chakramcp_bot`: `ALERT_CHANNEL=telegram`
+  selects `infra/observability/grafana/channels/telegram.yml`.
   `.github/workflows/uptime.yml` checks the public endpoints every
   10 minutes from GitHub, so a dead VM still raises one.
 
@@ -188,7 +201,10 @@ backticks):
 
 | Key | What |
 |---|---|
-| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Where alerts go |
+| `APP_DOMAIN`, `RELAY_DOMAIN`, `GRAFANA_DOMAIN` | The Caddy sites (and Grafana's root URL) |
+| `ALERT_CHANNEL`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Where alerts go: `telegram` and its bot |
+| `PROBE_TARGETS` | The HTTPS probes, a JSON list: relay, app, frontend, grafana |
+| `GRAFANA_GITHUB_ENABLED`, `GRAFANA_GITHUB_AUTO_LOGIN`, `GRAFANA_DISABLE_LOGIN_FORM` | `true` each: GitHub is the only sign-in |
 | `GRAFANA_GITHUB_CLIENT_ID`, `GRAFANA_GITHUB_CLIENT_SECRET` | The `chakramcp-grafana` GitHub OAuth app (callback `https://grafana.chakramcp.com/login/github`) |
 | `GRAFANA_ROLE_ATTRIBUTE_PATH` | Who may sign in: a JMESPath over GitHub's `/user` response that yields `'GrafanaAdmin'`, or `''` to refuse. Match on the numeric `id`, written as a number literal (`` id == `123` ``). |
 | `GRAFANA_ADMIN_PASSWORD` | Break-glass admin. Basic auth is refused at Caddy, so it only works from inside the VM. |
@@ -220,8 +236,10 @@ CD only sets the password when it creates the role.
 `infra/observability/compose.dev.yml` runs the stack on a laptop; its
 header has the commands. It needs a Docker runtime with journald: Linux
 or colima work, Docker Desktop doesn't. The observability CI
-(`observability-ci.yml`) validates every config and runs a smoke test of
-the real stack, deployed by the same `deploy.sh`.
+(`observability-ci.yml`) validates every config (all five alert
+channels), checks that `deploy.sh` refuses a host without journald, and
+runs a smoke test of the real stack with the generic `ci.env` settings,
+deployed by the same `deploy.sh` next to the relay from `:edge`.
 
 ### If the uptime workflow stops
 

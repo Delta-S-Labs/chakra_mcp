@@ -138,36 +138,14 @@ prometheus.scrape "redis" {
 }
 
 // ─── HTTPS probes (uptime, latency, certificate expiry) ──
-// Run from this VM, so they test DNS, TLS, Caddy and the backend — not
-// reachability from the internet (the GitHub Actions uptime check does
-// that).
+// Run from this host, so they test DNS, TLS, Caddy and the backend — not
+// reachability from the internet. The targets come from PROBE_TARGETS, a
+// JSON list of {"name", "address"} (none by default); the "Backend down"
+// alert looks for the names "relay" and "app".
 
 prometheus.exporter.blackbox "probes" {
-	config = "{ modules: { http_2xx: { prober: http, timeout: 10s, http: { preferred_ip_protocol: ip4, valid_status_codes: [200], fail_if_not_ssl: true } } } }"
-
-	target {
-		name    = "relay"
-		address = "https://relay.chakramcp.com/healthz"
-		module  = "http_2xx"
-	}
-
-	target {
-		name    = "app"
-		address = "https://app.chakramcp.com/healthz"
-		module  = "http_2xx"
-	}
-
-	target {
-		name    = "frontend"
-		address = "https://chakramcp.com/"
-		module  = "http_2xx"
-	}
-
-	target {
-		name    = "grafana"
-		address = "https://grafana.chakramcp.com/api/health"
-		module  = "http_2xx"
-	}
+	config  = "{ modules: { http_2xx: { prober: http, timeout: 10s, http: { preferred_ip_protocol: ip4, valid_status_codes: [200], fail_if_not_ssl: true } } } }"
+	targets = encoding.from_json(coalesce(sys.env("PROBE_TARGETS"), "[]"))
 }
 
 prometheus.scrape "probes" {

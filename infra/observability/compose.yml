@@ -1,32 +1,34 @@
 # The observability stack — Prometheus (metrics), Loki (logs), Alloy (the
-# collector) and Grafana (dashboards + alerts to Telegram). Design:
-# docs/superpowers/specs/2026-09-29-observability-phase1-design.md
+# collector) and Grafana (dashboards and alerts). Designs:
+# docs/superpowers/specs/2026-09-29-observability-phase1-design.md and
+# 2026-09-29-self-hosting-phase2-design.md; guide: docs/self-hosting/.
 #
 # An overlay on ../docker-compose.prod.yml: it only ADDS services and
 # volumes, and uses the `internal` and `observability` networks that file
 # declares. Run it with both files, from the project directory
-# (/opt/chakramcp on the VM, where the base file is docker-compose.yml):
+# (/opt/chakramcp on the VM, where the base file is docker-compose.yml; a
+# checkout's infra/, where it is docker-compose.prod.yml), through
+# scripts/deploy.sh, which checks the host first and applies config changes.
 #
-#   docker compose -f docker-compose.yml -f observability/compose.yml \
-#     up -d alloy prometheus loki grafana
+# Needs a systemd Linux host logging to journald (LOG_DRIVER=journald, the
+# default) with persistent journal storage: Alloy reads container logs from
+# the host journal. Docker Desktop can't run it.
 #
 # Relative paths below resolve against that project directory. Nothing here
 # depends_on a base service, so bringing the stack up or down never touches
 # the relay, Postgres, Redis or Caddy.
 #
-# Env (the project's .env; never committed):
-#   GRAFANA_ADMIN_PASSWORD           break-glass admin (usable only from inside the VM)
-#   GRAFANA_GITHUB_CLIENT_ID/SECRET  the GitHub OAuth app Grafana signs in with
-#   GRAFANA_ROLE_ATTRIBUTE_PATH      who may sign in: a JMESPath over GitHub's /user
-#                                    response that yields 'GrafanaAdmin', or '' to refuse
-#   GRAFANA_ROOT_URL                 default https://grafana.chakramcp.com
-#   TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID  where alerts go
-#   PG_MONITOR_PASSWORD              the chakramcp_monitor role (read-only statistics)
+# Env (the project's .env; see ../.env.example): GRAFANA_ADMIN_PASSWORD and
+# PG_MONITOR_PASSWORD are required. Sign-in providers (GRAFANA_GITHUB_*,
+# GRAFANA_GOOGLE_*, GRAFANA_OIDC_*, GRAFANA_ROLE_ATTRIBUTE_PATH), the alert
+# channel (ALERT_CHANNEL and its settings) and HTTPS probes (PROBE_TARGETS)
+# are optional: by default Grafana has only its admin login, and alerts show
+# in Grafana alone.
 
 # Same logging as the base services: the host journal, never blocking.
 # (YAML anchors don't carry across compose files.)
 x-logging: &logging
-  driver: journald
+  driver: ${LOG_DRIVER:-journald}
   options:
     mode: non-blocking
     max-buffer-size: 4m
@@ -57,12 +59,26 @@ services:
     environment:
       GOMEMLIMIT: 150MiB
       PG_MONITOR_PASSWORD: ${PG_MONITOR_PASSWORD:?set PG_MONITOR_PASSWORD in .env}
+      # HTTPS probes, a JSON list: [{"name":"relay","address":"https://…/healthz"}].
+      PROBE_TARGETS: ${PROBE_TARGETS:-[]}
     volumes:
       - ./observability/alloy:/etc/alloy:ro
       - alloy_data:/alloy-data
-      - /var/log/journal:/var/log/journal:ro
+      # The host journal. Strict mounts: on a host without them, Compose
+      # fails instead of creating /etc/machine-id as a directory, or
+      # creating /var/log/journal, which would switch journald to
+      # persistent storage. /run/log/journal is tmpfs on systemd hosts.
+      - type: bind
+        source: /var/log/journal
+        target: /var/log/journal
+        read_only: true
+        bind: { create_host_path: false }
       - /run/log/journal:/run/log/journal:ro
-      - /etc/machine-id:/etc/machine-id:ro
+      - type: bind
+        source: /etc/machine-id
+        target: /etc/machine-id
+        read_only: true
+        bind: { create_host_path: false }
     networks: [internal, observability]
 
   # Stores and queries metrics; Alloy remote-writes into it.
@@ -107,7 +123,9 @@ services:
     networks: [observability]
 
   # Dashboards and alerting. The only piece reachable from outside, through
-  # Caddy at grafana.chakramcp.com; GitHub sign-in is the only way in.
+  # Caddy at GRAFANA_DOMAIN. Sign-in: the admin login form by default, plus
+  # GitHub, Google or a generic OIDC provider when configured; each provider
+  # admits only whom GRAFANA_ROLE_ATTRIBUTE_PATH maps to a role (strict).
   grafana:
     image: grafana/grafana:13.2.3
     restart: unless-stopped
@@ -121,26 +139,48 @@ services:
     environment:
       GOMEMLIMIT: 256MiB
       GF_LOG_LEVEL: warn
-      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-https://grafana.chakramcp.com}
+      GF_SERVER_ROOT_URL: https://${GRAFANA_DOMAIN:-localhost}
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
       GF_SECURITY_COOKIE_SECURE: "true"
       GF_SECURITY_DISABLE_GRAVATAR: "true"
-      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      # true once a provider works: the admin then signs in only from inside
+      # the host (Caddy refuses Basic auth from outside).
+      GF_AUTH_DISABLE_LOGIN_FORM: ${GRAFANA_DISABLE_LOGIN_FORM:-false}
       GF_AUTH_ANONYMOUS_ENABLED: "false"
-      GF_AUTH_GITHUB_ENABLED: "true"
-      GF_AUTH_GITHUB_CLIENT_ID: ${GRAFANA_GITHUB_CLIENT_ID:?set GRAFANA_GITHUB_CLIENT_ID in .env}
-      GF_AUTH_GITHUB_CLIENT_SECRET: ${GRAFANA_GITHUB_CLIENT_SECRET:?set GRAFANA_GITHUB_CLIENT_SECRET in .env}
+      # Sign-in providers, each off unless enabled. Every one is strict: a
+      # user GRAFANA_ROLE_ATTRIBUTE_PATH doesn't map to a role is refused,
+      # so an empty path refuses everyone.
+      GF_AUTH_GITHUB_ENABLED: ${GRAFANA_GITHUB_ENABLED:-false}
+      GF_AUTH_GITHUB_CLIENT_ID: ${GRAFANA_GITHUB_CLIENT_ID:-}
+      GF_AUTH_GITHUB_CLIENT_SECRET: ${GRAFANA_GITHUB_CLIENT_SECRET:-}
       # read:org is required: at every sign-in Grafana lists the user's team
       # memberships (/user/teams), which 404s without it and fails the login.
       GF_AUTH_GITHUB_SCOPES: "user:email,read:org"
       GF_AUTH_GITHUB_ALLOW_SIGN_UP: "true"
-      GF_AUTH_GITHUB_AUTO_LOGIN: "true"
-      # Who may sign in. Strict: anyone the expression doesn't map to a role
-      # is refused. Kept in .env — it names the operator's account.
-      GF_AUTH_GITHUB_ROLE_ATTRIBUTE_PATH: ${GRAFANA_ROLE_ATTRIBUTE_PATH:?set GRAFANA_ROLE_ATTRIBUTE_PATH in .env}
+      GF_AUTH_GITHUB_AUTO_LOGIN: ${GRAFANA_GITHUB_AUTO_LOGIN:-false}
+      GF_AUTH_GITHUB_ROLE_ATTRIBUTE_PATH: ${GRAFANA_ROLE_ATTRIBUTE_PATH:-}
       GF_AUTH_GITHUB_ROLE_ATTRIBUTE_STRICT: "true"
       GF_AUTH_GITHUB_ALLOW_ASSIGN_GRAFANA_ADMIN: "true"
+      GF_AUTH_GOOGLE_ENABLED: ${GRAFANA_GOOGLE_ENABLED:-false}
+      GF_AUTH_GOOGLE_CLIENT_ID: ${GRAFANA_GOOGLE_CLIENT_ID:-}
+      GF_AUTH_GOOGLE_CLIENT_SECRET: ${GRAFANA_GOOGLE_CLIENT_SECRET:-}
+      GF_AUTH_GOOGLE_ALLOW_SIGN_UP: "true"
+      GF_AUTH_GOOGLE_ROLE_ATTRIBUTE_PATH: ${GRAFANA_ROLE_ATTRIBUTE_PATH:-}
+      GF_AUTH_GOOGLE_ROLE_ATTRIBUTE_STRICT: "true"
+      GF_AUTH_GOOGLE_ALLOW_ASSIGN_GRAFANA_ADMIN: "true"
+      GF_AUTH_GENERIC_OAUTH_ENABLED: ${GRAFANA_OIDC_ENABLED:-false}
+      GF_AUTH_GENERIC_OAUTH_NAME: ${GRAFANA_OIDC_NAME:-OpenID Connect}
+      GF_AUTH_GENERIC_OAUTH_CLIENT_ID: ${GRAFANA_OIDC_CLIENT_ID:-}
+      GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: ${GRAFANA_OIDC_CLIENT_SECRET:-}
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: ${GRAFANA_OIDC_AUTH_URL:-}
+      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: ${GRAFANA_OIDC_TOKEN_URL:-}
+      GF_AUTH_GENERIC_OAUTH_API_URL: ${GRAFANA_OIDC_API_URL:-}
+      GF_AUTH_GENERIC_OAUTH_SCOPES: ${GRAFANA_OIDC_SCOPES:-openid email profile}
+      GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: "true"
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: ${GRAFANA_ROLE_ATTRIBUTE_PATH:-}
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_STRICT: "true"
+      GF_AUTH_GENERIC_OAUTH_ALLOW_ASSIGN_GRAFANA_ADMIN: "true"
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_USERS_ALLOW_ORG_CREATE: "false"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
@@ -150,12 +190,30 @@ services:
       GF_PLUGINS_PREINSTALL_DISABLED: "true"
       # false in CI: rules load but never try to notify.
       GF_UNIFIED_ALERTING_EXECUTE_ALERTS: ${GF_UNIFIED_ALERTING_EXECUTE_ALERTS:-true}
-      # Read by provisioning/alerting (the Telegram contact point).
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set TELEGRAM_BOT_TOKEN in .env}
-      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:?set TELEGRAM_CHAT_ID in .env}
+      # Alert channel settings, read by grafana/channels/$ALERT_CHANNEL.yml
+      # (Grafana expands $VARS in contact-point settings).
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+      # Outgoing mail, for the email channel.
+      GF_SMTP_ENABLED: ${GF_SMTP_ENABLED:-false}
+      GF_SMTP_HOST: ${GF_SMTP_HOST:-localhost:25}
+      GF_SMTP_USER: ${GF_SMTP_USER:-}
+      GF_SMTP_PASSWORD: ${GF_SMTP_PASSWORD:-}
+      GF_SMTP_FROM_ADDRESS: ${GF_SMTP_FROM_ADDRESS:-admin@grafana.localhost}
     volumes:
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./observability/grafana/dashboards:/etc/grafana/dashboards:ro
+      # The alert channel (none, telegram, slack, email or webhook), mounted
+      # over the placeholder provisioning/alerting/channel.yml. Strict, so an
+      # unknown ALERT_CHANNEL fails here rather than mounting a directory.
+      - type: bind
+        source: ./observability/grafana/channels/${ALERT_CHANNEL:-none}.yml
+        target: /etc/grafana/provisioning/alerting/channel.yml
+        read_only: true
+        bind: { create_host_path: false }
       - grafana_data:/var/lib/grafana
     networks: [observability]
     healthcheck:
