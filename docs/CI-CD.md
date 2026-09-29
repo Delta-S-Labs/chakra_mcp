@@ -153,6 +153,28 @@ release) and `GIT_SHA`, which `chakramcp-server --version` and the
 (GitHub → the org's Packages → `chakramcp-server` → Package settings →
 Change visibility) if it didn't inherit the repo's visibility.
 
+## Helm chart
+
+`charts/chakramcp` ([guide](self-hosting/kubernetes.md)).
+
+- **`chart-ci.yml`** runs on every PR and skips itself unless `charts/**`
+  or the workflow changed:
+  - lint and render with each values file in `ci/` (installable) and
+    `ci-template/` (render-only);
+  - check that invalid values are refused;
+  - validate the manifests with kubeconform against Kubernetes 1.37 and
+    1.33;
+  - install every `ci/` file on kind with `ct` and run `helm test`. The
+    namespace enforces the `restricted` Pod Security profile, and the
+    `:edge` image is loaded into kind with the workflow's token.
+- **Releases.** The `chart` job of `cli-release.yml` packages the chart
+  with `--version` and `--app-version` set to the release, and pushes it
+  to `oci://ghcr.io/delta-s-labs/charts`. It runs after the image tags
+  exist. No `:edge` chart is published: unreleased changes install from
+  a checkout.
+- **One-time:** the chart package needs the same public-visibility toggle
+  as the image.
+
 ## Observability
 
 Metrics, logs, dashboards and Telegram alerts for production. Designs:

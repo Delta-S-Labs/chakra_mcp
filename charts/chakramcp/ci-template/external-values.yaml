@@ -1,0 +1,9 @@
+# Template-only: external Postgres and Redis given as URLs.
+postgresql:
+  enabled: false
+externalDatabase:
+  url: postgres://chakramcp:p%40ss@db.example.com:5432/chakramcp?sslmode=require
+redis:
+  enabled: false
+externalRedis:
+  url: redis://redis.example.com:6379

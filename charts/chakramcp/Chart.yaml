@@ -1,0 +1,17 @@
+apiVersion: v2
+name: chakramcp
+description: >-
+  ChakraMCP, the relay and app API for agent networks, with optional bundled
+  Postgres and Redis.
+type: application
+# The repo's copy installs the :edge image; each release (cli-release.yml)
+# packages the chart with both versions set to the release, e.g. 0.2.0.
+version: 0.0.0-dev
+appVersion: edge
+home: https://github.com/Delta-S-Labs/chakra_mcp
+sources:
+  - https://github.com/Delta-S-Labs/chakra_mcp
+keywords: [mcp, agents, relay]
+maintainers:
+  - name: Delta S Labs
+    url: https://github.com/Delta-S-Labs

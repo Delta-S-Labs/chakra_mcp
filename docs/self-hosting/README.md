@@ -17,7 +17,7 @@ You build it from public pieces:
 | | For | Guide |
 |---|---|---|
 | **Docker Compose** | One Linux host: a VPS, a VM or a box in your VPC | [compose.md](compose.md) |
-| **Kubernetes** | A cluster, with a Helm chart | In progress |
+| **Kubernetes** | A cluster, with the Helm chart in `charts/chakramcp` | [kubernetes.md](kubernetes.md) |
 | **A single binary** | A laptop or a quick trial (Homebrew or a source build) | [INSTALL.md](../INSTALL.md#self-hosted-server-chakramcp-server) |
 
 Observability (Prometheus, Loki, Grafana and Alloy, with ChakraMCP's

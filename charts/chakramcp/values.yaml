@@ -1,0 +1,159 @@
+# Default values for the chakramcp chart. Guide:
+# docs/self-hosting/kubernetes.md; every value is described in README.md.
+
+image:
+  repository: ghcr.io/delta-s-labs/chakramcp-server
+  # Defaults to the chart's appVersion: `edge` from a checkout, the release
+  # version from a packaged chart. `:edge` moves with main; pin a build
+  # (sha-<7>) or a release for anything that matters.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# More replicas are safe: migrations take an advisory lock, the credits
+# worker holds its own lock for accounting, and rate-limit counters live in
+# Redis.
+replicaCount: 1
+
+config:
+  # The public URLs the server advertises (OAuth redirects, discovery
+  # documents). Default: derived from the Ingress hosts when the Ingress is
+  # on, else the server's localhost defaults.
+  appPublicUrl: ""
+  relayPublicUrl: ""
+  # Where the web frontend lives, when not on appPublicUrl.
+  frontendPublicUrl: ""
+  # This account gets the server's admin role.
+  adminEmail: ""
+  # true: over-limit calls are refused (429); false: logged only.
+  limitsEnforce: true
+  discoveryV2: true
+  rustLog: info,chakramcp_app=info,chakramcp_relay=info,sqlx=warn
+
+secrets:
+  # A Secret whose keys all become environment variables: JWT_SECRET
+  # (required) and any optional ones, e.g. UPSERT_SHARED_SECRET,
+  # GOOGLE_CLIENT_SECRET, GITHUB_CLIENT_SECRET, TYPESAFE_AI_KEY. Without it
+  # the chart generates JWT_SECRET once and keeps it across upgrades
+  # (`lookup`), which GitOps tools can't do: set this with Argo CD or Flux.
+  existingSecret: ""
+
+# Extra environment variables for the server, as Kubernetes EnvVar entries,
+# and extra sources (envFrom entries).
+extraEnv: []
+extraEnvFrom: []
+
+metrics:
+  # Prometheus metrics on a port of their own. Keep it off the Ingress.
+  enabled: true
+  port: 9464
+
+service:
+  type: ClusterIP
+  appPort: 8080
+  relayPort: 8090
+
+ingress:
+  enabled: false
+  className: ""
+  # e.g. cert-manager.io/cluster-issuer: letsencrypt
+  annotations: {}
+  hosts:
+    app: ""    # → the app API (8080)
+    relay: ""  # → the relay and MCP (8090)
+  # e.g. [{secretName: chakramcp-tls, hosts: [app.example.com, relay.example.com]}]
+  tls: []
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 512Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# ─── Postgres ──────────────────────────────────────────────────────────
+# Bundled: one Postgres pod with a volume, for evaluation and small
+# installs. For production, use a managed or operator-run Postgres through
+# externalDatabase (postgresql.enabled=false).
+postgresql:
+  enabled: true
+  image:
+    repository: postgres
+    tag: 16-alpine
+    pullPolicy: IfNotPresent
+  auth:
+    username: chakramcp
+    database: chakramcp
+    # A Secret holding the password under secretKey. Without it the chart
+    # generates one and keeps it (GitOps: set this). Any characters work:
+    # the server gets it as PGPASSWORD, not inside a URL.
+    existingSecret: ""
+    secretKey: password
+  persistence:
+    # false: an emptyDir, so the data goes with the pod.
+    enabled: true
+    size: 8Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 1Gi
+
+# Used when postgresql.enabled=false: a postgres:// URL, or a Secret that
+# holds one. The URL is used as given, so percent-encode its password.
+externalDatabase:
+  url: ""
+  existingSecret: ""
+  secretKey: DATABASE_URL
+
+# ─── Redis ─────────────────────────────────────────────────────────────
+# Rate-limit counters only, no persistence. Without any Redis, rate
+# limiting fails open (calls are served; the other limits still apply).
+redis:
+  enabled: true
+  image:
+    repository: redis
+    tag: 7-alpine
+    pullPolicy: IfNotPresent
+  maxmemory: 128mb
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      memory: 192Mi
+
+# Used when redis.enabled=false, e.g. redis://:password@redis.example:6379.
+externalRedis:
+  url: ""

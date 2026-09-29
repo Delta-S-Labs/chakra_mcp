@@ -161,7 +161,8 @@ with the next one. The image runs as a non-root user and exposes 8080
 metrics).
 
 **Docker Compose on one host** (TLS through Caddy, Postgres, Redis, and
-optionally Prometheus, Loki and Grafana with our dashboards and alerts):
+optionally Prometheus, Loki and Grafana with our dashboards and alerts),
+or **Kubernetes** with the Helm chart in [`charts/chakramcp`](charts/chakramcp):
 [`docs/self-hosting/`](docs/self-hosting/README.md).
 
 **Docker (production-shaped):**

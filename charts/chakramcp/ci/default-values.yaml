@@ -1,0 +1,7 @@
+# `ct install`: the defaults (bundled Postgres and Redis, generated
+# secrets) with the :edge image, which chart-ci loads into kind first.
+image:
+  pullPolicy: IfNotPresent
+postgresql:
+  persistence:
+    size: 1Gi
