@@ -79,10 +79,10 @@ Derived from `2026-09-29-self-hosting-phase2-design.md` (approved 2026-09-29). �
    - **Verify** Alloy accepts `[]` with `alloy run` locally. If not, split the probe components into `alloy/probes.alloy`, loaded only when set; Alloy loads a directory, so `--config` becomes the directory.
 7. **Scripts:**
    - `deploy.sh` and `smoke-test.py` use `${COMPOSE_BASE:-docker-compose.yml}`. `deploy.sh` calls `ensure-monitor-role.sh -f "$COMPOSE_BASE" -f observability/compose.yml`.
-   - The overlay's `x-logging.driver` reads `${LOG_DRIVER:-journald}`. Verify that Alloy runs without a host journal: mount an empty dir locally.
+   - **Journald preflight (§4.1).** The overlay's `x-logging.driver` reads `${LOG_DRIVER:-journald}`. `deploy.sh` first checks `LOG_DRIVER`, `/etc/machine-id` and `/var/log/journal`, then exits with the fix before running Compose. The paths are overridable variables so a test can point them at missing files. Alloy's `/etc/machine-id` and `/var/log/journal` mounts switch to the long syntax with `create_host_path: false`. Test that the preflight fails on missing paths and on `LOG_DRIVER=json-file`, and that the stack still starts on colima, which has all three paths.
    - `deploy.sh` recreates Grafana when `grafana/channels` changed.
    - `check-grafana.py` also parses `channels/*.yml`.
-8. **Overview dashboard.** In `gen_dashboards.py` (the scratch generator), replace the four probe stat tiles with one stat panel: `label_replace(probe_success, "probe", "$1", "job", "integrations/blackbox/(.*)")`, legend `{{probe}}`, with UP/DOWN mappings. Regenerate.
+8. **Overview dashboard.** Edit `overview.json` directly: Phase 1's generator was a scratch tool and isn't in the repo. Replace the four probe stat tiles with one stat panel: `label_replace(probe_success, "probe", "$1", "job", "integrations/blackbox/(.*)")`, legend `{{probe}}`, with UP/DOWN mappings. `check-grafana.py` validates it; the diff touches only those panels.
 9. **`cd.yml`:**
    - In the backend job, after "Sync infra config", add the step `docker compose up -d --no-deps caddy`. It prints whether Caddy was recreated.
    - The existing reload stays hash-gated.
@@ -93,6 +93,8 @@ Derived from `2026-09-29-self-hosting-phase2-design.md` (approved 2026-09-29). �
     - `caddy validate` gets `-e APP_DOMAIN=… -e RELAY_DOMAIN=… -e GRAFANA_DOMAIN=…`.
     - The smoke test also starts `relay` with `CHAKRAMCP_IMAGE=ghcr.io/delta-s-labs/chakramcp-server:edge` (plus the env the relay needs, from `ci.env`).
     - Assert `up{job="chakramcp"}`, `chakramcp_build_info`, and relay logs with `level`.
+    - `smoke-test.py`'s contact-point check follows `ALERT_CHANNEL`: with `none`, no `*-chakramcp` contact point; otherwise the channel's uid.
+    - Confirm the runner has `/var/log/journal`, which the strict mount now needs; if it doesn't, the workflow creates it before starting the stack.
 11. **Docs:**
     - `docs/self-hosting/README.md`, `compose.md` (the §4.3 walkthrough), and `observability.md` (Compose parts: providers with an allowlist example per provider, channels, probes, dashboards, alerts);
     - `INSTALL.md` links to them;
@@ -124,35 +126,36 @@ Derived from `2026-09-29-self-hosting-phase2-design.md` (approved 2026-09-29). �
      - `secret.yaml` (app secrets: existingSecret, or generated with a `lookup` keep);
      - `postgresql-{statefulset,service,secret}.yaml`, `redis-{deployment,service}.yaml`;
      - `tests/test-connection.yaml`.
-   - `DATABASE_URL` is built from the bundled Postgres Secret, or from `externalDatabase`, as an env var with `valueFrom` plus `$(VAR)` interpolation, so the password never lands in a ConfigMap.
+   - With bundled Postgres, `DATABASE_URL` has no password and `PGPASSWORD` comes from the Secret via `secretKeyRef` (§5.2). The password never lands in a ConfigMap and needs no URL-encoding. External: `externalDatabase.url` or its `existingSecret`.
 2. **`chart-ci.yml`:**
    - path-gated;
-   - lint, template (`ci/` and `ci-template/`), kubeconform (`-strict`, two K8s versions, CRD catalog);
-   - `ct install` on kind with `ci/default-values.yaml` (`image.tag: edge`), then `helm test`.
+   - `helm dependency build` first (a no-op until PR-4), then lint, template (`ci/` and `ci-template/`), kubeconform (`-strict`, two K8s versions, CRD catalog);
+   - `ct install` on kind with `ci/default-values.yaml` (`image.tag: edge`), then `helm test`;
+   - a password case. `ct install --namespace` gets a fixed namespace holding a pre-created Secret whose password has URL-special characters (`@:/#%`). `ci/existing-secret-values.yaml` points `postgresql.auth.existingSecret` at it, and the release must become ready.
 3. **`cli-release.yml`, job `chart`:**
    - `needs: [resolve-version, image-merge]`, `packages: write`;
-   - `helm package --version/--app-version <ver>` and `helm push oci://ghcr.io/delta-s-labs/charts`.
-4. **Docs.** `docs/self-hosting/kubernetes.md` covers install, bundled vs external, Ingress/TLS, secrets and GitOps (both existingSecrets), upgrades, and rollback across migrations.
+   - `helm dependency build` (a no-op until PR-4), `helm package --version/--app-version <ver>` and `helm push oci://ghcr.io/delta-s-labs/charts`.
+4. **Docs.** `docs/self-hosting/kubernetes.md` covers install, bundled vs external, Ingress/TLS, secrets and GitOps (the app and Postgres `existingSecret`s; PR-4 adds Grafana's), the percent-encoding note for an external `DATABASE_URL`, upgrades, and rollback across migrations.
 5. **Verify.** kind locally (colima) with the default values, reaching the app through port-forward.
 6. **Ship.** Merge, then ask the user whether to make chart-ci required.
 
 ## PR-4 — chart observability (§5.3, §5.4)
 
-1. **`sync-chart-assets.sh`:** copies Overview (plus a variant without its Loki panel) + Logs, and filters `rules.yml` to the Kubernetes uid set (a small Python script inside it), writing to `charts/chakramcp/files/`. CI runs it and fails on `git diff --exit-code`.
+1. **`sync-chart-assets.sh`:** copies Overview (plus a variant without its Loki panel) + Logs, and filters `rules.yml` to the Kubernetes uid set (a small Python script inside it). It writes the `logs` group to its own `rules-logs.yaml`, and everything goes to `charts/chakramcp/files/`. CI runs it and fails on `git diff --exit-code`.
 2. **Integration templates:**
    - a `servicemonitor.yaml` (Capabilities-gated, `labels` value, `honorLabels: true`, job relabel);
    - the dashboard ConfigMaps (Logs gated on `observability.loki.enabled`);
-   - the alert-rules ConfigMap (`namespace` value; datasource UID substitution with `replace`).
+   - the alert-rules ConfigMap (`namespace` value; datasource UID substitution with `replace`; `rules-logs.yaml` only with `observability.loki.enabled`).
 3. **Bundled:**
    - **Subchart dependencies**, conditions on `observability.bundled.enabled`:
      - prometheus-community `prometheus` (server only, remote-write receiver);
-     - Loki from its current chart (verify the repo, single binary, caches/gateway/canary off);
+     - `loki` from `oci://ghcr.io/grafana-community/helm-charts` (single binary, caches/gateway/canary off);
      - `grafana` from `oci://ghcr.io/grafana-community/helm-charts` (datasources with fixed UIDs; sidecars for dashboards and alerts; auth and channel values);
      - `alloy` (a Deployment with 1 replica and a chart-provided config: `discovery.kubernetes` → scrape → remote_write; `loki.source.kubernetes` → process → Loki).
-   - `helm dependency update` → `Chart.lock`.
+   - `helm repo add` prometheus-community and grafana (for Alloy), then `helm dependency update` → `Chart.lock`. chart-ci (`chart-repos` in `ct.yaml`, plus the static steps) and the release's `chart` job add the same repos before `helm dependency build`.
 4. **CI.** `ci/bundled-values.yaml` installs on kind. Its checks run as `helm test` hook pods, since `ct` uninstalls afterwards: Grafana is healthy, the dashboards and rules exist (through the Grafana API), and `up{job="chakramcp"} == 1` (through the Prometheus API).
 5. **Dependabot.** A `helm` entry for `/charts/chakramcp`. Confirm it raises PRs for the `oci://` dependencies; otherwise document manual bumps in `CI-CD.md`.
-6. **Docs.** `observability.md` gains its Kubernetes section: integrate vs bundled, the kube-prometheus-stack `release` label and alerts sidecar, the rule set.
+6. **Docs.** `observability.md` gains its Kubernetes section: integrate vs bundled, the kube-prometheus-stack `release` label and alerts sidecar, the rule set. `kubernetes.md` and `NOTES.txt` add Grafana's `admin.existingSecret` to the GitOps list.
 
 ## PR-5 — first versioned release (§8.5)
 

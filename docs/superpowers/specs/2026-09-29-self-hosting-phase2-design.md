@@ -1,6 +1,6 @@
 # Self-hosting, Phase 2: public image, Compose and Kubernetes packaging
 
-**Status:** design, awaiting review
+**Status:** approved 2026-09-29; implemented per `2026-09-29-self-hosting-phase2-plan.md`
 **Date:** 2026-09-29
 **Builds on:** `2026-09-29-observability-phase1-design.md` (production observability, shipped in #339, #340, #348, #349).
 
@@ -84,8 +84,10 @@ The same files serve production and self-hosters, and they keep their names: `in
 
 - **Image.** `image: ${CHAKRAMCP_IMAGE:-ghcr.io/delta-s-labs/chakramcp-server:edge}` for `relay` and `migrate`. It becomes `:latest` in PR-5: that tag exists only after the first versioned release. Production sets its ECR image, as today, and CD still pins the exact sha.
 - **Log driver.** `x-logging` uses `driver: ${LOG_DRIVER:-journald}`, which needs a host with systemd's journald, as production has.
-  - On Docker Desktop or hosts without journald, `LOG_DRIVER=json-file` makes the services start. The overlay's own logging block reads `LOG_DRIVER` too; anchors don't cross files.
-  - With `json-file`, observability still runs: metrics, dashboards and alerts work, but Loki stays empty, because Alloy reads the journal. Alloy's journal source reports an error in its own UI, and the docs say so. The implementation verifies that Alloy tolerates a host without a journal.
+  - On Docker Desktop or hosts without journald, `LOG_DRIVER=json-file` makes the **base services** start. The overlay's own logging block reads `LOG_DRIVER` too; anchors don't cross files.
+  - **The observability overlay needs journald.** Alloy reads container logs from the host journal through bind mounts of `/var/log/journal`, `/run/log/journal` and `/etc/machine-id`. On Docker Desktop those host paths don't exist and aren't shared, so Alloy can't start. Supported: a systemd Linux host with `LOG_DRIVER=journald` and persistent journal storage (`/var/log/journal`, the default on Ubuntu and Debian). Elsewhere, run the base services only.
+  - **`deploy.sh` checks first**, before changing anything: `LOG_DRIVER` (environment, then `.env`, default `journald`) must be `journald`, `/etc/machine-id` a file and `/var/log/journal` a directory. Otherwise it exits with the fix and a link to the docs. With volatile journal storage the fix is `mkdir /var/log/journal` and a journald restart: an explicit choice, not a side effect.
+  - **Strict mounts.** The `/etc/machine-id` and `/var/log/journal` mounts use the long syntax with `create_host_path: false`, so a manual `docker compose up` on an unsupported host fails. Otherwise Docker would create a directory at `/etc/machine-id`, or create `/var/log/journal`, which switches journald's default `Storage=auto` to persistent storage. `/run/log/journal` (tmpfs, present on systemd hosts) keeps the short syntax. Production has all three (checked 2026-09-29); the new mount definition recreates Alloy once.
   - json-file logs don't rotate by default; the docs point to Docker's daemon-level `log-opts` (`max-size`/`max-file`).
   - The `mode` and `labels` options work with both drivers.
 - **Caddy hostnames come from the environment.** The `caddy` service's environment gets:
@@ -161,6 +163,7 @@ From a checkout's `infra/`:
 - The static checks run with `ci.env` extended for the new keys:
   - `caddy validate` gets `APP_DOMAIN`, `RELAY_DOMAIN` and `GRAFANA_DOMAIN`;
   - the Compose config is checked with `ALERT_CHANNEL=none` and with `telegram`.
+- The smoke test's contact-point check follows `ALERT_CHANNEL`: `ci.env` uses `none`, and Phase 1's check for a Telegram contact point would fail.
 - The smoke test also starts the **relay** from `:edge` and asserts:
   - `up{job="chakramcp"} == 1`;
   - a `chakramcp_build_info` series;
@@ -191,6 +194,7 @@ From a checkout's `infra/`:
 | Postgres | `postgresql.enabled=true`: a StatefulSet from `postgres:16-alpine` with a PVC (`persistence.size`, `storageClass`). The password comes from `postgresql.auth.existingSecret`/`key`, or is generated and kept with `lookup`. | `postgresql.enabled=false` plus `externalDatabase.url`, or `existingSecret`/`key` |
 | Redis | `redis.enabled=true`: a Deployment from `redis:7-alpine` with Phase 1's flags (no persistence, `maxmemory` + LRU) | `redis.enabled=false` plus `externalRedis.url`. Unset means rate limiting fails open, as today. |
 
+- **Database password.** With bundled Postgres, `DATABASE_URL` has no password (`postgres://chakramcp@<release>-postgresql:5432/chakramcp`) and `PGPASSWORD` comes from the Secret through `secretKeyRef`. sqlx starts from the `PG*` environment when it parses the URL, and only a password in the URL overrides it (checked in sqlx-postgres 0.9.0). So any password works, generated or from `existingSecret`, with no URL-encoding. An external `DATABASE_URL` is used as given; the docs say its password must be percent-encoded.
 - **GitOps.** `helm template`/Argo can't `lookup`, so every generated value would change on each render. The docs and `NOTES.txt` say GitOps users must set `secrets.existingSecret` and `postgresql.auth.existingSecret`, and in bundled mode Grafana's `admin.existingSecret`.
 - The bundled Postgres is labelled "for evaluation and small installs". The chart README recommends a managed or operator-run Postgres for production.
 
@@ -217,7 +221,7 @@ From a checkout's `infra/`:
 
 - **The alerts sidecar.** kube-prometheus-stack's Grafana has its alerts sidecar **off** by default, and it searches only its own namespace. The docs say to set `grafana.sidecar.alerts.enabled=true` **and** either `searchNamespace: ALL` or `observability.alertRules.namespace` (to put the ConfigMap in Grafana's namespace).
 - **Datasource UIDs** are values (`observability.datasources.prometheus`, default `prometheus` like kube-prometheus-stack; `.loki`, default `loki`), substituted into the synced JSON and YAML at render time.
-- **Asset sync.** `infra/observability/scripts/sync-chart-assets.sh` writes `charts/chakramcp/files/`: the Overview and Logs dashboards, and the filtered rules. It also writes an Overview variant **without** its Loki-backed panel, used when `observability.loki.enabled=false`, so the panel doesn't show a datasource error. CI re-runs it and fails on any difference.
+- **Asset sync.** `infra/observability/scripts/sync-chart-assets.sh` writes `charts/chakramcp/files/`: the Overview and Logs dashboards, and the filtered rules in two files: `rules.yaml`, and `rules-logs.yaml` with the `logs` group (`error-log-spike`), which the ConfigMap includes only with `observability.loki.enabled`. It also writes an Overview variant **without** its Loki-backed panel, used when `observability.loki.enabled=false`, so the panel doesn't show a datasource error. CI re-runs it and fails on any difference.
 
 ### 5.4 Observability: bundled (off by default; `observability.bundled.enabled=true`)
 
@@ -248,7 +252,7 @@ From a checkout's `infra/`:
 ### 5.6 Publishing
 
 `cli-release.yml` gains a `chart` job in PR-3. It needs `resolve-version` and the image job, and has job-level `packages: write`. It runs:
-- `helm dependency build`;
+- `helm repo add` for the two HTTP-hosted dependencies (prometheus-community, and grafana for Alloy; the OCI ones need none), then `helm dependency build` from the committed `Chart.lock`. `helm package`, `lint` and `template` all fail on a declared dependency missing from `charts/`, even a disabled one, so chart-ci does the same;
 - `helm package charts/chakramcp --version X.Y.Z --app-version X.Y.Z`;
 - `helm push` to `oci://ghcr.io/delta-s-labs/charts`.
 
@@ -271,7 +275,7 @@ Once it's stable, it's added to the required checks (ask the user then).
 ## 6. Documentation
 
 - **`docs/self-hosting/`:**
-  - `README.md`: choose Compose or Kubernetes, and the host requirements (Linux with journald for the default Compose logging);
+  - `README.md`: choose Compose or Kubernetes, and the host requirements (Linux with journald for the default Compose logging, and required by the observability overlay);
   - `compose.md`: the §4.3 walkthrough, DNS and TLS, upgrades;
   - `kubernetes.md`: `helm install`, bundled vs external databases, Ingress/TLS, secrets and GitOps, kube-prometheus-stack integration, upgrades and rollbacks;
   - `observability.md`: sign-in providers and allowlist examples per provider, alert channels, probes, what each dashboard and alert means, and which apply on Kubernetes.
@@ -319,5 +323,5 @@ Once it's stable, it's added to the required checks (ask the user then).
 | Generated secrets change under GitOps | `existingSecret` for the app secrets **and** the Postgres password, required for GitOps and documented |
 | An existing kube-prometheus-stack ignores the chart's pieces | ServiceMonitor labels are a setting; the docs cover the `release` label and enabling the alerts sidecar |
 | Kubernetes alerts that can never be satisfied | An explicit Kubernetes rule set; the Loki-dependent pieces are gated |
-| Compose on hosts without journald | `LOG_DRIVER=json-file`, documented as a host requirement choice |
+| Compose on hosts without journald | Base services run with `LOG_DRIVER=json-file`. The observability overlay needs a systemd host with persistent journald: `deploy.sh` checks that first, and strict mounts create nothing on the host |
 | Bundled Postgres used as production storage | Labelled for evaluation; the docs recommend external Postgres |
