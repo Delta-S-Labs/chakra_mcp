@@ -16,8 +16,8 @@ helm install chakramcp chakra_mcp/charts/chakramcp \
 helm test chakramcp -n chakramcp
 ```
 
-From the next release on, the chart is also published as an OCI artifact,
-versioned with the server and defaulting to the same image version:
+Each release (from 0.2.0 on) is also published as an OCI chart, versioned
+with the server and defaulting to the same image version:
 
 ```sh
 helm install chakramcp oci://ghcr.io/delta-s-labs/charts/chakramcp --version X.Y.Z \
@@ -31,7 +31,7 @@ Without an Ingress, reach it with
 
 ```yaml
 image:
-  tag: sha-abc1234        # pin a build, or a release once they exist
+  tag: "0.2.0"            # pin a release (a packaged chart defaults to its own)
 ingress:
   enabled: true
   className: nginx

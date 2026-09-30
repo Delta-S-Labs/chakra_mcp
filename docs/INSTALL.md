@@ -5,7 +5,7 @@ Two surfaces ship from this repo:
 | What               | When you want it                                        | Status today                          |
 |--------------------|---------------------------------------------------------|---------------------------------------|
 | **`chakramcp` CLI** | Talk to a relay from your terminal: manage agents, run an inbox loop, invoke peers, leave reviews. | ✅ `npm install -g @chakramcp/cli` *or* `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp` (release [`cli-v0.2.0`](https://github.com/Delta-S-Labs/chakra_mcp/releases/tag/cli-v0.2.0); prebuilt binaries on five platforms). `cargo install --git …` is the source fallback. `crates.io` listing and the `install.sh` universal installer are still **planned**. |
-| **`chakramcp-server`** | Run a private relay on your own box.                  | ✅ `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp-server` (Postgres dependency handled automatically), or the public container image `ghcr.io/delta-s-labs/chakramcp-server` (linux/amd64 + arm64: `:edge` from `main`; versioned tags from the next release on). Build from source or production-shaped Docker image via `infra/Dockerfile.thin` both still supported. |
+| **`chakramcp-server`** | Run a private relay on your own box.                  | ✅ `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp-server` (Postgres dependency handled automatically), or the public container image `ghcr.io/delta-s-labs/chakramcp-server` (linux/amd64 + arm64: `:latest` for the newest release, `:edge` from `main`). Build from source or production-shaped Docker image via `infra/Dockerfile.thin` both still supported. |
 
 | SDK                | Status today | Install                                  |
 |--------------------|--------------|------------------------------------------|
@@ -316,13 +316,13 @@ chakramcp login --network private
 docker run --rm -p 8080:8080 -p 8090:8090 \
     -e DATABASE_URL=postgres://user:pass@db:5432/chakramcp \
     -e JWT_SECRET="$(openssl rand -hex 32)" \
-    ghcr.io/delta-s-labs/chakramcp-server:edge
+    ghcr.io/delta-s-labs/chakramcp-server:latest
 ```
 
 | Tag | What |
 |---|---|
 | `:edge`, `:sha-<7>` | Every backend change on `main` ([`image.yml`](../.github/workflows/image.yml)) |
-| `:X.Y.Z` | A release (`cli-vX.Y.Z`, [`cli-release.yml`](../.github/workflows/cli-release.yml)); the first versioned tag arrives with the next release |
+| `:X.Y.Z` | A release (`cli-vX.Y.Z`, [`cli-release.yml`](../.github/workflows/cli-release.yml)), from 0.2.0 on |
 | `:X.Y`, `:latest` | The newest final release (never a pre-release) |
 
 Multi-arch (linux/amd64 + linux/arm64), runs as uid 10001, applies
@@ -342,8 +342,7 @@ in [`charts/chakramcp`](../charts/chakramcp) has its own guide:
 [`kubernetes.md`](./self-hosting/kubernetes.md). It brings the same
 dashboards and alerts, either for an existing kube-prometheus-stack or
 with a bundled Prometheus, Loki and Grafana. Each release also publishes
-the chart as `oci://ghcr.io/delta-s-labs/charts/chakramcp`, starting with
-the next one.
+the chart as `oci://ghcr.io/delta-s-labs/charts/chakramcp`, from 0.2.0 on.
 
 Production's own pipeline (build → private ECR → SSH to Lightsail →
 migrate → restart, with [`infra/Dockerfile.thin`](../infra/Dockerfile.thin))

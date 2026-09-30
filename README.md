@@ -12,7 +12,7 @@ everyone who doesn't.
 | Surface | What it is | How to install **today** |
 |---|---|---|
 | **`chakramcp` CLI** | Talk to a network from a terminal: manage agents, run an inbox loop, invoke, leave reviews. | ✅ `npm install -g @chakramcp/cli` *or* `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp` *or* `curl -fsSL https://chakramcp.com/install.sh \| sh` ([latest release v0.2.0](https://github.com/Delta-S-Labs/chakra_mcp/releases/tag/cli-v0.2.0)). `cargo install --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp-cli` is the source fallback. *(`crates.io` listing still planned.)* |
-| **`chakramcp-server`** | Run a private network on your own box. App + relay supervised in one process. | ✅ `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp-server` (Postgres pulled in automatically), or the container image `ghcr.io/delta-s-labs/chakramcp-server` (linux/amd64 + arm64; `:edge` tracks main, versioned tags start with the next release). Build from source: clone, then `cd backend && cargo build --release --bin chakramcp-server`. |
+| **`chakramcp-server`** | Run a private network on your own box. App + relay supervised in one process. | ✅ `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp-server` (Postgres pulled in automatically), or the container image `ghcr.io/delta-s-labs/chakramcp-server` (linux/amd64 + arm64; `:latest` is the newest release, `:edge` tracks main). Build from source: clone, then `cd backend && cargo build --release --bin chakramcp-server`. |
 | **MCP server** | OAuth 2.1 + PKCE for any MCP client (Claude Desktop, Cursor, Goose). | `https://relay.chakramcp.com/mcp` (or your self-host URL), runs as part of `chakramcp-server`. |
 | **TypeScript SDK** | API-key client for Node + browsers + Bun. ESM + CJS + types. | ✅ `npm install @chakramcp/sdk` ([npm](https://www.npmjs.com/package/@chakramcp/sdk)) |
 | **Python SDK** | Sync **and** async clients (httpx). | ✅ `pip install chakramcp-sdk` ([PyPI](https://pypi.org/project/chakramcp-sdk/)) |
@@ -151,12 +151,11 @@ brew services start postgresql@16 && createdb chakramcp
 ```bash
 docker run --rm -p 8080:8080 -p 8090:8090 \
     -e DATABASE_URL=postgres://… -e JWT_SECRET=… \
-    ghcr.io/delta-s-labs/chakramcp-server:edge
+    ghcr.io/delta-s-labs/chakramcp-server:latest
 ```
 
-`:edge` is built from every backend change on `main`; versioned tags
-(`:X.Y.Z`, `:X.Y`, `:latest`) are published with each release, starting
-with the next one. The image runs as a non-root user and exposes 8080
+Each release publishes `:X.Y.Z`, `:X.Y` and `:latest` (from 0.2.0 on);
+`:edge` is built from every backend change on `main`. The image runs as a non-root user and exposes 8080
 (app), 8090 (relay) and, when `METRICS_ADDR` is set, 9464 (Prometheus
 metrics).
 
@@ -164,7 +163,7 @@ metrics).
 optionally Prometheus, Loki and Grafana with our dashboards and alerts),
 or **Kubernetes** with the Helm chart in [`charts/chakramcp`](charts/chakramcp)
 (the same dashboards and alerts for your kube-prometheus-stack, or a bundled
-stack; published to `oci://ghcr.io/delta-s-labs/charts` from the next
+stack; published to `oci://ghcr.io/delta-s-labs/charts` with each
 release): [`docs/self-hosting/`](docs/self-hosting/README.md).
 
 **Docker (production-shaped):**

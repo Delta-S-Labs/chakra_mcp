@@ -7,8 +7,8 @@ observability stack with metrics, logs, dashboards and alerts.
 You build it from public pieces:
 
 - **The image** `ghcr.io/delta-s-labs/chakramcp-server`, for linux/amd64
-  and linux/arm64. `:edge` follows `main`; versioned tags arrive with the
-  next release.
+  and linux/arm64. `:latest` is the newest release (from 0.2.0 on);
+  `:edge` follows `main`.
 - **The Compose files in `infra/`**, which are the files production runs.
   Everything specific to a deployment lives in your `.env`.
 
