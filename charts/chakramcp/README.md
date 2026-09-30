@@ -8,7 +8,7 @@ Ingress, TLS, secrets, GitOps and upgrades, is
 
 ## Install
 
-From a release (starting with the next one):
+From a release (0.2.0 on):
 
 ```sh
 helm install chakramcp oci://ghcr.io/delta-s-labs/charts/chakramcp --version X.Y.Z \

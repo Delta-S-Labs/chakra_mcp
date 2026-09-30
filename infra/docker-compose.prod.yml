@@ -15,7 +15,8 @@
 # without journald (Docker Desktop), set LOG_DRIVER=json-file: the services
 # run, but the observability stack needs journald.
 #
-# The image defaults to the public ghcr.io/delta-s-labs/chakramcp-server:edge.
+# The image defaults to the public ghcr.io/delta-s-labs/chakramcp-server:latest,
+# the newest release (`:edge` follows main).
 # Production sets CHAKRAMCP_IMAGE to its private ECR image, and CD overrides
 # it per deploy with the build's exact `:<sha>` tag for both `migrate` and
 # `relay`, so a deploy never runs a stale `:latest`.
@@ -79,7 +80,7 @@ services:
   # subcommand, so it has to be present.
   migrate:
     profiles: ["migrate"]
-    image: ${CHAKRAMCP_IMAGE:-ghcr.io/delta-s-labs/chakramcp-server:edge}
+    image: ${CHAKRAMCP_IMAGE:-ghcr.io/delta-s-labs/chakramcp-server:latest}
     logging: *logging
     depends_on:
       pg: { condition: service_healthy }
@@ -91,7 +92,7 @@ services:
     networks: [internal]
 
   relay:
-    image: ${CHAKRAMCP_IMAGE:-ghcr.io/delta-s-labs/chakramcp-server:edge}
+    image: ${CHAKRAMCP_IMAGE:-ghcr.io/delta-s-labs/chakramcp-server:latest}
     restart: unless-stopped
     logging: *logging
     depends_on:

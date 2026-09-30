@@ -14,17 +14,24 @@
 
 ## Pre-merge: already wired
 
-Branch protection on `main` requires all four status checks green
-and the branch up-to-date before a merge button enables. Set up via
-`gh api PUT /repos/Delta-S-Labs/chakra_mcp/branches/main/protection`.
-Inspect / change at <https://github.com/Delta-S-Labs/chakra_mcp/settings/branches>.
+Branch protection on `main` requires these checks green and the branch
+up to date before a merge button enables. Inspect or change them at
+<https://github.com/Delta-S-Labs/chakra_mcp/settings/branches>, or with
+`gh api repos/Delta-S-Labs/chakra_mcp/branches/main/protection/required_status_checks`.
 
-Required checks:
+| Required check | Workflow | What |
+|---|---|---|
+| `Lint, typecheck, build` | `frontend-ci.yml` | The Next.js app |
+| `Dependency audit` | `frontend-ci.yml` | `pnpm audit --audit-level moderate`: a fresh advisory can turn it red with no code change |
+| `Build (ubuntu-22.04)` | `cli-ci.yml` | The CLI: build, clippy, fmt |
+| `Verify .sqlx cache is up to date` | `sqlx-prepare-check.yml` | `cargo sqlx prepare --workspace --check -- --tests` |
+| `Analyze (javascript-typescript)` | `codeql.yml` | SAST |
+| `Lint + typecheck + test (3.12)`, `Lint + test + build`, `Lint + test`, `Vet + test (go 1.22)` | `sdk-py-ci.yml`, `sdk-ts-ci.yml`, `sdk-rust-ci.yml`, `sdk-go-ci.yml` | The four SDKs |
+| `Observability config + smoke test` | `observability-ci.yml` | [Observability](#observability) |
+| `Chart lint, render + kind install` | `chart-ci.yml` | [Helm chart](#helm-chart) |
 
-- `Frontend CI`: lint + typecheck + build for the Next.js app
-- `CLI CI`: `cargo build` + `cargo clippy --workspace -- -D warnings` + `cargo fmt --check` on `backend/cli`
-- `Verify .sqlx cache is up to date`: runs `cargo sqlx prepare --workspace --check -- --tests` so committed query JSON matches source
-- `CodeQL`: SAST baseline
+A required check must report on every PR, so these workflows run on all
+of them and skip their steps when nothing relevant changed.
 
 Plus `.github/workflows/security-scan.yml` runs on every PR and
 **blocks** on leaked secrets via gitleaks. Other scans

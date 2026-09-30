@@ -83,10 +83,10 @@ docker compose -f docker-compose.prod.yml up -d
   when the database has a migration it doesn't know. Roll forward
   instead.
 
-**Pinning a version.** `:edge` moves with every change to `main`. To
-stay on a given build, set `CHAKRAMCP_IMAGE` in `.env`, e.g.
-`ghcr.io/delta-s-labs/chakramcp-server:sha-<7>`. Tagged releases
-(`:X.Y.Z`) are coming.
+**Pinning a version.** The default, `:latest`, moves with each release.
+To stay on one, set `CHAKRAMCP_IMAGE` in `.env`, e.g.
+`ghcr.io/delta-s-labs/chakramcp-server:0.2.0`. `:edge` follows every
+change to `main`.
 
 ## Operating
 
