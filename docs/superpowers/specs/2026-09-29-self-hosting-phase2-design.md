@@ -1,6 +1,6 @@
 # Self-hosting, Phase 2: public image, Compose and Kubernetes packaging
 
-**Status:** approved 2026-09-29; implemented per `2026-09-29-self-hosting-phase2-plan.md`
+**Status:** implemented (#351 image, #352 Compose, #354 chart, #355 chart observability, plus #353 graceful shutdown) and first released in 0.2.0; plan: `2026-09-29-self-hosting-phase2-plan.md`
 **Date:** 2026-09-29
 **Builds on:** `2026-09-29-observability-phase1-design.md` (production observability, shipped in #339, #340, #348, #349).
 
