@@ -157,3 +157,350 @@ redis:
 # Used when redis.enabled=false, e.g. redis://:password@redis.example:6379.
 externalRedis:
   url: ""
+
+# ─── Observability ─────────────────────────────────────────────────────
+# Guide: docs/self-hosting/observability.md. Pieces for an existing
+# Prometheus and Grafana (e.g. kube-prometheus-stack) are on by default;
+# bundled.enabled installs a small stack instead.
+observability:
+  serviceMonitor:
+    # Rendered only when the monitoring.coreos.com/v1 API exists.
+    enabled: true
+    # kube-prometheus-stack selects ServiceMonitors by its release label,
+    # e.g. release: kube-prometheus-stack.
+    labels: {}
+    interval: 15s
+  dashboards:
+    enabled: true
+    # The label Grafana's dashboard sidecar watches.
+    labels:
+      grafana_dashboard: "1"
+    # Default: the release namespace (kube-prometheus-stack's sidecar
+    # watches every namespace).
+    namespace: ""
+  alertRules:
+    enabled: true
+    # The label Grafana's alerts sidecar watches.
+    labels:
+      grafana_alert: "1"
+    # kube-prometheus-stack's alerts sidecar watches only Grafana's own
+    # namespace: set it here, or its searchNamespace to ALL.
+    namespace: ""
+  # true when your Grafana has a Loki with the chart's log labels (as the
+  # bundled stack does): adds the Logs dashboard, the Overview's log panel
+  # and the error-log-spike rule.
+  loki:
+    enabled: false
+  # The UIDs of your Grafana's datasources (kube-prometheus-stack's
+  # Prometheus is `prometheus`).
+  datasources:
+    prometheus: prometheus
+    loki: loki
+  bundled:
+    enabled: false
+  # Bundled Grafana only: none (alerts show in Grafana), telegram, slack,
+  # email or webhook, with the settings (TELEGRAM_BOT_TOKEN, …) in the
+  # Secret named under grafana.envFromSecrets.
+  alertChannel: none
+
+# ─── The bundled stack (observability.bundled.enabled) ─────────────────
+# Subchart values, under each chart's name. The defaults below make a
+# small single-node stack; everything else is the subcharts' own values.
+
+# Metrics storage: the server only, fed by Alloy's remote write.
+prometheus:
+  alertmanager:
+    enabled: false
+  kube-state-metrics:
+    enabled: false
+  prometheus-node-exporter:
+    enabled: false
+  prometheus-pushgateway:
+    enabled: false
+  server:
+    extraFlags:
+      - web.enable-lifecycle
+      - web.enable-remote-write-receiver
+    retention: 15d
+    persistentVolume:
+      size: 8Gi
+    # The restricted Pod Security profile, like the rest of the chart.
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 65534
+      runAsGroup: 65534
+      fsGroup: 65534
+      seccompProfile:
+        type: RuntimeDefault
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: [ALL]
+  configmapReload:
+    prometheus:
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]
+  # None of the chart's scrape jobs: Alloy is the only scraper. (Each is
+  # turned off by name; a null for the whole map doesn't reach a subchart.)
+  scrapeConfigs:
+    prometheus:
+      enabled: false
+    kubernetes-api-servers:
+      enabled: false
+    kubernetes-nodes:
+      enabled: false
+    kubernetes-nodes-cadvisor:
+      enabled: false
+    kubernetes-service-endpoints:
+      enabled: false
+    kubernetes-service-endpoints-slow:
+      enabled: false
+    prometheus-pushgateway:
+      enabled: false
+    kubernetes-services:
+      enabled: false
+    kubernetes-pods:
+      enabled: false
+    kubernetes-pods-slow:
+      enabled: false
+
+# Log storage: one Loki, on its volume.
+loki:
+  deploymentMode: Monolithic
+  loki:
+    auth_enabled: false
+    commonConfig:
+      replication_factor: 1
+    storage:
+      type: filesystem
+    schemaConfig:
+      configs:
+        - from: "2024-01-01"
+          store: tsdb
+          object_store: filesystem
+          schema: v13
+          index:
+            prefix: index_
+            period: 24h
+    limits_config:
+      retention_period: 336h  # 14 days
+      # Only the labels Alloy sets (service, level), as in Compose.
+      discover_service_name: []
+    compactor:
+      retention_enabled: true
+      delete_request_store: filesystem
+  singleBinary:
+    replicas: 1
+    persistence:
+      size: 8Gi
+  # The simple-scalable targets stay off.
+  read:
+    replicas: 0
+  write:
+    replicas: 0
+  backend:
+    replicas: 0
+  gateway:
+    enabled: false
+  lokiCanary:
+    enabled: false
+  test:
+    enabled: false
+  chunksCache:
+    enabled: false
+  resultsCache:
+    enabled: false
+
+# Dashboards and alerting. Sign-in: the admin (admin.existingSecret for
+# GitOps) plus any provider set in grafana.ini, e.g. auth.github; see
+# docs/self-hosting/observability.md.
+grafana:
+  admin:
+    existingSecret: ""
+  persistence:
+    enabled: true
+    size: 2Gi
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          uid: prometheus
+          type: prometheus
+          url: http://{{ if contains "prometheus" .Release.Name }}{{ .Release.Name }}{{ else }}{{ .Release.Name }}-prometheus{{ end }}-server
+          access: proxy
+          isDefault: true
+        - name: Loki
+          uid: loki
+          type: loki
+          url: http://{{ if contains "loki" .Release.Name }}{{ .Release.Name }}{{ else }}{{ .Release.Name }}-loki{{ end }}:3100
+          access: proxy
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+    alerts:
+      enabled: true
+      label: grafana_alert
+      labelValue: "1"
+  # The alert channel's settings (TELEGRAM_BOT_TOKEN, SLACK_WEBHOOK_URL, …):
+  # create this Secret for any channel but none.
+  envFromSecrets:
+    - name: chakramcp-alerts
+      optional: true
+  grafana.ini:
+    analytics:
+      reporting_enabled: false
+      check_for_updates: false
+      check_for_plugin_updates: false
+    news:
+      news_feed_enabled: false
+    users:
+      allow_sign_up: false
+      allow_org_create: false
+    auth.anonymous:
+      enabled: false
+  testFramework:
+    enabled: false
+  # It runs as root; the volume's ownership comes from fsGroup instead.
+  initChownData:
+    enabled: false
+
+# The collector: one replica (a DaemonSet would tail every pod's logs once
+# per node), scraping the server and tailing the release's pods.
+alloy:
+  controller:
+    type: deployment
+    replicas: 1
+  configReloader:
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: [ALL]
+      runAsNonRoot: true
+      runAsUser: 65534
+      runAsGroup: 65534
+      seccompProfile:
+        type: RuntimeDefault
+  alloy:
+    clustering:
+      enabled: false
+    # Not root (the image's default): logs come through the Kubernetes API,
+    # not the host.
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: [ALL]
+      runAsNonRoot: true
+      runAsUser: 473
+      runAsGroup: 473
+      seccompProfile:
+        type: RuntimeDefault
+    configMap:
+      content: |-
+        // ChakraMCP's collector (charts/chakramcp values.yaml). Rendered by
+        // Helm's tpl, hence the escaped Go template below.
+
+        // Metrics: the server's pods → Prometheus.
+        discovery.kubernetes "chakramcp" {
+          role = "pod"
+          namespaces {
+            names = ["{{ .Release.Namespace }}"]
+          }
+          selectors {
+            role  = "pod"
+            label = "app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=relay"
+          }
+        }
+
+        discovery.relabel "chakramcp" {
+          targets = discovery.kubernetes.chakramcp.targets
+          rule {
+            source_labels = ["__meta_kubernetes_pod_container_port_name"]
+            regex         = "metrics"
+            action        = "keep"
+          }
+          rule {
+            source_labels = ["__meta_kubernetes_pod_name"]
+            target_label  = "instance"
+          }
+        }
+
+        prometheus.scrape "chakramcp" {
+          targets         = discovery.relabel.chakramcp.output
+          job_name        = "chakramcp"
+          scrape_interval = "15s"
+          forward_to      = [prometheus.remote_write.local.receiver]
+        }
+
+        prometheus.remote_write "local" {
+          endpoint {
+            url = "http://{{ if contains "prometheus" .Release.Name }}{{ .Release.Name }}{{ else }}{{ .Release.Name }}-prometheus{{ end }}-server/api/v1/write"
+          }
+        }
+
+        // Logs: the release's pods → Loki, labelled like Compose's.
+        discovery.kubernetes "pods" {
+          role = "pod"
+          namespaces {
+            names = ["{{ .Release.Namespace }}"]
+          }
+          selectors {
+            role  = "pod"
+            label = "app.kubernetes.io/instance={{ .Release.Name }}"
+          }
+        }
+
+        discovery.relabel "logs" {
+          targets = discovery.kubernetes.pods.targets
+          rule {
+            source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_component"]
+            regex         = ".+"
+            action        = "keep"
+          }
+          rule {
+            source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_component"]
+            target_label  = "service"
+          }
+        }
+
+        loki.source.kubernetes "pods" {
+          targets    = discovery.relabel.logs.output
+          forward_to = [loki.process.logs.receiver]
+        }
+
+        loki.process "logs" {
+          // The server logs JSON: lift `level` into a lower-case label.
+          stage.match {
+            selector = "{service=\"relay\"}"
+
+            stage.json {
+              expressions = {level = "level"}
+            }
+
+            stage.template {
+              source   = "level"
+              template = "{{ "{{" }} ToLower .Value {{ "}}" }}"
+            }
+
+            stage.labels {
+              values = {level = ""}
+            }
+          }
+
+          stage.label_keep {
+            values = ["service", "level"]
+          }
+          forward_to = [loki.write.local.receiver]
+        }
+
+        loki.write "local" {
+          endpoint {
+            url = "http://{{ if contains "loki" .Release.Name }}{{ .Release.Name }}{{ else }}{{ .Release.Name }}-loki{{ end }}:3100/loki/api/v1/push"
+          }
+        }

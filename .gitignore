@@ -62,3 +62,6 @@ examples/typescript-mastra/pnpm-lock.yaml
 # Staged production binary (output of cargo-zigbuild → copied here by the
 # deploy script for Dockerfile.thin to pick up). Never commit binaries.
 infra/chakramcp-server
+
+# Helm subcharts, fetched by `helm dependency build` from Chart.lock.
+charts/chakramcp/charts/

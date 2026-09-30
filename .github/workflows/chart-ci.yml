@@ -1,9 +1,11 @@
 name: Chart CI
 
 # Checks the Helm chart (charts/chakramcp):
-#   1. lint and render it with every values file in ci/ (installable) and
-#      ci-template/ (render-only), and validate the manifests with
-#      kubeconform against a current and an older Kubernetes;
+#   1. its dashboards and alert rules match their source in
+#      infra/observability/ (scripts/sync-chart-assets.sh); lint and render
+#      it with every values file in ci/ (installable) and ci-template/
+#      (render-only, with the ServiceMonitor API), and validate the
+#      manifests with kubeconform against a current and an older Kubernetes;
 #   2. install every ci/ values file on kind with chart-testing (ct), in a
 #      namespace enforcing the restricted Pod Security profile, and run
 #      `helm test` against each release.
@@ -20,6 +22,8 @@ on:
     branches: [main]
     paths:
       - "charts/**"
+      - "infra/observability/grafana/**"
+      - "infra/observability/scripts/sync-chart-assets.sh"
       - ".github/workflows/chart-ci.yml"
 
 concurrency:
@@ -48,6 +52,8 @@ jobs:
           filters: |
             chart:
               - 'charts/**'
+              - 'infra/observability/grafana/**'
+              - 'infra/observability/scripts/sync-chart-assets.sh'
               - '.github/workflows/chart-ci.yml'
 
       - name: Nothing to check
@@ -60,16 +66,41 @@ jobs:
           version: v3.22.0
 
       # ─── 1. Static checks ─────────────────────────────────
+      - name: Synced dashboards and rules match their source
+        if: steps.changes.outputs.chart == 'true'
+        run: |
+          set -euo pipefail
+          python3 -c 'import yaml' 2>/dev/null || sudo apt-get install -y -qq python3-yaml
+          infra/observability/scripts/sync-chart-assets.sh
+          if [ -n "$(git status --porcelain -- "$CHART/files")" ]; then
+            git status --short -- "$CHART/files"
+            git diff -- "$CHART/files" | head -60
+            echo "::error::charts/chakramcp/files is out of date: run infra/observability/scripts/sync-chart-assets.sh"
+            exit 1
+          fi
+
+      - name: Fetch the subcharts
+        if: steps.changes.outputs.chart == 'true'
+        run: |
+          set -euo pipefail
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo add grafana https://grafana.github.io/helm-charts
+          helm dependency build "$CHART"
+
       - name: Lint and render every values file
         if: steps.changes.outputs.chart == 'true'
         run: |
           set -euo pipefail
-          helm dependency build "$CHART"
           mkdir -p "$RUNNER_TEMP/rendered"
           for values in "$CHART"/ci/*.yaml "$CHART"/ci-template/*.yaml; do
             echo "::group::$values"
             helm lint "$CHART" -f "$values"
-            helm template ci "$CHART" -f "$values" > "$RUNNER_TEMP/rendered/$(basename "$(dirname "$values")")-$(basename "$values")"
+            # The render-only variants see the Prometheus Operator's API, so
+            # the ServiceMonitor is rendered and validated too.
+            extra=()
+            case "$values" in */ci-template/*) extra=(--api-versions monitoring.coreos.com/v1/ServiceMonitor) ;; esac
+            helm template ci "$CHART" -f "$values" "${extra[@]}" \
+              > "$RUNNER_TEMP/rendered/$(basename "$(dirname "$values")")-$(basename "$values")"
             echo "::endgroup::"
           done
 
@@ -99,8 +130,10 @@ jobs:
           curl -fsSLO "$base/CHECKSUMS"
           grep ' kubeconform-linux-amd64.tar.gz$' CHECKSUMS | sha256sum -c -
           tar xzf kubeconform-linux-amd64.tar.gz kubeconform
+          crds='https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
           for k8s in 1.37.0 1.33.0; do
-            ./kubeconform -strict -summary -kubernetes-version "$k8s" rendered/*.yaml
+            ./kubeconform -strict -summary -kubernetes-version "$k8s" \
+              -schema-location default -schema-location "$crds" rendered/*.yaml
           done
 
       # ─── 2. Install on kind ───────────────────────────────
@@ -136,6 +169,7 @@ jobs:
         if: steps.changes.outputs.chart == 'true'
         run: >-
           ct install --charts "$CHART" --namespace chakramcp-ci
+          --chart-repos prometheus-community=https://prometheus-community.github.io/helm-charts,grafana=https://grafana.github.io/helm-charts
           --helm-extra-args "--timeout 600s"
 
       - name: Cluster state (on failure)

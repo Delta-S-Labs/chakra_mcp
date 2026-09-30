@@ -162,8 +162,10 @@ metrics).
 
 **Docker Compose on one host** (TLS through Caddy, Postgres, Redis, and
 optionally Prometheus, Loki and Grafana with our dashboards and alerts),
-or **Kubernetes** with the Helm chart in [`charts/chakramcp`](charts/chakramcp):
-[`docs/self-hosting/`](docs/self-hosting/README.md).
+or **Kubernetes** with the Helm chart in [`charts/chakramcp`](charts/chakramcp)
+(the same dashboards and alerts for your kube-prometheus-stack, or a bundled
+stack; published to `oci://ghcr.io/delta-s-labs/charts` from the next
+release): [`docs/self-hosting/`](docs/self-hosting/README.md).
 
 **Docker (production-shaped):**
 

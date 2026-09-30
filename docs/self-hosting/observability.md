@@ -148,3 +148,120 @@ obs logs --tail 50 grafana
   1. Change it in `.env`.
   2. Run `obs exec -T pg psql -U chakramcp -d chakramcp -c "ALTER ROLE chakramcp_monitor PASSWORD '…'"`.
   3. Run `obs up -d --force-recreate alloy`.
+
+## Kubernetes
+
+The Helm chart ([kubernetes.md](kubernetes.md)) ships the same dashboards
+and alert rules, in one of two ways.
+
+### With your own Prometheus and Grafana (the default)
+
+For kube-prometheus-stack or anything like it, the chart renders:
+
+- **A ServiceMonitor**, when the Prometheus Operator's API exists. It
+  scrapes the metrics port as `job="chakramcp"` and keeps the metrics' own
+  `service` label (`honorLabels`). kube-prometheus-stack only selects
+  ServiceMonitors that carry its release label:
+
+  ```yaml
+  observability:
+    serviceMonitor:
+      labels:
+        release: kube-prometheus-stack   # your kube-prometheus-stack release name
+  ```
+
+  Without an operator, scrape port 9464 of the chart's Service yourself,
+  as `job="chakramcp"`.
+- **Dashboards**: ConfigMaps labelled `grafana_dashboard: "1"`, which
+  kube-prometheus-stack's Grafana sidecar loads from every namespace. You
+  get the Overview; with `observability.loki.enabled`, also the Logs
+  dashboard and the Overview's log panel. The Infrastructure dashboard is
+  Compose-only; on Kubernetes, the cluster's own dashboards cover nodes
+  and pods.
+- **Alert rules**: a ConfigMap labelled `grafana_alert: "1"`.
+  kube-prometheus-stack's alerts sidecar is **off** by default and only
+  watches Grafana's namespace, so turn it on and let it see the rules:
+
+  ```yaml
+  # kube-prometheus-stack values
+  grafana:
+    sidecar:
+      alerts:
+        enabled: true
+        searchNamespace: ALL
+  ```
+
+  Alternatively, set `observability.alertRules.namespace` to Grafana's
+  namespace. Your Grafana's notification policies route the alerts.
+
+Only the rules that work on Kubernetes are shipped:
+- backend down;
+- a high 5xx ratio;
+- the credit switches going stale;
+- the credit queue backing up;
+- with Loki, the error-log spike.
+
+The host, Postgres and certificate rules need Compose's exporters and
+probes.
+
+Datasource UIDs default to `prometheus` (kube-prometheus-stack's) and
+`loki`. Set `observability.datasources.*` if yours differ.
+`observability.loki.enabled` expects a Loki whose streams carry the
+chart's `service` (the pod's `app.kubernetes.io/component`) and `level`
+labels, as the bundled stack's do.
+
+### Bundled
+
+`observability.bundled.enabled=true` installs a small stack next to the
+server:
+- Prometheus (server only, 15 days);
+- Loki (single binary, 14 days);
+- Grafana, with the dashboards and alert rules;
+- Alloy (one replica), which scrapes the server and tails the release's
+  pod logs through the Kubernetes API.
+
+Every pod meets the `restricted` Pod Security profile.
+
+```sh
+kubectl -n chakramcp port-forward svc/chakramcp-grafana 3000:80
+kubectl -n chakramcp get secret chakramcp-grafana -o jsonpath='{.data.admin-password}' | base64 -d
+```
+
+- **Alerts** go to `observability.alertChannel`: `none`, `telegram`,
+  `slack`, `email` or `webhook`, with the same settings as Compose, in a
+  Secret named `chakramcp-alerts`:
+
+  ```sh
+  kubectl -n chakramcp create secret generic chakramcp-alerts \
+    --from-literal=TELEGRAM_BOT_TOKEN=… --from-literal=TELEGRAM_CHAT_ID=…
+  ```
+
+  For email, also set `grafana.smtp` or the `[smtp]` section in
+  `grafana."grafana.ini"`.
+- **Sign-in** is the admin by default. Providers are Grafana settings, as
+  in Compose, e.g. GitHub:
+
+  ```yaml
+  grafana:
+    grafana.ini:
+      server:
+        root_url: https://grafana.example.com
+      auth.github:
+        enabled: true
+        client_id: …
+        scopes: user:email,read:org
+        allow_sign_up: true
+        role_attribute_path: "login == 'your-login' && 'GrafanaAdmin' || ''"
+        role_attribute_strict: true
+        allow_assign_grafana_admin: true
+    envFromSecrets:
+      - name: chakramcp-alerts
+        optional: true
+      - name: chakramcp-grafana-auth   # GF_AUTH_GITHUB_CLIENT_SECRET=…
+  ```
+
+  Expose Grafana with the subchart's own `grafana.ingress`.
+- **GitOps**: also set `grafana.admin.existingSecret`, next to the chart's
+  other existing Secrets.
+- **Every subchart setting** stays available under `prometheus`, `loki`,
+  `grafana` and `alloy`, e.g. volume sizes and retention.

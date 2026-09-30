@@ -1,0 +1,22 @@
+# `ct install`: the bundled observability stack (without volumes, to keep
+# CI light). Its helm test checks that the server is scraped, its logs reach
+# Loki, and Grafana has the dashboards and alert rules.
+image:
+  pullPolicy: IfNotPresent
+observability:
+  bundled:
+    enabled: true
+postgresql:
+  persistence:
+    enabled: false
+prometheus:
+  server:
+    persistentVolume:
+      enabled: false
+loki:
+  singleBinary:
+    persistence:
+      enabled: false
+grafana:
+  persistence:
+    enabled: false

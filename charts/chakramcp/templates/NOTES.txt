@@ -34,6 +34,37 @@ backups). For production, use externalDatabase.
 No Redis is configured: rate limiting fails open.
 {{- end }}
 
+{{- $obs := .Values.observability }}
+{{- if $obs.bundled.enabled }}
+{{- $grafana := include "chakramcp.subchartFullname" (list . "grafana") }}
+
+Observability (bundled): Grafana has the ChakraMCP dashboards and alert rules.
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ $grafana }} 3000:80
+  then http://localhost:3000 as admin, password:
+  kubectl -n {{ .Release.Namespace }} get secret {{ .Values.grafana.admin.existingSecret | default $grafana }} -o jsonpath='{.data.{{ .Values.grafana.admin.passwordKey | default "admin-password" }}}' | base64 -d
+  Alerts go to: {{ $obs.alertChannel }}{{ if ne $obs.alertChannel "none" }} (settings from the Secret {{ (index .Values.grafana.envFromSecrets 0).name }}){{ end }}.
+  {{- if not .Values.grafana.admin.existingSecret }}
+  GitOps: also set grafana.admin.existingSecret.
+  {{- end }}
+{{- else }}
+{{- if or $obs.dashboards.enabled $obs.alertRules.enabled }}
+
+Observability: the dashboards and alert rules are ConfigMaps for Grafana's
+sidecars (labels {{ $obs.dashboards.labels | toJson }}, {{ $obs.alertRules.labels | toJson }}).
+kube-prometheus-stack's alerts sidecar is off by default: enable it, with
+searchNamespace ALL or observability.alertRules.namespace.
+{{- end }}
+{{- if and .Values.metrics.enabled $obs.serviceMonitor.enabled }}
+{{- if .Capabilities.APIVersions.Has "monitoring.coreos.com/v1/ServiceMonitor" }}
+A ServiceMonitor scrapes the metrics port{{ if not $obs.serviceMonitor.labels }}; kube-prometheus-stack
+only selects it with observability.serviceMonitor.labels.release=<its release>{{ end }}.
+{{- else }}
+No Prometheus Operator found, so no ServiceMonitor: scrape port {{ .Values.metrics.port }} of
+svc/{{ include "chakramcp.fullname" . }} yourself, as job "chakramcp".
+{{- end }}
+{{- end }}
+{{- end }}
+
 Upgrade by rolling forward: `helm rollback` past a release that added a
 database migration fails, because the server won't boot on a migration it
 doesn't know. Guide:

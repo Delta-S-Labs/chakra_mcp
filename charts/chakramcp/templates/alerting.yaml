@@ -1,0 +1,38 @@
+{{- $obs := .Values.observability }}
+{{- if $obs.alertRules.enabled }}
+# The alert rules that work on Kubernetes, for a Grafana alerts sidecar (the
+# label below). kube-prometheus-stack's is off by default and watches only
+# Grafana's own namespace: see alertRules.namespace.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "chakramcp.fullname" . }}-alert-rules
+  namespace: {{ $obs.alertRules.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "chakramcp.labels" . | nindent 4 }}
+    {{- toYaml $obs.alertRules.labels | nindent 4 }}
+data:
+  chakramcp-rules.yaml: |-
+    {{- include "chakramcp.withDatasources" (list . (.Files.Get "files/alerting/rules.yaml")) | nindent 4 }}
+  {{- if include "chakramcp.lokiEnabled" . }}
+  chakramcp-rules-logs.yaml: |-
+    {{- include "chakramcp.withDatasources" (list . (.Files.Get "files/alerting/rules-logs.yaml")) | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- if $obs.bundled.enabled }}
+---
+# Where the bundled Grafana sends alerts: observability.alertChannel, with
+# its settings from the Secret in grafana.envFromSecrets.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "chakramcp.fullname" . }}-alert-channel
+  labels:
+    {{- include "chakramcp.labels" . | nindent 4 }}
+    {{- toYaml $obs.alertRules.labels | nindent 4 }}
+data:
+  chakramcp-templates.yaml: |-
+    {{- .Files.Get "files/alerting/templates.yaml" | nindent 4 }}
+  chakramcp-channel.yaml: |-
+    {{- .Files.Get (printf "files/alerting/channels/%s.yaml" $obs.alertChannel) | nindent 4 }}
+{{- end }}

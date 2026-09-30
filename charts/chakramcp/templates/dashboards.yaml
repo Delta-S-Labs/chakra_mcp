@@ -1,0 +1,23 @@
+{{- $obs := .Values.observability }}
+{{- if $obs.dashboards.enabled }}
+{{- $loki := include "chakramcp.lokiEnabled" . }}
+{{- $files := dict "overview" (ternary "files/dashboards/overview.json" "files/dashboards/overview-no-loki.json" (eq $loki "true")) }}
+{{- if $loki }}
+{{- $_ := set $files "logs" "files/dashboards/logs.json" }}
+{{- end }}
+{{- range $name, $path := $files }}
+---
+# The {{ $name }} dashboard, for a Grafana dashboard sidecar (the label below).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "chakramcp.fullname" $ }}-dashboard-{{ $name }}
+  namespace: {{ $obs.dashboards.namespace | default $.Release.Namespace }}
+  labels:
+    {{- include "chakramcp.labels" $ | nindent 4 }}
+    {{- toYaml $obs.dashboards.labels | nindent 4 }}
+data:
+  chakramcp-{{ $name }}.json: |-
+    {{- include "chakramcp.withDatasources" (list $ ($.Files.Get $path)) | nindent 4 }}
+{{- end }}
+{{- end }}
