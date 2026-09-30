@@ -163,6 +163,24 @@ fn log_panic(info: &std::panic::PanicHookInfo<'_>) {
     tracing::error!(panic.message = message, panic.location = %location, "panic");
 }
 
+// ─── Build ───────────────────────────────────────────────
+
+/// The version this build reports everywhere: `--version`,
+/// `chakramcp_build_info`, the MCP `serverInfo` and outgoing user agents.
+/// It's the release (`CHAKRAMCP_VERSION`, set by the release and image
+/// builds, e.g. `0.2.0` or `edge`), else the crate version.
+pub const VERSION: &str = match option_env!("CHAKRAMCP_VERSION") {
+    Some(version) => version,
+    None => env!("CARGO_PKG_VERSION"),
+};
+
+/// The commit this build came from; CD and the release and image builds set
+/// `GIT_SHA`.
+pub const GIT_SHA: &str = match option_env!("GIT_SHA") {
+    Some(sha) => sha,
+    None => "unknown",
+};
+
 // ─── Metrics ─────────────────────────────────────────────
 
 /// What `chakramcp_build_info` reports.
@@ -170,6 +188,14 @@ fn log_panic(info: &std::panic::PanicHookInfo<'_>) {
 pub struct BuildInfo {
     pub version: &'static str,
     pub git_sha: &'static str,
+}
+
+impl BuildInfo {
+    /// This build: [`VERSION`] and [`GIT_SHA`].
+    pub const CURRENT: BuildInfo = BuildInfo {
+        version: VERSION,
+        git_sha: GIT_SHA,
+    };
 }
 
 /// The Prometheus exporter with the catalogue's histogram buckets.

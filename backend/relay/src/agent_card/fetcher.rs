@@ -110,10 +110,9 @@ impl Default for Fetcher {
 impl Fetcher {
     pub fn new() -> Self {
         let client = reqwest::Client::builder()
-            .user_agent(concat!(
-                "chakramcp-relay/",
-                env!("CARGO_PKG_VERSION"),
-                " (+https://chakramcp.com)"
+            .user_agent(format!(
+                "chakramcp-relay/{} (+https://chakramcp.com)",
+                chakramcp_shared::telemetry::VERSION
             ))
             .timeout(Duration::from_secs(FETCH_TIMEOUT_SECONDS))
             // Don't follow redirects to a different host without
