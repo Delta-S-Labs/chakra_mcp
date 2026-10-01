@@ -6,7 +6,9 @@ use axum::routing::{delete, get, post};
 use axum::Router;
 use tower_http::cors::{Any, CorsLayer};
 
+pub mod accounts;
 pub mod auth;
+pub mod credits_service;
 pub mod handlers;
 pub mod state;
 

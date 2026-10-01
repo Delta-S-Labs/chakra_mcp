@@ -12,6 +12,10 @@
 //! - `start`   — run app on $APP_PORT (default 8080) and relay on
 //!   $RELAY_PORT (default 8090). Migrations are applied
 //!   automatically on startup.
+//! - `users`, `credits` — operator commands that work on the database
+//!   directly (see `ops`).
+
+mod ops;
 
 use std::fs;
 use std::net::SocketAddr;
@@ -65,6 +69,12 @@ enum Cmd {
     Migrate,
     /// Run app + relay together (default if no subcommand is given).
     Start,
+    /// Manage users: create one, list them, set a password or the admin role.
+    #[command(subcommand)]
+    Users(ops::users::UsersCmd),
+    /// Show and change an account's credits.
+    #[command(subcommand)]
+    Credits(ops::credits::CreditsCmd),
 }
 
 #[tokio::main]
@@ -79,6 +89,8 @@ async fn main() -> Result<()> {
         } => init(cli.config, force, database_url, admin_email),
         Cmd::Migrate => migrate(cli.config).await,
         Cmd::Start => start(cli.config).await,
+        Cmd::Users(cmd) => ops::users::run(cli.config, cmd).await,
+        Cmd::Credits(cmd) => ops::credits::run(cli.config, cmd).await,
     }
 }
 
@@ -534,5 +546,107 @@ impl UnwrapOrDefaultMarker for Option<ServerFile> {
     type Inner = ServerFile;
     fn unwrap_or_default_marker(self) -> ServerFile {
         self.unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+
+    use super::{Cli, Cmd};
+    use crate::ops::credits::{CreditsCmd, OnOff};
+    use crate::ops::users::UsersCmd;
+
+    fn parse(args: &[&str]) -> Cmd {
+        let argv = std::iter::once("chakramcp-server").chain(args.iter().copied());
+        Cli::try_parse_from(argv)
+            .unwrap_or_else(|e| panic!("{args:?}: {e}"))
+            .cmd
+            .unwrap()
+    }
+
+    #[test]
+    fn a_negative_adjustment_is_an_amount_not_a_flag() {
+        match parse(&[
+            "credits",
+            "adjust",
+            "ada@example.test",
+            "-5",
+            "--note",
+            "refund",
+        ]) {
+            Cmd::Credits(CreditsCmd::Adjust {
+                account,
+                credits,
+                note,
+            }) => {
+                assert_eq!(account, "ada@example.test");
+                assert_eq!(credits, "-5");
+                assert_eq!(note, "refund");
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_adjustment_needs_a_note() {
+        assert!(
+            Cli::try_parse_from(["chakramcp-server", "credits", "adjust", "acct", "5"]).is_err()
+        );
+    }
+
+    #[test]
+    fn settings_take_on_off_and_default() {
+        match parse(&[
+            "credits",
+            "set",
+            "acct",
+            "--unlimited",
+            "on",
+            "--monthly-grant",
+            "default",
+            "--rate",
+            "120",
+        ]) {
+            Cmd::Credits(CreditsCmd::Set {
+                unlimited,
+                monthly_grant,
+                rate,
+                ..
+            }) => {
+                assert!(matches!(unlimited, Some(OnOff::On)));
+                assert_eq!(monthly_grant.as_deref(), Some("default"));
+                assert_eq!(rate.as_deref(), Some("120"));
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn users_add_takes_its_flags() {
+        match parse(&[
+            "users",
+            "add",
+            "ada@example.test",
+            "--name",
+            "Ada",
+            "--admin",
+            "--password-stdin",
+        ]) {
+            Cmd::Users(UsersCmd::Add {
+                email,
+                name,
+                admin,
+                password_stdin,
+            }) => {
+                assert_eq!((email.as_str(), name.as_str()), ("ada@example.test", "Ada"));
+                assert!(admin && password_stdin);
+            }
+            other => panic!("{other:?}"),
+        }
+        // A name is required.
+        assert!(
+            Cli::try_parse_from(["chakramcp-server", "users", "add", "a@example.test"]).is_err()
+        );
     }
 }

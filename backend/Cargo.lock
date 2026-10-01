@@ -435,6 +435,7 @@ dependencies = [
  "chakramcp-relay",
  "chakramcp-shared",
  "clap",
+ "dialoguer",
  "directories",
  "hex",
  "rand 0.8.6",
@@ -446,6 +447,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "uuid",
 ]
 
 [[package]]

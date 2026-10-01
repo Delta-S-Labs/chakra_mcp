@@ -165,7 +165,7 @@ pub async fn upsert(
 
             // Create their personal account + membership as owner.
             let account_id = Uuid::now_v7();
-            let slug = personal_account_slug(&inserted.email);
+            let slug = crate::accounts::personal_slug(&inserted.email);
             sqlx::query!(
                 r#"
                 INSERT INTO accounts (id, slug, display_name, account_type, owner_user_id)
@@ -310,23 +310,6 @@ pub async fn me(State(state): State<AppState>, user: AuthUser) -> ApiResult<Json
         memberships,
         survey_required,
     }))
-}
-
-/// Build a slug for a personal account from an email. Naive — just the
-/// part before @, lowercased, with non-slug chars replaced. Collisions
-/// are extremely unlikely at our scale; if we hit one, the unique
-/// constraint on `accounts.slug` will surface a clear error.
-fn personal_account_slug(email: &str) -> String {
-    let local = email.split('@').next().unwrap_or("user");
-    let mut s: String = local
-        .to_lowercase()
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-        .collect();
-    if s.is_empty() {
-        s.push_str("user");
-    }
-    format!("{}-{}", s, &Uuid::now_v7().simple().to_string()[..8])
 }
 
 #[cfg(test)]
