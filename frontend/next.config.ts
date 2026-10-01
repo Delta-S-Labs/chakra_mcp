@@ -5,6 +5,14 @@ const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+  // A baseline only: no plugins, no <base> rewrites, no framing. It sets
+  // no script-src; that would need nonces for Next's inline scripts plus
+  // PostHog's /ingest proxy and reCAPTCHA. It lives here, not in
+  // netlify.toml: a CSP added to that file's `/*` rule was never served.
+  {
+    key: "Content-Security-Policy",
+    value: "object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+  },
 ];
 
 const nextConfig: NextConfig = {
