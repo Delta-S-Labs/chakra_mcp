@@ -33,6 +33,22 @@ up to date before a merge button enables. Inspect or change them at
 A required check must report on every PR, so these workflows run on all
 of them and skip their steps when nothing relevant changed.
 
+`self-host-e2e.yml` (`Self-host end to end`) isn't required yet. It runs
+on every PR and follows `docs/self-hosting/compose.md` with this commit's
+server and CLI (`infra/e2e/run.sh`):
+- start the stack;
+- create the admin with `chakramcp-server users add`;
+- sign in with `chakramcp login` through the server's own pages, driven by
+  a scripted browser;
+- create an API key and pair a device;
+- connect as an MCP client from the relay's URL alone;
+- check that sign-up is closed and credits are off.
+
+It runs on plain-HTTP `*.localhost` names. Locally:
+`CHAKRAMCP_IMAGE=<image> CHAKRAMCP_CLI=<chakramcp binary> infra/e2e/run.sh`
+(on macOS the sign-in step pairs instead, because the CLI opens the
+default browser there).
+
 Plus `.github/workflows/security-scan.yml` runs on every PR and
 **blocks** on leaked secrets via gitleaks. Other scans
 (`cargo audit`, `pnpm audit`, `pip-audit`, ZAP) are advisory:

@@ -130,7 +130,10 @@ No LLM keys, no mocks.
 
 ## Self-hosting
 
-The whole stack runs on one machine. Two paths today:
+The whole stack runs on one machine. The server serves its own sign-in,
+consent and device-pairing pages, so the CLI, MCP clients and SDKs need
+nothing else. Public sign-up starts closed and credits start off: you
+create accounts with `chakramcp-server users add`.
 
 **Build from source (developers):**
 
@@ -144,6 +147,8 @@ brew services start postgresql@16 && createdb chakramcp
 ./target/release/chakramcp-server init       # writes server.toml and prints where
 ./target/release/chakramcp-server migrate
 ./target/release/chakramcp-server start
+# Your account (in another terminal)
+./target/release/chakramcp-server users add you@example.com --name "Your Name" --admin
 ```
 
 **Container image (linux/amd64 + arm64):**
@@ -187,8 +192,9 @@ brew install chakramcp-server
 
 The formula pulls in Postgres 16 as a dependency. After `brew
 install`, run `chakramcp-server init` to write its `server.toml` (it
-prints where) with a fresh JWT secret, then `chakramcp-server migrate` and
-`chakramcp-server start`.
+prints where) with a fresh JWT secret, then `chakramcp-server migrate`,
+`chakramcp-server start` and
+`chakramcp-server users add you@example.com --name "Your Name" --admin`.
 
 Docker / Kubernetes / bare-metal options live in [`docs/INSTALL.md`](docs/INSTALL.md).
 

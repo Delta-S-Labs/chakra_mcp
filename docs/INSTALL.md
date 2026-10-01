@@ -298,17 +298,25 @@ cargo build --release --bin chakramcp-server
 ./target/release/chakramcp-server init      # writes server.toml with a fresh JWT secret, and prints where
 ./target/release/chakramcp-server migrate   # applies SQL migrations
 ./target/release/chakramcp-server start     # foreground
+
+# In another terminal: your account. Public sign-up is closed by default.
+./target/release/chakramcp-server users add you@example.com --name "Your Name" --admin
 ```
 
 The app surface answers on `http://localhost:8080`, the relay on
-`http://localhost:8090`. Point your CLI at it:
+`http://localhost:8090`. Point your CLI at it and sign in. Your browser
+opens the server's own sign-in page:
 
 ```sh
 chakramcp networks add private \
     --app-url http://localhost:8080 \
     --relay-url http://localhost:8090
-chakramcp login --network private
+chakramcp networks use private
+chakramcp login
 ```
+
+MCP clients connect to `http://localhost:8090/mcp` and sign in through
+the same page. SDKs take an API key: `chakramcp api-keys create --name <what for>`.
 
 ### Container image
 
@@ -361,11 +369,19 @@ are set:
 |----------------------|----------------------|----------------------|--------------------------------------|
 | Postgres DSN         | `database_url`       | `DATABASE_URL`       | (required)                           |
 | JWT signing secret   | `jwt_secret`         | `JWT_SECRET`         | (required)                           |
-| Bootstrap admin email| `admin_email`        | `ADMIN_EMAIL`        | unset                                |
+| Hosting mode         | `hosting_mode`       | `HOSTING_MODE`       | `self_hosted` (`managed` is chakramcp.com's) |
+| Public sign-up       | `signup_enabled`     | `SIGNUP_ENABLED`     | `false` when self-hosted             |
+| Credits              | `credits_enabled`    | `CREDITS_ENABLED`    | `false` when self-hosted             |
+| Monthly free grant (milli-credits) | `credits_default_monthly_free_mc` | `CREDITS_DEFAULT_MONTHLY_FREE_MC` | `100000` (100 credits) |
+| Cost per call (milli-credits) | `credits_cost_per_invocation_mc` | `CREDITS_COST_PER_INVOCATION_MC` | `100` (0.1 credit) |
+| Rate limit per account | `limits_default_rate_per_min` | `LIMITS_DEFAULT_RATE_PER_MIN` | `60` a minute (needs Redis) |
+| Refuse over-limit calls | `limits_enforce`   | `LIMITS_ENFORCE`     | `false`: only logged                 |
+| Redis (rate limiting) | `redis_url`         | `REDIS_URL`          | unset: no rate limiting              |
+| Admin email (chakramcp.com only) | `admin_email` | `ADMIN_EMAIL`  | unset; ignored when self-hosted      |
 | First-login survey   | `survey_enabled`     | `SURVEY_ENABLED`     | `false`                              |
 | App port             | `app_port`           | `APP_PORT`           | `8080`                               |
 | Relay port           | `relay_port`         | `RELAY_PORT`         | `8090`                               |
-| Frontend public URL  | `frontend_base_url`  | `FRONTEND_BASE_URL`  | `http://localhost:3000`              |
+| Sign-in pages' URL   | `frontend_base_url`  | `FRONTEND_BASE_URL`  | the app URL, where the server serves its own pages |
 | App public URL       | `app_base_url`       | `APP_BASE_URL`       | `http://localhost:8080`              |
 | Relay public URL     | `relay_base_url`     | `RELAY_BASE_URL`     | `http://localhost:8090`              |
 | Discovery v2 enabled | `discovery_v2_enabled` | `DISCOVERY_V2`     | `false`                              |
@@ -376,6 +392,24 @@ are set:
 | TypeSafe base URL    | (env only)           | `TYPESAFE_AI_BASE_URL` | `https://api.typesafe.ai`          |
 | TypeSafe timeout (ms)| (env only)           | `TYPESAFE_AI_TIMEOUT_MS` | `2000`                           |
 
+A non-empty environment value wins over the file; an empty one counts as
+unset.
+
+**Accounts and credits.** A self-hosted server serves its own sign-in,
+consent and device-pairing pages. Public sign-up is closed: create accounts
+with `chakramcp-server users add` (`users list`, `users set-password` and
+`users set-admin` do the rest), or set `signup_enabled = true` while your
+team signs up. Credits are off, so nobody is refused for running out;
+turn them on with `credits_enabled = true` and manage them with
+`chakramcp-server credits`. The guide in
+[`self-hosting/compose.md`](./self-hosting/compose.md#accounts) covers
+both; the commands work the same here.
+
+**Upgrading from 0.2.0.** `chakramcp-server init` used to write
+`frontend_base_url = "http://localhost:3000"`. Delete that line from your
+`server.toml`: the server now serves its own sign-in pages at the app URL,
+and warns at startup while the line is there.
+
 The System One settings have no TOML key; set them in the env. With
 `SYSTEM_ONE_CHECKS` on, TypeSafe's Jev model reads every invocation's
 input and checks it against the capability, the grant's purpose and the
@@ -383,10 +417,10 @@ friendship. Clear violations are rejected. If TypeSafe is down, calls go
 through and the failure is logged. Details are in
 [`system-one-compliance.md`](./system-one-compliance.md).
 
-The web UI (`frontend/`) isn't bundled into `chakramcp-server`: it
-runs as a separate Next.js process. If you want it, clone the repo
-and run `pnpm dev` under `frontend/`. For headless / agent use, the
-backend pair alone is sufficient.
+The web dashboard (`frontend/`) isn't bundled into `chakramcp-server`:
+it's the separate Next.js app chakramcp.com runs. The CLI, the SDKs and
+MCP clients need nothing beyond the server, whose own pages handle
+sign-in, consent and device pairing.
 
 ---
 

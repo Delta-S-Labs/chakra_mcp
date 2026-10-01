@@ -1,6 +1,6 @@
 # Self-hosting, Phase 3: a self-hosted network that works without the web UI
 
-**Status:** approved design; plan: `2026-10-01-self-hosting-phase3-plan.md`
+**Status:** implemented: #365 (operator commands), #366 (`HOSTING_MODE`), #367 (built-in pages, sign-in limit, MCP discovery, `chakramcp api-keys`), and the CI test and docs in the PR that follows them; plan: `2026-10-01-self-hosting-phase3-plan.md`
 **Date:** 2026-10-01
 **Builds on:**
 - `2026-09-29-self-hosting-phase2-design.md` (public image, Compose, Helm chart; released in 0.2.0).

@@ -41,7 +41,7 @@ the accepted price of zero added latency.
 | Refunds | **Out of scope.** Money refunds are manual in Dodo; credit corrections are manual `adjustment` ledger rows (P3). Single balance — no free/paid buckets. |
 | Plans | **Retired.** Rate limit + free grant become per-account overrides on the wallet, with global defaults. |
 | Rate limiting | **Stays on Redis** (inline `INCR`, fail-open) — decided 2026-09-25. |
-| Hosting modes | `HOSTING_MODE` is introduced in **P4**, not here (the prod compose *is* the managed deployment; defaulting it to `self_hosted` there would be a trap). Nobody self-hosts yet — see the [deferred checklist](#first-self-hoster-checklist-deferred). |
+| Hosting modes | `HOSTING_MODE` was planned for **P4**, but came earlier, with self-hosting Phase 3 (`docs/superpowers/specs/2026-10-01-self-hosting-phase3-design.md` §3). `self_hosted`, the default, has credits off; production sets `managed` in its `.env` before deploying, and CD refuses to deploy without it. See [the checklist](#first-self-hoster-checklist-done-in-self-hosting-phase-3). |
 
 ## Goals / non-goals
 
@@ -475,14 +475,20 @@ switches go stale, and their recovery.
   changes only the worker — never the hot path.
 - **Free-balance cap:** skip the monthly grant while `balance_mc ≥ cap`.
 
-## First-self-hoster checklist (deferred)
+## First-self-hoster checklist: done in self-hosting Phase 3
 
-Nobody self-hosts today. Before the first one does: self-host-safe compose
-defaults (managed values moved to the operator's host `.env` — set them there
-*before* the compose change deploys); the credit knobs in `server.toml`; a
-`chakramcp-server credits {show,grant,set-limit,set-unlimited}` escape hatch; an
-upgrade note (stop the relay before migrating across the cutover); INSTALL.md and
-`/docs/self-host`.
+Deferred here, then delivered by self-hosting Phase 3
+(`docs/superpowers/specs/2026-10-01-self-hosting-phase3-design.md`, #365–#367):
+
+- **Self-host-safe defaults.** `HOSTING_MODE=self_hosted` by default: credits off, public
+  sign-up closed. Production's `.env` set `managed` before the change deployed.
+- **The credit knobs in `server.toml`.** `credits_enabled`,
+  `credits_default_monthly_free_mc`, `credits_cost_per_invocation_mc`,
+  `limits_default_rate_per_min`, `limits_enforce` and `redis_url`.
+- **An escape hatch.** `chakramcp-server credits {show,grant,adjust,set}`, sharing the
+  admin API's code; ledger rows record `{"operator": "cli"}`.
+- **The upgrade note.** For self-hosters, in `docs/self-hosting/compose.md` (Upgrades).
+- **INSTALL.md and the self-hosting guides**, which now cover accounts and credits.
 
 ## Resolved defaults
 

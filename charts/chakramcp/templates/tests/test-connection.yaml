@@ -28,6 +28,11 @@ spec:
           wget -qO- "$base:{{ .Values.service.relayPort }}/healthz"; echo
           wget -qO- "$base:{{ .Values.service.relayPort }}/readyz"; echo
           wget -qO- "$base:{{ .Values.service.appPort }}/healthz"; echo
+          # The server's own sign-in page is served: a request naming no
+          # client gets its 400 error page, not a 404.
+          status=$(wget -S -O /dev/null "$base:{{ .Values.service.appPort }}/oauth/authorize" 2>&1 | awk '/HTTP\//{print $2; exit}')
+          echo "sign-in page: $status"
+          [ "$status" = 400 ]
           {{- if .Values.metrics.enabled }}
           wget -qO- "$base:{{ .Values.metrics.port }}/metrics" | grep '^chakramcp_build_info'
           {{- end }}

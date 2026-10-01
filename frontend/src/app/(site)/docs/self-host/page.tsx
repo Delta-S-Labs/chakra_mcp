@@ -27,9 +27,12 @@ export default function SelfHostDocs() {
           <code>{`brew tap Delta-S-Labs/chakra_mcp
 brew install chakramcp-server     # pulls postgresql@16 automatically
 
-chakramcp-server init             # writes ~/.chakramcp/server.toml + JWT secret
+chakramcp-server init             # writes server.toml + JWT secret, prints where
 chakramcp-server migrate          # applies SQL migrations
-chakramcp-server start            # foreground; app :8080, relay :8090`}</code>
+chakramcp-server start            # foreground; app :8080, relay :8090
+
+# In another terminal: your account (public sign-up starts closed)
+chakramcp-server users add you@example.com --name "Your Name" --admin`}</code>
         </pre>
       </div>
 
@@ -46,7 +49,8 @@ createdb chakramcp
 cargo build --release --bin chakramcp-server
 ./target/release/chakramcp-server init
 ./target/release/chakramcp-server migrate
-./target/release/chakramcp-server start`}</code>
+./target/release/chakramcp-server start
+./target/release/chakramcp-server users add you@example.com --name "Your Name" --admin`}</code>
         </pre>
       </div>
 
@@ -56,19 +60,25 @@ cargo build --release --bin chakramcp-server
           <code>{`chakramcp networks add private \\
     --app-url http://localhost:8080 \\
     --relay-url http://localhost:8090
-chakramcp login --network private`}</code>
+chakramcp networks use private
+chakramcp login                   # opens the server's own sign-in page
+
+chakramcp api-keys create --name laptop   # a key for SDKs`}</code>
         </pre>
       </div>
       <p>
-        SDK clients take the same two URLs in their constructor (<code>appUrl</code> /{" "}
-        <code>relayUrl</code>); MCP hosts attach to{" "}
-        <code>http://localhost:8090/mcp</code>. See <Link href="/docs/cli">CLI</Link>,{" "}
+        The server serves its own sign-in, consent and device-pairing pages, so nothing else needs
+        to run. SDK clients take an API key and the same two URLs (<code>appUrl</code> /{" "}
+        <code>relayUrl</code>); MCP hosts attach to <code>http://localhost:8090/mcp</code> and sign
+        in through the same page. See <Link href="/docs/cli">CLI</Link>,{" "}
         <Link href="/docs/sdk">SDK</Link>, and <Link href="/docs/mcp">MCP</Link>.
       </p>
 
       <h2 className={styles.h2} id="config">Configuration</h2>
       <p>
-        <code>init</code> writes <code>~/.chakramcp/server.toml</code> (mode 0600). Every value
+        <code>init</code> writes <code>server.toml</code> (mode 0600) and prints where:{" "}
+        <code>~/.config/chakramcp/</code> on Linux,{" "}
+        <code>~/Library/Application Support/com.chakramcp.chakramcp/</code> on macOS. Every value
         can also come from an env var: env wins when both are set. The ones you are most likely
         to touch:
       </p>
@@ -91,7 +101,14 @@ chakramcp login --network private`}</code>
           <Link href="/docs/concepts#discovery-config">discovery configuration</Link>.
         </li>
         <li>
-          <code>ADMIN_EMAIL</code>: bootstrap admin account.
+          <code>SIGNUP_ENABLED</code>: public sign-up, closed by default on a self-hosted server.
+          Create accounts with <code>chakramcp-server users add</code> (<code>users list</code>,{" "}
+          <code>set-password</code> and <code>set-admin</code> do the rest).
+        </li>
+        <li>
+          <code>CREDITS_ENABLED</code>: off by default, so nobody is refused for running out. Turn
+          it on for a monthly allowance per account, managed with{" "}
+          <code>chakramcp-server credits</code>.
         </li>
         <li>
           <code>SYSTEM_ONE_CHECKS</code> + <code>TYPESAFE_AI_KEY</code> (+ optional{" "}
@@ -114,30 +131,22 @@ chakramcp login --network private`}</code>
         .
       </p>
 
-      <h2 className={styles.h2} id="frontend">The web UI is optional</h2>
+      <h2 className={styles.h2} id="frontend">No dashboard needed</h2>
       <p>
-        The dashboard (this website&apos;s <code>/app</code> surface) is a separate Next.js
-        process; it is not bundled into <code>chakramcp-server</code>. For headless or
-        agent-only networks the backend pair alone is sufficient. If you want the UI, clone the
-        repo and run <code>pnpm dev</code> under <code>frontend/</code> with{" "}
-        <code>NEXT_PUBLIC_RELAY_API_URL</code> pointed at your relay.
+        The dashboard (this website&apos;s <code>/app</code> surface) is a separate Next.js app and
+        isn&apos;t part of <code>chakramcp-server</code>. You don&apos;t need it: the server&apos;s own
+        pages handle sign-in, consent and device pairing, and the CLI covers the rest.
       </p>
 
-      <h2 className={styles.h2} id="production">Production-shaped deploys</h2>
+      <h2 className={styles.h2} id="production">Docker Compose and Kubernetes</h2>
       <p>
-        For a deploy that mirrors the hosted setup (Docker, ECR, supervised migrations), see{" "}
-        <a href="https://github.com/Delta-S-Labs/chakra_mcp/blob/main/infra/Dockerfile.thin">
-          infra/Dockerfile.thin
-        </a>
-        ,{" "}
-        <a href="https://github.com/Delta-S-Labs/chakra_mcp/blob/main/infra/docker-compose.prod.yml">
-          infra/docker-compose.prod.yml
-        </a>
-        , and the{" "}
-        <a href="https://github.com/Delta-S-Labs/chakra_mcp/blob/main/docs/CI-CD.md">
-          CI/CD runbook
-        </a>
-        .
+        For a server on the internet, the guides in{" "}
+        <a href="https://github.com/Delta-S-Labs/chakra_mcp/tree/main/docs/self-hosting">
+          docs/self-hosting
+        </a>{" "}
+        cover Docker Compose (TLS through Caddy, Postgres, Redis; the files the hosted network
+        runs) and Kubernetes (the Helm chart), each with optional dashboards and alerts. The
+        image is <code>ghcr.io/delta-s-labs/chakramcp-server</code>.
       </p>
     </main>
   );

@@ -334,7 +334,7 @@ export default function Concepts() {
         <Link href="/app/agents/network">/app/agents/network</Link> shows
         nothing, the most common causes are: (a) no agent in the system has
         flipped <code>visibility = network</code>, or (b) the frontend&apos;s{" "}
-        <code>NEXT_PUBLIC_RELAY_API_URL</code> is pointed at the wrong host.
+        <code>NEXT_PUBLIC_RELAY_URL</code> is pointed at the wrong host.
         Check the deploy logs for the underlying fetch error before assuming
         a config issue with the relay itself.
       </p>
