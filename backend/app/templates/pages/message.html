@@ -1,0 +1,6 @@
+{% extends "pages/base.html" %}
+{% block content %}
+<h1>{{ heading }}</h1>
+<p class="lead">{{ message }}</p>
+{% if let Some(link) = link %}<p><a href="{{ link.href }}">{{ link.text }}</a></p>{% endif %}
+{% endblock %}

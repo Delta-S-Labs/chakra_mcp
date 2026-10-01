@@ -1,0 +1,10 @@
+{% extends "pages/base.html" %}
+{% block content %}
+<h1>Connect an agent</h1>
+<p class="lead">Enter the code your device shows.</p>
+{% if let Some(error) = error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<form method="get" action="/app/pair">
+  <label>Code <input name="session" value="{{ code }}" placeholder="ABCD-EFGH" autocomplete="off" autocapitalize="characters" required autofocus></label>
+  <button type="submit">Continue</button>
+</form>
+{% endblock %}

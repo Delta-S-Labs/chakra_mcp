@@ -1,4 +1,4 @@
-use axum::http::StatusCode;
+use axum::http::{header, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde::Serialize;
@@ -42,6 +42,11 @@ pub enum ApiError {
     /// default). The operator creates accounts with `chakramcp-server users`.
     #[error("sign-up is closed on this server: ask its operator for an account")]
     SignupDisabled,
+
+    /// Too many failed sign-ins for one email (the app's `signin_limit`).
+    /// Sent with `Retry-After`.
+    #[error("too many failed sign-ins for this email: try again in {retry_after_secs} seconds")]
+    SigninRateLimited { retry_after_secs: u64 },
 }
 
 #[derive(Serialize)]
@@ -80,6 +85,13 @@ impl IntoResponse for ApiError {
                 false,
             ),
             ApiError::SignupDisabled => (StatusCode::FORBIDDEN, "signup_disabled", false),
+            ApiError::SigninRateLimited { .. } => {
+                (StatusCode::TOO_MANY_REQUESTS, "signin_rate_limited", true)
+            }
+        };
+        let retry_after = match &self {
+            ApiError::SigninRateLimited { retry_after_secs } => Some(*retry_after_secs),
+            _ => None,
         };
 
         let body = ErrorEnvelope {
@@ -89,7 +101,13 @@ impl IntoResponse for ApiError {
                 retryable,
             },
         };
-        (status, Json(body)).into_response()
+        let mut response = (status, Json(body)).into_response();
+        if let Some(secs) = retry_after {
+            response
+                .headers_mut()
+                .insert(header::RETRY_AFTER, HeaderValue::from(secs));
+        }
+        response
     }
 }
 

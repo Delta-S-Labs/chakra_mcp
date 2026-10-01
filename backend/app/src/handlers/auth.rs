@@ -104,39 +104,20 @@ pub async fn login(
     State(state): State<AppState>,
     Json(req): Json<LoginRequest>,
 ) -> ApiResult<Json<AuthResponse>> {
-    let email = req.email.trim().to_lowercase();
+    // Same answer for "no such user" and "wrong password", so the response
+    // doesn't reveal which emails exist; failures count toward the sign-in
+    // limit, which refuses an email after too many.
+    let row = accounts::authenticate(&state.db, &req.email, &req.password).await?;
 
-    let row = sqlx::query!(
-        r#"
-        SELECT id, email, display_name, avatar_url, is_admin, password_hash
-        FROM users
-        WHERE LOWER(email) = $1
-        LIMIT 1
-        "#,
-        email
-    )
-    .fetch_optional(&state.db)
-    .await?;
-
-    // Same generic error for "no such user" and "wrong password" — we
-    // don't want to leak which emails exist on the network.
-    let row = match row {
-        Some(r) if r.password_hash.is_some() => r,
-        _ => return Err(ApiError::Unauthorized),
-    };
-    let stored_hash = row.password_hash.as_ref().unwrap();
-
-    accounts::verify_password(&req.password, stored_hash)?;
-
-    let memberships = load_memberships(&state.db, row.id).await?;
+    let memberships = load_memberships(&state.db, row.user_id).await?;
     let user_dto = UserDto {
-        id: row.id,
+        id: row.user_id,
         email: row.email.clone(),
         display_name: row.display_name,
         avatar_url: row.avatar_url,
         is_admin: row.is_admin,
     };
-    let claims = jwt::UserClaims::new(row.id, row.email, row.is_admin, 24);
+    let claims = jwt::UserClaims::new(row.user_id, row.email, row.is_admin, 24);
     let token = jwt::encode_jwt(&claims, &state.config.jwt_secret)?;
     let survey_required =
         crate::handlers::surveys::is_required(&state.db, state.config.survey_enabled, user_dto.id)
@@ -467,5 +448,72 @@ mod signup_tests {
         let (status, body) = signup(&pool, HostingSettings::for_mode(HostingMode::Managed)).await;
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(body["user"]["is_admin"], true);
+    }
+}
+
+#[cfg(test)]
+mod login_limit_tests {
+    use axum::body::Body;
+    use axum::http::{header, Request, StatusCode};
+    use http_body_util::BodyExt;
+    use serde_json::{json, Value};
+    use sqlx::PgPool;
+    use tower::ServiceExt;
+
+    use crate::accounts::{self, NewUser};
+    use crate::tests_support::test_config;
+
+    async fn login(pool: &PgPool, password: &str) -> (StatusCode, Option<String>, Value) {
+        let state = crate::AppState::new(pool.clone(), test_config());
+        let body = json!({ "email": "ada@example.test", "password": password });
+        let res = crate::router(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/login")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = res.status();
+        let retry_after = res
+            .headers()
+            .get(header::RETRY_AFTER)
+            .map(|v| v.to_str().unwrap().to_owned());
+        let bytes = res.into_body().collect().await.unwrap().to_bytes();
+        (
+            status,
+            retry_after,
+            serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+        )
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn too_many_failures_lock_the_email_with_retry_after(pool: PgPool) {
+        accounts::create_user(
+            &pool,
+            NewUser {
+                email: "ada@example.test",
+                name: "Ada",
+                password: "the-right-password",
+                is_admin: false,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(login(&pool, "the-right-password").await.0, StatusCode::OK);
+        for _ in 0..crate::signin_limit::MAX_FAILURES {
+            assert_eq!(
+                login(&pool, "wrong-password").await.0,
+                StatusCode::UNAUTHORIZED
+            );
+        }
+        let (status, retry_after, body) = login(&pool, "the-right-password").await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(body["error"]["code"], "signin_rate_limited");
+        let secs: u64 = retry_after.expect("Retry-After").parse().unwrap();
+        assert!((1..=900).contains(&secs), "{secs}");
     }
 }

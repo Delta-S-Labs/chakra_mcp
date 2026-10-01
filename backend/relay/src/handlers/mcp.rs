@@ -163,8 +163,8 @@ fn api_err_to_rpc(e: ApiError) -> RpcError {
         // Usage limits: a client-side "back off" error (no JSON-RPC 429). The
         // message ("rate limit exceeded" / "insufficient credits") conveys it.
         RateLimited | InsufficientCredits => (ERR_INVALID_REQUEST, e.to_string()),
-        // The app's sign-up error; the relay never returns it.
-        SignupDisabled => (ERR_INVALID_REQUEST, e.to_string()),
+        // The app's sign-up and sign-in errors; the relay never returns them.
+        SignupDisabled | SigninRateLimited { .. } => (ERR_INVALID_REQUEST, e.to_string()),
         Database(_) | Auth(_) | Internal(_) => (ERR_INTERNAL, e.to_string()),
     };
     RpcError {

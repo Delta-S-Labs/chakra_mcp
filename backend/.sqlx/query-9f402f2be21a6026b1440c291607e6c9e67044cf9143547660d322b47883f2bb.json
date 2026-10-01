@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT GREATEST(1, EXTRACT(EPOCH FROM\n                   window_started_at + make_interval(secs => $3) - now()))::bigint AS \"retry_after!\"\n          FROM signin_failures\n         WHERE email_hash = $1\n           AND failures >= $2\n           AND window_started_at > now() - make_interval(secs => $3)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "retry_after!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int4",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "9f402f2be21a6026b1440c291607e6c9e67044cf9143547660d322b47883f2bb"
+}

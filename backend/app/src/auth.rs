@@ -97,7 +97,7 @@ impl FromRequestParts<AppState> for AuthUser {
 /// A nil jti (legacy token, pre-revocation field) is never matched —
 /// no row can exist with PK = nil — so this is a fast miss for old
 /// tokens still in flight.
-async fn is_token_revoked(db: &PgPool, jti: Uuid) -> Result<bool, ApiError> {
+pub(crate) async fn is_token_revoked(db: &PgPool, jti: Uuid) -> Result<bool, ApiError> {
     let row = sqlx::query!(
         r#"SELECT 1 as one FROM revoked_tokens WHERE jti = $1 LIMIT 1"#,
         jti,

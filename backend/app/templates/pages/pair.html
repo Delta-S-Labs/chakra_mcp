@@ -1,0 +1,35 @@
+{% extends "pages/base.html" %}
+{% block content %}
+<h1>Connect an agent</h1>
+<p class="lead">Signed in as <strong>{{ user_email }}</strong>. Pairing code <code>{{ user_code }}</code>{% if let Some(persona) = persona %}, from {{ persona }}{% endif %}.</p>
+<form method="post" action="/app/pair">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="session" value="{{ user_code }}">
+  {% if !agents.is_empty() %}
+  <fieldset>
+    <legend>Connect it as</legend>
+    {% for agent in agents %}<label class="choice"><input type="radio" name="target" value="{{ agent.id }}"{% if agent.checked %} checked{% endif %}> {{ agent.display_name }} <span class="muted">{{ agent.account_slug }}/{{ agent.slug }}</span></label>
+    {% endfor %}<label class="choice"><input type="radio" name="target" value="new"{% if new_agent %} checked{% endif %}> A new agent:</label>
+  </fieldset>
+  {% else %}<input type="hidden" name="target" value="new">
+  {% endif %}
+  <fieldset>
+    <legend>New agent</legend>
+    <label>Name <input name="display_name" value="{{ display_name }}"></label>
+    <label>Slug <span class="muted">3–32 of a–z, 0–9 and -</span><input name="slug" value="{{ slug }}"></label>
+    <label>Description <input name="description" value="{{ description }}"></label>
+    <label>Who can see it
+      <select name="visibility">
+        <option value="private"{% if visibility == "private" %} selected{% endif %}>Only you</option>
+        <option value="org"{% if visibility == "org" %} selected{% endif %}>Your organizations</option>
+        <option value="network"{% if visibility == "network" %} selected{% endif %}>Everyone on this network</option>
+      </select>
+    </label>
+  </fieldset>
+  {% if let Some(error) = error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+  <div class="actions">
+    <button type="submit" name="step" value="approve">Approve</button>
+    <button type="submit" name="step" value="deny" class="secondary">Deny</button>
+  </div>
+</form>
+{% endblock %}

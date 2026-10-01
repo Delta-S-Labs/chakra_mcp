@@ -10,6 +10,8 @@ pub mod accounts;
 pub mod auth;
 pub mod credits_service;
 pub mod handlers;
+mod pages;
+pub mod signin_limit;
 pub mod state;
 
 #[cfg(test)]
@@ -130,8 +132,14 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/v1/admin/accounts/{account_id}/credits/ledger",
             post(handlers::credits::admin_add_entry),
-        )
-        .with_state(state)
-        .layer(cors);
+        );
+    // A self-hosted server serves its own sign-in, consent and pairing pages
+    // (chakramcp.com uses its web UI).
+    let router = if state.hosting.mode == chakramcp_shared::hosting::HostingMode::SelfHosted {
+        router.merge(pages::router())
+    } else {
+        router
+    };
+    let router = router.with_state(state).layer(cors);
     chakramcp_shared::telemetry::instrument(router, "app")
 }
