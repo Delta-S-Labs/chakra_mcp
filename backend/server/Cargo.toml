@@ -19,12 +19,15 @@ tokio = { workspace = true }
 sqlx = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+uuid = { workspace = true }
 rand = { workspace = true }
 hex = { workspace = true }
 
 clap = { version = "4", features = ["derive", "env"] }
 toml = "1.1"
 directories = "6"
+# Password prompts for `users add` / `users set-password`, as in the CLI.
+dialoguer = { version = "0.12", default-features = false, features = ["password"] }
 
 anyhow = { workspace = true }
 tracing = { workspace = true }

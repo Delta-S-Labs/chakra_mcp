@@ -4,9 +4,8 @@
 //!   POST /v1/auth/signup   email + password + name → user + JWT
 //!   POST /v1/auth/login    email + password         → user + JWT
 //!
-//! Passwords are hashed with Argon2id. The `users.password_hash` column
-//! stores the full PHC string (including salt + parameters). We never
-//! store plaintext.
+//! Account creation and password hashing live in [`crate::accounts`], which
+//! the operator commands share.
 //!
 //! TODO (separate slice):
 //!   * Email verification — send a magic link, set users.email_verified_at
@@ -14,8 +13,6 @@
 //!   * Rate limiting per IP / email
 //!   * Lockout after N failed attempts
 
-use argon2::password_hash::phc::PasswordHash;
-use argon2::{Argon2, PasswordHasher, PasswordVerifier};
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;
@@ -25,6 +22,7 @@ use uuid::Uuid;
 use chakramcp_shared::error::{ApiError, ApiResult};
 use chakramcp_shared::jwt;
 
+use crate::accounts::{self, NewUser};
 use crate::auth::AuthUser;
 use crate::handlers::users::{MembershipDto, UserDto};
 use crate::state::AppState;
@@ -50,9 +48,6 @@ pub struct AuthResponse {
     pub survey_required: bool,
 }
 
-const MIN_PASSWORD_LEN: usize = 8;
-const MAX_PASSWORD_LEN: usize = 200;
-
 // ─────────────────────────────────────────────────────────
 // POST /v1/auth/signup
 // ─────────────────────────────────────────────────────────
@@ -60,93 +55,28 @@ pub async fn signup(
     State(state): State<AppState>,
     Json(req): Json<SignupRequest>,
 ) -> ApiResult<Json<AuthResponse>> {
-    let email = req.email.trim().to_lowercase();
-    if email.is_empty() || !email.contains('@') {
-        return Err(ApiError::InvalidRequest("a valid email is required".into()));
-    }
-    if req.password.len() < MIN_PASSWORD_LEN || req.password.len() > MAX_PASSWORD_LEN {
-        return Err(ApiError::InvalidRequest(format!(
-            "password must be {MIN_PASSWORD_LEN}–{MAX_PASSWORD_LEN} characters"
-        )));
-    }
-    let name = req.name.trim();
-    if name.is_empty() {
-        return Err(ApiError::InvalidRequest("name is required".into()));
-    }
-
-    let exists = sqlx::query!(
-        r#"SELECT id FROM users WHERE LOWER(email) = $1 LIMIT 1"#,
-        email
+    let admin_email = state.admin_email().map(accounts::normalize_email);
+    let is_admin = admin_email.as_deref() == Some(accounts::normalize_email(&req.email).as_str());
+    let user = accounts::create_user(
+        &state.db,
+        NewUser {
+            email: &req.email,
+            name: &req.name,
+            password: &req.password,
+            is_admin,
+        },
     )
-    .fetch_optional(&state.db)
-    .await?;
-    if exists.is_some() {
-        return Err(ApiError::Conflict(
-            "an account with this email already exists".into(),
-        ));
-    }
-
-    let password_hash = hash_password(&req.password)?;
-    let admin_email = state.admin_email().map(|s| s.to_lowercase());
-    let is_admin = admin_email.as_deref() == Some(email.as_str());
-
-    let mut tx = state.db.begin().await?;
-
-    let user_id = Uuid::now_v7();
-    let user = sqlx::query!(
-        r#"
-        INSERT INTO users (id, email, display_name, is_admin, password_hash)
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING id, email, display_name, avatar_url, is_admin
-        "#,
-        user_id,
-        req.email,
-        name,
-        is_admin,
-        password_hash,
-    )
-    .fetch_one(&mut *tx)
     .await?;
 
-    // Personal account + owner membership.
-    let account_id = Uuid::now_v7();
-    let slug = personal_slug(&user.email);
-    sqlx::query!(
-        r#"
-        INSERT INTO accounts (id, slug, display_name, account_type, owner_user_id)
-        VALUES ($1, $2, $3, 'individual', $4)
-        "#,
-        account_id,
-        slug,
-        user.display_name,
-        user.id,
-    )
-    .execute(&mut *tx)
-    .await?;
-
-    sqlx::query!(
-        r#"
-        INSERT INTO account_memberships (id, account_id, user_id, role)
-        VALUES ($1, $2, $3, 'owner')
-        "#,
-        Uuid::now_v7(),
-        account_id,
-        user.id,
-    )
-    .execute(&mut *tx)
-    .await?;
-
-    tx.commit().await?;
-
-    let memberships = load_memberships(&state.db, user.id).await?;
+    let memberships = load_memberships(&state.db, user.user_id).await?;
     let user_dto = UserDto {
-        id: user.id,
+        id: user.user_id,
         email: user.email.clone(),
         display_name: user.display_name,
         avatar_url: user.avatar_url,
         is_admin: user.is_admin,
     };
-    let claims = jwt::UserClaims::new(user.id, user.email, user.is_admin, 24);
+    let claims = jwt::UserClaims::new(user.user_id, user.email, user.is_admin, 24);
     let token = jwt::encode_jwt(&claims, &state.config.jwt_secret)?;
     let survey_required =
         crate::handlers::surveys::is_required(&state.db, state.config.survey_enabled, user_dto.id)
@@ -189,7 +119,7 @@ pub async fn login(
     };
     let stored_hash = row.password_hash.as_ref().unwrap();
 
-    verify_password(&req.password, stored_hash)?;
+    accounts::verify_password(&req.password, stored_hash)?;
 
     let memberships = load_memberships(&state.db, row.id).await?;
     let user_dto = UserDto {
@@ -257,24 +187,6 @@ pub async fn signout(State(state): State<AppState>, user: AuthUser) -> ApiResult
 // Helpers
 // ─────────────────────────────────────────────────────────
 
-fn hash_password(plain: &str) -> Result<String, ApiError> {
-    // argon2 0.6 (password-hash 0.6): `hash_password` takes only the password
-    // and generates a random salt itself via the `getrandom` feature (on by
-    // default), replacing the old explicit `SaltString::generate(&mut OsRng)`.
-    let hash = Argon2::default()
-        .hash_password(plain.as_bytes())
-        .map_err(|e| ApiError::Internal(anyhow::anyhow!("password hashing failed: {e}")))?;
-    Ok(hash.to_string())
-}
-
-fn verify_password(plain: &str, stored: &str) -> Result<(), ApiError> {
-    let parsed = PasswordHash::new(stored)
-        .map_err(|_| ApiError::Internal(anyhow::anyhow!("stored password hash is malformed")))?;
-    Argon2::default()
-        .verify_password(plain.as_bytes(), &parsed)
-        .map_err(|_| ApiError::Unauthorized)
-}
-
 async fn load_memberships(
     db: &sqlx::PgPool,
     user_id: Uuid,
@@ -302,19 +214,6 @@ async fn load_memberships(
             role: r.role,
         })
         .collect())
-}
-
-fn personal_slug(email: &str) -> String {
-    let local = email.split('@').next().unwrap_or("user");
-    let mut s: String = local
-        .to_lowercase()
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-        .collect();
-    if s.is_empty() {
-        s.push_str("user");
-    }
-    format!("{}-{}", s, &Uuid::now_v7().simple().to_string()[..8])
 }
 
 #[cfg(test)]
@@ -489,60 +388,6 @@ mod signout_tests {
             res.status(),
             StatusCode::OK,
             "another user's revocation must not invalidate this user's token",
-        );
-    }
-}
-
-#[cfg(test)]
-mod password_tests {
-    //! Argon2id password hashing: round-trip + cross-version backward
-    //! compatibility. `hash_password`/`verify_password` were previously
-    //! untested (the signout tests seed a placeholder hash); this module was
-    //! added with the argon2 0.5 → 0.6 upgrade to prove hashes already stored
-    //! in `users.password_hash` keep authenticating after the bump.
-    use super::{hash_password, verify_password};
-    use chakramcp_shared::error::ApiError;
-
-    // A real Argon2id PHC string produced by argon2 0.5.3 (the pre-upgrade
-    // version) for `V05_PASSWORD`. If 0.6 can still verify it, existing users
-    // can still log in.
-    const V05_PASSWORD: &str = "correct-horse-battery-staple-v05";
-    const V05_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$Tq9rqVFKHliQY6aIu/doBg$R2bCUeP9WjSzJ+ylF/JJCqGAzDQc7YbbJhV99iq4CDo";
-
-    #[test]
-    fn verifies_hash_produced_by_argon2_0_5() {
-        verify_password(V05_PASSWORD, V05_HASH)
-            .expect("a stored 0.5-era hash must still verify under argon2 0.6");
-        assert!(
-            matches!(
-                verify_password("wrong", V05_HASH),
-                Err(ApiError::Unauthorized)
-            ),
-            "a wrong password against the 0.5 hash must be rejected"
-        );
-    }
-
-    #[test]
-    fn hash_then_verify_round_trips() {
-        let hash = hash_password("s3cr3t-pw").unwrap();
-        assert!(
-            hash.starts_with("$argon2id$"),
-            "unexpected hash format: {hash}"
-        );
-        verify_password("s3cr3t-pw", &hash).expect("correct password should verify");
-        assert!(
-            matches!(verify_password("nope", &hash), Err(ApiError::Unauthorized)),
-            "incorrect password should be Unauthorized"
-        );
-    }
-
-    #[test]
-    fn each_hash_uses_a_fresh_random_salt() {
-        // The 0.6 auto-salt path must still salt per-call: same password,
-        // different hashes.
-        assert_ne!(
-            hash_password("same").unwrap(),
-            hash_password("same").unwrap()
         );
     }
 }
