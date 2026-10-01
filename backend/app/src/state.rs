@@ -4,6 +4,7 @@ use sqlx::PgPool;
 
 use chakramcp_shared::config::SharedConfig;
 use chakramcp_shared::credits::CreditsConfig;
+use chakramcp_shared::hosting::HostingSettings;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -16,6 +17,10 @@ pub struct AppState {
     /// The global credit defaults, for showing effective grants and limits.
     /// Must match what the relay enforces: both mains read the same env.
     pub credits: CreditsConfig,
+    /// Who may sign up and who is an admin (`HOSTING_MODE` and its
+    /// overrides). `new` starts from the self-hosted defaults; the mains set
+    /// it from config.
+    pub hosting: HostingSettings,
 }
 
 impl AppState {
@@ -25,6 +30,7 @@ impl AppState {
             config: Arc::new(config),
             upsert_secret: None,
             credits: CreditsConfig::default(),
+            hosting: HostingSettings::default(),
         }
     }
 
@@ -39,6 +45,11 @@ impl AppState {
 
     pub fn with_credits_config(mut self, credits: CreditsConfig) -> Self {
         self.credits = credits;
+        self
+    }
+
+    pub fn with_hosting(mut self, hosting: HostingSettings) -> Self {
+        self.hosting = hosting;
         self
     }
 

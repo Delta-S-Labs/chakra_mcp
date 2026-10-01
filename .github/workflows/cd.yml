@@ -174,6 +174,23 @@ jobs:
           chmod 600 ~/.ssh/lightsail
           ssh-keyscan -H "$LIGHTSAIL_HOST" >> ~/.ssh/known_hosts
 
+      # ─── chakramcp.com runs as managed ─────────────────────────
+      # The server defaults to self_hosted (credits off, sign-up closed,
+      # ADMIN_EMAIL ignored). Production must say HOSTING_MODE=managed in
+      # its .env; checked before the compose file reaches the VM, so a
+      # missing line stops the deploy instead of switching chakramcp.com to
+      # self-hosted defaults. Fix: append HOSTING_MODE=managed to
+      # /opt/chakramcp/.env (docs/CI-CD.md).
+      - name: Check production runs as managed
+        run: |
+          set -euo pipefail
+          if ! ssh -i ~/.ssh/lightsail ubuntu@"$LIGHTSAIL_HOST" \
+              "grep -qx 'HOSTING_MODE=managed' /opt/chakramcp/.env"; then
+            echo "::error::/opt/chakramcp/.env has no HOSTING_MODE=managed line: refusing to deploy, or chakramcp.com would run with self-hosted defaults (credits off, sign-up closed). Append the line and re-run."
+            exit 1
+          fi
+          echo "HOSTING_MODE=managed is set."
+
       # ─── Sync infra config (compose YAML + Caddyfile) to the VM ─
       # CD used to only run `docker compose pull` + `up -d` on the
       # box — it never touched the compose YAML itself. That meant

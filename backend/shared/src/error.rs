@@ -37,6 +37,11 @@ pub enum ApiError {
 
     #[error("insufficient credits")]
     InsufficientCredits,
+
+    /// Public sign-up is closed (`SIGNUP_ENABLED`, or a self-hosted server's
+    /// default). The operator creates accounts with `chakramcp-server users`.
+    #[error("sign-up is closed on this server: ask its operator for an account")]
+    SignupDisabled,
 }
 
 #[derive(Serialize)]
@@ -74,6 +79,7 @@ impl IntoResponse for ApiError {
                 "account_credits_exhausted",
                 false,
             ),
+            ApiError::SignupDisabled => (StatusCode::FORBIDDEN, "signup_disabled", false),
         };
 
         let body = ErrorEnvelope {

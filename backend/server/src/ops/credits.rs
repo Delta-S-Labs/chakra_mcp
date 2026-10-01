@@ -10,7 +10,6 @@ use uuid::Uuid;
 
 use chakramcp_app::accounts;
 use chakramcp_app::credits_service::{self, Actor, CreditsView, SettingsChange};
-use chakramcp_shared::credits::CreditsConfig;
 
 use super::{connect, explain, format_credits, parse_credits, print_table};
 
@@ -69,8 +68,8 @@ pub enum OnOff {
 }
 
 pub async fn run(config: Option<PathBuf>, cmd: CreditsCmd) -> Result<()> {
-    let credits_cfg = CreditsConfig::from_env()?;
-    let db = connect(config).await?;
+    let (cfg, db) = connect(config).await?;
+    let credits_cfg = cfg.credits;
     let (account, account_id) = match &cmd {
         CreditsCmd::Show { account, .. }
         | CreditsCmd::Grant { account, .. }

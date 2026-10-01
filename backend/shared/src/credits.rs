@@ -5,11 +5,19 @@
 use std::time::Duration;
 
 use anyhow::{bail, Context};
+use serde::Deserialize;
+
+use crate::hosting::env_value;
 
 /// Global credit defaults. Per-account values on `credit_wallets` override
 /// the grant and the rate limit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CreditsConfig {
+    /// Whether credits are charged, granted and enforced. The default comes
+    /// from the hosting mode (`crate::hosting`): on for chakramcp.com, off
+    /// for self-hosted servers. Off, the worker discards queued charges and
+    /// nobody is blocked for credits; the rate limit still applies.
+    pub enabled: bool,
     /// Monthly free grant for wallets with no override (milli-credits).
     pub default_monthly_free_mc: i64,
     /// Flat cost of one accepted invocation (milli-credits).
@@ -24,6 +32,7 @@ pub struct CreditsConfig {
 impl Default for CreditsConfig {
     fn default() -> Self {
         Self {
+            enabled: true,
             // 100 credits = 1,000 invocations at 0.1 credit each: today's free tier.
             default_monthly_free_mc: 100_000,
             cost_per_invocation_mc: 100,
@@ -37,19 +46,40 @@ impl Default for CreditsConfig {
 /// behind, and the fail-open window is a multiple of it.
 const MAX_SWEEP_INTERVAL_SECS: u64 = 300;
 
+/// The `server.toml` keys, named after their environment variables.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct CreditsFile {
+    pub credits_default_monthly_free_mc: Option<i64>,
+    pub credits_cost_per_invocation_mc: Option<i64>,
+    pub limits_default_rate_per_min: Option<i32>,
+}
+
 impl CreditsConfig {
-    /// Read from the environment. Unset → default; set but unparseable or
-    /// not positive (or a tick over five minutes) → error. Money settings
-    /// must never silently fall back.
-    pub fn from_env() -> anyhow::Result<Self> {
-        Self::from_lookup(|key| std::env::var(key).ok())
+    /// From the environment only (the standalone binaries). `enabled` comes
+    /// from the hosting settings.
+    pub fn from_env(enabled: bool) -> anyhow::Result<Self> {
+        Self::from_sources(
+            |key| std::env::var(key).ok(),
+            &CreditsFile::default(),
+            enabled,
+        )
     }
 
-    fn from_lookup(get: impl Fn(&str) -> Option<String>) -> anyhow::Result<Self> {
+    /// Each setting from a non-empty environment value, else the config
+    /// file, else the default. An empty value counts as unset (Compose
+    /// passes one for every `.env` key left out); a value that is set but
+    /// unparseable or not positive, or a tick over five minutes, is an
+    /// error. Money settings must never silently fall back.
+    pub fn from_sources(
+        get: impl Fn(&str) -> Option<String>,
+        file: &CreditsFile,
+        enabled: bool,
+    ) -> anyhow::Result<Self> {
         let defaults = Self::default();
         let sweep_secs = positive(
             &get,
             "CREDITS_SWEEP_INTERVAL_SECS",
+            None,
             defaults.sweep_interval.as_secs(),
         )?;
         if sweep_secs > MAX_SWEEP_INTERVAL_SECS {
@@ -58,23 +88,38 @@ impl CreditsConfig {
             );
         }
         Ok(Self {
+            enabled,
             default_monthly_free_mc: positive(
                 &get,
                 "CREDITS_DEFAULT_MONTHLY_FREE_MC",
+                file.credits_default_monthly_free_mc,
                 defaults.default_monthly_free_mc,
             )?,
             cost_per_invocation_mc: positive(
                 &get,
                 "CREDITS_COST_PER_INVOCATION_MC",
+                file.credits_cost_per_invocation_mc,
                 defaults.cost_per_invocation_mc,
             )?,
             sweep_interval: Duration::from_secs(sweep_secs),
             default_rate_per_min: positive(
                 &get,
                 "LIMITS_DEFAULT_RATE_PER_MIN",
+                file.limits_default_rate_per_min,
                 defaults.default_rate_per_min,
             )?,
         })
+    }
+
+    /// The balance below which an account is blocked: one invocation's
+    /// cost, or, with credits off, a balance no wallet can have, so the
+    /// switch refresh blocks nobody.
+    pub fn block_below_mc(&self) -> i64 {
+        if self.enabled {
+            self.cost_per_invocation_mc
+        } else {
+            i64::MIN
+        }
     }
 
     /// After this long without a refresh the switches are treated as
@@ -99,20 +144,27 @@ pub fn is_blocked(
     !unlimited && granted && balance_mc < cost_per_invocation_mc
 }
 
-fn positive<T>(get: &impl Fn(&str) -> Option<String>, key: &str, default: T) -> anyhow::Result<T>
+fn positive<T>(
+    get: &impl Fn(&str) -> Option<String>,
+    key: &str,
+    from_file: Option<T>,
+    default: T,
+) -> anyhow::Result<T>
 where
-    T: std::str::FromStr + PartialOrd + Default,
+    T: std::str::FromStr + PartialOrd + Default + std::fmt::Display,
     T::Err: std::error::Error + Send + Sync + 'static,
 {
-    let Some(raw) = get(key) else {
-        return Ok(default);
+    let value: T = match env_value(get, key) {
+        Some(raw) => raw
+            .parse()
+            .with_context(|| format!("{key}={raw:?} is not a valid number"))?,
+        None => match from_file {
+            Some(value) => value,
+            None => return Ok(default),
+        },
     };
-    let value: T = raw
-        .trim()
-        .parse()
-        .with_context(|| format!("{key}={raw:?} is not a valid number"))?;
     if value <= T::default() {
-        bail!("{key} must be greater than 0 (got {raw:?})");
+        bail!("{key} must be greater than 0 (got {value})");
     }
     Ok(value)
 }
@@ -128,7 +180,7 @@ mod tests {
             .iter()
             .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
             .collect();
-        CreditsConfig::from_lookup(|key| env.get(key).cloned())
+        CreditsConfig::from_sources(|key| env.get(key).cloned(), &CreditsFile::default(), true)
     }
 
     #[test]
@@ -172,6 +224,45 @@ mod tests {
         assert!(!is_blocked(100, true, false, cost), "can pay for one more");
         assert!(!is_blocked(-500, true, true, cost), "unlimited");
         assert!(!is_blocked(-100, false, false, cost), "never granted");
+    }
+
+    #[test]
+    fn empty_values_count_as_unset_and_the_file_comes_second() {
+        let cfg = from(&[
+            ("CREDITS_DEFAULT_MONTHLY_FREE_MC", ""),
+            ("CREDITS_COST_PER_INVOCATION_MC", "  "),
+        ])
+        .unwrap();
+        assert_eq!(cfg, CreditsConfig::default());
+
+        let file = CreditsFile {
+            credits_default_monthly_free_mc: Some(5_000),
+            credits_cost_per_invocation_mc: Some(10),
+            limits_default_rate_per_min: Some(30),
+        };
+        let lookup = |key: &str| (key == "LIMITS_DEFAULT_RATE_PER_MIN").then(|| "90".to_owned());
+        let cfg = CreditsConfig::from_sources(lookup, &file, false).unwrap();
+        assert!(!cfg.enabled);
+        assert_eq!(cfg.default_monthly_free_mc, 5_000, "from the file");
+        assert_eq!(cfg.cost_per_invocation_mc, 10, "from the file");
+        assert_eq!(cfg.default_rate_per_min, 90, "the environment wins");
+
+        let bad = CreditsFile {
+            credits_cost_per_invocation_mc: Some(0),
+            ..Default::default()
+        };
+        assert!(CreditsConfig::from_sources(|_| None, &bad, true).is_err());
+    }
+
+    #[test]
+    fn with_credits_off_nobody_is_blocked() {
+        let on = CreditsConfig::default();
+        assert_eq!(on.block_below_mc(), on.cost_per_invocation_mc);
+        let off = CreditsConfig {
+            enabled: false,
+            ..on
+        };
+        assert_eq!(off.block_below_mc(), i64::MIN);
     }
 
     #[test]

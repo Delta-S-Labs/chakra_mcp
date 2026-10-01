@@ -31,7 +31,9 @@ Read the source. It's about 200 lines total.
   createdb chakramcp
   chakramcp-server init
   chakramcp-server migrate
-  chakramcp-server start
+  # The demo signs up its own users: open sign-up, which a self-hosted
+  # server keeps closed by default.
+  SIGNUP_ENABLED=true chakramcp-server start
   ```
 
   Or, if you're hacking on this repo, run the dev backend:

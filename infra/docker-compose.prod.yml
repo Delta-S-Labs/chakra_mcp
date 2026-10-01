@@ -87,7 +87,6 @@ services:
     environment:
       DATABASE_URL: postgres://chakramcp:${POSTGRES_PASSWORD}@pg:5432/chakramcp
       JWT_SECRET: ${JWT_SECRET}
-      ADMIN_EMAIL: ${ADMIN_EMAIL}
     command: ["migrate"]
     networks: [internal]
 
@@ -101,18 +100,22 @@ services:
     environment:
       DATABASE_URL: postgres://chakramcp:${POSTGRES_PASSWORD}@pg:5432/chakramcp
       REDIS_URL: redis://redis:6379
-      # Shared with the frontend's server-side sign-in callback (set the same
-      # value in Netlify's env): the only caller allowed to turn a
-      # Google/GitHub identity into a session. Unset = that sign-in is off.
-      UPSERT_SHARED_SECRET: ${UPSERT_SHARED_SECRET:-}
+      # self_hosted (the default) or managed (chakramcp.com only). Self-hosted
+      # means credits off, public sign-up closed and ADMIN_EMAIL ignored: the
+      # operator creates accounts with `chakramcp-server users`. Empty values
+      # mean the server's defaults. See docs/self-hosting/compose.md.
+      HOSTING_MODE: ${HOSTING_MODE:-}
+      SIGNUP_ENABLED: ${SIGNUP_ENABLED:-}
+      CREDITS_ENABLED: ${CREDITS_ENABLED:-}
+      CREDITS_DEFAULT_MONTHLY_FREE_MC: ${CREDITS_DEFAULT_MONTHLY_FREE_MC:-}
+      CREDITS_COST_PER_INVOCATION_MC: ${CREDITS_COST_PER_INVOCATION_MC:-}
+      LIMITS_DEFAULT_RATE_PER_MIN: ${LIMITS_DEFAULT_RATE_PER_MIN:-}
       # Usage-limit enforcement. Default true = ENFORCING: over-limit calls are
-      # denied (429: over the per-minute rate limit, or the account is out of
-      # credits). To fall back to shadow mode (log `limit.would_block`, still
-      # serve), set LIMITS_ENFORCE=false in the host env. Takes effect on the
+      # denied (429: over the per-minute rate limit, or, with credits on, out
+      # of credits). To fall back to shadow mode (log `limit.would_block`,
+      # still serve), set LIMITS_ENFORCE=false in .env. Takes effect on the
       # next `docker compose up -d relay` (which also starts Redis — until it's
       # up, rate limiting fails open; the credit switches don't use Redis).
-      # Credit amounts use the built-in defaults unless CREDITS_* is set (see
-      # docs/specs/2026-09-23-credit-ledger-foundation-design.md).
       LIMITS_ENFORCE: ${LIMITS_ENFORCE:-true}
       # System One compliance checks (TypeSafe Jev) — off unless the host env
       # sets SYSTEM_ONE_CHECKS=true and TYPESAFE_AI_KEY. Fail-open: a TypeSafe
@@ -121,18 +124,19 @@ services:
       TYPESAFE_AI_KEY: ${TYPESAFE_AI_KEY:-}
       TYPESAFE_AI_MODEL: ${TYPESAFE_AI_MODEL:-jev-latest}
       JWT_SECRET: ${JWT_SECRET}
-      ADMIN_EMAIL: ${ADMIN_EMAIL}
       APP_PORT: "8080"
       RELAY_PORT: "8090"
       APP_PUBLIC_URL: ${APP_PUBLIC_URL}
       RELAY_PUBLIC_URL: ${RELAY_PUBLIC_URL}
-      # Single host serves both the marketing/app frontend and the
-      # /oauth/* API endpoints (caddy routes /oauth/* → :8080,
-      # everything else → Netlify), so FRONTEND_PUBLIC_URL matches
-      # APP_PUBLIC_URL. shared/config.rs reads either *_PUBLIC_URL or
-      # *_BASE_URL; specifying both keeps older deploys + newer code
-      # honest.
+      # Where sign-in and device-pairing links point. A self-hosted server
+      # serves those pages itself at APP_PUBLIC_URL; chakramcp.com points
+      # this at its web UI.
       FRONTEND_PUBLIC_URL: ${FRONTEND_PUBLIC_URL:-${APP_PUBLIC_URL}}
+      # chakramcp.com only. ADMIN_EMAIL: signing up with it grants admin
+      # (managed mode). UPSERT_SHARED_SECRET: shared with the web UI's
+      # server-side Google/GitHub sign-in callback; unset turns that off.
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      UPSERT_SHARED_SECRET: ${UPSERT_SHARED_SECRET:-}
       DISCOVERY_V2: "true"
       RUST_LOG: info,chakramcp_app=info,chakramcp_relay=info,sqlx=warn
       # One JSON object per log line (request_id, route, … on each), for Loki.
@@ -140,13 +144,6 @@ services:
       # Prometheus metrics for the observability stack's collector. Reachable
       # only on the Docker networks: not published, not routed by Caddy.
       METRICS_ADDR: "0.0.0.0:9464"
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
-      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
-      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
-      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
-      RECAPTCHA_SITE_KEY: ${RECAPTCHA_SITE_KEY:-}
-      RECAPTCHA_SECRET_KEY: ${RECAPTCHA_SECRET_KEY:-}
-      CAPTCHA_ENABLED: ${CAPTCHA_ENABLED:-false}
     networks: [internal]
     expose:
       - "8080"

@@ -19,14 +19,14 @@ use tracing_subscriber::EnvFilter;
 use chakramcp_shared::error::ApiError;
 
 /// Load the server config the way `migrate` does, quietly, and connect.
-async fn connect(explicit_path: Option<PathBuf>) -> Result<PgPool> {
+async fn connect(explicit_path: Option<PathBuf>) -> Result<(crate::ServerConfig, PgPool)> {
     // Warnings only, on stderr: info lines would mix with the results.
     let _ = tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .with_env_filter(EnvFilter::new("warn"))
         .try_init();
     let cfg = crate::load_config(explicit_path)?;
-    PgPoolOptions::new()
+    let pool = PgPoolOptions::new()
         .max_connections(2)
         .connect(&cfg.shared.database_url)
         .await
@@ -35,7 +35,8 @@ async fn connect(explicit_path: Option<PathBuf>) -> Result<PgPool> {
                 "connecting to {}",
                 crate::redact_url(&cfg.shared.database_url)
             )
-        })
+        })?;
+    Ok((cfg, pool))
 }
 
 /// An API error as a message for the person at the terminal. `not_found`
