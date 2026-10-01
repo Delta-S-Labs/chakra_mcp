@@ -55,3 +55,5 @@ next-env.d.ts
 # Playwright e2e run artefacts (screenshots, traces, videos, html-report).
 # The spec + config + helpers are tracked; the per-run output dirs aren't.
 /e2e/screenshots/
+# Unit test runs (`pnpm test`) leave the runner's state here.
+/test-results/

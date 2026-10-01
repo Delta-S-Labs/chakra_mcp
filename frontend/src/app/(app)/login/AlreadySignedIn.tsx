@@ -20,6 +20,7 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import { signOutAndRedirect } from "@/lib/auth-actions";
+import { safeRedirect } from "@/lib/safe-redirect";
 import styles from "./login.module.css";
 
 /**
@@ -42,7 +43,7 @@ function backendTokenUsable(token: string | undefined): boolean {
   }
 }
 
-export async function AlreadySignedIn({ from }: { from?: string }) {
+export async function AlreadySignedIn({ redirectTo }: { redirectTo?: string }) {
   const session = await auth();
   if (!session?.user) return null;
 
@@ -63,7 +64,7 @@ export async function AlreadySignedIn({ from }: { from?: string }) {
         )}
       </div>
       <div className={styles.alreadyInActions}>
-        <Link href={from || "/app"} className={styles.alreadyInContinue}>
+        <Link href={safeRedirect(redirectTo)} className={styles.alreadyInContinue}>
           Continue
         </Link>
         <form action={signOutAndRedirect}>

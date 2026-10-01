@@ -21,6 +21,10 @@
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
     Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    # A baseline only: no plugins, no <base> rewrites, no framing. It sets
+    # no script-src; that would need nonces for Next's inline scripts plus
+    # PostHog's /ingest proxy and reCAPTCHA.
+    Content-Security-Policy = "object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
 
 [[headers]]
   for = "/assets/*"
