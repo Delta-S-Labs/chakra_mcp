@@ -167,7 +167,7 @@ docker compose -f docker-compose.prod.yml up -d
 
 **Pinning a version.** The default, `:latest`, moves with each release.
 To stay on one, set `CHAKRAMCP_IMAGE` in `.env`, e.g.
-`ghcr.io/delta-s-labs/chakramcp-server:0.2.0`. `:edge` follows every
+`ghcr.io/delta-s-labs/chakramcp-server:0.3.0`. `:edge` follows every
 change to `main`.
 
 ## Operating
