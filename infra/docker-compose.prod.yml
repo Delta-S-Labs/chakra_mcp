@@ -107,9 +107,11 @@ services:
       HOSTING_MODE: ${HOSTING_MODE:-}
       SIGNUP_ENABLED: ${SIGNUP_ENABLED:-}
       CREDITS_ENABLED: ${CREDITS_ENABLED:-}
-      CREDITS_DEFAULT_MONTHLY_FREE_MC: ${CREDITS_DEFAULT_MONTHLY_FREE_MC:-}
-      CREDITS_COST_PER_INVOCATION_MC: ${CREDITS_COST_PER_INVOCATION_MC:-}
-      LIMITS_DEFAULT_RATE_PER_MIN: ${LIMITS_DEFAULT_RATE_PER_MIN:-}
+      # The amounts default to the server's own defaults, written out: images
+      # before 0.3.0 refuse to start on an empty value here.
+      CREDITS_DEFAULT_MONTHLY_FREE_MC: ${CREDITS_DEFAULT_MONTHLY_FREE_MC:-100000}
+      CREDITS_COST_PER_INVOCATION_MC: ${CREDITS_COST_PER_INVOCATION_MC:-100}
+      LIMITS_DEFAULT_RATE_PER_MIN: ${LIMITS_DEFAULT_RATE_PER_MIN:-60}
       # Usage-limit enforcement. Default true = ENFORCING: over-limit calls are
       # denied (429: over the per-minute rate limit, or, with credits on, out
       # of credits). To fall back to shadow mode (log `limit.would_block`,
