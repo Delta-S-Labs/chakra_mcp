@@ -27,6 +27,21 @@ helm install chakramcp oci://ghcr.io/delta-s-labs/charts/chakramcp --version X.Y
 Without an Ingress, reach it with
 `kubectl -n chakramcp port-forward svc/chakramcp 8080:app 8090:relay`.
 
+Then create your account. Public sign-up is closed, so the first admin is
+made from inside the cluster (`helm install` prints this command with your
+release's name):
+
+```sh
+kubectl -n chakramcp exec -it deploy/chakramcp -- \
+    chakramcp-server users add you@example.com --name "Your Name" --admin
+```
+
+To pipe the password in instead, use `exec -i` and `--password-stdin`.
+Then sign in with the CLI (`chakramcp networks add`, `networks use`,
+`login`) and connect MCP clients, as in
+[compose.md](compose.md#first-start) from step 6. The server serves its
+own sign-in, consent and device-pairing pages.
+
 ## A production-shaped values file
 
 ```yaml
@@ -44,7 +59,8 @@ ingress:
     - secretName: chakramcp-tls
       hosts: [app.example.com, relay.example.com]
 config:
-  adminEmail: you@example.com
+  signupEnabled: false   # the default; true lets people create accounts
+  creditsEnabled: false  # the default; true gives accounts a monthly allowance
 secrets:
   existingSecret: chakramcp          # JWT_SECRET, plus optional keys
 postgresql:
@@ -60,6 +76,19 @@ externalDatabase:
 - **Scaling.** `replicaCount` above 1 is safe: migrations take an advisory
   lock, the credits worker locks its accounting, and rate-limit counters
   live in Redis.
+
+## Accounts and credits
+
+These work as on Compose. [compose.md](compose.md#accounts) has the
+details: who can sign up, the admin role, the failed sign-in limit, and
+turning credits on. Run the commands with
+`kubectl -n chakramcp exec deploy/chakramcp -- chakramcp-server …`, e.g.
+`… users list` or `… credits show you@example.com`.
+
+- `config.signupEnabled` and `config.creditsEnabled` set the switches.
+  Credit amounts go through `extraEnv`: `CREDITS_DEFAULT_MONTHLY_FREE_MC`,
+  `CREDITS_COST_PER_INVOCATION_MC`, `LIMITS_DEFAULT_RATE_PER_MIN`.
+- `config.adminEmail` has no effect on a self-hosted server.
 
 ## Postgres and Redis
 
@@ -85,8 +114,7 @@ environment variables:
 | Key | |
 |---|---|
 | `JWT_SECRET` | Required: `openssl rand -hex 32` |
-| `UPSERT_SHARED_SECRET` | Shared with the web frontend's sign-in callback; unset turns Google/GitHub sign-in off |
-| `GOOGLE_CLIENT_SECRET`, `GITHUB_CLIENT_SECRET`, `RECAPTCHA_SECRET_KEY`, `TYPESAFE_AI_KEY` | Optional features; their non-secret counterparts go in `extraEnv` |
+| `TYPESAFE_AI_KEY` | Optional: System One compliance checks, with `SYSTEM_ONE_CHECKS=true` in `extraEnv` |
 
 ```sh
 kubectl -n chakramcp create secret generic chakramcp \

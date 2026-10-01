@@ -39,10 +39,19 @@ either your own kube-prometheus-stack or a bundled stack. See
   and 2 GB of RAM, using about 600 MB. Without observability, 1 GB is
   plenty.
 
-## What's not included
+## What's included, and what isn't
 
-- **The web UI.** The Next.js frontend (`frontend/`) runs separately
-  from the server; the CLI, the SDKs and MCP clients work without it.
-- **Backups and high availability** for Postgres. The Compose setup
-  keeps its data in the `pgdata` volume: back it up (e.g. with
-  `pg_dump`), or point `DATABASE_URL` at a managed Postgres.
+- **Sign-in is built in.** The server serves its own sign-in, consent and
+  device-pairing pages, so `chakramcp login`, MCP clients, `chakramcp pair`
+  and the SDKs (with keys from `chakramcp api-keys`) need nothing else.
+- **Self-hosted defaults.**
+  - Public sign-up is closed: you create the first admin, and anyone else,
+    with `chakramcp-server users add`.
+  - Credits are off, so nobody is refused for running out.
+  - Both are one setting away; see [Accounts](compose.md#accounts) and
+    [Credits](compose.md#credits).
+- **No web dashboard.** The Next.js app in `frontend/` is the dashboard
+  chakramcp.com runs; it isn't part of the self-hosted server.
+- **No Postgres backups or high availability.** The Compose setup keeps
+  its data in the `pgdata` volume: back it up (e.g. with `pg_dump`), or
+  point `DATABASE_URL` at a managed Postgres.

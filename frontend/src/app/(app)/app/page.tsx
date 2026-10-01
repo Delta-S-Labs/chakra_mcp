@@ -174,7 +174,7 @@ export default async function AppDashboard() {
             <p>
               <em>Dev hint:</em> the relay runs alongside the app via{" "}
               <code>task dev:backend</code>; check{" "}
-              <code>NEXT_PUBLIC_RELAY_API_URL</code>.
+              <code>NEXT_PUBLIC_RELAY_URL</code>.
             </p>
           )}
         </section>
