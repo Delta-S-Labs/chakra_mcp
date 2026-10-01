@@ -46,7 +46,7 @@ own sign-in, consent and device-pairing pages.
 
 ```yaml
 image:
-  tag: "0.2.0"            # pin a release (a packaged chart defaults to its own)
+  tag: "0.3.0"            # pin a release (a packaged chart defaults to its own)
 ingress:
   enabled: true
   className: nginx
