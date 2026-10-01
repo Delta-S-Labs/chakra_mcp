@@ -27,24 +27,10 @@ use chakramcp_app::{router as app_router, AppState};
 use chakramcp_relay::{router as relay_router, RelayState};
 use chakramcp_shared::{config::SharedConfig, db, telemetry};
 
-/// The commit this binary was built from; CD sets `GIT_SHA` for the build.
-const GIT_SHA: &str = match option_env!("GIT_SHA") {
-    Some(sha) => sha,
-    None => "unknown",
-};
-
-/// The version reported by `--version` and `chakramcp_build_info`: the
-/// release (`CHAKRAMCP_VERSION`, set by the release and image builds, e.g.
-/// `0.2.0` or `edge`), else the crate version.
-const VERSION: &str = match option_env!("CHAKRAMCP_VERSION") {
-    Some(version) => version,
-    None => env!("CARGO_PKG_VERSION"),
-};
-
 #[derive(Parser, Debug)]
 #[command(
     name = "chakramcp-server",
-    version = VERSION,
+    version = telemetry::VERSION,
     about = "Run a private ChakraMCP network locally.",
     long_about = "Runs the user-facing API + inter-agent relay services in one process. \
                   Pair with a Postgres instance (homebrew installs postgresql@16 alongside)."
@@ -192,11 +178,7 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
     telemetry::init_tracing(&cfg.shared.log_filter, cfg.log_format.as_deref());
     // Metrics are opt-in (METRICS_ADDR): nothing listens unless it's set.
     if let Some(addr) = cfg.metrics_addr {
-        let build = telemetry::BuildInfo {
-            version: VERSION,
-            git_sha: GIT_SHA,
-        };
-        telemetry::install_metrics(addr, build).await?;
+        telemetry::install_metrics(addr, telemetry::BuildInfo::CURRENT).await?;
     }
 
     let pool: PgPool = db::connect(&cfg.shared.database_url).await?;

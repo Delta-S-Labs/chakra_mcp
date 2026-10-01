@@ -33,7 +33,8 @@ use crate::state::RelayState;
 
 const PROTOCOL_VERSION: &str = "2025-06-18";
 const SERVER_NAME: &str = "chakramcp-relay";
-const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
+/// The release this build reports (e.g. `0.2.0`, or `edge` from main).
+const SERVER_VERSION: &str = chakramcp_shared::telemetry::VERSION;
 
 // ─── JSON-RPC envelope ───────────────────────────────────
 
@@ -2739,5 +2740,17 @@ mod manage_agents_tests {
         ] {
             assert!(names.contains(&expected), "missing tool: {expected}");
         }
+    }
+}
+
+#[cfg(test)]
+mod server_info_tests {
+    //! The MCP handshake reports the release this build is, like `--version`
+    //! and `chakramcp_build_info`, not the relay crate's own version.
+
+    #[test]
+    fn initialize_reports_the_release_version() {
+        let release = option_env!("CHAKRAMCP_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"));
+        assert_eq!(super::initialize_result()["serverInfo"]["version"], release);
     }
 }
