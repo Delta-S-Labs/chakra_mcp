@@ -55,8 +55,15 @@ pub async fn signup(
     State(state): State<AppState>,
     Json(req): Json<SignupRequest>,
 ) -> ApiResult<Json<AuthResponse>> {
+    if !state.hosting.signup_enabled {
+        return Err(ApiError::SignupDisabled);
+    }
+    // On chakramcp.com, signing up with ADMIN_EMAIL makes the operator's
+    // account. A self-hosted server's admins are made with
+    // `chakramcp-server users`, so a stranger can't claim the address first.
     let admin_email = state.admin_email().map(accounts::normalize_email);
-    let is_admin = admin_email.as_deref() == Some(accounts::normalize_email(&req.email).as_str());
+    let is_admin = state.hosting.is_managed()
+        && admin_email.as_deref() == Some(accounts::normalize_email(&req.email).as_str());
     let user = accounts::create_user(
         &state.db,
         NewUser {
@@ -389,5 +396,76 @@ mod signout_tests {
             StatusCode::OK,
             "another user's revocation must not invalidate this user's token",
         );
+    }
+}
+
+#[cfg(test)]
+mod signup_tests {
+    use axum::body::Body;
+    use axum::http::{header, Request, StatusCode};
+    use chakramcp_shared::hosting::{HostingMode, HostingSettings};
+    use http_body_util::BodyExt;
+    use serde_json::{json, Value};
+    use sqlx::PgPool;
+    use tower::ServiceExt;
+
+    use crate::tests_support::test_config;
+
+    const EMAIL: &str = "operator@example.test";
+
+    async fn signup(pool: &PgPool, hosting: HostingSettings) -> (StatusCode, Value) {
+        let mut config = test_config();
+        config.admin_email = Some(EMAIL.to_owned());
+        let state = crate::AppState::new(pool.clone(), config).with_hosting(hosting);
+        let body = json!({ "email": EMAIL, "password": "long-enough", "name": "Op" });
+        let res = crate::router(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/signup")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = res.status();
+        let bytes = res.into_body().collect().await.unwrap().to_bytes();
+        (
+            status,
+            serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+        )
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn closed_sign_up_is_refused(pool: PgPool) {
+        let (status, body) = signup(&pool, HostingSettings::default()).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(body["error"]["code"], "signup_disabled");
+        let users: i64 = sqlx::query_scalar("SELECT count(*) FROM users")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(users, 0);
+    }
+
+    /// A stranger can't claim a self-hosted server by signing up with the
+    /// operator's address first.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn admin_email_grants_nothing_on_a_self_hosted_server(pool: PgPool) {
+        let open = HostingSettings {
+            signup_enabled: true,
+            ..HostingSettings::default()
+        };
+        let (status, body) = signup(&pool, open).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["user"]["is_admin"], false);
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn admin_email_grants_admin_on_chakramcp_com(pool: PgPool) {
+        let (status, body) = signup(&pool, HostingSettings::for_mode(HostingMode::Managed)).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["user"]["is_admin"], true);
     }
 }

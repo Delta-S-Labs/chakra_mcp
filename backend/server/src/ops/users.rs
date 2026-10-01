@@ -47,7 +47,7 @@ pub enum UsersCmd {
 }
 
 pub async fn run(config: Option<PathBuf>, cmd: UsersCmd) -> Result<()> {
-    let db = connect(config).await?;
+    let (_, db) = connect(config).await?;
     match cmd {
         UsersCmd::Add {
             email,

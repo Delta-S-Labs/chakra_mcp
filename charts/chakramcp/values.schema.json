@@ -50,6 +50,18 @@
           "type": "string",
           "pattern": "^(https?://.+)?$"
         },
+        "signupEnabled": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "creditsEnabled": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "adminEmail": {
           "type": "string"
         },

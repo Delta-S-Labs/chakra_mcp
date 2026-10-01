@@ -100,9 +100,13 @@ pub async fn upsert(
         ));
     }
 
+    // On chakramcp.com the flag follows ADMIN_EMAIL at every sign-in. A
+    // self-hosted server never sets it here: its admins are made with
+    // `chakramcp-server users`, and a stored flag is left alone.
     let admin_email = state.admin_email().map(|s| s.to_lowercase());
     let email_lower = req.email.to_lowercase();
-    let is_admin = admin_email.as_deref() == Some(email_lower.as_str());
+    let managed = state.hosting.is_managed();
+    let is_admin = managed && admin_email.as_deref() == Some(email_lower.as_str());
 
     let mut tx = state.db.begin().await?;
 
@@ -129,7 +133,7 @@ pub async fn upsert(
                 u.id,
                 req.name,
                 req.avatar_url,
-                is_admin
+                if managed { is_admin } else { u.is_admin }
             )
             .fetch_one(&mut *tx)
             .await?;
@@ -146,7 +150,10 @@ pub async fn upsert(
             )
         }
         None => {
-            // Create user.
+            // A new account: only while sign-up is open.
+            if !state.hosting.signup_enabled {
+                return Err(ApiError::SignupDisabled);
+            }
             let new_id = Uuid::now_v7();
             let inserted = sqlx::query!(
                 r#"
@@ -316,7 +323,9 @@ pub async fn me(State(state): State<AppState>, user: AuthUser) -> ApiResult<Json
 mod tests {
     use axum::body::Body;
     use axum::http::{header, Request, StatusCode};
-    use serde_json::json;
+    use chakramcp_shared::hosting::{HostingMode, HostingSettings};
+    use http_body_util::BodyExt;
+    use serde_json::{json, Value};
     use sqlx::PgPool;
     use tower::ServiceExt;
 
@@ -324,14 +333,25 @@ mod tests {
     use crate::tests_support::test_config;
 
     const SECRET: &str = "callback-secret-callback-secret-0123456789";
+    const EMAIL: &str = "someone@example.test";
 
-    async fn upsert(
+    fn managed() -> HostingSettings {
+        HostingSettings::for_mode(HostingMode::Managed)
+    }
+
+    /// A provider sign-in for `EMAIL`, as the web UI's callback makes it.
+    async fn upsert_as(
         pool: &PgPool,
+        hosting: HostingSettings,
+        admin_email: Option<&str>,
         configured: Option<&str>,
         presented: Option<&str>,
-    ) -> StatusCode {
-        let state = crate::AppState::new(pool.clone(), test_config())
-            .with_upsert_secret(configured.map(str::to_owned));
+    ) -> (StatusCode, Value) {
+        let mut config = test_config();
+        config.admin_email = admin_email.map(str::to_owned);
+        let state = crate::AppState::new(pool.clone(), config)
+            .with_upsert_secret(configured.map(str::to_owned))
+            .with_hosting(hosting);
         let mut req = Request::builder()
             .method("POST")
             .uri("/v1/users/upsert")
@@ -340,20 +360,42 @@ mod tests {
             req = req.header(UPSERT_SECRET_HEADER, secret);
         }
         let body = json!({
-            "email": "someone@example.test",
+            "email": EMAIL,
             "name": "Someone",
             "provider": "github",
             "provider_user_id": "12345",
         });
-        crate::router(state)
+        let res = crate::router(state)
             .oneshot(req.body(Body::from(body.to_string())).unwrap())
             .await
-            .unwrap()
-            .status()
+            .unwrap();
+        let status = res.status();
+        let bytes = res.into_body().collect().await.unwrap().to_bytes();
+        (
+            status,
+            serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+        )
+    }
+
+    async fn upsert(
+        pool: &PgPool,
+        configured: Option<&str>,
+        presented: Option<&str>,
+    ) -> StatusCode {
+        upsert_as(pool, managed(), None, configured, presented)
+            .await
+            .0
     }
 
     async fn users(pool: &PgPool) -> i64 {
         sqlx::query_scalar("SELECT count(*) FROM users WHERE email = 'someone@example.test'")
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+
+    async fn is_admin(pool: &PgPool) -> bool {
+        sqlx::query_scalar("SELECT is_admin FROM users WHERE email = 'someone@example.test'")
             .fetch_one(pool)
             .await
             .unwrap()
@@ -383,5 +425,58 @@ mod tests {
             StatusCode::OK
         );
         assert_eq!(users(&pool).await, 1);
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn on_chakramcp_com_the_admin_flag_follows_admin_email(pool: PgPool) {
+        let (status, body) =
+            upsert_as(&pool, managed(), Some(EMAIL), Some(SECRET), Some(SECRET)).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert!(is_admin(&pool).await);
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn a_self_hosted_server_creates_no_one_while_sign_up_is_closed(pool: PgPool) {
+        let (status, body) = upsert_as(
+            &pool,
+            HostingSettings::default(),
+            Some(EMAIL),
+            Some(SECRET),
+            Some(SECRET),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(body["error"]["code"], "signup_disabled");
+        assert_eq!(users(&pool).await, 0);
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn a_self_hosted_server_never_grants_admin_through_sign_in(pool: PgPool) {
+        let open = HostingSettings {
+            signup_enabled: true,
+            ..HostingSettings::default()
+        };
+        // ADMIN_EMAIL is set, but on a self-hosted server it grants nothing.
+        let (status, _) = upsert_as(&pool, open, Some(EMAIL), Some(SECRET), Some(SECRET)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(!is_admin(&pool).await);
+
+        // An admin made by the operator keeps the flag when they sign in,
+        // even with sign-up closed: existing users always can.
+        sqlx::query("UPDATE users SET is_admin = true WHERE email = $1")
+            .bind(EMAIL)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let (status, _) = upsert_as(
+            &pool,
+            HostingSettings::default(),
+            None,
+            Some(SECRET),
+            Some(SECRET),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(is_admin(&pool).await, "the stored flag is left alone");
     }
 }

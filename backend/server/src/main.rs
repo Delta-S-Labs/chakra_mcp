@@ -6,7 +6,9 @@
 //!
 //! Subcommands:
 //!
-//! - `init`    — write a sensible default config to ~/.chakramcp/server.toml
+//! - `init`    — write a sensible default config to server.toml in the OS
+//!   config directory (`~/.config/chakramcp/` on Linux,
+//!   `~/Library/Application Support/com.chakramcp.chakramcp/` on macOS)
 //!   (generates a fresh JWT_SECRET).
 //! - `migrate` — apply pending migrations against DATABASE_URL and exit.
 //! - `start`   — run app on $APP_PORT (default 8080) and relay on
@@ -29,6 +31,8 @@ use tokio::signal;
 
 use chakramcp_app::{router as app_router, AppState};
 use chakramcp_relay::{router as relay_router, RelayState};
+use chakramcp_shared::credits::{CreditsConfig, CreditsFile};
+use chakramcp_shared::hosting::{env_value, HostingFile, HostingMode, HostingSettings};
 use chakramcp_shared::{config::SharedConfig, db, telemetry};
 
 #[derive(Parser, Debug)]
@@ -40,8 +44,8 @@ use chakramcp_shared::{config::SharedConfig, db, telemetry};
                   Pair with a Postgres instance (homebrew installs postgresql@16 alongside)."
 )]
 struct Cli {
-    /// Path to the server config file (TOML). Defaults to
-    /// ~/.chakramcp/server.toml.
+    /// Path to the server config file (TOML). Defaults to server.toml in
+    /// the OS config directory (`chakramcp-server init` prints it).
     #[arg(long, env = "CHAKRAMCP_SERVER_CONFIG", global = true)]
     config: Option<PathBuf>,
 
@@ -136,14 +140,28 @@ fn init(
          # Public-facing URLs — used by the OAuth discovery doc the\n\
          # MCP server points clients at. Defaults assume you're running\n\
          # locally; change to https://your.host when you put a TLS\n\
-         # terminator in front.\n\
-         frontend_base_url = \"http://localhost:3000\"\n\
+         # terminator in front. Sign-in pages are served from app_base_url.\n\
          app_base_url = \"http://localhost:8080\"\n\
          relay_base_url = \"http://localhost:8090\"\n\
          \n\
          # Listening ports.\n\
          app_port = 8080\n\
          relay_port = 8090\n\
+         \n\
+         # self_hosted (the default) or managed (chakramcp.com only).\n\
+         # hosting_mode = \"self_hosted\"\n\
+         # Public sign-up: off by default on a self-hosted server. Create\n\
+         # accounts with `chakramcp-server users add`.\n\
+         # signup_enabled = false\n\
+         # Credits: off by default on a self-hosted server.\n\
+         # credits_enabled = false\n\
+         # credits_default_monthly_free_mc = 100000\n\
+         # credits_cost_per_invocation_mc = 100\n\
+         # Rate limit per account (needs redis_url); limits_enforce turns\n\
+         # refusals on (off: over-limit calls are only logged).\n\
+         # limits_default_rate_per_min = 60\n\
+         # limits_enforce = true\n\
+         # redis_url = \"redis://127.0.0.1:6379\"\n\
          \n\
          # Logging filter (RUST_LOG syntax).\n\
          log_filter = \"info,chakramcp_app=debug,chakramcp_relay=debug,sqlx=warn\"\n\
@@ -162,7 +180,10 @@ fn init(
     }
 
     eprintln!("wrote {}", path.display());
-    eprintln!("next: chakramcp-server migrate && chakramcp-server start");
+    eprintln!(
+        "next:\n  chakramcp-server migrate\n  chakramcp-server start\n  \
+         chakramcp-server users add <email> --name <name> --admin"
+    );
     Ok(())
 }
 
@@ -218,14 +239,23 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
     // Credits: validated settings (bad values stop startup), one refresh of
     // the switches before serving so a deploy never lets an out-of-credits
     // account through, then the worker that keeps them current.
-    let credits = chakramcp_relay::limits::CreditsConfig::from_env()?;
+    tracing::info!("{}", cfg.hosting.summary());
+    if cfg.hosting.mode == HostingMode::SelfHosted
+        && cfg.shared.frontend_base_url != cfg.shared.app_base_url
+    {
+        tracing::warn!(
+            frontend_base_url = %cfg.shared.frontend_base_url,
+            app_base_url = %cfg.shared.app_base_url,
+            "sign-in and pairing links point at frontend_base_url, not this server's own \
+             pages; unless you run the web UI there, remove frontend_base_url \
+             (FRONTEND_PUBLIC_URL) from the config"
+        );
+    }
+    let credits = cfg.credits;
     let credit_cache = std::sync::Arc::new(chakramcp_relay::limits::CreditCache::new(
         credits.stale_after(),
     ));
-    if let Err(e) = credit_cache
-        .refresh(&pool, credits.cost_per_invocation_mc)
-        .await
-    {
+    if let Err(e) = credit_cache.refresh(&pool, credits.block_below_mc()).await {
         tracing::warn!(error = %e, "initial credit refresh failed; the worker will retry");
     }
     let worker_pool =
@@ -239,17 +269,16 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
 
     let app_state = AppState::new(pool.clone(), cfg.shared.clone())
         .with_upsert_secret(std::env::var("UPSERT_SHARED_SECRET").ok())
-        .with_credits_config(credits);
+        .with_credits_config(credits)
+        .with_hosting(cfg.hosting);
     if app_state.upsert_secret.is_none() {
         tracing::warn!("UPSERT_SHARED_SECRET is not set: Google/GitHub sign-in is disabled");
     }
     let relay_state = RelayState::new(pool, cfg.shared.clone())
         .with_rate_limiter(chakramcp_relay::limits::RateLimiter::from_redis_url(
-            std::env::var("REDIS_URL").ok().as_deref(),
+            cfg.redis_url.as_deref(),
         ))
-        .with_limits_enforce(chakramcp_relay::limits::enforce_flag(
-            std::env::var("LIMITS_ENFORCE").ok().as_deref(),
-        ))
+        .with_limits_enforce(cfg.limits_enforce)
         .with_credits_config(credits)
         .with_credit_cache(credit_cache)
         .with_compliance(chakramcp_relay::compliance::ComplianceChecker::from_env());
@@ -377,6 +406,13 @@ struct ServerConfig {
     metrics_addr: Option<SocketAddr>,
     /// `text` (default) or `json`; see `telemetry::LogFormat`.
     log_format: Option<String>,
+    /// `HOSTING_MODE` and its overrides.
+    hosting: HostingSettings,
+    credits: CreditsConfig,
+    /// Refuse over-limit calls (`LIMITS_ENFORCE`); off, they're only logged.
+    limits_enforce: bool,
+    /// Redis for the per-account rate limit; none means no rate limiting.
+    redis_url: Option<String>,
 }
 
 #[derive(Debug, Default, serde::Deserialize)]
@@ -394,6 +430,12 @@ struct ServerFile {
     log_filter: Option<String>,
     metrics_addr: Option<String>,
     log_format: Option<String>,
+    limits_enforce: Option<bool>,
+    redis_url: Option<String>,
+    #[serde(flatten)]
+    hosting: HostingFile,
+    #[serde(flatten)]
+    credits: CreditsFile,
 }
 
 fn load_config(explicit_path: Option<PathBuf>) -> Result<ServerConfig> {
@@ -447,20 +489,16 @@ fn load_config(explicit_path: Option<PathBuf>) -> Result<ServerConfig> {
     // localhost — which would leak into /.well-known discovery
     // metadata, the OAuth issuer claim, and the device-flow
     // verification_uri.
-    let frontend_base_url = std::env::var("FRONTEND_BASE_URL")
-        .ok()
-        .or_else(|| std::env::var("FRONTEND_PUBLIC_URL").ok())
-        // Caddy fronts both the marketing site and the OAuth API on
-        // the same hostname today, so APP_PUBLIC_URL is the right
-        // last-mile fallback before localhost.
-        .or_else(|| std::env::var("APP_PUBLIC_URL").ok())
-        .or(from_file.frontend_base_url)
-        .unwrap_or_else(|| "http://localhost:3000".into());
-    let app_base_url = std::env::var("APP_BASE_URL")
-        .ok()
-        .or_else(|| std::env::var("APP_PUBLIC_URL").ok())
+    let env = |key: &str| std::env::var(key).ok();
+    let app_base_url = env_value(&env, "APP_BASE_URL")
+        .or_else(|| env_value(&env, "APP_PUBLIC_URL"))
         .or(from_file.app_base_url)
         .unwrap_or_else(|| "http://localhost:8080".into());
+    let frontend_base_url = chakramcp_shared::config::resolve_frontend_url(
+        env,
+        from_file.frontend_base_url,
+        &app_base_url,
+    );
     let relay_base_url = std::env::var("RELAY_BASE_URL")
         .ok()
         .or_else(|| std::env::var("RELAY_PUBLIC_URL").ok())
@@ -502,6 +540,17 @@ fn load_config(explicit_path: Option<PathBuf>) -> Result<ServerConfig> {
     )?;
     let log_format = std::env::var("LOG_FORMAT").ok().or(from_file.log_format);
 
+    // A non-empty environment value, else the file, else the default.
+    let hosting = HostingSettings::from_sources(env, &from_file.hosting)?;
+    let credits = CreditsConfig::from_sources(env, &from_file.credits, hosting.credits_enabled)?;
+    let limits_enforce = match env_value(&env, "LIMITS_ENFORCE") {
+        Some(raw) => chakramcp_relay::limits::enforce_flag(Some(&raw)),
+        None => from_file.limits_enforce.unwrap_or(false),
+    };
+    let redis_url = env_value(&env, "REDIS_URL")
+        .or(from_file.redis_url)
+        .filter(|s| !s.trim().is_empty());
+
     Ok(ServerConfig {
         shared: SharedConfig {
             database_url,
@@ -518,6 +567,10 @@ fn load_config(explicit_path: Option<PathBuf>) -> Result<ServerConfig> {
         relay_port,
         metrics_addr,
         log_format,
+        hosting,
+        credits,
+        limits_enforce,
+        redis_url,
     })
 }
 

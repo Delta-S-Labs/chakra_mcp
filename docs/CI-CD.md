@@ -69,6 +69,12 @@ dispatch). It runs four jobs:
    - `docker build -f infra/Dockerfile.thin` → `docker push` to
      `877326604850.dkr.ecr.us-east-1.amazonaws.com/chakramcp-server`
      with tags `${sha:0:7}` + `latest`.
+   - **Check that production runs as managed.** The server defaults to
+     `HOSTING_MODE=self_hosted`: credits off, public sign-up closed,
+     `ADMIN_EMAIL` ignored. chakramcp.com needs `HOSTING_MODE=managed`
+     in `/opt/chakramcp/.env`, and the deploy stops before touching the
+     VM if that exact line is missing. To fix it, append the line (back
+     the file up first; never `source` it) and re-run the workflow.
    - Copy `infra/docker-compose.prod.yml` (as `docker-compose.yml`)
      and the `Caddyfile` to `/opt/chakramcp`. `docker compose up -d
      --no-deps caddy` then recreates Caddy only when its definition

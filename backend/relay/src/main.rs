@@ -52,14 +52,13 @@ async fn main() -> Result<()> {
     // Credits: validated settings (bad values stop startup), one refresh of
     // the switches before serving so a deploy never lets an out-of-credits
     // account through, then the worker that keeps them current.
-    let credits = chakramcp_relay::limits::CreditsConfig::from_env()?;
+    let hosting = chakramcp_shared::hosting::HostingSettings::from_env()?;
+    tracing::info!("{}", hosting.summary());
+    let credits = chakramcp_relay::limits::CreditsConfig::from_env(hosting.credits_enabled)?;
     let credit_cache = std::sync::Arc::new(chakramcp_relay::limits::CreditCache::new(
         credits.stale_after(),
     ));
-    if let Err(e) = credit_cache
-        .refresh(&pool, credits.cost_per_invocation_mc)
-        .await
-    {
+    if let Err(e) = credit_cache.refresh(&pool, credits.block_below_mc()).await {
         tracing::warn!(error = %e, "initial credit refresh failed; the worker will retry");
     }
     let worker_pool =

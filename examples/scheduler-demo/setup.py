@@ -54,11 +54,20 @@ def signup(app_url: str, label: str) -> dict:
     suffix = secrets.token_hex(4)
     email = f"demo-{label}-{int(time.time())}-{suffix}@example.com"
     print(f"  signup: {email}")
-    res = http(
-        "POST",
-        f"{app_url}/v1/auth/signup",
-        body={"email": email, "password": "demo-password-only-locally", "name": label.title()},
-    )
+    try:
+        res = http(
+            "POST",
+            f"{app_url}/v1/auth/signup",
+            body={"email": email, "password": "demo-password-only-locally", "name": label.title()},
+        )
+    except RuntimeError as err:
+        if "signup_disabled" in str(err):
+            raise SystemExit(
+                "Sign-up is closed on this server, the self-hosted default. For this "
+                "demo, start it with sign-up open: `SIGNUP_ENABLED=true "
+                "chakramcp-server start`, or `signup_enabled = true` in server.toml."
+            ) from err
+        raise
     return {
         "email": email,
         "token": res["token"],

@@ -295,7 +295,7 @@ createdb chakramcp
 
 # Build + initialize
 cargo build --release --bin chakramcp-server
-./target/release/chakramcp-server init      # writes ~/.chakramcp/server.toml with a fresh JWT secret
+./target/release/chakramcp-server init      # writes server.toml with a fresh JWT secret, and prints where
 ./target/release/chakramcp-server migrate   # applies SQL migrations
 ./target/release/chakramcp-server start     # foreground
 ```
@@ -350,9 +350,12 @@ is documented in [`docs/CI-CD.md`](./CI-CD.md).
 
 ### Configuration
 
-`chakramcp-server init` writes `~/.chakramcp/server.toml` (mode 0600
-on Unix). Every value can also come from env vars: env wins over
-the file when both are set:
+`chakramcp-server init` writes `server.toml` (mode 0600 on Unix) and
+prints where: `~/.config/chakramcp/server.toml` on Linux,
+`~/Library/Application Support/com.chakramcp.chakramcp/server.toml` on
+macOS. `--config <file>` (or `CHAKRAMCP_SERVER_CONFIG`) uses another file.
+Every value can also come from env vars: env wins over the file when both
+are set:
 
 | Setting              | TOML key             | Env var              | Default                              |
 |----------------------|----------------------|----------------------|--------------------------------------|

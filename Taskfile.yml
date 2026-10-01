@@ -76,6 +76,12 @@ tasks:
   dev:backend:
     desc: Run the chakramcp-app service (port APP_PORT, default 8080)
     dir: "{{.BACKEND_DIR}}"
+    # Local development mirrors chakramcp.com: sign-up open, sign-in through
+    # the web UI on :3000. Self-hosted servers default to closed sign-up and
+    # their own sign-in pages.
+    env:
+      HOSTING_MODE: managed
+      FRONTEND_BASE_URL: http://localhost:3000
     cmds:
       - cargo run -p chakramcp-app
 

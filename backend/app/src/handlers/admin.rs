@@ -31,7 +31,8 @@ pub struct AdminOrgDto {
     pub created_at: DateTime<Utc>,
     /// Milli-credits; `None` until the account's first charge or admin change.
     pub credit_balance_mc: Option<i64>,
-    /// `active`, `blocked` (out of credits) or `unlimited`.
+    /// `active`, `blocked` (out of credits), `unlimited`, or `off` when
+    /// credits are switched off on this server.
     pub credit_status: &'static str,
 }
 
@@ -118,7 +119,9 @@ pub async fn list_orgs(
                 owner_email: r.owner_email,
                 created_at: r.created_at,
                 credit_balance_mc: r.credit_balance_mc,
-                credit_status: if r.credit_unlimited {
+                credit_status: if !state.credits.enabled {
+                    "off"
+                } else if r.credit_unlimited {
                     "unlimited"
                 } else if r.credit_balance_mc.is_some_and(|balance| {
                     is_blocked(

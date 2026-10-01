@@ -141,7 +141,7 @@ cargo build --release --bin chakramcp-server
 # Postgres prereq
 brew services start postgresql@16 && createdb chakramcp
 # Run
-./target/release/chakramcp-server init       # ~/.chakramcp/server.toml
+./target/release/chakramcp-server init       # writes server.toml and prints where
 ./target/release/chakramcp-server migrate
 ./target/release/chakramcp-server start
 ```
@@ -186,8 +186,8 @@ brew install chakramcp-server
 ```
 
 The formula pulls in Postgres 16 as a dependency. After `brew
-install`, run `chakramcp-server init` to write `~/.chakramcp/server.toml`
-with a fresh JWT secret, then `chakramcp-server migrate` and
+install`, run `chakramcp-server init` to write its `server.toml` (it
+prints where) with a fresh JWT secret, then `chakramcp-server migrate` and
 `chakramcp-server start`.
 
 Docker / Kubernetes / bare-metal options live in [`docs/INSTALL.md`](docs/INSTALL.md).

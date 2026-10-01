@@ -70,7 +70,10 @@ pub struct CreditsView {
     pub balance_mc: i64,
     /// False until the account's first charge or an admin change.
     pub has_wallet: bool,
-    /// `active`, `blocked` (out of credits) or `unlimited`.
+    /// Whether this server charges and enforces credits at all.
+    pub enabled: bool,
+    /// `active`, `blocked` (out of credits), `unlimited`, or `off` when
+    /// credits are switched off on this server.
     pub status: &'static str,
     pub cost_per_invocation_mc: i64,
     /// The monthly free grant in effect, and the override behind it
@@ -386,7 +389,9 @@ pub async fn load_view(
             false,
         ),
     };
-    let status = if unlimited {
+    let status = if !cfg.enabled {
+        "off"
+    } else if unlimited {
         "unlimited"
     } else if is_blocked(
         balance_mc,
@@ -403,6 +408,7 @@ pub async fn load_view(
         account_id,
         balance_mc,
         has_wallet: wallet.is_some(),
+        enabled: cfg.enabled,
         status,
         cost_per_invocation_mc: cfg.cost_per_invocation_mc,
         monthly_free_grant_mc: grant_override_or_default(grant_override, cfg),
@@ -552,6 +558,33 @@ mod tests {
         // Members don't see who made a change.
         let view = load_view(&pool, &cfg, account, false).await.unwrap();
         assert!(view.ledger.iter().all(|e| e.by.is_none()));
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn with_credits_off_the_view_says_off(pool: PgPool) {
+        let (_, _, account) = seed_user_with_personal(&pool, "customer").await;
+        // A wallet left from a time credits were on, out of credits.
+        sqlx::query(
+            "INSERT INTO credit_wallets (account_id, balance_mc, free_grant_period)
+             VALUES ($1, 50, date_trunc('month', now() AT TIME ZONE 'UTC')::date)",
+        )
+        .bind(account)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let off = CreditsConfig {
+            enabled: false,
+            ..CreditsConfig::default()
+        };
+        let view = load_view(&pool, &off, account, true).await.unwrap();
+        assert!(!view.enabled);
+        assert_eq!(view.status, "off");
+        assert_eq!(view.balance_mc, 50, "the balance is kept, not reset");
+
+        let on = CreditsConfig::default();
+        let view = load_view(&pool, &on, account, true).await.unwrap();
+        assert!(view.enabled);
+        assert_eq!(view.status, "blocked");
     }
 
     #[sqlx::test(migrations = "../migrations")]
