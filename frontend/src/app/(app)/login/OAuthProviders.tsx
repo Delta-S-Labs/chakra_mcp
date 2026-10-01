@@ -15,6 +15,7 @@
 
 import { useState } from "react";
 import { signIn } from "next-auth/react";
+import { safeRedirect } from "@/lib/safe-redirect";
 import styles from "./login.module.css";
 
 type Provider = "github" | "google";
@@ -34,7 +35,7 @@ export function OAuthProviders({
 
   async function go(provider: Provider) {
     setLoading(provider);
-    await signIn(provider, { redirectTo });
+    await signIn(provider, { redirectTo: safeRedirect(redirectTo) });
   }
 
   return (

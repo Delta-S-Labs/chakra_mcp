@@ -6,6 +6,7 @@ import { signIn } from "next-auth/react";
 import ReCAPTCHA from "react-google-recaptcha";
 import styles from "./login.module.css";
 import { OAuthProviders } from "./OAuthProviders";
+import { safeRedirect } from "@/lib/safe-redirect";
 
 type Provider = "password";
 
@@ -63,17 +64,18 @@ export default function SignInPanel({
     }
 
     setLoadingProvider("password");
+    const target = safeRedirect(redirectTo);
     const result = await signIn("password", {
       email: email.trim(),
       password,
-      redirectTo,
+      redirectTo: target,
       redirect: false,
     });
     setLoadingProvider(null);
     if (result?.error) {
       setError("Wrong email or password.");
     } else if (result?.ok) {
-      window.location.href = redirectTo;
+      window.location.assign(target);
     }
   }
 

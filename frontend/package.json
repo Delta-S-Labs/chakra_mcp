@@ -9,6 +9,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "playwright test --config playwright.unit.config.ts",
     "sync-skills": "node scripts/sync-skills.mjs",
     "e2e": "playwright test --config e2e/playwright.config.ts",
     "e2e:ui": "playwright test --config e2e/playwright.config.ts --ui",
