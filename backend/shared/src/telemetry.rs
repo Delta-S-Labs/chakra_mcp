@@ -167,8 +167,8 @@ fn log_panic(info: &std::panic::PanicHookInfo<'_>) {
 
 /// The version this build reports everywhere: `--version`,
 /// `chakramcp_build_info`, the MCP `serverInfo` and outgoing user agents.
-/// It's the release (`CHAKRAMCP_VERSION`, set by the release and image
-/// builds, e.g. `0.2.0` or `edge`), else the crate version.
+/// It's the release (`CHAKRAMCP_VERSION`, set by the release, image and
+/// CD builds, e.g. `0.2.0` or `edge`), else the crate version.
 pub const VERSION: &str = match option_env!("CHAKRAMCP_VERSION") {
     Some(version) => version,
     None => env!("CARGO_PKG_VERSION"),
