@@ -34,6 +34,12 @@ thiserror = { workspace = true }
 anyhow = { workspace = true }
 dotenvy = { workspace = true }
 urlencoding = "2.1.3"
+askama = "0.16.1"
+qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
+axum-extra = { version = "0.12.6", features = ["cookie", "form", "query"] }
+url = "2.5.8"
+hmac = { workspace = true }
+subtle = "2.6.1"
 
 [dev-dependencies]
 tower = { workspace = true }

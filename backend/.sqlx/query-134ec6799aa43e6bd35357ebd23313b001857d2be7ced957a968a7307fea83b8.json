@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO signin_failures (email_hash, failures, window_started_at)\n        VALUES ($1, 1, now())\n        ON CONFLICT (email_hash) DO UPDATE SET\n            failures = CASE\n                WHEN signin_failures.window_started_at <= now() - make_interval(secs => $2)\n                THEN 1 ELSE signin_failures.failures + 1 END,\n            window_started_at = CASE\n                WHEN signin_failures.window_started_at <= now() - make_interval(secs => $2)\n                THEN now() ELSE signin_failures.window_started_at END\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "134ec6799aa43e6bd35357ebd23313b001857d2be7ced957a968a7307fea83b8"
+}

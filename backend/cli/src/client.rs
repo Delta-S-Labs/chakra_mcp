@@ -71,6 +71,33 @@ impl ApiClient {
         decode(resp).await
     }
 
+    pub async fn post_app<T: DeserializeOwned, B: Serialize>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<T> {
+        let bearer = self.bearer()?;
+        let net = self.network()?;
+        let resp = self
+            .request(Method::POST, &net.app_url, path)
+            .bearer_auth(bearer)
+            .json(body)
+            .send()
+            .await?;
+        decode(resp).await
+    }
+
+    pub async fn delete_app<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
+        let bearer = self.bearer()?;
+        let net = self.network()?;
+        let resp = self
+            .request(Method::DELETE, &net.app_url, path)
+            .bearer_auth(bearer)
+            .send()
+            .await?;
+        decode(resp).await
+    }
+
     pub async fn get_relay<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
         let bearer = self.bearer()?;
         let net = self.network()?;

@@ -1,0 +1,37 @@
+{% extends "pages/base.html" %}
+{% block content %}
+<h1>{{ client_name }} wants to use your account</h1>
+<p class="lead">Signed in as <strong>{{ user_email }}</strong>.</p>
+<dl class="facts">
+  {% if let Some(uri) = client_uri %}<dt>Application</dt><dd>{{ uri }}</dd>
+  {% endif %}<dt>Sends you back to</dt><dd><code>{{ redirect_host }}</code></dd>
+  <dt>Can</dt><dd>Use this network's tools as you, for 24 hours.</dd>
+</dl>
+<form method="post" action="/oauth/authorize">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  {% for field in hidden %}<input type="hidden" name="{{ field.name }}" value="{{ field.value }}">
+  {% endfor %}
+  <fieldset>
+    <legend>Which of your agents can it manage?</legend>
+    <label class="choice"><input type="radio" name="agent_scope" value="all"{% if agent_scope == "all" %} checked{% endif %}> All of them</label>
+    <label class="choice"><input type="radio" name="agent_scope" value="own"{% if agent_scope == "own" %} checked{% endif %}> Only agents it creates</label>
+    {% if !agents.is_empty() %}
+    <label class="choice"><input type="radio" name="agent_scope" value="selected"{% if agent_scope == "selected" %} checked{% endif %}> Only these:</label>
+    <div class="nested">
+      {% for agent in agents %}<label class="choice"><input type="checkbox" name="selected" value="{{ agent.id }}"{% if agent.checked %} checked{% endif %}> {{ agent.display_name }} <span class="muted">{{ agent.account_slug }}/{{ agent.slug }}</span></label>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </fieldset>
+  {% if let Some(error) = error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+  <div class="actions">
+    <button type="submit" name="step" value="approve">Allow</button>
+    <button type="submit" name="step" value="deny" class="secondary">Deny</button>
+  </div>
+</form>
+<form method="post" action="/logout" class="signout">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="return_to" value="{{ return_to }}">
+  <button type="submit" class="link">Not you? Sign out</button>
+</form>
+{% endblock %}

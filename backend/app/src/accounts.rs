@@ -133,6 +133,61 @@ pub async fn create_user(db: &PgPool, new: NewUser<'_>) -> ApiResult<CreatedUser
     })
 }
 
+/// A user who signed in with their password.
+#[derive(Debug, Clone)]
+pub struct SignedIn {
+    pub user_id: Uuid,
+    pub email: String,
+    pub display_name: String,
+    pub avatar_url: Option<String>,
+    pub is_admin: bool,
+}
+
+/// Check an email and password, under the failed sign-in limit
+/// (`crate::signin_limit`). `Unauthorized` for an unknown email, a user with
+/// no password, or a wrong one, all alike so the answer doesn't reveal which
+/// emails exist; `SigninRateLimited` while the email is over the limit.
+pub async fn authenticate(db: &PgPool, email: &str, password: &str) -> ApiResult<SignedIn> {
+    let email = normalize_email(email);
+    crate::signin_limit::check(db, &email).await?;
+    let row = sqlx::query!(
+        r#"
+        SELECT id, email, display_name, avatar_url, is_admin, password_hash
+          FROM users
+         WHERE LOWER(email) = $1
+         LIMIT 1
+        "#,
+        email
+    )
+    .fetch_optional(db)
+    .await?;
+    let verified = match &row {
+        Some(r) => match r.password_hash.as_deref() {
+            Some(stored) => verify_password(password, stored),
+            None => Err(ApiError::Unauthorized),
+        },
+        None => Err(ApiError::Unauthorized),
+    };
+    match verified {
+        Ok(()) => {
+            crate::signin_limit::clear(db, &email).await?;
+            let r = row.expect("verified implies a row");
+            Ok(SignedIn {
+                user_id: r.id,
+                email: r.email,
+                display_name: r.display_name,
+                avatar_url: r.avatar_url,
+                is_admin: r.is_admin,
+            })
+        }
+        Err(ApiError::Unauthorized) => {
+            crate::signin_limit::record_failure(db, &email).await?;
+            Err(ApiError::Unauthorized)
+        }
+        Err(other) => Err(other),
+    }
+}
+
 /// Whether a user has this email (case-insensitive).
 pub async fn user_exists(db: &PgPool, email: &str) -> ApiResult<bool> {
     let found = sqlx::query_scalar!(

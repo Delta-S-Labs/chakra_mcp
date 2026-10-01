@@ -1,0 +1,7 @@
+{% extends "pages/base.html" %}
+{% block content %}
+<h1>Scan to connect</h1>
+<p class="lead">Scan this with your phone to open the approval page.</p>
+<img class="qr" src="{{ image }}" alt="QR code for the link below" width="240" height="240">
+<p class="url"><a href="{{ url }}">{{ url }}</a></p>
+{% endblock %}

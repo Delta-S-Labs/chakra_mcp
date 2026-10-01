@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO revoked_tokens (jti, user_id, expires_at, reason)\n            VALUES ($1, $2, $3, 'page_signout')\n            ON CONFLICT (jti) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cb15b1152cbd9472fe444f04cd82319996a293e0c73b70c0f2d49367d456a847"
+}
