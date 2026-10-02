@@ -418,9 +418,9 @@ through and the failure is logged. Details are in
 [`system-one-compliance.md`](./system-one-compliance.md).
 
 The web dashboard (`frontend/`) isn't bundled into `chakramcp-server`:
-it's the separate Next.js app chakramcp.com runs. The CLI, the SDKs and
-MCP clients need nothing beyond the server, whose own pages handle
-sign-in, consent and device pairing.
+it's the separate Next.js app chakramcp.com runs (Node 24 and pnpm 9 to
+build it yourself). The CLI, the SDKs and MCP clients need nothing beyond
+the server, whose own pages handle sign-in, consent and device pairing.
 
 ---
 

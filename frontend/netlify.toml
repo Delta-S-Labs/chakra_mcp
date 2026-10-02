@@ -3,7 +3,7 @@
   publish = ".next"
 
 [build.environment]
-  NODE_VERSION = "20"
+  NODE_VERSION = "24"
   PNPM_VERSION = "9.15.9"
   # Turbopack's build cache records the values of env vars the code reads
   # (UPSERT_SHARED_SECRET, a Netlify "secret" var, among them). The cache is
