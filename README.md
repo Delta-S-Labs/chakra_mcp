@@ -251,7 +251,7 @@ You'll want:
 | Tool | Why | Install |
 |---|---|---|
 | **[Task](https://taskfile.dev)** | Dev commands run through it. | `brew install go-task` |
-| **Node 20+ / pnpm 9+** | Frontend toolchain. | `brew install node && npm i -g pnpm` |
+| **Node 24+ / pnpm 9+** | Frontend toolchain. | `brew install node && npm i -g pnpm` |
 | **Rust stable + Postgres 16+** | Backend toolchain. | `rustup` and `brew install postgresql@16` |
 | **Docker** | One-shot Postgres for dev. | `brew install --cask docker` |
 
