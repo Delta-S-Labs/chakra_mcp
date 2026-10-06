@@ -110,6 +110,7 @@ CREATE INDEX credit_checkouts_account_created ON credit_checkouts (account_id, c
   - The same `chakramcp-server` also runs the relay, so refusing to start would take invocations down over a half-edited `.env`.
   - CD checks the VM's `.env` before deploying: all four `DODO_PAYMENTS_*` keys or none, like the existing managed guard (§12).
   - With none of them set, purchasing is simply off, and that's logged at info.
+  - **A gauge makes a broken setup visible after go-live:** `chakramcp_purchase_config_error` is 1 when any `DODO_PAYMENTS_*` or `CREDITS_PURCHASE_*` setting is present but the check failed, and 0 otherwise. It's set at startup and alerted on (§10). Otherwise a setting broken by a later edit would leave the webhook answering 404 until Dodo gave up, with no alert.
 - **Startup log:** it reports `purchasing=on (live_mode)` or `purchasing=off (<reason>)`, next to the existing `hosting_mode=… credits=… signup=…` line.
 
 ### 5.2 `POST /v1/orgs/{slug}/credits/checkouts`
@@ -165,8 +166,8 @@ Rejections are counted and logged at warn without the body. Only then is the JSO
 - **`payment.succeeded`:** in one transaction (`SET LOCAL lock_timeout = '5s'`, as `add_entry` does):
   1. **Find the checkout:** `SELECT … FROM credit_checkouts WHERE dodo_session_id = $session FOR UPDATE`.
      - **No session id, or no row:**
-       - If `data.product_cart` is present and none of it is our credits product (`DODO_PAYMENTS_PRODUCT_ID`), it belongs to some other integration on the Dodo account. Log at info and answer 200.
-       - Otherwise, including a `null` cart, it's an **unmatched** payment, e.g. through a shared payment link: nothing is credited. Log at ERROR, count it (§10) and answer 200.
+       - If `data.product_cart` lists at least one product and none of them is our credits product (`DODO_PAYMENTS_PRODUCT_ID`), it belongs to some other integration on the Dodo account. Log at info and answer 200.
+       - Otherwise, including a `null` or empty cart, it's an **unmatched** payment, e.g. through a shared payment link: nothing is credited. Log at ERROR, count it (§10) and answer 200.
      - **`paid` or `unapplied` with the same `payment_id`:** a retry or duplicate delivery. Answer 200, without logging or counting again.
      - **`paid` or `unapplied` with a different `payment_id`:** a second payment on one session, which isn't credited. Log at ERROR, count it as unmatched and answer 200.
      - **`open` or `failed`:** carry on. A `failed` row is credited too: after a declined card, the buyer can retry in the same session.
@@ -317,18 +318,20 @@ This is one account at a time, with the existing Personal/org switcher. Top to b
 - **Counters:**
   - `chakramcp_credit_purchases_total{status}`, where status is `paid`, `failed`, `unapplied` or `unmatched`;
   - `chakramcp_dodo_webhook_rejected_total{reason}`, where reason is `missing_header`, `stale`, `bad_signature` or `bad_json`.
-  - Both go in the metric catalogue in `telemetry.rs` (`names`).
+  - A gauge, `chakramcp_purchase_config_error`, set to 0 or 1 at startup (§5.1).
+  - All three go in the metric catalogue in `telemetry.rs` (`names`).
   - **At startup, every `status` and `reason` value is registered at 0** (`counter!(…).increment(0)`, next to `describe()`).
     - Without that, a series only appears at its first event, already at 1. Prometheus's `increase()` reads such a series as 0.
     - Every deploy resets the counters, so a lone stuck payment would never alert.
     - A test checks that `/metrics` lists them all at 0.
 - **Log lines** carry the payment, checkout and account ids. Card data never reaches us.
-- **Alerts:** the existing `error-log-spike` alert only fires above 20 ERROR lines in 5 minutes, so it would never notice one stuck payment. PR-1 adds two rules to `infra/observability/grafana/provisioning/alerting/rules.yml`:
+- **Alerts:** the existing `error-log-spike` alert only fires above 20 ERROR lines in 5 minutes, so it would never notice one stuck payment. PR-1 adds three rules to `infra/observability/grafana/provisioning/alerting/rules.yml`:
   - **Payment needs attention:** `increase(chakramcp_credit_purchases_total{status=~"unmatched|unapplied"}[15m]) > 0`. A customer paid and wasn't credited.
-  - **Webhooks Dodo signed but we couldn't use:** `increase(chakramcp_dodo_webhook_rejected_total{reason=~"bad_signature|bad_json"}[15m]) > 0`.
+  - **Webhook signature or payload failures:** `increase(chakramcp_dodo_webhook_rejected_total{reason=~"bad_signature|bad_json"}[15m]) > 0`.
     - `bad_signature` usually means a wrong `DODO_PAYMENTS_WEBHOOK_KEY`, and every payment would go uncredited.
     - `bad_json` is a signed payload our parser rejects, e.g. after a change on Dodo's side. Every payment would fail with a 500 until it's fixed.
     - The rule leaves out `missing_header` and `stale`. Scanners probing the URL send no valid signature headers, so they don't page anyone.
+  - **Purchase settings broken:** `chakramcp_purchase_config_error > 0`. Purchasing is off because of a bad setting, so webhooks answer 404 and open checkouts would never be credited.
 - **Refunds and disputes** log at warn, for the manual adjustment.
 
 ## 11. Testing
@@ -352,12 +355,15 @@ This is one account at a time, with the existing Personal/org switcher. Top to b
     - **already paid, then a different `payment_id` for the session:** not credited, ERROR and counted;
     - **not as agreed** (a discount, a non-USD currency, or `total_amount` below the amount): `unapplied`, nothing credited;
     - an unknown session for the credits product (unmatched, counted), and one for another product (ignored, not counted);
+    - a `null` or empty cart with no matching session: unmatched, counted;
+    - a missing `currency` or `total_amount`: `unapplied` with `not_as_agreed`;
+    - a second payment on an `unapplied` session: not credited, ERROR and counted;
     - a deleted account becomes `unapplied` with `account_gone`;
     - cancelled; a signed payload that doesn't parse (500);
     - the reconciliation invariant (balance = Σ ledger − Σ charges);
     - the view's `payments`, `purchase` and the ledger entries' `purchase` field, and the derived `expired`;
     - `GET …/checkouts/{id}` for another account's checkout (404).
-  - Config: purchasing is off when only some Dodo settings are set, and for each bounds failure. Every status and reason value is on `/metrics` at 0 from startup.
+  - Config: purchasing is off when only some Dodo settings are set, and for each bounds failure, with `chakramcp_purchase_config_error` at 1. It's 0 when nothing is set and when everything is valid. Every status and reason value is on `/metrics` at 0 from startup.
 - **Frontend:** `pnpm test` units for the amount parsing and the credits preview.
 - **End to end, before going live:** a local stack in Dodo test mode, with Dodo's CLI forwarding test webhooks to localhost. The test keys come from a gitignored file the user creates; the session never reads or prints them.
 
@@ -366,8 +372,8 @@ This is one account at a time, with the existing Personal/org switcher. Top to b
 1. **PR-1, backend:**
    - this spec and the plan;
    - migration 0038, `dodo.rs`, the endpoints, the webhook, the settings and the metrics;
-   - the two alert rules and the zero-registered counters (§10);
-   - a CD check, next to the managed guard: the VM's `.env` must have all four `DODO_PAYMENTS_*` keys or none (§5.1);
+   - the three alert rules, the zero-registered counters and the config gauge (§10);
+   - a CD check, next to the managed guard: the VM's `.env` must have all four `DODO_PAYMENTS_*` keys or none (§5.1). A key with an empty value counts as unset, as it does for the server;
    - the new free-grant default, including the `init` template;
    - tests.
    - Purchasing is inert until the Dodo settings exist, but **the new grant default takes effect when PR-1 deploys**. Right after that deploy, any wallet granted under the old default gets topped up (§3.2).
