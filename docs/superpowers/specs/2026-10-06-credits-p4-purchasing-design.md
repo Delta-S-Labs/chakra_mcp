@@ -94,7 +94,7 @@ CREATE INDEX credit_checkouts_account_created ON credit_checkouts (account_id, c
 - **"Expired":** reads report an `open` row older than 24 hours as `expired`, and nothing writes that status. A late payment on such a row is still credited.
 - **No foreign keys:** without them, the migration takes no lock on `users` or `accounts`. It only creates a table and its index, so it can't queue behind traffic on a hot table.
 - **Ledger:** the ledger's `purchase` reason, its `external_ref` and the unique index `credit_ledger_purchase_ref_uniq` already exist (0034).
-- **Applied migrations stay untouched.** Fixing a stale comment in 0034 would change its checksum, and every server would refuse to boot. The stale lines are fixed in the credits spec only (§12).
+- **Applied migrations stay untouched.** Fixing 0034's stale "0035 drops plans" comment would change its checksum, and every server would refuse to boot. The credits spec gets a note instead (§12).
 
 ## 5. API (app service)
 
@@ -105,7 +105,11 @@ CREATE INDEX credit_checkouts_account_created ON credit_checkouts (account_id, c
   - credits are enabled;
   - the four Dodo settings are non-empty (§9).
 - **Turned off:** the checkout routes and the webhook route answer 404, and the credits view's `purchase` is `null`.
-- **Some Dodo settings but not all four:** a configuration error, and the server refuses to start. A half-configured payment setup should be loud, not quietly off. With none of them set, purchasing is simply off.
+- **A problem in the purchase settings** turns purchasing off, but never stops the server. The problem could be some Dodo settings set without the others, an unknown environment, or bad prices or limits (§9).
+  - The startup log says what's wrong at ERROR, e.g. `purchasing=off (DODO_PAYMENTS_WEBHOOK_KEY is missing)`.
+  - The same `chakramcp-server` also runs the relay, so refusing to start would take invocations down over a half-edited `.env`.
+  - CD checks the VM's `.env` before deploying: all four `DODO_PAYMENTS_*` keys or none, like the existing managed guard (§12).
+  - With none of them set, purchasing is simply off, and that's logged at info.
 - **Startup log:** it reports `purchasing=on (live_mode)` or `purchasing=off (<reason>)`, next to the existing `hosting_mode=… credits=… signup=…` line.
 
 ### 5.2 `POST /v1/orgs/{slug}/credits/checkouts`
@@ -153,7 +157,7 @@ The admin console uses the same view, so account pages there show payments with 
 
 Rejections are counted and logged at warn without the body. Only then is the JSON parsed:
 - Unknown fields are ignored.
-- Of a payment's fields, only `payment_id` is required. `checkout_session_id`, `invoice_url`, `tax`, `discounts` and `product_cart` can each be `null`.
+- Of a payment's fields, only `payment_id` is required for parsing. `checkout_session_id`, `invoice_url`, `tax`, `discounts` and `product_cart` can each be `null`. But a missing `currency` or `total_amount` fails the price check in §6.2; it never skips it.
 - A signed payload that still fails to parse is logged at ERROR and answered 500, so Dodo keeps retrying while a fix ships.
 
 ### 6.2 Events
@@ -161,13 +165,18 @@ Rejections are counted and logged at warn without the body. Only then is the JSO
 - **`payment.succeeded`:** in one transaction (`SET LOCAL lock_timeout = '5s'`, as `add_entry` does):
   1. **Find the checkout:** `SELECT … FROM credit_checkouts WHERE dodo_session_id = $session FOR UPDATE`.
      - **No session id, or no row:**
-       - If none of `data.product_cart` is our credits product (`DODO_PAYMENTS_PRODUCT_ID`), it belongs to some other integration on the Dodo account. Log at info and answer 200.
-       - Otherwise it's an **unmatched** payment for credits, e.g. through a shared payment link: nothing is credited. Log at ERROR, count it (§10) and answer 200.
-     - **`paid` with the same `payment_id`:** a retry or duplicate delivery. Answer 200.
-     - **`paid` with a different `payment_id`:** a second payment on one session, which isn't credited. Log at ERROR, count it as unmatched and answer 200.
-     - **`unapplied`:** already handed to the operator. Answer 200, without logging or counting again.
+       - If `data.product_cart` is present and none of it is our credits product (`DODO_PAYMENTS_PRODUCT_ID`), it belongs to some other integration on the Dodo account. Log at info and answer 200.
+       - Otherwise, including a `null` cart, it's an **unmatched** payment, e.g. through a shared payment link: nothing is credited. Log at ERROR, count it (§10) and answer 200.
+     - **`paid` or `unapplied` with the same `payment_id`:** a retry or duplicate delivery. Answer 200, without logging or counting again.
+     - **`paid` or `unapplied` with a different `payment_id`:** a second payment on one session, which isn't credited. Log at ERROR, count it as unmatched and answer 200.
      - **`open` or `failed`:** carry on. A `failed` row is credited too: after a declined card, the buyer can retry in the same session.
-  2. **Check it paid what we asked.** It must be `data.currency == "USD"`, `data.total_amount >= amount_cents` (true whether tax is added on top or included), and `data.discounts` empty or `null`. Otherwise set `status = 'unapplied'` and `unapplied_reason = 'not_as_agreed'` with the payment id, log at ERROR, count it and answer 200. The operator decides between a refund and a manual grant.
+  2. **Check it paid what we asked.** All three must hold:
+     - `data.currency == "USD"`;
+     - `data.total_amount >= amount_cents`. That's true whether tax is added on top or included. A missing value fails.
+     - `data.discounts` is empty or `null`. This check stays even with the amount check, because with tax on top a discount smaller than the tax would still pass the amount test.
+
+     Otherwise set `status = 'unapplied'` and `unapplied_reason = 'not_as_agreed'` with the payment id, log at ERROR, count it and answer 200. The operator decides between a refund and a manual grant.
+     - `unapplied` rows have no "resolved" state. They keep showing "Needs review", and the operator's refund or grant shows in Dodo and in the ledger.
   3. **Check the account still exists.** If not, set `unapplied` with `account_gone`, log at ERROR, count it and answer 200.
   4. **Credit it:**
      - Upsert the wallet: `balance_mc += credits_mc`. A new wallet gets its first monthly grant from the worker a few seconds later, as today.
@@ -205,6 +214,7 @@ Rejections are counted and logged at warn without the body. Only then is the JSO
     {
       "product_cart": [{ "product_id": "<DODO_PAYMENTS_PRODUCT_ID>", "quantity": 1, "amount": 1000 }],
       "customer": { "email": "<buyer email>", "name": "<buyer display name>" },
+      "billing_currency": "USD",
       "feature_flags": { "allow_discount_code": false, "allow_currency_selection": false },
       "return_url": "<frontend base>/app/credits?account=<slug>&checkout=<id>",
       "metadata": { "checkout_id": "<id>", "account": "<slug>" }
@@ -243,7 +253,8 @@ This is one account at a time, with the existing Personal/org switcher. Top to b
    - The card then shows "Payment received, adding credits…" and polls §5.3 every 2 s for up to 2 minutes.
      - `paid`: "Added 10,000 credits", and the page data refreshes.
      - `failed` doesn't stop the polling. A declined first attempt can be followed by a successful one in the same session, and a buyer offered a retry too early might pay twice.
-     - Still not `paid` after 2 minutes, whether `open` or `failed`: "We'll add the credits as soon as Dodo confirms the payment. Check Payments below."
+     - Still `open` after 2 minutes: "We'll add the credits as soon as Dodo confirms the payment. Check Payments below."
+     - Still `failed` after 2 minutes: "The payment didn't go through. You can try again; if Dodo did charge you, the credits will still arrive."
      - `unapplied`: "The payment needs a manual check. We'll sort it out."
    - On a first purchase for an account with no wallet yet, the purchased credits show first. The monthly free grant follows on the worker's next pass, a few seconds later.
    - The `payment_id` and `status` that Dodo appends to the return URL are ignored. Anyone could forge them; only §5.3 counts.
@@ -284,12 +295,13 @@ This is one account at a time, with the existing Personal/org switcher. Top to b
 - **How they're read:**
   - They're read like `UPSERT_SHARED_SECRET`, in both `app/src/main.rs` and `server/src/main.rs`, and kept on `AppState`.
   - An empty value counts as unset.
-  - With only some of the four Dodo settings set, the server refuses to start (§5.1).
-- **Validated at startup,** where bad values stop the server, the way `CreditsConfig` does:
+- **Validated at startup.** Any failure turns purchasing off with an ERROR log naming the problem (§5.1). It never stops the server. The checks:
+  - all four Dodo settings, or none;
   - the environment is `test_mode` or `live_mode`;
+  - `per_usd > 0`;
   - `0 < min ≤ max`;
   - `max` fits the `amount_cents INTEGER` column;
-  - `max × per_usd × 10` stays within `MAX_AMOUNT_MC`.
+  - `max × per_usd × 10`, computed with overflow checks, stays within `MAX_AMOUNT_MC`.
 - **The `init` template:** its commented `credits_default_monthly_free_mc = 100000` line (`backend/server/src/main.rs`) moves to the new default.
 - **Compose** passes them as `${VAR:-}`. Older images ignore variables they don't know, so that's safe for them.
 - **The chart** doesn't need them; self-hosted servers don't buy.
@@ -297,6 +309,7 @@ This is one account at a time, with the existing Personal/org switcher. Top to b
   - one-time, pay-what-you-want, minimum $1.00 USD, a SaaS tax category;
   - Dodo's own Credits, Entitlements and Metadata sections stay empty;
   - a test-mode copy and a live-mode copy.
+- **Adaptive Currency stays off** in the Dodo dashboard. Sessions also pass `billing_currency: "USD"`. Otherwise checkout could default to the buyer's local currency, and with currency selection off they couldn't switch back. Every non-US purchase would then be held as `not_as_agreed`.
 - **The webhook endpoint** subscribes to `payment.*`, `refund.*` and `dispute.*`.
 
 ## 10. Observability
@@ -305,11 +318,17 @@ This is one account at a time, with the existing Personal/org switcher. Top to b
   - `chakramcp_credit_purchases_total{status}`, where status is `paid`, `failed`, `unapplied` or `unmatched`;
   - `chakramcp_dodo_webhook_rejected_total{reason}`, where reason is `missing_header`, `stale`, `bad_signature` or `bad_json`.
   - Both go in the metric catalogue in `telemetry.rs` (`names`).
+  - **At startup, every `status` and `reason` value is registered at 0** (`counter!(…).increment(0)`, next to `describe()`).
+    - Without that, a series only appears at its first event, already at 1. Prometheus's `increase()` reads such a series as 0.
+    - Every deploy resets the counters, so a lone stuck payment would never alert.
+    - A test checks that `/metrics` lists them all at 0.
 - **Log lines** carry the payment, checkout and account ids. Card data never reaches us.
 - **Alerts:** the existing `error-log-spike` alert only fires above 20 ERROR lines in 5 minutes, so it would never notice one stuck payment. PR-1 adds two rules to `infra/observability/grafana/provisioning/alerting/rules.yml`:
   - **Payment needs attention:** `increase(chakramcp_credit_purchases_total{status=~"unmatched|unapplied"}[15m]) > 0`. A customer paid and wasn't credited.
-  - **Webhook signature failures:** `increase(chakramcp_dodo_webhook_rejected_total{reason="bad_signature"}[15m]) > 0`. This usually means a wrong `DODO_PAYMENTS_WEBHOOK_KEY`, and every payment would go uncredited.
-    - It counts only `bad_signature`, not `missing_header`. Scanners probing the URL send no signature headers, so they don't page anyone.
+  - **Webhooks Dodo signed but we couldn't use:** `increase(chakramcp_dodo_webhook_rejected_total{reason=~"bad_signature|bad_json"}[15m]) > 0`.
+    - `bad_signature` usually means a wrong `DODO_PAYMENTS_WEBHOOK_KEY`, and every payment would go uncredited.
+    - `bad_json` is a signed payload our parser rejects, e.g. after a change on Dodo's side. Every payment would fail with a 500 until it's fixed.
+    - The rule leaves out `missing_header` and `stale`. Scanners probing the URL send no valid signature headers, so they don't page anyone.
 - **Refunds and disputes** log at warn, for the manual adjustment.
 
 ## 11. Testing
@@ -318,7 +337,7 @@ This is one account at a time, with the existing Personal/org switcher. Top to b
   - Webhook verification against the Standard Webhooks reference test vector, plus: a tampered body, a stale or future timestamp, a missing header, several signatures where only the second matches (rotation), and a key without `whsec_`.
   - `credits_mc` math at the bounds, and amount validation.
   - Event parsing: known and unknown types, extra fields.
-  - Config: all four Dodo settings or nothing; empty means unset; bad numbers fail.
+  - Config: all four Dodo settings or nothing; empty means unset; each bad value turns purchasing off with the reason, and the server still starts.
 - **Database (`#[sqlx::test]`):**
   - Creating a checkout, against a fake Dodo, an axum server on `127.0.0.1:0` that records the request: the row, the session id and the response shape.
   - Dodo down: the row is `failed`, and the answer is 502.
@@ -338,7 +357,7 @@ This is one account at a time, with the existing Personal/org switcher. Top to b
     - the reconciliation invariant (balance = Σ ledger − Σ charges);
     - the view's `payments`, `purchase` and the ledger entries' `purchase` field, and the derived `expired`;
     - `GET …/checkouts/{id}` for another account's checkout (404).
-  - Config: some but not all of the Dodo settings refuse to start; the bounds validation.
+  - Config: purchasing is off when only some Dodo settings are set, and for each bounds failure. Every status and reason value is on `/metrics` at 0 from startup.
 - **Frontend:** `pnpm test` units for the amount parsing and the credits preview.
 - **End to end, before going live:** a local stack in Dodo test mode, with Dodo's CLI forwarding test webhooks to localhost. The test keys come from a gitignored file the user creates; the session never reads or prints them.
 
@@ -347,7 +366,8 @@ This is one account at a time, with the existing Personal/org switcher. Top to b
 1. **PR-1, backend:**
    - this spec and the plan;
    - migration 0038, `dodo.rs`, the endpoints, the webhook, the settings and the metrics;
-   - the two alert rules (§10);
+   - the two alert rules and the zero-registered counters (§10);
+   - a CD check, next to the managed guard: the VM's `.env` must have all four `DODO_PAYMENTS_*` keys or none (§5.1);
    - the new free-grant default, including the `init` template;
    - tests.
    - Purchasing is inert until the Dodo settings exist, but **the new grant default takes effect when PR-1 deploys**. Right after that deploy, any wallet granted under the old default gets topped up (§3.2).
