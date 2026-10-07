@@ -121,7 +121,7 @@ still applies.
 To give each account a monthly allowance, set `CREDITS_ENABLED=true` in
 `.env` and run `up -d` again.
 - **The allowance:** every account gets a monthly free grant
-  (`CREDITS_DEFAULT_MONTHLY_FREE_MC`, default 100 credits), and each
+  (`CREDITS_DEFAULT_MONTHLY_FREE_MC`, default 5,000 credits), and each
   accepted call costs `CREDITS_COST_PER_INVOCATION_MC` (default 0.1
   credit). Amounts are in milli-credits: 1 credit = 1,000.
 - **Running out:** unused credit rolls over. An account that runs out gets
