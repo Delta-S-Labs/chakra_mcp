@@ -214,8 +214,9 @@ granted (the ledger invariant holds universally), but never blocked.
   handler cancelled, process restarted during the upstream request — writes no row
   and is not charged; the row is written after the upstream returns so the hot path
   stays one statement.
-- **Top-ups / admin grants (P3/P4)** take effect at the next refresh (≤ 5 s), or
-  immediately via an in-process refresh.
+- **Top-ups / admin grants (P3/P4)** take effect at the next refresh (≤ 5 s). (An
+  in-process refresh was considered; the app has no handle on the relay's cache, so
+  there isn't one.)
 
 ## Charging rules
 
@@ -437,6 +438,10 @@ switches go stale, and their recovery.
   `/v1/invoke` and the MCP `invoke` tool return 409 before dispatch instead of
   parking a row no one delivers, so they're never charged.
 
+> **Note on migration 0034.** Its header comment says "0035 drops plans"; the drop
+> landed in 0036. Applied migrations can't change (sqlx checks their checksums at
+> boot), so the correction lives here.
+
 ## Later phases
 
 - **P2 — Owner visibility (built):** `GET /v1/orgs/{slug}/credits` for any member
@@ -466,9 +471,12 @@ switches go stale, and their recovery.
   and the 0035 CHECKs. Effects reach the relay at its next switch refresh (≤ 5 s).
   `GET /v1/admin/orgs` gains `credit_balance_mc` and `credit_status`; the admin console
   links each account to `/app/admin/accounts/{id}`.
-- **P4 — Purchasing (managed-only, Dodo):** introduces `HOSTING_MODE` (default
-  `managed` in the prod compose); checkout + signed webhooks → `purchase` rows
-  (deduped by the unique index) + top-up. Refunds stay manual.
+- **P4 — Purchasing (managed-only, Dodo): built.** Any member buys any amount from $1
+  to $5,000 at $1 = 1,000 credits through Dodo's overlay checkout; a signed webhook
+  credits each payment exactly once (`purchase` rows deduplicated by
+  `credit_ledger_purchase_ref_uniq`), and the monthly free grant rose to 5,000 credits.
+  `HOSTING_MODE` came earlier, with self-hosting Phase 3. Spec:
+  `docs/superpowers/specs/2026-10-06-credits-p4-purchasing-design.md`.
 - **P5 — Request-increase + alerts:** low-balance alerts computed on the worker tick.
 - **P6 — Agent signaling:** 429 `Retry-After` + balance/limit headers.
 - **Cost weighting:** the worker prices each drained row, so per-class pricing

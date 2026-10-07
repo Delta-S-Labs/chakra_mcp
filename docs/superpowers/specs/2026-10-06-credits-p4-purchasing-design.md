@@ -1,6 +1,6 @@
 # Credits P4: buying credits through Dodo Payments
 
-**Status:** design approved 2026-10-06; plan: `2026-10-06-credits-p4-purchasing-plan.md`
+**Status:** implemented: #374 (backend: checkouts, webhook, settings, alerts, the 5,000-credit grant), #376 (web UI), and the docs PR that follows them; plan: `2026-10-06-credits-p4-purchasing-plan.md`. Live once the Dodo settings are on the VM (§12).
 **Date:** 2026-10-06
 **Builds on:**
 - `docs/specs/2026-09-23-credit-ledger-foundation-design.md`: the ledger, the wallets and the async worker (P1), the owner view (P2) and admin management (P3). P4 is its "Purchasing (managed-only, Dodo)" phase.
