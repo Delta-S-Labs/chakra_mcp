@@ -3,7 +3,9 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getOrgCredits, listOrgs, type CreditsView, type Org } from "@/lib/api";
+import { BuyCredits } from "@/components/credits/BuyCredits";
 import { CreditsPanel } from "@/components/credits/CreditsPanel";
+import { formatCredits } from "@/lib/format";
 import styles from "./credits.module.css";
 
 export const metadata: Metadata = {
@@ -15,7 +17,9 @@ export const metadata: Metadata = {
 /**
  * /app/credits — one account's credits at a time: the personal account
  * by default, any other with `?account=<slug>`. Every member can see an
- * account's credits; only the operator can change them (/app/admin).
+ * account's credits and, on chakramcp.com, buy more; only the operator can
+ * grant or adjust them (/app/admin). Dodo sends a buyer back here with
+ * `?checkout=<id>` once they've paid.
  */
 export default async function CreditsPage({
   searchParams,
@@ -37,6 +41,10 @@ export default async function CreditsPage({
   }
 
   const wanted = typeof params.account === "string" ? params.account : undefined;
+  const returnedCheckout =
+    typeof params.checkout === "string" && /^[0-9a-f-]{36}$/i.test(params.checkout)
+      ? params.checkout
+      : undefined;
   const current =
     accounts.find((a) => a.slug === wanted) ??
     accounts.find((a) => a.account_type === "individual") ??
@@ -54,11 +62,7 @@ export default async function CreditsPage({
       <header className={styles.head}>
         <div className="eyebrow">Credits</div>
         <h1 className={styles.title}>Credits.</h1>
-        <p className={styles.body}>
-          Every accepted invocation spends a fraction of a credit. Each account
-          gets free credits on the 1st of every month, and whatever you
-          don&apos;t use rolls over. Buying more credits is coming soon.
-        </p>
+        <p className={styles.body}>{intro(view)}</p>
       </header>
 
       {accounts.length > 1 && (
@@ -77,7 +81,36 @@ export default async function CreditsPage({
       )}
 
       {error && <div className={styles.error}>{error}</div>}
-      {view && <CreditsPanel view={view} />}
+      {view && current && (
+        <CreditsPanel
+          view={view}
+          buy={
+            view.purchase ? (
+              <BuyCredits
+                key={current.slug}
+                slug={current.slug}
+                purchase={view.purchase}
+                costPerInvocationMc={view.cost_per_invocation_mc}
+                returnedCheckoutId={returnedCheckout}
+              />
+            ) : null
+          }
+        />
+      )}
     </div>
   );
+}
+
+function intro(view: CreditsView | null): string {
+  if (!view) return "Every accepted invocation spends a fraction of a credit.";
+  if (!view.enabled) return "Credits are off on this server.";
+  return [
+    `Each accepted call costs ${formatCredits(view.cost_per_invocation_mc)} credit.`,
+    view.purchase
+      ? `$1 buys ${view.purchase.credits_per_usd.toLocaleString("en-US")} credits.`
+      : null,
+    `This account gets ${formatCredits(view.monthly_free_grant_mc)} free credits on the 1st of every month, and unused credits roll over.`,
+  ]
+    .filter(Boolean)
+    .join(" ");
 }

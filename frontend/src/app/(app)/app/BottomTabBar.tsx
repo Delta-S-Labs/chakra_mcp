@@ -18,9 +18,9 @@ type Tab = {
  * nav is hidden and this bar takes its place; main content gets matching
  * bottom-padding so cards never hide under the bar.
  *
- * The 5 chosen routes are the daily-driver ones: Dashboard / Agents / Friends
- * / Grants / Inbox. Orgs / API keys / Audit / Pair / Usage / Admin / Docs
- * all live in the UserMenu — they're settings-ish, not daily flow.
+ * The 6 chosen routes are the daily-driver ones: Dashboard / Agents / Friends
+ * / Grants / Inbox / Credits. Orgs / API keys / Audit / Pair / Usage / Admin /
+ * Docs live in the UserMenu (Usage is also linked from Credits).
  */
 const tabs: Tab[] = [
   {
@@ -117,6 +117,22 @@ const tabs: Tab[] = [
           stroke="currentColor"
           strokeWidth="1.6"
           strokeLinejoin="round"
+        />
+      </svg>
+    ),
+  },
+  {
+    label: "Credits",
+    href: "/app/credits",
+    icon: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="1.6" />
+        <path
+          d="M14.5 9.2c-.5-.8-1.4-1.2-2.5-1.2-1.5 0-2.6.8-2.6 1.9 0 2.6 5.3 1.3 5.3 4.1 0 1.1-1.1 2-2.7 2-1.2 0-2.2-.5-2.7-1.3M12 6.5V8m0 8v1.5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
         />
       </svg>
     ),
