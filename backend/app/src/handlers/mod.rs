@@ -7,6 +7,7 @@ pub mod health;
 pub mod oauth;
 pub mod orgs;
 pub mod pairings;
+pub mod purchases;
 pub mod surveys;
 pub mod usage;
 pub mod users;

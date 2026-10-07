@@ -2,6 +2,7 @@
 //! so the supervisor binary (`chakramcp-server`) can mount its router
 //! into the same process as the relay.
 
+use axum::extract::DefaultBodyLimit;
 use axum::routing::{delete, get, post};
 use axum::Router;
 use tower_http::cors::{Any, CorsLayer};
@@ -11,6 +12,7 @@ pub mod auth;
 pub mod credits_service;
 pub mod handlers;
 mod pages;
+pub mod purchases;
 pub mod signin_limit;
 pub mod state;
 
@@ -86,6 +88,20 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/v1/orgs/{slug}/credits",
             get(handlers::credits::account_credits),
+        )
+        // ─── Buying credits (credits P4, chakramcp.com) ─
+        .route(
+            "/v1/orgs/{slug}/credits/checkouts",
+            post(handlers::purchases::create_checkout),
+        )
+        .route(
+            "/v1/orgs/{slug}/credits/checkouts/{id}",
+            get(handlers::purchases::checkout_status),
+        )
+        // Dodo's webhooks: no user auth, its signature is the only way in.
+        .route(
+            "/v1/webhooks/dodo",
+            post(handlers::purchases::dodo_webhook).layer(DefaultBodyLimit::max(256 * 1024)),
         )
         .route(
             "/v1/orgs/{slug}/invites",

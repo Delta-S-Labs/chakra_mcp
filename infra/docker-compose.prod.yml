@@ -109,7 +109,7 @@ services:
       CREDITS_ENABLED: ${CREDITS_ENABLED:-}
       # The amounts default to the server's own defaults, written out: images
       # before 0.3.0 refuse to start on an empty value here.
-      CREDITS_DEFAULT_MONTHLY_FREE_MC: ${CREDITS_DEFAULT_MONTHLY_FREE_MC:-100000}
+      CREDITS_DEFAULT_MONTHLY_FREE_MC: ${CREDITS_DEFAULT_MONTHLY_FREE_MC:-5000000}
       CREDITS_COST_PER_INVOCATION_MC: ${CREDITS_COST_PER_INVOCATION_MC:-100}
       LIMITS_DEFAULT_RATE_PER_MIN: ${LIMITS_DEFAULT_RATE_PER_MIN:-60}
       # Usage-limit enforcement. Default true = ENFORCING: over-limit calls are
@@ -139,6 +139,16 @@ services:
       # server-side Google/GitHub sign-in callback; unset turns that off.
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       UPSERT_SHARED_SECRET: ${UPSERT_SHARED_SECRET:-}
+      # chakramcp.com only: buying credits through Dodo Payments (credits P4).
+      # All four DODO_PAYMENTS_* or none (CD checks); empty means unset, and
+      # a bad value turns purchasing off without stopping the server.
+      DODO_PAYMENTS_API_KEY: ${DODO_PAYMENTS_API_KEY:-}
+      DODO_PAYMENTS_WEBHOOK_KEY: ${DODO_PAYMENTS_WEBHOOK_KEY:-}
+      DODO_PAYMENTS_PRODUCT_ID: ${DODO_PAYMENTS_PRODUCT_ID:-}
+      DODO_PAYMENTS_ENVIRONMENT: ${DODO_PAYMENTS_ENVIRONMENT:-}
+      CREDITS_PURCHASE_PER_USD: ${CREDITS_PURCHASE_PER_USD:-}
+      CREDITS_PURCHASE_MIN_CENTS: ${CREDITS_PURCHASE_MIN_CENTS:-}
+      CREDITS_PURCHASE_MAX_CENTS: ${CREDITS_PURCHASE_MAX_CENTS:-}
       DISCOVERY_V2: "true"
       RUST_LOG: info,chakramcp_app=info,chakramcp_relay=info,sqlx=warn
       # One JSON object per log line (request_id, route, … on each), for Loki.

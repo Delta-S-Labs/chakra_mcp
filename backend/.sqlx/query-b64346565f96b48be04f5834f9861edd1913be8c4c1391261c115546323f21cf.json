@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE credit_checkouts\n               SET status = 'unapplied', unapplied_reason = $2, dodo_payment_id = $3,\n                   invoice_url = $4, updated_at = now()\n             WHERE id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b64346565f96b48be04f5834f9861edd1913be8c4c1391261c115546323f21cf"
+}

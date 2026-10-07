@@ -6,6 +6,8 @@ use chakramcp_shared::config::SharedConfig;
 use chakramcp_shared::credits::CreditsConfig;
 use chakramcp_shared::hosting::HostingSettings;
 
+use crate::purchases::PurchaseConfig;
+
 #[derive(Clone)]
 pub struct AppState {
     pub db: PgPool,
@@ -21,6 +23,10 @@ pub struct AppState {
     /// overrides). `new` starts from the self-hosted defaults; the mains set
     /// it from config.
     pub hosting: HostingSettings,
+    /// Buying credits through Dodo (credits P4): set only on chakramcp.com,
+    /// with credits on and Dodo configured. `None` turns the checkout and
+    /// webhook routes into 404s.
+    pub purchase: Option<Arc<PurchaseConfig>>,
 }
 
 impl AppState {
@@ -31,6 +37,7 @@ impl AppState {
             upsert_secret: None,
             credits: CreditsConfig::default(),
             hosting: HostingSettings::default(),
+            purchase: None,
         }
     }
 
@@ -50,6 +57,11 @@ impl AppState {
 
     pub fn with_hosting(mut self, hosting: HostingSettings) -> Self {
         self.hosting = hosting;
+        self
+    }
+
+    pub fn with_purchase(mut self, purchase: Option<PurchaseConfig>) -> Self {
+        self.purchase = purchase.map(Arc::new);
         self
     }
 

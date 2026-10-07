@@ -191,6 +191,22 @@ jobs:
           fi
           echo "HOSTING_MODE=managed is set."
 
+      - name: Check the Dodo settings are all or none
+        run: |
+          set -euo pipefail
+          # Credits P4: with some DODO_PAYMENTS_* keys but not all four, the
+          # server keeps running with purchasing off (and alerts); catch it
+          # before deploying. Only key names leave the VM, never values; a
+          # blank value counts as unset, as it does for the server.
+          n=$(ssh -i ~/.ssh/lightsail ubuntu@"$LIGHTSAIL_HOST" \
+              "grep -E '^DODO_PAYMENTS_(API_KEY|WEBHOOK_KEY|PRODUCT_ID|ENVIRONMENT)=[[:space:]]*[^[:space:]]' /opt/chakramcp/.env | cut -d= -f1 | sort -u | wc -l")
+          n=$(echo "$n" | tr -d '[:space:]')
+          if [ "$n" != 0 ] && [ "$n" != 4 ]; then
+            echo "::error::/opt/chakramcp/.env sets $n of the 4 DODO_PAYMENTS_* keys (API_KEY, WEBHOOK_KEY, PRODUCT_ID, ENVIRONMENT): set all four or none. With some missing, buying credits stays off."
+            exit 1
+          fi
+          echo "Dodo settings: $n of 4 set."
+
       # ─── Sync infra config (compose YAML + Caddyfile) to the VM ─
       # CD used to only run `docker compose pull` + `up -d` on the
       # box — it never touched the compose YAML itself. That meant
