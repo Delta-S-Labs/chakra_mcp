@@ -600,7 +600,8 @@ export function adminListOrgs(token: string) {
 // Amounts are milli-credits (1 credit = 1,000 mc); format with
 // `formatCredits` from lib/format.
 
-export type CreditStatus = "active" | "blocked" | "unlimited";
+/** `off` when this server doesn't charge credits at all. */
+export type CreditStatus = "active" | "blocked" | "unlimited" | "off";
 
 export interface CreditsDailySpend {
   day: string;
@@ -627,6 +628,32 @@ export interface CreditsLedgerEntry {
   changes: Record<string, CreditsSettingChange> | null;
   /** Admin view only: who made the change. */
   by?: string;
+  /** Purchases: what was paid and who bought. */
+  purchase?: { amount_cents: number; currency: string; buyer_email: string };
+}
+
+/** `expired`: an `open` checkout over a day old. `unapplied`: paid but held
+ *  for the operator (another amount, a discount, or a deleted account). */
+export type PaymentStatus = "open" | "paid" | "failed" | "unapplied" | "expired";
+
+export interface CreditPayment {
+  id: string;
+  created_at: string;
+  amount_cents: number;
+  currency: string;
+  credits_mc: number;
+  status: PaymentStatus;
+  buyer_email: string;
+  invoice_url: string | null;
+  paid_at: string | null;
+}
+
+/** How to buy credits on this server (chakramcp.com only). */
+export interface PurchaseInfo {
+  min_cents: number;
+  max_cents: number;
+  credits_per_usd: number;
+  mode: "test" | "live";
 }
 
 export interface CreditsView {
@@ -635,6 +662,8 @@ export interface CreditsView {
    *  wallet yet, the grant the first invocation brings. */
   balance_mc: number;
   has_wallet: boolean;
+  /** Whether this server charges credits at all. */
+  enabled: boolean;
   status: CreditStatus;
   cost_per_invocation_mc: number;
   monthly_free_grant_mc: number;
@@ -649,10 +678,46 @@ export interface CreditsView {
   daily: CreditsDailySpend[];
   /** Newest first. */
   ledger: CreditsLedgerEntry[];
+  /** The latest checkouts, newest first. */
+  payments: CreditPayment[];
+  /** `null` where credits can't be bought (self-hosted, or not set up). */
+  purchase: PurchaseInfo | null;
 }
 
 export function getOrgCredits(token: string, slug: string) {
   return request<CreditsView>(`/v1/orgs/${encodeURIComponent(slug)}/credits`, { token });
+}
+
+export interface CreatedCheckout {
+  checkout_id: string;
+  /** Dodo's checkout, opened as an overlay. */
+  checkout_url: string;
+  credits_mc: number;
+}
+
+/** Start buying credits for an account (a person signed in to the web app). */
+export function createCheckout(token: string, slug: string, amountCents: number) {
+  return request<CreatedCheckout>(`/v1/orgs/${encodeURIComponent(slug)}/credits/checkouts`, {
+    method: "POST",
+    token,
+    body: JSON.stringify({ amount_cents: amountCents }),
+  });
+}
+
+export interface CheckoutStatusView {
+  id: string;
+  status: PaymentStatus;
+  amount_cents: number;
+  credits_mc: number;
+  created_at: string;
+  paid_at: string | null;
+}
+
+export function getCheckout(token: string, slug: string, id: string) {
+  return request<CheckoutStatusView>(
+    `/v1/orgs/${encodeURIComponent(slug)}/credits/checkouts/${encodeURIComponent(id)}`,
+    { token },
+  );
 }
 
 export function adminGetAccountCredits(token: string, accountId: string) {

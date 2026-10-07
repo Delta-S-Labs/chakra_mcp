@@ -1,23 +1,34 @@
+import type { ReactNode } from "react";
 import type {
+  CreditPayment,
   CreditStatus,
   CreditsLedgerEntry,
   CreditsSettingChange,
   CreditsView,
+  PaymentStatus,
 } from "@/lib/api";
+import { callsFor, formatUsd } from "@/lib/credits-math";
 import { formatCredits } from "@/lib/format";
 import styles from "./credits.module.css";
 
 /**
  * An account's credits: balance, what they cost, the monthly grant and
- * limits, the last 30 days of spend, and the ledger. Rendered as-is for
- * members (/app/credits) and for the operator (/app/admin/accounts/[id]),
- * where each ledger entry also names the admin who made it.
+ * limits, buying more (`buy`, members only), payments, the last 30 days of
+ * spend, and the ledger. Rendered for members (/app/credits) and for the
+ * operator (/app/admin/accounts/[id]), where each ledger entry also names
+ * the admin who made it.
  */
-export function CreditsPanel({ view }: { view: CreditsView }) {
+export function CreditsPanel({ view, buy }: { view: CreditsView; buy?: ReactNode }) {
   const maxDaily = Math.max(1, ...view.daily.map((d) => d.spent_mc));
 
   return (
     <div className={styles.panel}>
+      {!view.enabled && (
+        <p className={styles.off}>
+          Credits are off on this server: nothing is charged, and nobody is refused for running
+          out.
+        </p>
+      )}
       <div className={styles.summary}>
         <div className={styles.balanceCard}>
           <div className={styles.label}>Balance</div>
@@ -25,6 +36,12 @@ export function CreditsPanel({ view }: { view: CreditsView }) {
             {formatCredits(view.balance_mc)}
             <span className={styles.unit}>credits</span>
           </div>
+          {view.enabled && (
+            <div className={styles.calls}>
+              ≈ {callsFor(view.balance_mc, view.cost_per_invocation_mc).toLocaleString("en-US")}{" "}
+              calls
+            </div>
+          )}
           <StatusPill status={view.status} />
           {view.status === "blocked" && (
             <p className={styles.warn}>
@@ -78,6 +95,10 @@ export function CreditsPanel({ view }: { view: CreditsView }) {
           </div>
         </dl>
       </div>
+
+      {buy}
+
+      {(view.payments.length > 0 || view.purchase) && <Payments payments={view.payments} />}
 
       <section className={styles.block}>
         <h3 className={styles.blockTitle}>Last 30 days</h3>
@@ -149,11 +170,79 @@ export function CreditsPanel({ view }: { view: CreditsView }) {
 }
 
 export function StatusPill({ status }: { status: CreditStatus }) {
-  const label = { active: "active", blocked: "out of credits", unlimited: "unlimited" }[status];
+  const label = {
+    active: "active",
+    blocked: "out of credits",
+    unlimited: "unlimited",
+    off: "off",
+  }[status];
   const cls = {
     active: styles.pillOk,
     blocked: styles.pillCoral,
     unlimited: styles.pillButter,
+    off: styles.pillMuted,
+  }[status];
+  return <span className={cls}>{label}</span>;
+}
+
+/** The account's checkouts, newest first, with Dodo's receipt when there is one. */
+function Payments({ payments }: { payments: CreditPayment[] }) {
+  return (
+    <section className={styles.block}>
+      <h3 className={styles.blockTitle}>Payments</h3>
+      {payments.length === 0 ? (
+        <p className={styles.empty}>No purchases yet.</p>
+      ) : (
+        <div className="tableScroll">
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>When</th>
+                <th className={styles.num}>Amount</th>
+                <th className={styles.num}>Credits</th>
+                <th>By</th>
+                <th>Status</th>
+                <th>Receipt</th>
+              </tr>
+            </thead>
+            <tbody>
+              {payments.map((p) => (
+                <tr key={p.id}>
+                  <td className={styles.when}>{formatWhen(p.created_at)}</td>
+                  <td className={styles.num}>
+                    {p.currency === "USD" ? formatUsd(p.amount_cents) : `${p.amount_cents / 100} ${p.currency}`}
+                  </td>
+                  <td className={styles.num}>{formatCredits(p.credits_mc)}</td>
+                  <td>{p.buyer_email}</td>
+                  <td>
+                    <PaymentPill status={p.status} />
+                  </td>
+                  <td>
+                    {p.invoice_url ? (
+                      <a className={styles.receipt} href={p.invoice_url} target="_blank" rel="noreferrer">
+                        Receipt
+                      </a>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PaymentPill({ status }: { status: PaymentStatus }) {
+  const [label, cls] = {
+    open: ["pending", styles.pillButter],
+    paid: ["paid", styles.pillOk],
+    failed: ["failed", styles.pillCoral],
+    unapplied: ["needs review", styles.pillCoral],
+    expired: ["expired", styles.pillMuted],
   }[status];
   return <span className={cls}>{label}</span>;
 }
@@ -167,7 +256,9 @@ function describe(entry: CreditsLedgerEntry): string {
     case "adjustment":
       return "Balance adjusted";
     case "purchase":
-      return "Credits purchased";
+      return entry.purchase
+        ? `Credits purchased · ${formatUsd(entry.purchase.amount_cents)} by ${entry.purchase.buyer_email}`
+        : "Credits purchased";
     case "settings":
       return `Settings changed: ${Object.entries(entry.changes ?? {})
         .map(([key, change]) => describeChange(key, change))

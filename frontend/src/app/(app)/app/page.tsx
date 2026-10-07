@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { ApiClientError, apiBaseUrl, getMe } from "@/lib/api";
-import { formatElapsed } from "@/lib/format";
+import { ApiClientError, apiBaseUrl, getMe, getOrgCredits, type CreditsView } from "@/lib/api";
+import { callsFor } from "@/lib/credits-math";
+import { formatCredits, formatElapsed } from "@/lib/format";
 import {
   listFriendships,
   listGrants,
@@ -114,6 +115,18 @@ export default async function AppDashboard() {
     redirect("/app/welcome");
   }
 
+  // The personal account's credits, for the first stat card. Non-fatal: a
+  // backend blip just leaves the card out.
+  let credits: CreditsView | null = null;
+  const personal = memberships.find((m) => m.account_type === "individual");
+  if (personal) {
+    try {
+      credits = await getOrgCredits(token, personal.slug);
+    } catch {
+      credits = null;
+    }
+  }
+
   const showDevHint = isLocalBackend();
 
   // Memberships are still loaded above because the `/v1/me` call
@@ -181,6 +194,16 @@ export default async function AppDashboard() {
       )}
 
       <section className={styles.statGrid}>
+        {credits && credits.enabled && (
+          <StatCard
+            label="Credits"
+            value={formatCredits(credits.balance_mc)}
+            hint={`~${callsFor(credits.balance_mc, credits.cost_per_invocation_mc).toLocaleString("en-US")} calls · ${
+              credits.purchase ? "Buy credits →" : credits.status === "blocked" ? "out of credits" : "see Credits"
+            }`}
+            href="/app/credits"
+          />
+        )}
         <StatCard
           label="Agents"
           value={agentCount}
@@ -272,7 +295,7 @@ function StatCard({
   href,
 }: {
   label: string;
-  value: number;
+  value: number | string;
   hint: string;
   href: string;
 }) {
