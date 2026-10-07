@@ -49,6 +49,29 @@ pub mod names {
     pub const DB_POOL_CONNECTIONS: &str = "chakramcp_db_pool_connections";
     pub const DB_POOL_MAX_CONNECTIONS: &str = "chakramcp_db_pool_max_connections";
     pub const BUILD_INFO: &str = "chakramcp_build_info";
+    pub const CREDIT_PURCHASES_TOTAL: &str = "chakramcp_credit_purchases_total";
+    pub const DODO_WEBHOOK_REJECTED_TOTAL: &str = "chakramcp_dodo_webhook_rejected_total";
+    pub const PURCHASE_CONFIG_ERROR: &str = "chakramcp_purchase_config_error";
+}
+
+/// `status` values of `chakramcp_credit_purchases_total`.
+pub const PURCHASE_STATUSES: [&str; 4] = ["paid", "failed", "unapplied", "unmatched"];
+/// `reason` values of `chakramcp_dodo_webhook_rejected_total`.
+pub const WEBHOOK_REJECTIONS: [&str; 4] = ["missing_header", "stale", "bad_signature", "bad_json"];
+
+/// Count a credit purchase outcome (one of [`PURCHASE_STATUSES`]).
+pub fn record_purchase(status: &'static str) {
+    counter!(names::CREDIT_PURCHASES_TOTAL, "status" => status).increment(1);
+}
+
+/// Count a refused Dodo webhook (one of [`WEBHOOK_REJECTIONS`]).
+pub fn record_webhook_rejected(reason: &'static str) {
+    counter!(names::DODO_WEBHOOK_REJECTED_TOTAL, "reason" => reason).increment(1);
+}
+
+/// 1 while a purchase setting is present but wrong, so purchasing is off.
+pub fn set_purchase_config_error(error: bool) {
+    gauge!(names::PURCHASE_CONFIG_ERROR).set(if error { 1.0 } else { 0.0 });
 }
 
 /// HTTP latency buckets: 5 ms … 30 s.
@@ -364,6 +387,28 @@ fn describe() {
         BUILD_INFO,
         "Always 1; labelled with the version and git sha."
     );
+    describe_counter!(
+        CREDIT_PURCHASES_TOTAL,
+        "Credit purchase webhooks by outcome (unmatched and unapplied need the operator)."
+    );
+    describe_counter!(
+        DODO_WEBHOOK_REJECTED_TOTAL,
+        "Dodo webhooks refused before processing, by reason."
+    );
+    describe_gauge!(
+        PURCHASE_CONFIG_ERROR,
+        "1 while a purchase setting is present but wrong, so purchasing is off."
+    );
+    // Series appear at their first event, already at 1, and `increase()`
+    // reads such a series as 0. Starting every value at 0 lets an alert see
+    // a single stuck payment, even right after a deploy reset the counters.
+    for status in PURCHASE_STATUSES {
+        counter!(CREDIT_PURCHASES_TOTAL, "status" => status).increment(0);
+    }
+    for reason in WEBHOOK_REJECTIONS {
+        counter!(DODO_WEBHOOK_REJECTED_TOTAL, "reason" => reason).increment(0);
+    }
+    gauge!(PURCHASE_CONFIG_ERROR).set(0.0);
 }
 
 // ─── HTTP ────────────────────────────────────────────────
@@ -520,6 +565,23 @@ mod tests {
         ));
         assert!(text
             .contains("chakramcp_invocation_duration_seconds_bucket{mode=\"push\",le=\"60\"} 1"));
+    }
+
+    #[test]
+    fn purchase_series_start_at_zero() {
+        let recorder = prometheus_builder().build_recorder();
+        let handle = recorder.handle();
+        metrics::with_local_recorder(&recorder, describe);
+        let text = handle.render();
+        for status in PURCHASE_STATUSES {
+            let line = format!("chakramcp_credit_purchases_total{{status=\"{status}\"}} 0");
+            assert!(text.contains(&line), "missing {line}");
+        }
+        for reason in WEBHOOK_REJECTIONS {
+            let line = format!("chakramcp_dodo_webhook_rejected_total{{reason=\"{reason}\"}} 0");
+            assert!(text.contains(&line), "missing {line}");
+        }
+        assert!(text.contains("chakramcp_purchase_config_error 0"));
     }
 
     #[tokio::test]

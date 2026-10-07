@@ -155,7 +155,7 @@ fn init(
          # signup_enabled = false\n\
          # Credits: off by default on a self-hosted server.\n\
          # credits_enabled = false\n\
-         # credits_default_monthly_free_mc = 100000\n\
+         # credits_default_monthly_free_mc = 5000000\n\
          # credits_cost_per_invocation_mc = 100\n\
          # Rate limit per account (needs redis_url); limits_enforce turns\n\
          # refusals on (off: over-limit calls are only logged).\n\
@@ -267,10 +267,13 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
         ]);
     }
 
+    let purchase =
+        chakramcp_app::purchases::config::from_env(cfg.hosting.is_managed(), credits.enabled);
     let app_state = AppState::new(pool.clone(), cfg.shared.clone())
         .with_upsert_secret(std::env::var("UPSERT_SHARED_SECRET").ok())
         .with_credits_config(credits)
-        .with_hosting(cfg.hosting);
+        .with_hosting(cfg.hosting)
+        .with_purchase(purchase);
     if app_state.upsert_secret.is_none() {
         tracing::warn!("UPSERT_SHARED_SECRET is not set: Google/GitHub sign-in is disabled");
     }

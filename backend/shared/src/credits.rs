@@ -33,8 +33,9 @@ impl Default for CreditsConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            // 100 credits = 1,000 invocations at 0.1 credit each: today's free tier.
-            default_monthly_free_mc: 100_000,
+            // 5,000 credits = 50,000 invocations at 0.1 credit each: the free
+            // tier since credits P4 (it was 100 credits).
+            default_monthly_free_mc: 5_000_000,
             cost_per_invocation_mc: 100,
             sweep_interval: Duration::from_secs(5),
             default_rate_per_min: 60,
@@ -187,7 +188,7 @@ mod tests {
     fn unset_values_use_the_defaults() {
         let cfg = from(&[]).unwrap();
         assert_eq!(cfg, CreditsConfig::default());
-        assert_eq!(cfg.default_monthly_free_mc, 100_000);
+        assert_eq!(cfg.default_monthly_free_mc, 5_000_000);
         assert_eq!(cfg.cost_per_invocation_mc, 100);
         assert_eq!(cfg.stale_after(), Duration::from_secs(15));
     }
