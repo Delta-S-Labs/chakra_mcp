@@ -372,7 +372,7 @@ are set:
 | Hosting mode         | `hosting_mode`       | `HOSTING_MODE`       | `self_hosted` (`managed` is chakramcp.com's) |
 | Public sign-up       | `signup_enabled`     | `SIGNUP_ENABLED`     | `false` when self-hosted             |
 | Credits              | `credits_enabled`    | `CREDITS_ENABLED`    | `false` when self-hosted             |
-| Monthly free grant (milli-credits) | `credits_default_monthly_free_mc` | `CREDITS_DEFAULT_MONTHLY_FREE_MC` | `100000` (100 credits) |
+| Monthly free grant (milli-credits) | `credits_default_monthly_free_mc` | `CREDITS_DEFAULT_MONTHLY_FREE_MC` | `5000000` (5,000 credits) |
 | Cost per call (milli-credits) | `credits_cost_per_invocation_mc` | `CREDITS_COST_PER_INVOCATION_MC` | `100` (0.1 credit) |
 | Rate limit per account | `limits_default_rate_per_min` | `LIMITS_DEFAULT_RATE_PER_MIN` | `60` a minute (needs Redis) |
 | Refuse over-limit calls | `limits_enforce`   | `LIMITS_ENFORCE`     | `false`: only logged                 |
@@ -390,6 +390,12 @@ are set:
 | TypeSafe API key     | (env only)           | `TYPESAFE_AI_KEY`    | unset (required when checks are on)  |
 | TypeSafe model       | (env only)           | `TYPESAFE_AI_MODEL`  | `jev-latest`                         |
 | TypeSafe base URL    | (env only)           | `TYPESAFE_AI_BASE_URL` | `https://api.typesafe.ai`          |
+| Dodo Payments API key (chakramcp.com only) | (env only) | `DODO_PAYMENTS_API_KEY` | unset: no buying credits |
+| Dodo webhook key, `whsec_…` | (env only) | `DODO_PAYMENTS_WEBHOOK_KEY` | unset |
+| Dodo credits product, `pdt_…` | (env only) | `DODO_PAYMENTS_PRODUCT_ID` | unset |
+| Dodo environment     | (env only)           | `DODO_PAYMENTS_ENVIRONMENT` | unset (`test_mode` or `live_mode`) |
+| Credits per dollar   | (env only)           | `CREDITS_PURCHASE_PER_USD` | `1000` |
+| Smallest / largest purchase (cents) | (env only) | `CREDITS_PURCHASE_MIN_CENTS` / `_MAX_CENTS` | `100` / `500000` ($1 / $5,000) |
 | TypeSafe timeout (ms)| (env only)           | `TYPESAFE_AI_TIMEOUT_MS` | `2000`                           |
 
 A non-empty environment value wins over the file; an empty one counts as
