@@ -19,7 +19,7 @@ export const metadata: Metadata = {
  * by default, any other with `?account=<slug>`. Every member can see an
  * account's credits and, on chakramcp.com, buy more; only the operator can
  * grant or adjust them (/app/admin). Dodo sends a buyer back here with
- * `?checkout=<id>` once they've paid.
+ * `?checkout=<id>&status=…` once they've paid, or once a payment failed.
  */
 export default async function CreditsPage({
   searchParams,
@@ -92,6 +92,7 @@ export default async function CreditsPage({
                 purchase={view.purchase}
                 costPerInvocationMc={view.cost_per_invocation_mc}
                 returnedCheckoutId={returnedCheckout}
+                returnedStatus={typeof params.status === "string" ? params.status : undefined}
               />
             ) : null
           }

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { startCheckout } from "@/app/(app)/app/credits/actions";
 import type { PaymentStatus, PurchaseInfo } from "@/lib/api";
+import { pollVerdict, returnHint, type ReturnHint } from "@/lib/checkout-return";
 import { callsFor, creditsMcFor, formatUsd, parseDollars } from "@/lib/credits-math";
 import { formatCredits } from "@/lib/format";
 import styles from "./credits.module.css";
@@ -14,7 +15,7 @@ type Phase =
   | { kind: "idle" }
   | { kind: "starting" }
   | { kind: "paying" }
-  | { kind: "confirming"; checkoutId: string }
+  | { kind: "confirming"; checkoutId: string; hint: ReturnHint }
   | { kind: "done"; creditsMc: number }
   | { kind: "pending" }
   | { kind: "declined" }
@@ -22,33 +23,38 @@ type Phase =
   | { kind: "error"; message: string };
 
 const POLL_EVERY_MS = 2_000;
-const POLL_FOR_MS = 120_000;
 
 type Dodo = typeof import("dodopayments-checkout").DodoPayments;
 
 /**
  * Buy credits for one account: any amount within the server's limits, paid
- * in Dodo's checkout overlay. When the payment completes, Dodo sends the
- * browser back here with `?checkout=<id>`, and the box polls until the
- * backend has credited it (Dodo's signed webhook does that, not this page).
+ * in Dodo's checkout overlay. When the payment completes or fails, Dodo
+ * sends the browser back here with `?checkout=<id>&status=…`, and the box
+ * polls until the backend knows the outcome (Dodo's signed webhook credits
+ * it, not this page).
  */
 export function BuyCredits({
   slug,
   purchase,
   costPerInvocationMc,
   returnedCheckoutId,
+  returnedStatus,
 }: {
   slug: string;
   purchase: PurchaseInfo;
   costPerInvocationMc: number;
   /** Set when Dodo sent the buyer back from a checkout. */
   returnedCheckoutId?: string;
+  /** Dodo's `status` on the return URL, a hint only. */
+  returnedStatus?: string;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [amount, setAmount] = useState("10");
   const [phase, setPhase] = useState<Phase>(
-    returnedCheckoutId ? { kind: "confirming", checkoutId: returnedCheckoutId } : { kind: "idle" },
+    returnedCheckoutId
+      ? { kind: "confirming", checkoutId: returnedCheckoutId, hint: returnHint(returnedStatus) }
+      : { kind: "idle" },
   );
   // The overlay's event callback is registered once, so it reads the
   // current phase through a ref.
@@ -63,14 +69,14 @@ export function BuyCredits({
   const boughtMc = cents !== null ? creditsMcFor(cents, purchase.credits_per_usd) : 0;
   const busy = phase.kind === "starting" || phase.kind === "paying" || phase.kind === "confirming";
 
-  // After a return from Dodo: poll until the webhook has credited the
-  // payment. `failed` doesn't stop the polling, because a declined first
-  // attempt can be followed by a successful one in the same checkout.
+  // After a return from Dodo: poll until the backend knows the outcome
+  // (pollVerdict decides when to stop).
   useEffect(() => {
     if (phase.kind !== "confirming") return;
-    const { checkoutId } = phase;
+    const { checkoutId, hint } = phase;
     const started = Date.now();
     let last: PaymentStatus | null = null;
+    let creditsMc = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let stopped = false;
 
@@ -90,8 +96,7 @@ export function BuyCredits({
         if (res.ok) {
           const body = (await res.json()) as { status: PaymentStatus; credits_mc: number };
           last = body.status;
-          if (body.status === "paid") return settle({ kind: "done", creditsMc: body.credits_mc });
-          if (body.status === "unapplied") return settle({ kind: "review" });
+          creditsMc = body.credits_mc;
         } else if (res.status === 404) {
           return settle({ kind: "error", message: "That checkout isn't one of this account's." });
         }
@@ -99,10 +104,18 @@ export function BuyCredits({
         // A network blip: keep polling.
       }
       if (stopped) return;
-      if (Date.now() - started >= POLL_FOR_MS) {
-        return settle(last === "failed" ? { kind: "declined" } : { kind: "pending" });
+      switch (pollVerdict(hint, last, Date.now() - started)) {
+        case "done":
+          return settle({ kind: "done", creditsMc });
+        case "review":
+          return settle({ kind: "review" });
+        case "declined":
+          return settle({ kind: "declined" });
+        case "pending":
+          return settle({ kind: "pending" });
+        case "keep":
+          timer = setTimeout(tick, POLL_EVERY_MS);
       }
-      timer = setTimeout(tick, POLL_EVERY_MS);
     };
 
     timer = setTimeout(tick, 0);
@@ -210,7 +223,7 @@ function BuyMessage({ phase }: { phase: Phase }) {
     case "confirming":
       return (
         <p className={styles.buyStatus} role="status">
-          Payment received, adding credits…
+          {phase.hint === "succeeded" ? "Payment received, adding credits…" : "Checking the payment…"}
         </p>
       );
     case "done":
