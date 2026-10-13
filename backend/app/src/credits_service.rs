@@ -20,6 +20,8 @@ use uuid::Uuid;
 use chakramcp_shared::credits::{is_blocked, CreditsConfig};
 use chakramcp_shared::error::{ApiError, ApiResult};
 
+use crate::purchases::{self, PaymentView, PurchaseInfo};
+
 /// Ledger rows returned with a view, newest first.
 const LEDGER_LIMIT: i64 = 50;
 /// Largest single grant, adjustment or monthly-grant override: a billion credits.
@@ -94,6 +96,11 @@ pub struct CreditsView {
     pub daily: Vec<DailySpend>,
     /// Newest first.
     pub ledger: Vec<LedgerEntry>,
+    /// The account's latest checkouts (credits P4), newest first.
+    pub payments: Vec<PaymentView>,
+    /// How to buy credits here; `None` where purchasing is off. Set by the
+    /// members' endpoint only.
+    pub purchase: Option<PurchaseInfo>,
 }
 
 #[derive(Debug, Serialize)]
@@ -119,6 +126,16 @@ pub struct LedgerEntry {
     /// Admin view only: who made the change.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub by: Option<String>,
+    /// Purchases: what was paid and who bought. Every member sees it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub purchase: Option<PurchaseLine>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PurchaseLine {
+    pub amount_cents: i64,
+    pub currency: String,
+    pub buyer_email: String,
 }
 
 /// Add a ledger entry. `kind` is `grant` (a positive amount) or `adjustment`
@@ -371,11 +388,20 @@ pub async fn load_view(
     )
     .fetch_all(&mut *tx)
     .await?;
+    let payments = purchases::recent_payments(&mut tx, account_id).await?;
     tx.commit().await?;
 
     let (balance_mc, grant_override, rate_override, period, unlimited) = match &wallet {
         Some(w) => (
-            w.balance_mc,
+            // A wallet made before the account's first grant (by a purchase
+            // or an admin) gets that grant on the worker's next pass, seconds
+            // away. Count it, as for an account with no wallet yet, so a first
+            // purchase never shows a balance below the one before it.
+            if cfg.enabled && w.free_grant_period.is_none() {
+                w.balance_mc + grant_override_or_default(w.monthly_free_grant_mc, cfg)
+            } else {
+                w.balance_mc
+            },
             w.monthly_free_grant_mc,
             w.rate_limit_per_min,
             w.free_grant_period,
@@ -435,6 +461,8 @@ pub async fn load_view(
                 )
             })
             .collect(),
+        payments,
+        purchase: None,
     })
 }
 
@@ -464,6 +492,18 @@ fn ledger_entry(
             .map(str::to_owned)
             .or_else(|| meta.get("operator").map(|_| OPERATOR_LABEL.to_owned()))
     };
+    let purchase = (reason == "purchase").then(|| PurchaseLine {
+        amount_cents: meta
+            .get("amount_cents")
+            .and_then(Value::as_i64)
+            .unwrap_or(0),
+        currency: text("currency").unwrap_or_default(),
+        buyer_email: meta
+            .pointer("/buyer/email")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned(),
+    });
     LedgerEntry {
         id,
         created_at,
@@ -474,6 +514,7 @@ fn ledger_entry(
         period: text("period"),
         changes: meta.get("changes").cloned(),
         by: admin.then(by).flatten(),
+        purchase,
     }
 }
 
@@ -550,7 +591,8 @@ mod tests {
         let cfg = CreditsConfig::default();
         let view = load_view(&pool, &cfg, account, true).await.unwrap();
         assert_eq!(view.status, "unlimited");
-        assert_eq!(view.balance_mc, 5_000);
+        // The new wallet's first monthly grant, seconds away, is counted.
+        assert_eq!(view.balance_mc, 5_000 + cfg.default_monthly_free_mc);
         assert!(view
             .ledger
             .iter()

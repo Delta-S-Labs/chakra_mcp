@@ -33,9 +33,9 @@ pub async fn account_credits(
     .fetch_optional(&state.db)
     .await?
     .ok_or(ApiError::NotFound)?;
-    Ok(Json(
-        credits_service::load_view(&state.db, &state.credits, account_id, false).await?,
-    ))
+    let mut view = credits_service::load_view(&state.db, &state.credits, account_id, false).await?;
+    view.purchase = state.purchase.as_ref().map(|p| p.info());
+    Ok(Json(view))
 }
 
 // ─────────────────────────────────────────────────────────
@@ -246,9 +246,9 @@ mod tests {
         let (_, token, account) = seed_user_with_personal(&pool, "fresh").await;
         let view = member_view(&pool, &token, account).await;
         assert_eq!(view["has_wallet"], false);
-        assert_eq!(view["balance_mc"], 100_000);
+        assert_eq!(view["balance_mc"], 5_000_000);
         assert_eq!(view["status"], "active");
-        assert_eq!(view["monthly_free_grant_mc"], 100_000);
+        assert_eq!(view["monthly_free_grant_mc"], 5_000_000);
         assert_eq!(view["monthly_free_grant_override_mc"], Value::Null);
         assert_eq!(view["rate_limit_per_min"], 60);
         assert_eq!(view["cost_per_invocation_mc"], 100);
@@ -372,8 +372,9 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK, "{view}");
         assert_eq!(view["has_wallet"], true);
-        // The new wallet's monthly grant lands on the worker's next pass.
-        assert_eq!(view["balance_mc"], 5_000);
+        // The new wallet's monthly grant lands on the worker's next pass;
+        // the view counts it already, as it does before a wallet exists.
+        assert_eq!(view["balance_mc"], 5_000 + 5_000_000);
         let entry = &view["ledger"][0];
         assert_eq!(entry["kind"], "grant");
         assert_eq!(entry["delta_mc"], 5_000);

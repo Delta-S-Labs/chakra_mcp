@@ -535,7 +535,8 @@ mod tests {
     use crate::telemetry::testing::Recorded;
 
     const COST: i64 = 100;
-    const GRANT: i64 = 100_000;
+    /// `CreditsConfig::default()`'s monthly grant: 5,000 credits.
+    const GRANT: i64 = 5_000_000;
 
     async fn seed_account(pool: &PgPool) -> Uuid {
         let owner = Uuid::now_v7();

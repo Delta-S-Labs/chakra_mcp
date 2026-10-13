@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE credit_checkouts SET status = 'failed', updated_at = now()\n         WHERE dodo_session_id = $1 AND status = 'open'\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9aa39836c394522c2cdbd4bc4bcec9596c7af3759be4083c5c7bf47f48707575"
+}

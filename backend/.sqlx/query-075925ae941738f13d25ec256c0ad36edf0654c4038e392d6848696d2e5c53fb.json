@@ -1,0 +1,124 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT id, account_id, user_id, buyer_email, amount_cents, currency,\n                       credits_mc, status, dodo_payment_id\n                  FROM credit_checkouts WHERE dodo_session_id = $1\n                   FOR UPDATE\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "credit_checkouts",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "credit_checkouts",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "credit_checkouts",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "buyer_email",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "credit_checkouts",
+            "name": "buyer_email"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "amount_cents",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "credit_checkouts",
+            "name": "amount_cents"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "currency",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "credit_checkouts",
+            "name": "currency"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "credits_mc",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "credit_checkouts",
+            "name": "credits_mc"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "credit_checkouts",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "dodo_payment_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "credit_checkouts",
+            "name": "dodo_payment_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "075925ae941738f13d25ec256c0ad36edf0654c4038e392d6848696d2e5c53fb"
+}

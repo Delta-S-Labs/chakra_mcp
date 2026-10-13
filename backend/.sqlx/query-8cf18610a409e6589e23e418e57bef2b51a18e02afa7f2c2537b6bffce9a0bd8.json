@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE credit_checkouts SET status = 'failed', updated_at = now() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8cf18610a409e6589e23e418e57bef2b51a18e02afa7f2c2537b6bffce9a0bd8"
+}
