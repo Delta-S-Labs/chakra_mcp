@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Metadata } from "next";
 import { auth } from "@/auth";
 import { getUsageSummary, type UsageSummary } from "@/lib/api";
@@ -94,8 +95,9 @@ export default async function UsagePage({
           <h2 className={styles.meterTitle}>Metered requests</h2>
           <p className={styles.body}>
             Every API request you make — REST routes and individual MCP tool
-            calls, reads included — counted by action. This is the substrate
-            future billing draws from.
+            calls, reads included — counted by action. Only accepted
+            invocations spend credits: 0.1 credit each (see{" "}
+            <Link href="/app/credits">Credits</Link>).
           </p>
           <ul className={styles.totals}>
             {meterTotals.map((t) => (

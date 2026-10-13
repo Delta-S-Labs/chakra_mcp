@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO credit_wallets (account_id, balance_mc, updated_at)\n        VALUES ($1, $2, now())\n        ON CONFLICT (account_id) DO UPDATE\n           SET balance_mc = credit_wallets.balance_mc + EXCLUDED.balance_mc,\n               updated_at = now()\n        RETURNING balance_mc\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "balance_mc",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "credit_wallets",
+            "name": "balance_mc"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c8ea0eee7da177c372298875585b2d103b92715b978a34457628834932e8f129"
+}

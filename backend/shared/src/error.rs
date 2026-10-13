@@ -47,6 +47,14 @@ pub enum ApiError {
     /// Sent with `Retry-After`.
     #[error("too many failed sign-ins for this email: try again in {retry_after_secs} seconds")]
     SigninRateLimited { retry_after_secs: u64 },
+
+    /// An account opened too many credit checkouts in the last hour.
+    #[error("too many checkouts for this account in the last hour: try again later")]
+    TooManyCheckouts,
+
+    /// The payment provider (Dodo) failed or didn't answer in time.
+    #[error("the payment provider couldn't start a checkout: try again")]
+    PaymentProvider,
 }
 
 #[derive(Serialize)]
@@ -88,6 +96,10 @@ impl IntoResponse for ApiError {
             ApiError::SigninRateLimited { .. } => {
                 (StatusCode::TOO_MANY_REQUESTS, "signin_rate_limited", true)
             }
+            ApiError::TooManyCheckouts => {
+                (StatusCode::TOO_MANY_REQUESTS, "too_many_checkouts", true)
+            }
+            ApiError::PaymentProvider => (StatusCode::BAD_GATEWAY, "payment_provider_error", true),
         };
         let retry_after = match &self {
             ApiError::SigninRateLimited { retry_after_secs } => Some(*retry_after_secs),

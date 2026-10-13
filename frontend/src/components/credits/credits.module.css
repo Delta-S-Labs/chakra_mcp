@@ -252,6 +252,159 @@
   color: var(--ink);
 }
 
+.calls {
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.off {
+  max-width: none;
+  margin: 0;
+  padding: 0.9rem 1rem;
+  border: 1px dashed var(--line);
+  border-radius: 0.85rem;
+  font-family: var(--font-body);
+  font-size: 0.92rem;
+  color: var(--ink-soft);
+}
+
+/* ─── Buy credits ─── */
+.buyCard {
+  display: grid;
+  gap: 0.7rem;
+  padding: 1.2rem 1.3rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--paper-soft);
+}
+
+.buyHead {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.buyForm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.amountField {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-height: 2.6rem;
+  padding: 0 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 0.55rem;
+  background: var(--paper);
+}
+
+.amountField:focus-within {
+  outline: 2px solid color-mix(in oklab, var(--accent-coral) 50%, transparent);
+  outline-offset: 1px;
+}
+
+.amountDollar {
+  font-family: var(--font-display);
+  font-weight: 800;
+  color: var(--ink-muted);
+}
+
+.amountInput {
+  width: 8rem;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+
+.amountInput[aria-invalid="true"] { color: oklch(45% 0.15 28); }
+
+.buyButton {
+  min-height: 2.6rem;
+  padding: 0 1.3rem;
+  border: 1px solid color-mix(in oklab, var(--accent-coral) 70%, var(--line));
+  border-radius: 0.55rem;
+  background: var(--accent-butter);
+  font: inherit;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background 140ms, opacity 140ms;
+}
+
+.buyButton:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--accent-butter) 70%, var(--accent-coral) 30%);
+}
+
+.buyButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.buyPreview,
+.buyFoot {
+  max-width: none;
+  margin: 0;
+  font-family: var(--font-body);
+  font-variant-numeric: tabular-nums;
+}
+
+.buyPreview { font-size: 0.92rem; color: var(--ink-soft); }
+.buyFoot { font-size: 0.78rem; color: var(--ink-muted); }
+
+.buyStatus,
+.buyOk {
+  max-width: none;
+  margin: 0;
+  padding: 0.5rem 0.7rem;
+  border-radius: 0.5rem;
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+}
+
+.buyStatus {
+  border: 1px solid var(--line);
+  background: color-mix(in oklab, var(--accent-butter) 22%, var(--paper-soft));
+  color: var(--ink);
+}
+
+.buyOk {
+  border: 1px solid color-mix(in oklab, oklch(75% 0.18 145) 50%, var(--line));
+  background: color-mix(in oklab, oklch(75% 0.18 145) 14%, var(--paper-soft));
+  color: oklch(35% 0.13 145);
+}
+
+/* ─── Payments ─── */
+.receipt {
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.pillMuted {
+  display: inline-block;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: color-mix(in oklab, var(--paper-warm) 40%, var(--paper-soft));
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--ink-muted);
+}
+
 @media (max-width: 720px) {
   .summary { grid-template-columns: 1fr; }
 }

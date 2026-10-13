@@ -30,10 +30,13 @@ async fn main() -> Result<()> {
     let hosting = chakramcp_shared::hosting::HostingSettings::from_env()?;
     tracing::info!("{}", hosting.summary());
     let credits = chakramcp_shared::credits::CreditsConfig::from_env(hosting.credits_enabled)?;
+    let purchase =
+        chakramcp_app::purchases::config::from_env(hosting.is_managed(), credits.enabled);
     let state = AppState::new(pool, cfg.clone())
         .with_upsert_secret(env::var("UPSERT_SHARED_SECRET").ok())
         .with_credits_config(credits)
-        .with_hosting(hosting);
+        .with_hosting(hosting)
+        .with_purchase(purchase);
     let app = router(state);
 
     let port: u16 = env::var("APP_PORT")
