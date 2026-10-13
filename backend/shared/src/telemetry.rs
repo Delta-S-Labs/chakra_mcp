@@ -152,7 +152,8 @@ pub fn init_tracing(filter: &str, log_format: Option<&str>) {
 
 /// JSON lines: event fields flattened into the object, plus the current
 /// span's fields (`request_id`, `method`, `route` inside a request).
-fn json_subscriber<W>(filter: EnvFilter, writer: W) -> impl tracing::Subscriber + Send + Sync
+/// Public for `tests/json_logs.rs`, which checks this format.
+pub fn json_subscriber<W>(filter: EnvFilter, writer: W) -> impl tracing::Subscriber + Send + Sync
 where
     W: for<'w> MakeWriter<'w> + Send + Sync + 'static,
 {
@@ -715,42 +716,6 @@ mod tests {
         fn flush(&mut self) -> std::io::Result<()> {
             Ok(())
         }
-    }
-
-    #[tokio::test]
-    async fn json_logs_carry_the_request_span() {
-        let captured = Captured::default();
-        let writer = captured.clone();
-        let subscriber = json_subscriber(EnvFilter::new("info"), move || writer.clone());
-        let _default = tracing::subscriber::set_default(subscriber);
-
-        let router = Router::new().route(
-            "/items/{id}",
-            get(|| async {
-                tracing::info!(answer = 42, "inside the handler");
-                "ok"
-            }),
-        );
-        let response = instrument(router, "app")
-            .oneshot(Request::get("/items/9").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        let id = response.headers()[REQUEST_ID_HEADER]
-            .to_str()
-            .unwrap()
-            .to_owned();
-
-        let out = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
-        let line = out
-            .lines()
-            .find(|l| l.contains("inside the handler"))
-            .expect("the handler's log line");
-        let v: serde_json::Value = serde_json::from_str(line).unwrap();
-        assert_eq!(v["level"], "INFO");
-        assert_eq!(v["answer"], 42, "event fields are flattened");
-        assert_eq!(v["span"]["request_id"], id.as_str());
-        assert_eq!(v["span"]["route"], "/items/{id}");
-        assert_eq!(v["span"]["method"], "GET");
     }
 
     #[test]
