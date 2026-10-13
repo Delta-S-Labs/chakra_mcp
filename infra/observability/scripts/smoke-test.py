@@ -13,8 +13,11 @@ published. Polls until everything holds or the deadline passes:
 - logs: Loki holds Postgres's lines, i.e. the journald pipeline works, and
   the relay's JSON lines with a `level`, with only the `service` / `level`
   labels;
-- Grafana: the three dashboards, the alert rules and the contact point of
-  the configured ALERT_CHANNEL are provisioned (none for `none`).
+- Grafana: the four dashboards, the alert rules and the contact point of
+  the configured ALERT_CHANNEL are provisioned (none for `none`);
+- the Postgres datasource logs in, and every query of the Revenue dashboard
+  runs through it, macros and all (catches SQL errors and a column
+  ensure-monitor-role.sh doesn't grant).
 
 The base compose file is docker-compose.yml when present, else
 docker-compose.prod.yml; COMPOSE_BASE overrides it (as in deploy.sh).
@@ -57,6 +60,35 @@ def curl(url, auth=False):
     return json.loads(out.stdout)
 
 
+def post(url, body):
+    """POST JSON to Grafana as its admin; the parsed reply, error or not."""
+    cmd = COMPOSE + ["exec", "-T", "grafana", "sh", "-c",
+                     'curl -sS -u "admin:$GF_SECURITY_ADMIN_PASSWORD" -H "Content-Type: application/json" '
+                     '--data-binary @- "$0"', url]
+    out = subprocess.run(cmd, capture_output=True, text=True, input=json.dumps(body))
+    if out.returncode != 0:
+        raise RuntimeError(out.stderr.strip() or f"curl exited {out.returncode}")
+    return json.loads(out.stdout)
+
+
+with open("observability/grafana/dashboards/revenue.json") as f:
+    SQL_TARGETS = [(p["title"], t) for p in json.load(f)["panels"] for t in p.get("targets", [])
+                   if (t.get("datasource") or {}).get("uid") == "postgres"]
+
+
+def revenue_query_errors():
+    """Run every Postgres query of the Revenue dashboard; the failures."""
+    queries = [dict(t, refId=f"Q{i}") for i, (_, t) in enumerate(SQL_TARGETS)]
+    results = post("http://127.0.0.1:3000/api/ds/query",
+                   {"from": "now-30d", "to": "now", "queries": queries}).get("results", {})
+    errors = []
+    for i, (title, _) in enumerate(SQL_TARGETS):
+        result = results.get(f"Q{i}", {})
+        if result.get("error") or result.get("status", 200) >= 400:
+            errors.append(f"{title}: {result.get('error') or result.get('status')}")
+    return errors
+
+
 def prom(query):
     return curl("http://prometheus:9090/api/v1/query?" + urllib.parse.urlencode({"query": query}))["data"]["result"]
 
@@ -93,8 +125,12 @@ def checks():
     labels = {key for s in series for key in s} - {"__stream_shard__"}
     yield f"Loki labels are service/level only (got {sorted(labels)})", labels <= {"service", "level"}
 
-    for uid in ["chakramcp-overview", "chakramcp-infrastructure", "chakramcp-logs"]:
+    for uid in ["chakramcp-overview", "chakramcp-infrastructure", "chakramcp-logs", "chakramcp-revenue"]:
         yield f"dashboard {uid}", curl(f"http://127.0.0.1:3000/api/dashboards/uid/{uid}", auth=True)["dashboard"]["uid"] == uid
+    health = curl("http://127.0.0.1:3000/api/datasources/uid/postgres/health", auth=True)
+    yield f"Postgres datasource logs in ({health.get('message')})", health.get("status") == "OK"
+    errors = revenue_query_errors()
+    yield f"Revenue dashboard's {len(SQL_TARGETS)} queries run (failing: {errors})", not errors
     rules = curl("http://127.0.0.1:3000/api/v1/provisioning/alert-rules", auth=True)
     yield f"alert rules loaded ({len(rules)})", len(rules) >= 12
     points = {p["uid"] for p in curl("http://127.0.0.1:3000/api/v1/provisioning/contact-points", auth=True)}
