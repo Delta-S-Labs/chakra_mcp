@@ -1071,8 +1071,18 @@ mod tests {
             "never loaded, now stalled: flagged (and logged) as stale"
         );
 
+        // Once the lock is gone, the next refresh succeeds and clears the flag.
+        // It gets the default tick, not the 200 ms one: the pool has no idle
+        // connection yet (sqlx pings a connection before taking it back, and
+        // the abandoned refresh's ping waits for its orphaned query), so this
+        // refresh opens a new one, and connecting alone can take over half a
+        // second on a busy CI runner.
         ddl.rollback().await.unwrap();
-        refresh_switches(&wide, &cache, &cfg, &mut stale).await;
+        let unhurried = CreditsConfig {
+            sweep_interval: CreditsConfig::default().sweep_interval,
+            ..cfg
+        };
+        refresh_switches(&wide, &cache, &unhurried, &mut stale).await;
         assert!(!stale && !cache.is_stale());
     }
 
