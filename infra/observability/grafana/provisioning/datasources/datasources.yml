@@ -19,3 +19,23 @@ datasources:
     access: proxy
     url: http://loki:3100
     editable: false
+
+  # The relay's own database, for the Revenue dashboard: Prometheus keeps
+  # 15 days, revenue needs months. Read-only, as the collector's
+  # chakramcp_monitor login, which may read only the credit columns
+  # scripts/ensure-monitor-role.sh grants (no emails), for 5 s per query.
+  - name: Postgres
+    uid: postgres
+    type: grafana-postgresql-datasource
+    access: proxy
+    url: pg:5432
+    user: chakramcp_monitor
+    editable: false
+    jsonData:
+      database: chakramcp
+      sslmode: disable
+      postgresVersion: 1600
+      maxOpenConns: 2
+      maxIdleConns: 1
+    secureJsonData:
+      password: $PG_MONITOR_PASSWORD
