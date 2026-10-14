@@ -37,13 +37,19 @@ frontend dev server with captcha disabled:
 CAPTCHA_ENABLED=false
 ```
 
-Backend env (`.env` or `.env.local` at repo root or `backend/.env`):
+Backend env. `chakramcp-server` doesn't read `.env` files, so export these
+in the shell that starts it (or put them in its `server.toml`):
 
-```
-DATABASE_URL=postgres://chakramcp:chakramcp@localhost:5432/chakramcp
-JWT_SECRET=<openssl rand -hex 32>
+```bash
+export DATABASE_URL=postgres://chakramcp:chakramcp@localhost:5432/chakramcp
+export JWT_SECRET=<openssl rand -hex 32>
+# Run as chakramcp.com does: sign-up open, sign-in and pairing through the
+# web UI on :3000. Without these the server runs self-hosted: sign-up
+# closed and its own sign-in pages, which this suite doesn't drive.
+export HOSTING_MODE=managed
+export FRONTEND_BASE_URL=http://localhost:3000
 # Optional but recommended for tests:
-SURVEY_ENABLED=false
+export SURVEY_ENABLED=false
 ```
 
 ## Startup order

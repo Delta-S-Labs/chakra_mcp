@@ -41,7 +41,7 @@ the accepted price of zero added latency.
 | Refunds | **Out of scope.** Money refunds are manual in Dodo; credit corrections are manual `adjustment` ledger rows (P3). Single balance — no free/paid buckets. |
 | Plans | **Retired.** Rate limit + free grant become per-account overrides on the wallet, with global defaults. |
 | Rate limiting | **Stays on Redis** (inline `INCR`, fail-open) — decided 2026-09-25. |
-| Hosting modes | `HOSTING_MODE` is introduced in **P4**, not here (the prod compose *is* the managed deployment; defaulting it to `self_hosted` there would be a trap). Nobody self-hosts yet — see the [deferred checklist](#first-self-hoster-checklist-deferred). |
+| Hosting modes | `HOSTING_MODE` was planned for **P4**, but came earlier, with self-hosting Phase 3 (`docs/superpowers/specs/2026-10-01-self-hosting-phase3-design.md` §3). `self_hosted`, the default, has credits off; production sets `managed` in its `.env` before deploying, and CD refuses to deploy without it. See [the checklist](#first-self-hoster-checklist-done-in-self-hosting-phase-3). |
 
 ## Goals / non-goals
 
@@ -214,8 +214,9 @@ granted (the ledger invariant holds universally), but never blocked.
   handler cancelled, process restarted during the upstream request — writes no row
   and is not charged; the row is written after the upstream returns so the hot path
   stays one statement.
-- **Top-ups / admin grants (P3/P4)** take effect at the next refresh (≤ 5 s), or
-  immediately via an in-process refresh.
+- **Top-ups / admin grants (P3/P4)** take effect at the next refresh (≤ 5 s). (An
+  in-process refresh was considered; the app has no handle on the relay's cache, so
+  there isn't one.)
 
 ## Charging rules
 
@@ -437,6 +438,10 @@ switches go stale, and their recovery.
   `/v1/invoke` and the MCP `invoke` tool return 409 before dispatch instead of
   parking a row no one delivers, so they're never charged.
 
+> **Note on migration 0034.** Its header comment says "0035 drops plans"; the drop
+> landed in 0036. Applied migrations can't change (sqlx checks their checksums at
+> boot), so the correction lives here.
+
 ## Later phases
 
 - **P2 — Owner visibility (built):** `GET /v1/orgs/{slug}/credits` for any member
@@ -466,23 +471,32 @@ switches go stale, and their recovery.
   and the 0035 CHECKs. Effects reach the relay at its next switch refresh (≤ 5 s).
   `GET /v1/admin/orgs` gains `credit_balance_mc` and `credit_status`; the admin console
   links each account to `/app/admin/accounts/{id}`.
-- **P4 — Purchasing (managed-only, Dodo):** introduces `HOSTING_MODE` (default
-  `managed` in the prod compose); checkout + signed webhooks → `purchase` rows
-  (deduped by the unique index) + top-up. Refunds stay manual.
+- **P4 — Purchasing (managed-only, Dodo): built.** Any member buys any amount from $1
+  to $5,000 at $1 = 1,000 credits through Dodo's overlay checkout; a signed webhook
+  credits each payment exactly once (`purchase` rows deduplicated by
+  `credit_ledger_purchase_ref_uniq`), and the monthly free grant rose to 5,000 credits.
+  `HOSTING_MODE` came earlier, with self-hosting Phase 3. Spec:
+  `docs/superpowers/specs/2026-10-06-credits-p4-purchasing-design.md`.
 - **P5 — Request-increase + alerts:** low-balance alerts computed on the worker tick.
 - **P6 — Agent signaling:** 429 `Retry-After` + balance/limit headers.
 - **Cost weighting:** the worker prices each drained row, so per-class pricing
   changes only the worker — never the hot path.
 - **Free-balance cap:** skip the monthly grant while `balance_mc ≥ cap`.
 
-## First-self-hoster checklist (deferred)
+## First-self-hoster checklist: done in self-hosting Phase 3
 
-Nobody self-hosts today. Before the first one does: self-host-safe compose
-defaults (managed values moved to the operator's host `.env` — set them there
-*before* the compose change deploys); the credit knobs in `server.toml`; a
-`chakramcp-server credits {show,grant,set-limit,set-unlimited}` escape hatch; an
-upgrade note (stop the relay before migrating across the cutover); INSTALL.md and
-`/docs/self-host`.
+Deferred here, then delivered by self-hosting Phase 3
+(`docs/superpowers/specs/2026-10-01-self-hosting-phase3-design.md`, #365–#367):
+
+- **Self-host-safe defaults.** `HOSTING_MODE=self_hosted` by default: credits off, public
+  sign-up closed. Production's `.env` set `managed` before the change deployed.
+- **The credit knobs in `server.toml`.** `credits_enabled`,
+  `credits_default_monthly_free_mc`, `credits_cost_per_invocation_mc`,
+  `limits_default_rate_per_min`, `limits_enforce` and `redis_url`.
+- **An escape hatch.** `chakramcp-server credits {show,grant,adjust,set}`, sharing the
+  admin API's code; ledger rows record `{"operator": "cli"}`.
+- **The upgrade note.** For self-hosters, in `docs/self-hosting/compose.md` (Upgrades).
+- **INSTALL.md and the self-hosting guides**, which now cover accounts and credits.
 
 ## Resolved defaults
 

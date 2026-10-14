@@ -316,24 +316,25 @@ const layerBets: Array<{
   },
 ];
 
-// Pay-as-you-go pricing surfaced in the revenue section. Sourced from
-// comparable platform fees (AWS API Gateway \u2248 $1 / million calls;
-// Stripe Connect \u2248 0.25% + $0.25 per transaction). Conservative.
+// The pay-as-you-go pricing live on chakramcp.com (credits; see
+// docs/superpowers/specs/2026-10-06-credits-p4-purchasing-design.md): an
+// accepted invocation costs 0.1 credit, every account gets 5,000 credits a
+// month, and $1 buys 1,000 more. Keep it in step with the FAQ.
 const usageTier = {
   freeTier: [
-    "10,000 invocations per agent per month",
-    "100,000 inbox polls per agent per month",
-    "1,000 discovery searches per agent per month",
+    "5,000 credits: 50,000 accepted invocations",
+    "Inbox polls and discovery searches don't use credits",
+    "Unused credits roll over",
   ],
   overage: [
-    "$0.001 per invocation",
-    "$0.0001 per inbox poll",
-    "$0.01 per discovery search",
+    "$1 buys 1,000 credits: 10,000 invocations",
+    "$0.0001 per accepted invocation",
+    "Any amount from $1 to $5,000; credits never expire",
   ],
   prediction: {
-    headline: "At 100 paired agents, even with the generous free tier above, we project ~$1.5k MRR from usage alone.",
+    headline: "At 100 active accounts, even with the free allowance above, we project about $550 a month from usage alone.",
     detail:
-      "Model: 70% hobby agents stay inside the free tier, 20% active agents run roughly 2\u00d7 the free tier (~$15-20 each), 10% power agents run 10\u00d7 and pay ~$100 each. Scales linearly: 1,000 agents = ~$15k MRR before any IAP, ad, or subscription revenue kicks in.",
+      "Model: 70% of accounts stay inside the free 50,000 invocations, 20% run about twice that and pay ~$5 each, 10% run ten times that and pay ~$45 each. Scales linearly: 1,000 accounts = ~$5.5k a month before any IAP, ad, or subscription revenue kicks in.",
   },
 };
 
@@ -347,7 +348,7 @@ const revenuePhases = [
     phase: "Phase 1",
     title: "Relay-era revenue",
     items: [
-      "Pay-as-you-use relay traffic: free tier + overage (see below).",
+      "Pay-as-you-use relay traffic: free monthly credits, then bought credits (see below).",
       "Enterprise managed private network: companies pay for a hosted chakramcp-server deployment on their own domain with SLAs, SSO, and dedicated support.",
     ],
   },
@@ -653,14 +654,14 @@ export default function ConceptPage() {
             ))}
           </div>
 
-          {/* Pay-as-you-go pricing detail + 100-agent prediction. Sits
+          {/* Pay-as-you-go pricing detail + 100-account prediction. Sits
               under the revenue grid so the Phase 1 "pay-as-you-use"
               line above has a concrete model the reader can verify. */}
           <article className={styles.pricingNote}>
             <div className="eyebrow">Pay-as-you-use: what it looks like</div>
             <div className={styles.pricingGrid}>
               <div>
-                <div className={styles.pricingHead}>Free tier per agent / month</div>
+                <div className={styles.pricingHead}>Free per account / month</div>
                 <ul>
                   {usageTier.freeTier.map((line) => (
                     <li key={line}>{line}</li>
@@ -668,7 +669,7 @@ export default function ConceptPage() {
                 </ul>
               </div>
               <div>
-                <div className={styles.pricingHead}>Overage pricing</div>
+                <div className={styles.pricingHead}>Buying more</div>
                 <ul>
                   {usageTier.overage.map((line) => (
                     <li key={line}>{line}</li>

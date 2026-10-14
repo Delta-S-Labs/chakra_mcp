@@ -65,3 +65,9 @@ infra/chakramcp-server
 
 # Helm subcharts, fetched by `helm dependency build` from Chart.lock.
 charts/chakramcp/charts/
+
+# Binaries staged for image builds (image.yml, cli-release.yml, infra/e2e).
+/dist/
+
+# Credits P4: Dodo test-mode keys for the local end-to-end run (never committed).
+backend/.env.dodo-test

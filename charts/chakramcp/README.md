@@ -36,12 +36,14 @@ non-root user with a read-only root filesystem.
 | `imagePullSecrets` | `[]` | |
 | `replicaCount` | `1` | More are safe: migrations and credit accounting take locks, and rate-limit counters live in Redis |
 | `config.appPublicUrl`, `config.relayPublicUrl` | from the Ingress hosts | The URLs the server advertises: OAuth redirects and discovery documents |
-| `config.frontendPublicUrl` | `appPublicUrl` | Where the web frontend lives |
-| `config.adminEmail` | `""` | This account gets the server's admin role |
+| `config.frontendPublicUrl` | `appPublicUrl` | Where sign-in and pairing links point. The server serves its own sign-in pages at `appPublicUrl`; set this only if you run the web UI |
+| `config.signupEnabled` | unset (closed) | Public sign-up. Create accounts with `chakramcp-server users add` (see `NOTES.txt`) |
+| `config.creditsEnabled` | unset (off) | Credits: a monthly allowance per account. Amounts via `extraEnv` (`CREDITS_DEFAULT_MONTHLY_FREE_MC`, `CREDITS_COST_PER_INVOCATION_MC`, `LIMITS_DEFAULT_RATE_PER_MIN`) |
+| `config.adminEmail` | `""` | chakramcp.com only (`HOSTING_MODE=managed`); no effect on a self-hosted server |
 | `config.limitsEnforce` | `true` | `false`: over-limit calls are only logged |
 | `config.discoveryV2` | `true` | |
 | `config.rustLog` | `info,…,sqlx=warn` | The log filter; logs are JSON |
-| `secrets.existingSecret` | `""` | A Secret whose keys all become environment variables: `JWT_SECRET` (required), plus optional ones such as `UPSERT_SHARED_SECRET`, `GITHUB_CLIENT_SECRET` or `TYPESAFE_AI_KEY`. Unset: `JWT_SECRET` is generated once and kept. |
+| `secrets.existingSecret` | `""` | A Secret whose keys all become environment variables: `JWT_SECRET` (required), plus optional ones such as `TYPESAFE_AI_KEY`. Unset: `JWT_SECRET` is generated once and kept. |
 | `extraEnv`, `extraEnvFrom` | `[]` | More environment for the server |
 | `metrics.enabled`, `metrics.port` | `true`, `9464` | Prometheus metrics on their own port, never on the Ingress |
 | `service.type`, `service.appPort`, `service.relayPort` | `ClusterIP`, `8080`, `8090` | |

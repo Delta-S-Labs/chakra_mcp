@@ -33,6 +33,22 @@ up to date before a merge button enables. Inspect or change them at
 A required check must report on every PR, so these workflows run on all
 of them and skip their steps when nothing relevant changed.
 
+`self-host-e2e.yml` (`Self-host end to end`) isn't required yet. It runs
+on every PR and follows `docs/self-hosting/compose.md` with this commit's
+server and CLI (`infra/e2e/run.sh`):
+- start the stack;
+- create the admin with `chakramcp-server users add`;
+- sign in with `chakramcp login` through the server's own pages, driven by
+  a scripted browser;
+- create an API key and pair a device;
+- connect as an MCP client from the relay's URL alone;
+- check that sign-up is closed and credits are off.
+
+It runs on plain-HTTP `*.localhost` names. Locally:
+`CHAKRAMCP_IMAGE=<image> CHAKRAMCP_CLI=<chakramcp binary> infra/e2e/run.sh`
+(on macOS the sign-in step pairs instead, because the CLI opens the
+default browser there).
+
 Plus `.github/workflows/security-scan.yml` runs on every PR and
 **blocks** on leaked secrets via gitleaks. Other scans
 (`cargo audit`, `pnpm audit`, `pip-audit`, ZAP) are advisory:
@@ -69,6 +85,12 @@ dispatch). It runs four jobs:
    - `docker build -f infra/Dockerfile.thin` → `docker push` to
      `877326604850.dkr.ecr.us-east-1.amazonaws.com/chakramcp-server`
      with tags `${sha:0:7}` + `latest`.
+   - **Check that production runs as managed.** The server defaults to
+     `HOSTING_MODE=self_hosted`: credits off, public sign-up closed,
+     `ADMIN_EMAIL` ignored. chakramcp.com needs `HOSTING_MODE=managed`
+     in `/opt/chakramcp/.env`, and the deploy stops before touching the
+     VM if that exact line is missing. To fix it, append the line (back
+     the file up first; never `source` it) and re-run the workflow.
    - Copy `infra/docker-compose.prod.yml` (as `docker-compose.yml`)
      and the `Caddyfile` to `/opt/chakramcp`. `docker compose up -d
      --no-deps caddy` then recreates Caddy only when its definition

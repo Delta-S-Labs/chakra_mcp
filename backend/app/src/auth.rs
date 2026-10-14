@@ -97,7 +97,7 @@ impl FromRequestParts<AppState> for AuthUser {
 /// A nil jti (legacy token, pre-revocation field) is never matched —
 /// no row can exist with PK = nil — so this is a fast miss for old
 /// tokens still in flight.
-async fn is_token_revoked(db: &PgPool, jti: Uuid) -> Result<bool, ApiError> {
+pub(crate) async fn is_token_revoked(db: &PgPool, jti: Uuid) -> Result<bool, ApiError> {
     let row = sqlx::query!(
         r#"SELECT 1 as one FROM revoked_tokens WHERE jti = $1 LIMIT 1"#,
         jti,
@@ -126,6 +126,33 @@ impl FromRequestParts<AppState> for AdminUser {
     ) -> Result<Self, Self::Rejection> {
         let user = AuthUser::from_request_parts(parts, state).await?;
         if !user.is_admin || user.api_key_id.is_some() {
+            return Err(ApiError::Forbidden);
+        }
+        if let Some(jti) = user.jti {
+            if is_delegated_token(&state.db, jti).await? {
+                return Err(ApiError::Forbidden);
+            }
+        }
+        Ok(Self(user))
+    }
+}
+
+/// A person signed in to the web app: not an API key, and not a token
+/// minted for an OAuth client or a device pairing (MCP clients, the CLI,
+/// agents). Starting a credit checkout needs one (credits P4): it spends
+/// money, so only the person themselves may.
+#[derive(Debug, Clone)]
+pub struct InteractiveUser(pub AuthUser);
+
+impl FromRequestParts<AppState> for InteractiveUser {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let user = AuthUser::from_request_parts(parts, state).await?;
+        if user.api_key_id.is_some() {
             return Err(ApiError::Forbidden);
         }
         if let Some(jti) = user.jti {

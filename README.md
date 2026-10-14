@@ -11,7 +11,7 @@ everyone who doesn't.
 
 | Surface | What it is | How to install **today** |
 |---|---|---|
-| **`chakramcp` CLI** | Talk to a network from a terminal: manage agents, run an inbox loop, invoke, leave reviews. | ✅ `npm install -g @chakramcp/cli` *or* `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp` *or* `curl -fsSL https://chakramcp.com/install.sh \| sh` ([latest release v0.2.0](https://github.com/Delta-S-Labs/chakra_mcp/releases/tag/cli-v0.2.0)). `cargo install --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp-cli` is the source fallback. *(`crates.io` listing still planned.)* |
+| **`chakramcp` CLI** | Talk to a network from a terminal: manage agents, run an inbox loop, invoke, leave reviews. | ✅ `npm install -g @chakramcp/cli` *or* `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp` *or* `curl -fsSL https://chakramcp.com/install.sh \| sh` ([latest release v0.3.0](https://github.com/Delta-S-Labs/chakra_mcp/releases/tag/cli-v0.3.0)). `cargo install --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp-cli` is the source fallback. *(`crates.io` listing still planned.)* |
 | **`chakramcp-server`** | Run a private network on your own box. App + relay supervised in one process. | ✅ `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp-server` (Postgres pulled in automatically), or the container image `ghcr.io/delta-s-labs/chakramcp-server` (linux/amd64 + arm64; `:latest` is the newest release, `:edge` tracks main). Build from source: clone, then `cd backend && cargo build --release --bin chakramcp-server`. |
 | **MCP server** | OAuth 2.1 + PKCE for any MCP client (Claude Desktop, Cursor, Goose). | `https://relay.chakramcp.com/mcp` (or your self-host URL), runs as part of `chakramcp-server`. |
 | **TypeScript SDK** | API-key client for Node + browsers + Bun. ESM + CJS + types. | ✅ `npm install @chakramcp/sdk` ([npm](https://www.npmjs.com/package/@chakramcp/sdk)) |
@@ -130,7 +130,10 @@ No LLM keys, no mocks.
 
 ## Self-hosting
 
-The whole stack runs on one machine. Two paths today:
+The whole stack runs on one machine. The server serves its own sign-in,
+consent and device-pairing pages, so the CLI, MCP clients and SDKs need
+nothing else. Public sign-up starts closed and credits start off: you
+create accounts with `chakramcp-server users add`.
 
 **Build from source (developers):**
 
@@ -141,9 +144,11 @@ cargo build --release --bin chakramcp-server
 # Postgres prereq
 brew services start postgresql@16 && createdb chakramcp
 # Run
-./target/release/chakramcp-server init       # ~/.chakramcp/server.toml
+./target/release/chakramcp-server init       # writes server.toml and prints where
 ./target/release/chakramcp-server migrate
 ./target/release/chakramcp-server start
+# Your account (in another terminal)
+./target/release/chakramcp-server users add you@example.com --name "Your Name" --admin
 ```
 
 **Container image (linux/amd64 + arm64):**
@@ -186,9 +191,10 @@ brew install chakramcp-server
 ```
 
 The formula pulls in Postgres 16 as a dependency. After `brew
-install`, run `chakramcp-server init` to write `~/.chakramcp/server.toml`
-with a fresh JWT secret, then `chakramcp-server migrate` and
-`chakramcp-server start`.
+install`, run `chakramcp-server init` to write its `server.toml` (it
+prints where) with a fresh JWT secret, then `chakramcp-server migrate`,
+`chakramcp-server start` and
+`chakramcp-server users add you@example.com --name "Your Name" --admin`.
 
 Docker / Kubernetes / bare-metal options live in [`docs/INSTALL.md`](docs/INSTALL.md).
 
@@ -245,7 +251,7 @@ You'll want:
 | Tool | Why | Install |
 |---|---|---|
 | **[Task](https://taskfile.dev)** | Dev commands run through it. | `brew install go-task` |
-| **Node 20+ / pnpm 9+** | Frontend toolchain. | `brew install node && npm i -g pnpm` |
+| **Node 24+ / pnpm 9+** | Frontend toolchain. | `brew install node && npm i -g pnpm` |
 | **Rust stable + Postgres 16+** | Backend toolchain. | `rustup` and `brew install postgresql@16` |
 | **Docker** | One-shot Postgres for dev. | `brew install --cask docker` |
 

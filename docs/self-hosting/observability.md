@@ -9,8 +9,10 @@
 - **Loki** keeps logs for 14 days.
 - **Grafana** serves the dashboards and evaluates the alert rules.
 
-You get three dashboards (**Overview**, **Infrastructure** and **Logs**)
-and twelve alert rules. They're the same files production runs.
+You get four dashboards (**Overview**, **Infrastructure**, **Logs** and
+**Revenue**) and fifteen alert rules. They're the same files production
+runs. Revenue shows credit purchases, read straight from Postgres; it stays
+empty on a server that doesn't sell credits, which is any self-hosted one.
 
 ## Requirements
 
@@ -31,7 +33,8 @@ missing. If the journal is volatile, enabling persistent storage takes
 2. **`.env`** (see `infra/.env.example`):
    - `GRAFANA_DOMAIN`: that hostname;
    - `GRAFANA_ADMIN_PASSWORD`: the `admin` login;
-   - `PG_MONITOR_PASSWORD`: the collector's read-only Postgres role.
+   - `PG_MONITOR_PASSWORD`: the read-only Postgres role the collector
+     and Grafana's Revenue dashboard log in as.
 
    After setting `GRAFANA_DOMAIN`, apply it to Caddy:
    `docker compose -f docker-compose.prod.yml up -d caddy`.
@@ -144,10 +147,17 @@ obs logs --tail 50 grafana
 - **Prometheus, Loki and Alloy aren't published.** To reach one, tunnel
   to its container address, e.g. `ssh -L 9090:<ip>:9090 host`, where
   `<ip>` comes from `docker inspect` on the container.
+- **What Grafana can read in Postgres:** it logs in as
+  `chakramcp_monitor`, which has Postgres's read-only statistics
+  (`pg_monitor`) plus SELECT on the credit columns the Revenue dashboard
+  needs: amounts, statuses, times and account ids. It can't read emails,
+  user ids, payment ids or ledger metadata, and every query stops after
+  5 seconds. `deploy.sh` grants these through
+  `observability/scripts/ensure-monitor-role.sh` on every run.
 - **Rotating `PG_MONITOR_PASSWORD`:**
   1. Change it in `.env`.
   2. Run `obs exec -T pg psql -U chakramcp -d chakramcp -c "ALTER ROLE chakramcp_monitor PASSWORD '…'"`.
-  3. Run `obs up -d --force-recreate alloy`.
+  3. Run `obs up -d --force-recreate alloy grafana`.
 
 ## Kubernetes
 
@@ -177,7 +187,7 @@ For kube-prometheus-stack or anything like it, the chart renders:
   get the Overview; with `observability.loki.enabled`, also the Logs
   dashboard and the Overview's log panel. The Infrastructure dashboard is
   Compose-only; on Kubernetes, the cluster's own dashboards cover nodes
-  and pods.
+  and pods. So is Revenue: only chakramcp.com sells credits.
 - **Alert rules**: a ConfigMap labelled `grafana_alert: "1"`.
   kube-prometheus-stack's alerts sidecar is **off** by default and only
   watches Grafana's namespace, so turn it on and let it see the rules:

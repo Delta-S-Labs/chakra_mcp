@@ -123,7 +123,8 @@ services:
     networks: [observability]
 
   # Dashboards and alerting. The only piece reachable from outside, through
-  # Caddy at GRAFANA_DOMAIN. Sign-in: the admin login form by default, plus
+  # Caddy at GRAFANA_DOMAIN. On the internal network too, for the Revenue
+  # dashboard's read-only Postgres login (the collector's chakramcp_monitor). Sign-in: the admin login form by default, plus
   # GitHub, Google or a generic OIDC provider when configured; each provider
   # admits only whom GRAFANA_ROLE_ATTRIBUTE_PATH maps to a role (strict).
   grafana:
@@ -142,6 +143,8 @@ services:
       GF_SERVER_ROOT_URL: https://${GRAFANA_DOMAIN:-localhost}
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
+      # The Postgres datasource's password (provisioning/datasources).
+      PG_MONITOR_PASSWORD: ${PG_MONITOR_PASSWORD:?set PG_MONITOR_PASSWORD in .env}
       GF_SECURITY_COOKIE_SECURE: "true"
       GF_SECURITY_DISABLE_GRAVATAR: "true"
       # true once a provider works: the admin then signs in only from inside
@@ -215,7 +218,7 @@ services:
         read_only: true
         bind: { create_host_path: false }
       - grafana_data:/var/lib/grafana
-    networks: [observability]
+    networks: [internal, observability]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
       interval: 15s

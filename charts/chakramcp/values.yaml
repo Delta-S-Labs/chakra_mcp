@@ -24,9 +24,18 @@ config:
   # on, else the server's localhost defaults.
   appPublicUrl: ""
   relayPublicUrl: ""
-  # Where the web frontend lives, when not on appPublicUrl.
+  # Where sign-in and device-pairing links point. Unset: appPublicUrl, where
+  # the server serves its own sign-in pages. Set it only if you run the web UI.
   frontendPublicUrl: ""
-  # This account gets the server's admin role.
+  # Public sign-up (true or false). Unset: closed. Create accounts with
+  # `chakramcp-server users add` (NOTES.txt prints the command).
+  signupEnabled: null
+  # Credits (true or false). Unset: off, so nobody is refused for running
+  # out. Amounts go through extraEnv: CREDITS_DEFAULT_MONTHLY_FREE_MC,
+  # CREDITS_COST_PER_INVOCATION_MC, LIMITS_DEFAULT_RATE_PER_MIN.
+  creditsEnabled: null
+  # For chakramcp.com (HOSTING_MODE=managed) only: no effect on a
+  # self-hosted server, whose admins are made with `chakramcp-server users`.
   adminEmail: ""
   # true: over-limit calls are refused (429); false: logged only.
   limitsEnforce: true
@@ -35,8 +44,7 @@ config:
 
 secrets:
   # A Secret whose keys all become environment variables: JWT_SECRET
-  # (required) and any optional ones, e.g. UPSERT_SHARED_SECRET,
-  # GOOGLE_CLIENT_SECRET, GITHUB_CLIENT_SECRET, TYPESAFE_AI_KEY. Without it
+  # (required) and any optional ones, e.g. TYPESAFE_AI_KEY. Without it
   # the chart generates JWT_SECRET once and keeps it across upgrades
   # (`lookup`), which GitOps tools can't do: set this with Argo CD or Flux.
   existingSecret: ""

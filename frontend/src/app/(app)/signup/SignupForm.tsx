@@ -6,6 +6,7 @@ import ReCAPTCHA from "react-google-recaptcha";
 import { signupWithPassword } from "@/lib/api";
 import styles from "../login/login.module.css";
 import { OAuthProviders } from "../login/OAuthProviders";
+import { safeRedirect } from "@/lib/safe-redirect";
 
 export function SignupForm({
   captchaEnabled,
@@ -57,6 +58,7 @@ export function SignupForm({
     }
 
     setPending(true);
+    const target = safeRedirect(redirectTo);
     try {
       // Create the account on the backend first.
       await signupWithPassword({ email: email.trim(), password, name: name.trim() });
@@ -65,13 +67,13 @@ export function SignupForm({
       const result = await signIn("password", {
         email: email.trim(),
         password,
-        redirectTo,
+        redirectTo: target,
         redirect: false,
       });
       if (result?.error) {
         setError("Account created, but sign-in failed. Try signing in.");
       } else {
-        window.location.href = redirectTo;
+        window.location.assign(target);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign-up failed.");

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Create the chakramcp_monitor role the collector's Postgres exporter logs
-# in as: a member of pg_monitor (read-only statistics), nothing else.
-# Idempotent. The password is sent only when the role is created — a
+# Create the chakramcp_monitor role the collector's Postgres exporter and
+# Grafana's Revenue dashboard log in as: a member of pg_monitor (read-only
+# statistics), plus SELECT on the credit columns that dashboard reads.
+# Never emails, user ids, payment ids or ledger metadata. Idempotent. The password is sent only when the role is created — a
 # failing statement is logged verbatim, and Postgres's logs go to Loki.
 # Rotating it is a manual step (docs/CI-CD.md).
 #
@@ -33,10 +34,34 @@ if [ "$(psql_pg -c "SELECT 1 FROM pg_roles WHERE rolname = 'chakramcp_monitor'")
   echo "created role chakramcp_monitor"
 fi
 
-# No password in these; safe to repeat on every deploy.
+# No password in these; safe to repeat on every deploy. Only the listed
+# columns that exist are granted: a table an older server image hasn't
+# created, or a column a later migration drops, is skipped rather than
+# failing the deploy (and a column grant never blocks a migration).
 psql_pg <<'SQL'
 SET client_min_messages = warning;
 GRANT pg_monitor TO chakramcp_monitor;
 ALTER ROLE chakramcp_monitor SET statement_timeout = '5s';
+DO $grants$
+DECLARE
+  g text[];
+  cols text;
+BEGIN
+  FOREACH g SLICE 1 IN ARRAY ARRAY[
+    ['credit_checkouts', 'id,account_id,amount_cents,currency,credits_mc,status,unapplied_reason,created_at,updated_at,paid_at'],
+    ['credit_ledger', 'id,account_id,delta_mc,reason,created_at'],
+    ['credit_wallets', 'account_id,balance_mc,unlimited'],
+    ['invocation_charges', 'account_id,cost_mc,charged_at']
+  ] LOOP
+    SELECT string_agg(quote_ident(column_name), ', ') INTO cols
+      FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = g[1]
+       AND column_name = ANY (string_to_array(g[2], ','));
+    IF cols IS NOT NULL THEN
+      EXECUTE format('GRANT SELECT (%s) ON %I TO chakramcp_monitor', cols, g[1]);
+    END IF;
+  END LOOP;
+END
+$grants$;
 SQL
 echo "chakramcp_monitor: ok"
