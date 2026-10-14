@@ -16,12 +16,16 @@ pub enum Error {
 
     /// The relay/app responded with a non-2xx status. `code` and
     /// `message` come from the standard `{"error":{"code","message"}}`
-    /// envelope; `body` is the raw response body for debugging.
+    /// envelope; when the body isn't one, `message` is the raw body.
     #[error("[{status} {code}] {message}")]
     Api {
         status: u16,
         code: String,
         message: String,
+        /// Seconds to wait before retrying, when the server says: the
+        /// `Retry-After` header, else the body's `retry_after_secs`.
+        /// `None` when it says neither (most errors, and older servers).
+        retry_after_secs: Option<u64>,
     },
 
     /// Public-invoke monthly quota exhausted (HTTP 429, body code
@@ -33,6 +37,32 @@ pub enum Error {
         message: String,
         quota: i32,
         resets_at: chrono::DateTime<chrono::Utc>,
+        /// The `Retry-After` delay in seconds, as on [`Error::Api`].
+        retry_after_secs: Option<u64>,
+    },
+
+    /// The calling account is over its per-minute rate limit (HTTP
+    /// 429, body code `account_rate_limited`). `retry_after_secs` is
+    /// the rest of the minute (`None` on older servers). The SDK
+    /// doesn't retry on its own.
+    #[error("[429 account_rate_limited] {message}")]
+    RateLimited {
+        message: String,
+        retry_after_secs: Option<u64>,
+    },
+
+    /// The calling account is out of credits (HTTP 429, body code
+    /// `account_credits_exhausted`). `retry_after_secs` runs until the
+    /// next free monthly grant (`next_grant_at`) and can be weeks long;
+    /// buying credits works at once. `credits_url` is where to buy
+    /// them, and is `None` on self-hosted servers. All three are `None`
+    /// on older servers.
+    #[error("[429 account_credits_exhausted] {message}")]
+    CreditsExhausted {
+        message: String,
+        retry_after_secs: Option<u64>,
+        next_grant_at: Option<chrono::DateTime<chrono::Utc>>,
+        credits_url: Option<String>,
     },
 
     #[error("invocation timed out after {0:?} - still in flight; check the audit log")]
@@ -43,6 +73,29 @@ pub enum Error {
         status: String,
         message: Option<String>,
     },
+}
+
+impl Error {
+    /// Seconds to wait before retrying, from whichever API error
+    /// variant this is. `None` for other errors, and when the server
+    /// sent no delay.
+    pub fn retry_after_secs(&self) -> Option<u64> {
+        match self {
+            Error::Api {
+                retry_after_secs, ..
+            }
+            | Error::QuotaExhausted {
+                retry_after_secs, ..
+            }
+            | Error::RateLimited {
+                retry_after_secs, ..
+            }
+            | Error::CreditsExhausted {
+                retry_after_secs, ..
+            } => *retry_after_secs,
+            _ => None,
+        }
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

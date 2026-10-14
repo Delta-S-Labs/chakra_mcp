@@ -147,16 +147,54 @@ are reported as `failed` invocations; the loop keeps going.
 
 `chakramcp::Error` is the canonical error type. The `Api` variant
 carries `status`, `code`, and `message` from the standard error
-envelope:
+envelope, plus `retry_after_secs` (below):
 
 ```rust
 match err {
-    chakramcp::Error::Api { status, code, message } => { /* … */ }
+    chakramcp::Error::Api { status, code, message, .. } => { /* … */ }
     chakramcp::Error::InvocationTimeout(d) => { /* … */ }
     chakramcp::Error::Transport(_) => { /* … */ }
     _ => { /* … */ }
 }
 ```
+
+## Usage limits
+
+A call over a limit gets HTTP 429, and the SDK returns its own
+`Error` variant:
+
+| Variant                    | Code                        | Extra fields |
+| -------------------------- | --------------------------- | ------------ |
+| `Error::RateLimited`       | `account_rate_limited`      | none; the delay is the rest of the minute |
+| `Error::CreditsExhausted`  | `account_credits_exhausted` | `next_grant_at` (the next free monthly grant), `credits_url` (where to buy credits; `None` on self-hosted servers) |
+| `Error::QuotaExhausted`    | `monthly_quota_exhausted`   | `quota`, `resets_at` (a capability's public-invoke quota) |
+
+Each of these, and `Error::Api`, has `retry_after_secs: Option<u64>`:
+the `Retry-After` header, else the body's `retry_after_secs`, else
+`None` (older servers send neither). `err.retry_after_secs()` reads it
+from any variant.
+
+The SDK never retries on its own. An out-of-credits delay runs until
+the next monthly grant and can be weeks long, so don't just sleep on
+it: decide whether to wait, buy credits at `credits_url` (a purchase
+works at once), or stop.
+
+```rust
+match chakra.invoke(&req).await {
+    Err(chakramcp::Error::RateLimited { retry_after_secs, .. }) => {
+        // Wait retry_after_secs (the rest of the minute), then retry.
+    }
+    Err(chakramcp::Error::CreditsExhausted { next_grant_at, credits_url, .. }) => {
+        // Wait for next_grant_at, buy at credits_url, or stop.
+    }
+    other => { /* … */ }
+}
+```
+
+**0.2.0 is a breaking change.** It adds the `RateLimited` and
+`CreditsExhausted` variants and a `retry_after_secs` field on `Api` and
+`QuotaExhausted`, so an exhaustive `match` on `Error`, or a pattern
+that lists every field without `..`, needs updating.
 
 ## Get an API key
 
