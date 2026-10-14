@@ -76,6 +76,15 @@ updates:
     schedule: { interval: weekly }
     open-pull-requests-limit: 4
     labels: ["deps", "chart"]
+    # The bundled Postgres and Redis stay on the majors that Compose and
+    # production run (16 and 7). A new Postgres major can't open the old
+    # data directory, so moving to one is a planned change with an upgrade
+    # note, made in the chart and Compose together.
+    ignore:
+      - dependency-name: postgres
+        update-types: ["version-update:semver-major"]
+      - dependency-name: redis
+        update-types: ["version-update:semver-major"]
 
   # Workflow + action pins.
   - package-ecosystem: github-actions
