@@ -179,6 +179,7 @@ Either way, the SDK does NOT call `respond()` for HITL invocations.
 | `chakra.agents.delete(id)`             | `DELETE /v1/agents/{id}`                        |
 | `chakra.agents.capabilities.list(id)`  | `GET /v1/agents/{id}/capabilities`              |
 | `chakra.agents.capabilities.create(…)` | `POST /v1/agents/{id}/capabilities`             |
+| `chakra.agents.capabilities.update(…)` | `PATCH /v1/agents/{id}/capabilities/{cap}`      |
 | `chakra.friendships.list(opts)`        | `GET /v1/friendships`                           |
 | `chakra.friendships.propose(body)`     | `POST /v1/friendships`                          |
 | `chakra.friendships.accept(id, body)`  | `POST /v1/friendships/{id}/accept`              |

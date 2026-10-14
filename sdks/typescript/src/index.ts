@@ -58,6 +58,7 @@ import {
   RevokeGrantRequest,
   TERMINAL_STATUSES,
   UpdateAgentRequest,
+  UpdateCapabilityRequest,
   Visibility,
   WriteReviewRequest,
 } from "./types.js";
@@ -328,6 +329,16 @@ export class AgentsClient {
         body,
       );
     },
+    update: (
+      agentId: string,
+      capabilityId: string,
+      body: UpdateCapabilityRequest,
+    ): Promise<Capability> =>
+      this.chakra.relayRequest(
+        "PATCH",
+        `/v1/agents/${encodeURIComponent(agentId)}/capabilities/${encodeURIComponent(capabilityId)}`,
+        body,
+      ),
     delete: (agentId: string, capabilityId: string): Promise<void> =>
       this.chakra.relayRequest(
         "DELETE",

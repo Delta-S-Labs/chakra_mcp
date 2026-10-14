@@ -68,6 +68,34 @@ describe("ChakraMCP", () => {
     } satisfies Partial<ChakraMCPError>);
   });
 
+  it("capabilities.update PATCHes the capability on the relay", async () => {
+    const seen: { method: string; url: string; body: unknown }[] = [];
+    const sdk = new ChakraMCP({
+      apiKey: "ck_test",
+      relayUrl: "http://relay",
+      fetch: mockFetch(async (req) => {
+        seen.push({ method: req.method, url: req.url, body: await req.json() });
+        expect(req.headers.get("content-type")).toBe("application/json");
+        return new Response(
+          JSON.stringify({ id: "cap 1", name: "echo", description: "now louder", visibility: "network" }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }),
+    });
+    const cap = await sdk.agents.capabilities.update("agent-1", "cap 1", {
+      description: "now louder",
+      visibility: "network",
+    });
+    expect(cap.description).toBe("now louder");
+    expect(seen).toEqual([
+      {
+        method: "PATCH",
+        url: "http://relay/v1/agents/agent-1/capabilities/cap%201",
+        body: { description: "now louder", visibility: "network" },
+      },
+    ]);
+  });
+
   it("invokeAndWait polls until terminal", async () => {
     let calls = 0;
     const fetchStub = vi.fn(
