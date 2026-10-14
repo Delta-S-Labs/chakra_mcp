@@ -17,7 +17,7 @@ use serde_json::{json, Map, Value};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use chakramcp_shared::credits::{is_blocked, CreditsConfig};
+use chakramcp_shared::credits::{is_blocked, is_low, CreditsConfig};
 use chakramcp_shared::error::{ApiError, ApiResult};
 
 use crate::purchases::{self, PaymentView, PurchaseInfo};
@@ -77,6 +77,11 @@ pub struct CreditsView {
     /// `active`, `blocked` (out of credits), `unlimited`, or `off` when
     /// credits are switched off on this server.
     pub status: &'static str,
+    /// Running low: an `active` account holding less than `low_balance_mc`
+    /// (credits P5). The status stays `active`, so no client's switch breaks.
+    pub low: bool,
+    /// The "running low" threshold in effect (milli-credits).
+    pub low_balance_mc: i64,
     pub cost_per_invocation_mc: i64,
     /// The monthly free grant in effect, and the override behind it
     /// (`None` = the global default).
@@ -429,6 +434,14 @@ pub async fn load_view(
     } else {
         "active"
     };
+    let low = status == "active"
+        && is_low(
+            balance_mc,
+            period.is_some(),
+            unlimited,
+            cfg.cost_per_invocation_mc,
+            cfg.low_below_mc(),
+        );
 
     Ok(CreditsView {
         account_id,
@@ -436,6 +449,8 @@ pub async fn load_view(
         has_wallet: wallet.is_some(),
         enabled: cfg.enabled,
         status,
+        low,
+        low_balance_mc: cfg.low_balance_mc,
         cost_per_invocation_mc: cfg.cost_per_invocation_mc,
         monthly_free_grant_mc: grant_override_or_default(grant_override, cfg),
         monthly_free_grant_override_mc: grant_override,
@@ -464,6 +479,81 @@ pub async fn load_view(
         payments,
         purchase: None,
     })
+}
+
+/// One of the signed-in user's accounts that is running low or out of
+/// credits, for the app's banner (credits P5).
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct CreditAlert {
+    pub account_slug: String,
+    pub account_name: String,
+    /// `individual` (the user's personal account) or `organization`.
+    pub account_type: String,
+    /// `low` or `blocked`.
+    pub state: &'static str,
+    pub balance_mc: i64,
+    /// Whole invocations the balance still pays for (0 when blocked).
+    pub calls_left: i64,
+    /// When the next free grant lands (the first of next month, UTC).
+    pub next_grant_on: NaiveDate,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CreditAlerts {
+    pub alerts: Vec<CreditAlert>,
+    /// Whether credits can be bought here (chakramcp.com with purchasing
+    /// configured), so the banner offers "Buy credits" or just a link.
+    pub purchase_available: bool,
+}
+
+/// The user's accounts that are running low or out of credits, lowest
+/// balance first. Empty when credits are off. Same rules as the relay's
+/// switches (`is_blocked`, `is_low`); deleted accounts are left out.
+pub async fn credit_alerts(
+    db: &PgPool,
+    cfg: &CreditsConfig,
+    user_id: Uuid,
+) -> ApiResult<Vec<CreditAlert>> {
+    if !cfg.enabled {
+        return Ok(Vec::new());
+    }
+    let below = cfg.low_below_mc().max(cfg.block_below_mc());
+    let rows = sqlx::query!(
+        r#"
+        SELECT a.slug, a.display_name, a.account_type, w.balance_mc,
+               (date_trunc('month', now() AT TIME ZONE 'UTC') + interval '1 month')::date
+                   AS "next_grant_on!"
+          FROM account_memberships m
+          JOIN accounts a ON a.id = m.account_id
+          JOIN credit_wallets w ON w.account_id = a.id
+         WHERE m.user_id = $1
+           AND a.tombstoned_at IS NULL
+           AND NOT w.unlimited
+           AND w.free_grant_period IS NOT NULL
+           AND w.balance_mc < $2
+         ORDER BY w.balance_mc, a.slug
+        "#,
+        user_id,
+        below,
+    )
+    .fetch_all(db)
+    .await?;
+    let cost = cfg.cost_per_invocation_mc;
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            let blocked = is_blocked(r.balance_mc, true, false, cost);
+            CreditAlert {
+                account_slug: r.slug,
+                account_name: r.display_name,
+                account_type: r.account_type,
+                state: if blocked { "blocked" } else { "low" },
+                balance_mc: r.balance_mc,
+                calls_left: (r.balance_mc / cost).max(0),
+                next_grant_on: r.next_grant_on,
+            }
+        })
+        .collect())
 }
 
 fn grant_override_or_default(grant_override: Option<i64>, cfg: &CreditsConfig) -> i64 {
@@ -627,6 +717,83 @@ mod tests {
         let view = load_view(&pool, &on, account, true).await.unwrap();
         assert!(view.enabled);
         assert_eq!(view.status, "blocked");
+    }
+
+    async fn granted_wallet(pool: &PgPool, account: Uuid, balance_mc: i64) {
+        sqlx::query(
+            "INSERT INTO credit_wallets (account_id, balance_mc, free_grant_period)
+             VALUES ($1, $2, date_trunc('month', now() AT TIME ZONE 'UTC')::date)
+             ON CONFLICT (account_id) DO UPDATE SET balance_mc = EXCLUDED.balance_mc",
+        )
+        .bind(account)
+        .bind(balance_mc)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn the_view_flags_a_low_balance(pool: PgPool) {
+        let (_, _, account) = seed_user_with_personal(&pool, "low").await;
+        granted_wallet(&pool, account, 50_000).await;
+        let view = load_view(&pool, &CreditsConfig::default(), account, false)
+            .await
+            .unwrap();
+        assert_eq!(view.status, "active", "the status doesn't change");
+        assert!(view.low);
+        assert_eq!(view.low_balance_mc, 100_000);
+
+        granted_wallet(&pool, account, 50).await;
+        let view = load_view(&pool, &CreditsConfig::default(), account, false)
+            .await
+            .unwrap();
+        assert_eq!(view.status, "blocked");
+        assert!(!view.low, "blocked, not low");
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn credit_alerts_list_only_the_users_short_accounts(pool: PgPool) {
+        let (alice, _, mine) = seed_user_with_personal(&pool, "alice").await;
+        let (_, _, theirs) = seed_user_with_personal(&pool, "bob").await;
+        let (carol, _, plenty) = seed_user_with_personal(&pool, "carol").await;
+        granted_wallet(&pool, mine, 50_000).await;
+        granted_wallet(&pool, theirs, 10).await;
+        granted_wallet(&pool, plenty, 9_000_000).await;
+        let cfg = CreditsConfig::default();
+
+        let alerts = credit_alerts(&pool, &cfg, alice.user_id).await.unwrap();
+        assert_eq!(alerts.len(), 1, "only her own account");
+        assert_eq!(alerts[0].state, "low");
+        assert_eq!(alerts[0].calls_left, 500);
+        assert_eq!(alerts[0].account_type, "individual");
+        assert!(credit_alerts(&pool, &cfg, carol.user_id)
+            .await
+            .unwrap()
+            .is_empty());
+
+        granted_wallet(&pool, mine, -20).await;
+        let alerts = credit_alerts(&pool, &cfg, alice.user_id).await.unwrap();
+        assert_eq!(alerts[0].state, "blocked");
+        assert_eq!(alerts[0].calls_left, 0, "clamped");
+
+        let off = CreditsConfig {
+            enabled: false,
+            ..CreditsConfig::default()
+        };
+        assert!(credit_alerts(&pool, &off, alice.user_id)
+            .await
+            .unwrap()
+            .is_empty());
+
+        sqlx::query("UPDATE accounts SET tombstoned_at = now() WHERE id = $1")
+            .bind(mine)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(credit_alerts(&pool, &cfg, alice.user_id)
+            .await
+            .unwrap()
+            .is_empty());
     }
 
     #[sqlx::test(migrations = "../migrations")]

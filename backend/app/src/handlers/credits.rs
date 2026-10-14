@@ -39,6 +39,20 @@ pub async fn account_credits(
 }
 
 // ─────────────────────────────────────────────────────────
+// GET /v1/me/credit-alerts — the signed-in user's accounts that are
+// running low or out of credits (credits P5, the app's banner)
+// ─────────────────────────────────────────────────────────
+pub async fn credit_alerts(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<credits_service::CreditAlerts>> {
+    Ok(Json(credits_service::CreditAlerts {
+        alerts: credits_service::credit_alerts(&state.db, &state.credits, user.user_id).await?,
+        purchase_available: state.purchase.is_some(),
+    }))
+}
+
+// ─────────────────────────────────────────────────────────
 // GET /v1/admin/accounts/{account_id}/credits
 // ─────────────────────────────────────────────────────────
 pub async fn admin_account_credits(

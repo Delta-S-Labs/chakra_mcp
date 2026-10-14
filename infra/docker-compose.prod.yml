@@ -112,6 +112,9 @@ services:
       CREDITS_DEFAULT_MONTHLY_FREE_MC: ${CREDITS_DEFAULT_MONTHLY_FREE_MC:-5000000}
       CREDITS_COST_PER_INVOCATION_MC: ${CREDITS_COST_PER_INVOCATION_MC:-100}
       LIMITS_DEFAULT_RATE_PER_MIN: ${LIMITS_DEFAULT_RATE_PER_MIN:-60}
+      # Empty means the server's default (100 credits, at least the cost of a
+      # call). Older images don't read it, so empty is safe for them.
+      CREDITS_LOW_BALANCE_MC: ${CREDITS_LOW_BALANCE_MC:-}
       # Usage-limit enforcement. Default true = ENFORCING: over-limit calls are
       # denied (429: over the per-minute rate limit, or, with credits on, out
       # of credits). To fall back to shadow mode (log `limit.would_block`,

@@ -86,6 +86,9 @@ pub async fn handle(
         return reply_err(id, ERR_INVALID_REQUEST, "jsonrpc must be '2.0'");
     }
 
+    // What the `invoke` tool tells its caller about its limits (credits P6),
+    // sent as headers on the HTTP response.
+    let mut signals = crate::limits::LimitSignals::default();
     let result = match req.method.as_str() {
         "initialize" => Ok(initialize_result()),
         "notifications/initialized" | "notifications/cancelled" => {
@@ -93,14 +96,17 @@ pub async fn handle(
             return StatusCode::NO_CONTENT.into_response();
         }
         "tools/list" => Ok(tools_list_result()),
-        "tools/call" => {
-            let result = call_tool(&state, &user, req.params).await;
-            if result.is_err() {
+        "tools/call" => match call_tool(&state, &user, req.params).await {
+            Ok((value, tool_signals)) => {
+                signals = tool_signals;
+                Ok(value)
+            }
+            Err(e) => {
                 // Refused before any tool ran: unknown tool or malformed params.
                 crate::telemetry::record_tool_call(crate::telemetry::UNKNOWN_TOOL, false);
+                Err(e)
             }
-            result
-        }
+        },
         "ping" => Ok(json!({})),
         _ => Err(rpc_err(
             ERR_METHOD_NOT_FOUND,
@@ -112,7 +118,7 @@ pub async fn handle(
         return StatusCode::NO_CONTENT.into_response();
     }
 
-    match result {
+    let mut response = match result {
         Ok(value) => Json(RpcResponse {
             jsonrpc: "2.0",
             id,
@@ -127,7 +133,9 @@ pub async fn handle(
             error: Some(e),
         })
         .into_response(),
-    }
+    };
+    signals.apply(response.headers_mut());
+    response
 }
 
 fn reply_err(id: Value, code: i32, message: impl Into<String>) -> Response {
@@ -161,8 +169,47 @@ fn api_err_to_rpc(e: ApiError) -> RpcError {
         NotFound => (ERR_INVALID_REQUEST, "not found".into()),
         Conflict(m) => (ERR_INVALID_REQUEST, m.clone()),
         // Usage limits: a client-side "back off" error (no JSON-RPC 429). The
-        // message ("rate limit exceeded" / "insufficient credits") conveys it.
-        RateLimited | InsufficientCredits => (ERR_INVALID_REQUEST, e.to_string()),
+        // message says when to retry; `data` carries the same as fields.
+        RateLimited {
+            limit,
+            retry_after_secs,
+        } => {
+            return RpcError {
+                code: ERR_INVALID_REQUEST,
+                message: format!("{e}; retry in {retry_after_secs} s"),
+                data: Some(json!({
+                    "code": "account_rate_limited",
+                    "limit": limit,
+                    "retry_after_secs": retry_after_secs,
+                })),
+            };
+        }
+        InsufficientCredits {
+            retry_after_secs,
+            next_grant_at,
+            credits_url,
+        } => {
+            let when = next_grant_at.format("%Y-%m-%d");
+            let message = match credits_url {
+                Some(url) => {
+                    format!("{e}; the free grant arrives on {when}, or buy credits at {url}")
+                }
+                None => format!("{e}; the free grant arrives on {when}"),
+            };
+            let mut data = json!({
+                "code": "account_credits_exhausted",
+                "retry_after_secs": retry_after_secs,
+                "next_grant_at": next_grant_at,
+            });
+            if let Some(url) = credits_url {
+                data["credits_url"] = json!(url);
+            }
+            return RpcError {
+                code: ERR_INVALID_REQUEST,
+                message,
+                data: Some(data),
+            };
+        }
         // The app's sign-up, sign-in and checkout errors; the relay never
         // returns them.
         SignupDisabled | SigninRateLimited { .. } | TooManyCheckouts => {
@@ -503,7 +550,14 @@ struct CallParams {
     arguments: Value,
 }
 
-async fn call_tool(state: &RelayState, user: &AuthUser, params: Value) -> Result<Value, RpcError> {
+/// Run one tool. Besides the MCP result envelope, returns what the caller is
+/// told about its limits (only `invoke` sets any), for the HTTP headers.
+async fn call_tool(
+    state: &RelayState,
+    user: &AuthUser,
+    params: Value,
+) -> Result<(Value, crate::limits::LimitSignals), RpcError> {
+    let mut signals = crate::limits::LimitSignals::default();
     let p: CallParams = serde_json::from_value(params)
         .map_err(|e| rpc_err(ERR_INVALID_PARAMS, format!("malformed call params: {e}")))?;
 
@@ -514,7 +568,10 @@ async fn call_tool(state: &RelayState, user: &AuthUser, params: Value) -> Result
         "list_network_agents" => list_network_agents(&state.db, user).await,
         "list_grants" => list_grants(&state.db, user, p.arguments).await,
         "list_friendships" => list_friendships(&state.db, user, p.arguments).await,
-        "invoke" => invoke(state, user, p.arguments).await,
+        "invoke" => invoke(state, user, p.arguments).await.map(|(value, sig)| {
+            signals = sig;
+            value
+        }),
         "poll_invocation" => poll_invocation(&state.db, user, p.arguments).await,
         "pull_inbox" => pull_inbox(&state.db, user, p.arguments).await,
         "list_invocations" => list_invocations(&state.db, user, p.arguments).await,
@@ -568,6 +625,9 @@ async fn call_tool(state: &RelayState, user: &AuthUser, params: Value) -> Result
             if value.is_object() {
                 envelope["structuredContent"] = value;
             }
+            if signals.credits_low {
+                envelope["_meta"] = json!({ "chakramcp/credits": "low" });
+            }
             (envelope, true)
         }
         Err(api_err) => {
@@ -575,15 +635,18 @@ async fn call_tool(state: &RelayState, user: &AuthUser, params: Value) -> Result
             // with isError=true so the LLM can read them, *not* as a
             // protocol-level RPC error.
             let rpc = api_err_to_rpc(api_err);
-            (
-                json!({
-                    "content": [
-                        { "type": "text", "text": format!("Error: {}", rpc.message) }
-                    ],
-                    "isError": true,
-                }),
-                false,
-            )
+            let mut envelope = json!({
+                "content": [
+                    { "type": "text", "text": format!("Error: {}", rpc.message) }
+                ],
+                "isError": true,
+            });
+            // A usage-limit refusal also comes back as fields (retry hint,
+            // next grant, where to buy) for clients that read them.
+            if let Some(data) = rpc.data {
+                envelope["structuredContent"] = data;
+            }
+            (envelope, false)
         }
     };
 
@@ -601,7 +664,7 @@ async fn call_tool(state: &RelayState, user: &AuthUser, params: Value) -> Result
         status_code: if ok { 200 } else { 400 },
     });
 
-    Ok(envelope)
+    Ok((envelope, signals))
 }
 
 // ─── Tool implementations ────────────────────────────────
@@ -897,7 +960,11 @@ async fn list_friendships(db: &PgPool, user: &AuthUser, args: Value) -> Result<V
         .collect::<Vec<_>>()))
 }
 
-async fn invoke(state: &RelayState, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
+async fn invoke(
+    state: &RelayState,
+    user: &AuthUser,
+    args: Value,
+) -> Result<(Value, crate::limits::LimitSignals), ApiError> {
     #[derive(Deserialize)]
     struct A {
         grant_id: Uuid,
@@ -920,9 +987,13 @@ async fn invoke(state: &RelayState, user: &AuthUser, args: Value) -> Result<Valu
     )
     .await?
     {
-        TrustedOutcome::Enqueued { invocation_id } => {
-            Ok(json!({ "invocation_id": invocation_id, "status": "pending" }))
-        }
+        TrustedOutcome::Enqueued {
+            invocation_id,
+            signals,
+        } => Ok((
+            json!({ "invocation_id": invocation_id, "status": "pending" }),
+            signals,
+        )),
         // The rejection is already recorded; surface it as a tool error.
         TrustedOutcome::Rejected { status, error, .. } => {
             Err(if status == StatusCode::BAD_REQUEST {
@@ -1738,12 +1809,43 @@ mod manage_agents_tests {
     #[test]
     fn usage_limit_refusals_map_to_a_client_side_rpc_error() {
         use chakramcp_shared::error::ApiError;
-        let credits = super::api_err_to_rpc(ApiError::InsufficientCredits);
-        assert_eq!(credits.code, super::ERR_INVALID_REQUEST);
-        assert_eq!(credits.message, "insufficient credits");
-        let rate = super::api_err_to_rpc(ApiError::RateLimited);
+        let next_grant_at = chrono::DateTime::parse_from_rfc3339("2026-11-01T00:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let managed = super::api_err_to_rpc(ApiError::InsufficientCredits {
+            retry_after_secs: 600,
+            next_grant_at,
+            credits_url: Some("https://chakramcp.com/app/credits".into()),
+        });
+        assert_eq!(managed.code, super::ERR_INVALID_REQUEST);
+        assert_eq!(
+            managed.message,
+            "insufficient credits; the free grant arrives on 2026-11-01, \
+             or buy credits at https://chakramcp.com/app/credits"
+        );
+        let data = managed.data.unwrap();
+        assert_eq!(data["code"], "account_credits_exhausted");
+        assert_eq!(data["retry_after_secs"], 600);
+        assert_eq!(data["credits_url"], "https://chakramcp.com/app/credits");
+
+        let self_hosted = super::api_err_to_rpc(ApiError::InsufficientCredits {
+            retry_after_secs: 600,
+            next_grant_at,
+            credits_url: None,
+        });
+        assert_eq!(
+            self_hosted.message,
+            "insufficient credits; the free grant arrives on 2026-11-01"
+        );
+        assert!(self_hosted.data.unwrap().get("credits_url").is_none());
+
+        let rate = super::api_err_to_rpc(ApiError::RateLimited {
+            limit: 60,
+            retry_after_secs: 23,
+        });
         assert_eq!(rate.code, super::ERR_INVALID_REQUEST);
-        assert_eq!(rate.message, "rate limit exceeded");
+        assert_eq!(rate.message, "rate limit exceeded; retry in 23 s");
+        assert_eq!(rate.data.unwrap()["retry_after_secs"], 23);
     }
 
     /// State whose usage recorder has a live background writer, so tests can
@@ -2601,6 +2703,29 @@ mod manage_agents_tests {
     }
 
     #[sqlx::test(migrations = "../migrations")]
+    async fn invoke_flags_a_low_balance(pool: PgPool) {
+        let (token, a, grant, _) = seed_granted_pair(&pool).await;
+        let cache = crate::limits::CreditCache::default();
+        cache.replace_all(
+            std::collections::HashSet::new(),
+            std::collections::HashSet::from([agent_account(&pool, &a).await]),
+            std::collections::HashMap::new(),
+        );
+        let state = recording_state(&pool)
+            .with_limits_enforce(true)
+            .with_credit_cache(std::sync::Arc::new(cache));
+        let res = call_on(
+            state,
+            &token,
+            "invoke",
+            json!({ "grant_id": grant, "grantee_agent_id": a, "input": { "q": 1 } }),
+        )
+        .await;
+        assert_eq!(res["isError"], json!(false), "invoke: {res}");
+        assert_eq!(res["_meta"]["chakramcp/credits"], json!("low"));
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
     async fn invoke_refused_when_out_of_credits(pool: PgPool) {
         let (token, a, grant, _) = seed_granted_pair(&pool).await;
         let credits =
@@ -2617,9 +2742,25 @@ mod manage_agents_tests {
         )
         .await;
         assert_eq!(res["isError"], json!(true), "invoke: {res}");
+        let text = res["content"][0]["text"].as_str().unwrap();
+        assert!(
+            text.starts_with("Error: insufficient credits; the free grant arrives on "),
+            "{text}"
+        );
+        assert!(
+            !text.contains("buy credits"),
+            "no buy link when self-hosted"
+        );
+        // The same facts as fields, for clients that read them.
         assert_eq!(
-            res["content"][0]["text"],
-            json!("Error: insufficient credits")
+            res["structuredContent"]["code"],
+            json!("account_credits_exhausted")
+        );
+        assert!(
+            res["structuredContent"]["retry_after_secs"]
+                .as_u64()
+                .unwrap()
+                >= 1
         );
         let queued: i64 = sqlx::query_scalar("SELECT count(*) FROM credit_charge_queue")
             .fetch_one(&pool)

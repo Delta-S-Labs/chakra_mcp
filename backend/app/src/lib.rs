@@ -69,6 +69,10 @@ pub fn router(state: AppState) -> Router {
         // ─── Authenticated user routes ─────────────────
         .route("/v1/me", get(handlers::users::me))
         .route(
+            "/v1/me/credit-alerts",
+            get(handlers::credits::credit_alerts),
+        )
+        .route(
             "/v1/me/survey",
             get(handlers::surveys::get_mine).post(handlers::surveys::submit),
         )

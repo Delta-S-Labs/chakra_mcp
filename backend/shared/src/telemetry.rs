@@ -46,6 +46,7 @@ pub mod names {
     pub const CREDITS_SWITCHES_STALE: &str = "chakramcp_credits_switches_stale";
     pub const CREDITS_STALE_AFTER_SECONDS: &str = "chakramcp_credits_stale_after_seconds";
     pub const CREDITS_BLOCKED_ACCOUNTS: &str = "chakramcp_credits_blocked_accounts";
+    pub const CREDITS_LOW_ACCOUNTS: &str = "chakramcp_credits_low_accounts";
     pub const DB_POOL_CONNECTIONS: &str = "chakramcp_db_pool_connections";
     pub const DB_POOL_MAX_CONNECTIONS: &str = "chakramcp_db_pool_max_connections";
     pub const BUILD_INFO: &str = "chakramcp_build_info";
@@ -381,6 +382,10 @@ fn describe() {
     describe_gauge!(
         CREDITS_BLOCKED_ACCOUNTS,
         "Accounts currently out of credits."
+    );
+    describe_gauge!(
+        CREDITS_LOW_ACCOUNTS,
+        "Accounts currently running low on credits (not yet out)."
     );
     describe_gauge!(DB_POOL_CONNECTIONS, "Database pool connections by state.");
     describe_gauge!(DB_POOL_MAX_CONNECTIONS, "Database pool size limit.");

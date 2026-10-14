@@ -93,12 +93,20 @@ async fn www_authenticate(State(state): State<RelayState>, req: Request, next: N
 }
 
 pub fn router(state: RelayState) -> Router {
-    // Browser-based MCP clients need to read `WWW-Authenticate` on a 401.
+    // Browser-based MCP clients need to read `WWW-Authenticate` on a 401, and
+    // every client the usage-limit headers (credits P6).
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any)
-        .expose_headers([axum::http::header::WWW_AUTHENTICATE]);
+        .expose_headers([
+            axum::http::header::WWW_AUTHENTICATE,
+            axum::http::header::RETRY_AFTER,
+            crate::limits::RATELIMIT_LIMIT,
+            crate::limits::RATELIMIT_REMAINING,
+            crate::limits::RATELIMIT_RESET,
+            crate::limits::CHAKRAMCP_CREDITS,
+        ]);
 
     let router = Router::new()
         // ─── Public ────────────────────────────────────
