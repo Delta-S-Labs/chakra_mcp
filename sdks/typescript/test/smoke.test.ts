@@ -4,7 +4,14 @@
  * requests + headers correctly and surfaces error envelopes.
  */
 import { describe, expect, it, vi } from "vitest";
-import { ChakraMCP, ChakraMCPError, ServeOptions } from "../src/index.js";
+import {
+  ChakraMCP,
+  ChakraMCPError,
+  CreditsExhaustedError,
+  QuotaExhaustedError,
+  RateLimitedError,
+  ServeOptions,
+} from "../src/index.js";
 
 function mockFetch(handler: (req: Request) => Promise<Response> | Response): typeof fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -418,5 +425,209 @@ describe("InboxClient.serve HITL routing", () => {
     // CRITICAL: the SDK must NOT report a wire result — a human still
     // has to resolve this invocation.
     expect(reported).toEqual([]);
+  });
+});
+
+describe("usage-limit errors", () => {
+  /** An SDK whose relay answers every call with one canned error. */
+  function sdkReturning(
+    status: number,
+    body: unknown,
+    headers: Record<string, string> = {},
+  ): ChakraMCP {
+    return new ChakraMCP({
+      apiKey: "ck_test",
+      relayUrl: "http://relay",
+      fetch: mockFetch(
+        async () =>
+          new Response(JSON.stringify(body), {
+            status,
+            headers: { "content-type": "application/json", ...headers },
+          }),
+      ),
+    });
+  }
+
+  /** Run `invoke` and hand back what it threw. */
+  async function invokeError(sdk: ChakraMCP): Promise<unknown> {
+    try {
+      await sdk.invoke({ capability_id: "cap", grantee_agent_id: "agent", input: {} });
+    } catch (err) {
+      return err;
+    }
+    throw new Error("expected invoke to throw");
+  }
+
+  it("rate limited: RateLimitedError with the Retry-After delay", async () => {
+    const err = await invokeError(
+      sdkReturning(
+        429,
+        {
+          error: {
+            code: "account_rate_limited",
+            message: "rate limit exceeded",
+            retryable: true,
+            retry_after_secs: 30,
+          },
+        },
+        { "retry-after": "23" },
+      ),
+    );
+    expect(err).toBeInstanceOf(RateLimitedError);
+    // Still a ChakraMCPError, so existing catch blocks keep working.
+    expect(err).toBeInstanceOf(ChakraMCPError);
+    expect(err).toMatchObject({
+      name: "RateLimitedError",
+      status: 429,
+      code: "account_rate_limited",
+      message: "rate limit exceeded",
+      // The header wins over the body.
+      retry_after_secs: 23,
+    });
+  });
+
+  it("credits exhausted on chakramcp.com: next grant + credits link", async () => {
+    const err = await invokeError(
+      sdkReturning(
+        429,
+        {
+          error: {
+            code: "account_credits_exhausted",
+            message: "insufficient credits",
+            retryable: false,
+            retry_after_secs: 1300000,
+            next_grant_at: "2026-11-01T00:00:00Z",
+            credits_url: "https://chakramcp.com/app/credits",
+          },
+        },
+        { "retry-after": "1300000" },
+      ),
+    );
+    expect(err).toBeInstanceOf(CreditsExhaustedError);
+    expect(err).toBeInstanceOf(ChakraMCPError);
+    expect(err).toMatchObject({
+      name: "CreditsExhaustedError",
+      status: 429,
+      code: "account_credits_exhausted",
+      retry_after_secs: 1300000,
+      next_grant_at: "2026-11-01T00:00:00Z",
+      credits_url: "https://chakramcp.com/app/credits",
+    });
+  });
+
+  it("credits exhausted on a self-hosted server: no credits link", async () => {
+    const err = await invokeError(
+      sdkReturning(
+        429,
+        {
+          error: {
+            code: "account_credits_exhausted",
+            message: "insufficient credits",
+            retryable: false,
+            retry_after_secs: 86400,
+            next_grant_at: "2026-11-01T00:00:00Z",
+          },
+        },
+        { "retry-after": "86400" },
+      ),
+    );
+    expect(err).toBeInstanceOf(CreditsExhaustedError);
+    const credits = err as CreditsExhaustedError;
+    expect(credits.retry_after_secs).toBe(86400);
+    expect(credits.next_grant_at).toBe("2026-11-01T00:00:00Z");
+    expect(credits.credits_url).toBeUndefined();
+  });
+
+  it("takes the delay from the body when there's no Retry-After header", async () => {
+    const err = await invokeError(
+      sdkReturning(429, {
+        error: {
+          code: "account_rate_limited",
+          message: "rate limit exceeded",
+          retryable: true,
+          retry_after_secs: 17,
+        },
+      }),
+    );
+    expect(err).toBeInstanceOf(RateLimitedError);
+    expect((err as RateLimitedError).retry_after_secs).toBe(17);
+  });
+
+  it("monthly quota: QuotaExhaustedError gains the Retry-After delay", async () => {
+    const err = await invokeError(
+      sdkReturning(
+        429,
+        {
+          error: {
+            code: "monthly_quota_exhausted",
+            message: "monthly quota exhausted",
+            retryable: false,
+          },
+          quota: 100,
+          resets_at: "2026-11-01T00:00:00Z",
+        },
+        { "retry-after": "1300000" },
+      ),
+    );
+    expect(err).toBeInstanceOf(QuotaExhaustedError);
+    expect(err).toMatchObject({
+      code: "monthly_quota_exhausted",
+      quota: 100,
+      resets_at: "2026-11-01T00:00:00Z",
+      retry_after_secs: 1300000,
+    });
+  });
+
+  it("older servers: typed errors with no delay, grant time or link", async () => {
+    const credits = await invokeError(
+      sdkReturning(429, {
+        error: { code: "account_credits_exhausted", message: "insufficient credits", retryable: false },
+      }),
+    );
+    expect(credits).toBeInstanceOf(CreditsExhaustedError);
+    expect(credits).toMatchObject({
+      retry_after_secs: undefined,
+      next_grant_at: undefined,
+      credits_url: undefined,
+    });
+
+    const rate = await invokeError(
+      sdkReturning(429, {
+        error: { code: "account_rate_limited", message: "rate limit exceeded", retryable: true },
+      }),
+    );
+    expect(rate).toBeInstanceOf(RateLimitedError);
+    expect((rate as RateLimitedError).retry_after_secs).toBeUndefined();
+
+    const quota = await invokeError(
+      sdkReturning(429, {
+        error: { code: "monthly_quota_exhausted", message: "monthly quota exhausted" },
+        quota: 100,
+        resets_at: "2026-11-01T00:00:00Z",
+      }),
+    );
+    expect(quota).toBeInstanceOf(QuotaExhaustedError);
+    expect((quota as QuotaExhaustedError).retry_after_secs).toBeUndefined();
+  });
+
+  it("other errors stay ChakraMCPError, with a delay only when the server sends one", async () => {
+    const forbidden = await invokeError(
+      sdkReturning(403, { error: { code: "forbidden", message: "forbidden" } }),
+    );
+    expect(forbidden).not.toBeInstanceOf(RateLimitedError);
+    expect(forbidden).toMatchObject({
+      name: "ChakraMCPError",
+      status: 403,
+      retry_after_secs: undefined,
+    });
+
+    const unavailable = await invokeError(
+      sdkReturning(
+        503,
+        { error: { code: "unavailable", message: "try later" } },
+        { "retry-after": "5" },
+      ),
+    );
+    expect(unavailable).toMatchObject({ name: "ChakraMCPError", status: 503, retry_after_secs: 5 });
   });
 });

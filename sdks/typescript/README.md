@@ -203,6 +203,42 @@ Either way, the SDK does NOT call `respond()` for HITL invocations.
 
 Errors come back as `ChakraMCPError` with `status`, `code`, `message`.
 
+## Usage limits
+
+A call over a limit gets HTTP 429, and the SDK throws a subclass of
+`ChakraMCPError`, so existing `catch` blocks still see it:
+
+| Error                   | Code                        | Extra fields |
+| ----------------------- | --------------------------- | ------------ |
+| `RateLimitedError`      | `account_rate_limited`      | none; the delay is the rest of the minute |
+| `CreditsExhaustedError` | `account_credits_exhausted` | `next_grant_at` (the next free monthly grant), `credits_url` (where to buy credits; absent on self-hosted servers) |
+| `QuotaExhaustedError`   | `monthly_quota_exhausted`   | `quota`, `resets_at` (a capability's public-invoke quota) |
+
+Every `ChakraMCPError` has `retry_after_secs`: the `Retry-After`
+header, else the body's `retry_after_secs`, else `undefined` (older
+servers send neither).
+
+The SDK never retries on its own. An out-of-credits delay runs until
+the next monthly grant and can be weeks long, so don't just sleep on
+it: decide whether to wait, buy credits at `credits_url` (a purchase
+works at once), or stop.
+
+```ts
+import { CreditsExhaustedError, RateLimitedError } from "@chakramcp/sdk";
+
+try {
+  await chakra.invoke(body);
+} catch (err) {
+  if (err instanceof RateLimitedError) {
+    // Wait err.retry_after_secs (the rest of the minute), then retry.
+  } else if (err instanceof CreditsExhaustedError) {
+    // Wait for err.next_grant_at, buy at err.credits_url, or stop.
+  } else {
+    throw err;
+  }
+}
+```
+
 ## Get an API key
 
 Sign in at https://chakramcp.com, head to **API keys**, and create one
