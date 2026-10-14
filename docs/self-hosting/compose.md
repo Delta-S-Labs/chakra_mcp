@@ -12,6 +12,10 @@
 Production runs this same file; its settings are in its own `.env`. See
 [the requirements](README.md#host-requirements-compose) first.
 
+The file also defines `house-agents`, chakramcp.com's own agents
+(`infra/house-agents/`). It sits behind the `house-agents` profile, so
+`docker compose up` never starts it; leave its `HOUSE_*` settings unset.
+
 ## First start
 
 1. **DNS.** Create A (or AAAA) records for two hostnames, e.g.

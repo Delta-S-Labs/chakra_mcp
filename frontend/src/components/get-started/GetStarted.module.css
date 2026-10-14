@@ -1,0 +1,147 @@
+.card {
+  display: grid;
+  gap: 0.85rem;
+  margin: 0 0.5rem;
+  padding: 1.1rem 1.2rem 1.2rem;
+  border: 1px solid color-mix(in oklab, var(--accent-coral) 35%, var(--line));
+  border-radius: 0.95rem;
+  background: linear-gradient(180deg, var(--paper-soft), color-mix(in oklab, var(--accent-butter) 12%, var(--paper-soft)));
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.25rem;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin: 0;
+}
+
+.progress {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.dismiss {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: var(--ink-muted);
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.4rem;
+}
+.dismiss:hover { color: var(--ink); background: color-mix(in oklab, var(--paper-warm) 60%, transparent); }
+
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.steps li {
+  /* Wider than the global list-item cap, so commands fit. */
+  max-width: none;
+  display: grid;
+  grid-template-columns: 1.7rem minmax(0, 1fr);
+  gap: 0.7rem;
+  align-items: start;
+  font-family: var(--font-body);
+  font-size: 0.93rem;
+  line-height: 1.55;
+  color: var(--ink);
+}
+
+.mark {
+  display: grid;
+  place-items: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+  background: var(--paper-soft);
+}
+
+.done .mark {
+  border-color: color-mix(in oklab, oklch(75% 0.18 145) 60%, var(--line));
+  background: color-mix(in oklab, oklch(75% 0.18 145) 28%, var(--paper-soft));
+  color: oklch(35% 0.13 145);
+}
+.done strong { color: var(--ink-muted); text-decoration: line-through; text-decoration-thickness: 1px; }
+
+.next .mark {
+  border-color: var(--accent-coral);
+  color: var(--accent-coral);
+}
+
+.todo strong { color: var(--ink-soft); font-weight: 600; }
+
+.stepText { display: grid; gap: 0.4rem; padding-top: 0.15rem; min-width: 0; }
+.stepText p { margin: 0; max-width: 70ch; color: var(--ink-soft); }
+.stepText code {
+  font-family: var(--font-mono);
+  font-size: 0.84em;
+  padding: 0.04rem 0.34rem;
+  border-radius: 0.3rem;
+  background: color-mix(in oklab, var(--paper-warm) 60%, var(--paper-soft));
+  overflow-wrap: anywhere;
+}
+
+.codeWrap { position: relative; min-width: 0; }
+
+.code {
+  margin: 0;
+  padding: 0.75rem 4.5rem 0.75rem 0.85rem;
+  border-radius: 0.6rem;
+  background: var(--accent-ink);
+  color: var(--paper-soft);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  overflow-x: auto;
+}
+.code code { background: none; padding: 0; color: inherit; font-size: inherit; }
+
+.copy {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  border: 1px solid color-mix(in oklab, var(--paper-soft) 30%, transparent);
+  background: color-mix(in oklab, var(--paper-soft) 12%, transparent);
+  color: var(--paper-soft);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.25rem 0.55rem;
+  border-radius: 0.4rem;
+  cursor: pointer;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
