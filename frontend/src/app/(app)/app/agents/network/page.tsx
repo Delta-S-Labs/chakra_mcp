@@ -101,7 +101,14 @@ export default async function NetworkAgentsPage({
             {mine.map((a) => (
               <li key={a.id} className={styles.row}>
                 <div>
-                  <div className={styles.rowName}>{a.display_name}</div>
+                  <div className={styles.rowName}>
+                    {a.display_name}
+                    {a.online && (
+                      <span className={styles.onlineChip} title="Pulled its inbox in the last 5 minutes">
+                        online
+                      </span>
+                    )}
+                  </div>
                   <div className={styles.rowMeta}>
                     <code>
                       {a.account_slug}/{a.slug}
@@ -202,6 +209,11 @@ export default async function NetworkAgentsPage({
                         </span>
                       )}
                       <ModeChip mode={a.mode} />
+                      {a.online && (
+                        <span className={styles.onlineChip} title="Pulled its inbox in the last 5 minutes">
+                          online
+                        </span>
+                      )}
                     </div>
                     <div className={styles.rowMeta}>
                       by <strong>{a.account_display_name}</strong> ·{" "}

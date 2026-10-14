@@ -111,6 +111,11 @@ pub struct InvocationDto {
     pub granter_display_name: Option<String>,
     pub grantee_agent_id: Option<Uuid>,
     pub grantee_display_name: Option<String>,
+    /// The calling agent's account, on inbox pulls only: lets a worker
+    /// apply per-account limits (house agents spec §2.4). `None` on the
+    /// audit-log endpoints.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grantee_account_id: Option<Uuid>,
     pub capability_id: Option<Uuid>,
     pub capability_name: String,
     /// Capability's HITL classification — `"autonomous"` (worker may
@@ -962,6 +967,8 @@ pub async fn inbox(
     if !crate::auth::grant_allows_agent(&state.db, &grant, q.agent_id).await? {
         return Err(ApiError::Forbidden);
     }
+    // The agent is online (in memory; flushed in batches).
+    state.heartbeats.record(q.agent_id);
 
     // Atomically claim the oldest pending rows for this agent.
     // FOR UPDATE SKIP LOCKED lets concurrent pollers safely pull
@@ -1011,6 +1018,7 @@ pub async fn inbox(
             i.created_at, i.claimed_at,
             ga.display_name as "granter_display_name?",
             ea.display_name as "grantee_display_name?",
+            ea.account_id   as "grantee_account_id?",
 
             g.status              as "g_status?",
             g.granter_agent_id    as "g_granter_agent_id?",
@@ -1119,6 +1127,7 @@ pub async fn inbox(
                     granter_display_name: r.granter_display_name,
                     grantee_agent_id: r.grantee_agent_id,
                     grantee_display_name: r.grantee_display_name,
+                    grantee_account_id: r.grantee_account_id,
                     capability_id: r.capability_id,
                     capability_name: r.capability_name,
                     semantics: r.capability_semantics,
@@ -1358,6 +1367,7 @@ pub async fn list(
                     granter_display_name: r.granter_display_name,
                     grantee_agent_id: r.grantee_agent_id,
                     grantee_display_name: r.grantee_display_name,
+                    grantee_account_id: None,
                     capability_id: r.capability_id,
                     capability_name: r.capability_name,
                     semantics: r.capability_semantics,
@@ -1451,6 +1461,7 @@ async fn fetch_one(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<InvocationDto
         granter_display_name: r.granter_display_name,
         grantee_agent_id: r.grantee_agent_id,
         grantee_display_name: r.grantee_display_name,
+        grantee_account_id: None,
         capability_id: r.capability_id,
         capability_name: r.capability_name,
         semantics: r.capability_semantics,
@@ -1933,7 +1944,8 @@ mod legacy_v01_contract_tests {
     #[sqlx::test(migrations = "../migrations")]
     async fn v01_pull_mode_full_lifecycle(pool: PgPool) {
         let f = seed_demo(&pool).await;
-        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        let state = crate::state::RelayState::new(pool.clone(), config());
+        let app = crate::router(state.clone());
 
         // ── Bob: POST /v1/invoke ────────────────────────────
         let invoke_res = app
@@ -2036,6 +2048,24 @@ mod legacy_v01_contract_tests {
                 .any(|inv| inv["id"] == invocation_id.to_string()),
             "Alice's inbox should include the parked invocation"
         );
+        // The pulled row names the caller's account (for per-account limits).
+        let pulled = items
+            .iter()
+            .find(|inv| inv["id"] == invocation_id.to_string())
+            .unwrap();
+        assert_eq!(
+            pulled["grantee_account_id"],
+            grantee_account(&pool, &f).await.to_string()
+        );
+        // The pull was recorded as a heartbeat, written on the next flush.
+        assert_eq!(state.heartbeats.flush(&pool).await.unwrap(), 1);
+        let polled: Option<chrono::DateTime<chrono::Utc>> =
+            sqlx::query_scalar("SELECT last_polled_at FROM agent_heartbeats WHERE agent_id = $1")
+                .bind(f.granter_agent_id)
+                .fetch_optional(&pool)
+                .await
+                .unwrap();
+        assert!(polled.is_some(), "the granter is online");
 
         // ── Alice: POST /v1/invocations/{id}/result ─────────
         let result_res = app

@@ -351,3 +351,73 @@
 .pager a:hover {
   background: var(--accent-butter, #f5d34a);
 }
+
+/* ─── Online + "Try these" ─── */
+.online {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.3rem;
+  background: color-mix(in oklab, var(--accent-lime, #c5e060) 45%, white);
+  color: var(--ink, #2a2620);
+}
+
+.onlineDot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-right: 0.4rem;
+  border-radius: 999px;
+  background: oklch(62% 0.17 145);
+  vertical-align: 0.1em;
+}
+
+.try {
+  margin: 0 0 1.5rem;
+}
+
+.tryTitle {
+  margin: 0 0 0.6rem;
+  font-size: 1.05rem;
+}
+
+.tryGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.75rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.tryCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid color-mix(in oklab, var(--accent-butter, #f3e3a0) 70%, var(--line, #e6decd));
+  border-radius: 0.9rem;
+  background: color-mix(in oklab, var(--accent-butter, #f3e3a0) 25%, var(--paper-soft, #fdf9ee));
+}
+
+.tryName {
+  margin: 0;
+  font-weight: 700;
+}
+
+.tryName a {
+  color: inherit;
+}
+
+.tryBody {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--ink-soft, #6b6258);
+}
+
+.tryLink {
+  margin-top: auto;
+  font-weight: 600;
+  font-size: 0.9rem;
+}

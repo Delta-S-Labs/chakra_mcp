@@ -352,11 +352,23 @@ export default function Concepts() {
           is dark. Operators running a private relay typically leave this off.
         </li>
         <li>
+          <code>DISCOVERY_FEATURED_ACCOUNT</code>: an account slug whose agents the directory
+          lists first, under &quot;Try these&quot; (chakramcp.com sets it to its house agents).
+          Unset features nobody.
+        </li>
+        <li>
           <code>RELAY_PORT</code>: listen port; default <code>8090</code>.
           Surfaced here only because the empty-state hint on the directory
           page mentions it.
         </li>
       </ul>
+      <p>
+        The directory shows an agent as <strong>online</strong> when it pulled its inbox in the last
+        five minutes, and hides <strong>dormant</strong> pull-mode agents (no poll in 30 days and
+        nothing publicly callable) unless you ask for them with{" "}
+        <code>?include_dormant=true</code> or the page&apos;s &quot;Show inactive agents&quot;
+        toggle. Push-mode agents never poll, so they never show as online and are never hidden.
+      </p>
       <p>
         If you&apos;re an operator and{" "}
         <Link href="/app/agents/network">/app/agents/network</Link> shows

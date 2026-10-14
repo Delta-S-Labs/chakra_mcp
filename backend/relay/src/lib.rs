@@ -16,6 +16,7 @@ pub mod compliance;
 pub mod events;
 pub mod forwarder;
 pub mod handlers;
+pub mod heartbeats;
 pub mod inbox_bridge;
 pub mod jwt_mint;
 pub mod limits;
@@ -208,6 +209,7 @@ pub fn router(state: RelayState) -> Router {
         .route("/.well-known/jwks.json", get(handlers::jwks::get_jwks))
         // ─── Discovery search (D10a) ──────────────────────────
         .route("/v1/discovery/agents", get(handlers::discovery::search))
+        .route("/v1/discovery/featured", get(handlers::discovery::featured))
         // ─── A2A: published Agent Card per registered agent ────
         .route(
             "/agents/{account_slug}/{agent_slug}/.well-known/agent-card.json",
@@ -282,6 +284,10 @@ mod discovery_tests {
             .unwrap()
             .to_lowercase();
         assert!(exposed.contains("www-authenticate"), "{exposed}");
+        // The usage-limit headers too (credits P6).
+        for name in ["retry-after", "ratelimit-remaining", "chakramcp-credits"] {
+            assert!(exposed.contains(name), "{exposed}");
+        }
 
         for path in [
             "/.well-known/oauth-protected-resource",

@@ -573,7 +573,7 @@ async fn call_tool(
             value
         }),
         "poll_invocation" => poll_invocation(&state.db, user, p.arguments).await,
-        "pull_inbox" => pull_inbox(&state.db, user, p.arguments).await,
+        "pull_inbox" => pull_inbox(state, user, p.arguments).await,
         "list_invocations" => list_invocations(&state.db, user, p.arguments).await,
         "respond" => respond(&state.db, user, p.arguments).await,
         "propose_friendship" => propose_friendship(&state.db, user, p.arguments).await,
@@ -1051,7 +1051,8 @@ async fn poll_invocation(db: &PgPool, user: &AuthUser, args: Value) -> Result<Va
     }))
 }
 
-async fn pull_inbox(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
+async fn pull_inbox(state: &RelayState, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
+    let db = &state.db;
     #[derive(Deserialize)]
     struct A {
         agent_id: Uuid,
@@ -1076,6 +1077,8 @@ async fn pull_inbox(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, 
     if !crate::auth::grant_allows_agent(db, &grant, a.agent_id).await? {
         return Err(ApiError::Forbidden);
     }
+    // The agent is online (in memory; flushed in batches).
+    state.heartbeats.record(a.agent_id);
 
     let mut tx = db.begin().await?;
     let claimed = sqlx::query!(

@@ -29,6 +29,11 @@ export interface Agent {
   avg_rating: number | null;
   /** Count of un-hidden reviews. */
   review_count: number;
+  /** When it last pulled its inbox. On `GET /v1/agents` only. */
+  last_polled_at?: string | null;
+  /** Capabilities others can see (`network`, public ones included). On
+   *  `GET /v1/agents` only. */
+  network_capability_count?: number;
 }
 
 export interface Capability {
@@ -145,6 +150,8 @@ export interface NetworkAgent extends Agent {
   tags: string[];
   /** Whether the owning account has been verified by the relay operator. */
   verified: boolean;
+  /** Pulled its inbox in the last 5 minutes. */
+  online?: boolean;
 }
 
 export interface NetworkListResponse {

@@ -291,7 +291,12 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
             &cfg.shared.frontend_base_url,
         ))
         .with_credit_cache(credit_cache)
+        .with_featured_account(std::env::var("DISCOVERY_FEATURED_ACCOUNT").ok())
         .with_compliance(chakramcp_relay::compliance::ComplianceChecker::from_env());
+    relay_state
+        .heartbeats
+        .clone()
+        .spawn_flusher(relay_state.db.clone());
     // Usage metering runs on a background writer so requests never wait on it.
     let usage = chakramcp_relay::events::UsageRecorder::spawn(relay_state.clone());
     let relay_state = relay_state.with_usage_recorder(usage);
