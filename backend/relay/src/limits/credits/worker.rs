@@ -235,7 +235,7 @@ pub(crate) async fn refresh_switches(
     stale: &mut bool,
 ) {
     let before = cache.blocked_count();
-    let refresh = cache.refresh(db, cfg.block_below_mc());
+    let refresh = cache.refresh(db, cfg);
     let refreshed = match tokio::time::timeout(cfg.sweep_interval, refresh).await {
         Ok(result) => result.map_err(|e| e.to_string()),
         Err(_) => Err(format!("timed out after {:?}", cfg.sweep_interval)),
@@ -339,6 +339,7 @@ fn record_refresh(cache: &CreditCache, ok: bool) {
         gauge!(names::CREDITS_SWITCHES_LAST_REFRESH_TIMESTAMP_SECONDS)
             .set(Utc::now().timestamp_millis() as f64 / 1000.0);
         gauge!(names::CREDITS_BLOCKED_ACCOUNTS).set(cache.blocked_count() as f64);
+        gauge!(names::CREDITS_LOW_ACCOUNTS).set(cache.low_count() as f64);
     }
     gauge!(names::CREDITS_SWITCHES_STALE).set(if cache.is_stale() { 1.0 } else { 0.0 });
 }
@@ -785,13 +786,10 @@ mod tests {
 
         // Row locks don't hold up the switches either.
         let cache = CreditCache::default();
-        tokio::time::timeout(
-            Duration::from_secs(2),
-            cache.refresh(&wide, cfg.cost_per_invocation_mc),
-        )
-        .await
-        .expect("refresh doesn't wait on row locks")
-        .unwrap();
+        tokio::time::timeout(Duration::from_secs(2), cache.refresh(&wide, &cfg))
+            .await
+            .expect("refresh doesn't wait on row locks")
+            .unwrap();
         assert!(!cache.is_stale());
 
         // Once the lock is gone, the next pass charges it.

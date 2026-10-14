@@ -43,6 +43,14 @@ export function CreditsPanel({ view, buy }: { view: CreditsView; buy?: ReactNode
             </div>
           )}
           <StatusPill status={view.status} />
+          {view.low && (
+            <p className={styles.lowNotice}>
+              Running low: about{" "}
+              {callsFor(view.balance_mc, view.cost_per_invocation_mc).toLocaleString("en-US")} calls
+              left. Calls keep working until the balance runs out; the next free grant lands on{" "}
+              {formatDay(view.next_grant_on)}.
+            </p>
+          )}
           {view.status === "blocked" && (
             <p className={styles.warn}>
               Out of credits: invocations are refused until the next free

@@ -5,11 +5,12 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{PoisonError, RwLock};
 use std::time::{Duration, Instant};
 
+use super::CreditsConfig;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-/// Which accounts are blocked, plus per-account rate-limit overrides, as of
-/// the last refresh.
+/// Which accounts are blocked or running low, plus per-account rate-limit
+/// overrides, as of the last refresh.
 #[derive(Debug)]
 pub struct CreditCache {
     snapshot: RwLock<Snapshot>,
@@ -19,6 +20,8 @@ pub struct CreditCache {
 #[derive(Debug, Default)]
 struct Snapshot {
     blocked: HashSet<Uuid>,
+    /// Running low but not blocked (credits P5/P6).
+    low: HashSet<Uuid>,
     rate_overrides: HashMap<Uuid, i32>,
     refreshed_at: Option<Instant>,
 }
@@ -46,6 +49,14 @@ impl CreditCache {
     pub fn is_blocked(&self, account: Uuid) -> bool {
         let snapshot = self.snapshot.read().unwrap_or_else(PoisonError::into_inner);
         self.is_fresh(&snapshot) && snapshot.blocked.contains(&account)
+    }
+
+    /// Whether `account` is running low on credits (it can still pay, but
+    /// for fewer calls than the low threshold). Fails open like
+    /// `is_blocked`: unknown switches report nobody.
+    pub fn is_low(&self, account: Uuid) -> bool {
+        let snapshot = self.snapshot.read().unwrap_or_else(PoisonError::into_inner);
+        self.is_fresh(&snapshot) && snapshot.low.contains(&account)
     }
 
     /// Whether the switches are unknown — never loaded, or not refreshed
@@ -81,29 +92,50 @@ impl CreditCache {
             .len()
     }
 
-    /// Swap in a new snapshot and mark it fresh.
+    /// How many accounts are currently running low (for the worker's gauge).
+    pub fn low_count(&self) -> usize {
+        self.snapshot
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .low
+            .len()
+    }
+
+    /// Swap in a new snapshot with nobody running low, and mark it fresh.
     pub fn replace(&self, blocked: HashSet<Uuid>, rate_overrides: HashMap<Uuid, i32>) {
+        self.replace_all(blocked, HashSet::new(), rate_overrides);
+    }
+
+    /// Swap in a new snapshot and mark it fresh.
+    pub fn replace_all(
+        &self,
+        blocked: HashSet<Uuid>,
+        low: HashSet<Uuid>,
+        rate_overrides: HashMap<Uuid, i32>,
+    ) {
         let mut snapshot = self
             .snapshot
             .write()
             .unwrap_or_else(PoisonError::into_inner);
         *snapshot = Snapshot {
             blocked,
+            low,
             rate_overrides,
             refreshed_at: Some(Instant::now()),
         };
     }
 
     /// Reload the switches from `credit_wallets`. An account is blocked when
-    /// it can't afford one more invocation — unless it's unlimited or has
-    /// never been granted (a wallet the worker created moments ago must not
-    /// be blocked before its first grant lands). Keep this in step with
-    /// `chakramcp_shared::credits::is_blocked`, which the app shows owners.
-    pub async fn refresh(
-        &self,
-        db: &PgPool,
-        cost_per_invocation_mc: i64,
-    ) -> Result<(), sqlx::Error> {
+    /// it can't afford one more invocation, and running low when it can but
+    /// holds less than the low threshold — unless it's unlimited or has never
+    /// been granted (a wallet the worker created moments ago must not be
+    /// blocked before its first grant lands). With credits off, both
+    /// thresholds are `i64::MIN`, so nobody is either. Keep this in step
+    /// with `chakramcp_shared::credits::{is_blocked, is_low}`, which the app
+    /// shows owners.
+    pub async fn refresh(&self, db: &PgPool, cfg: &CreditsConfig) -> Result<(), sqlx::Error> {
+        let block_below = cfg.block_below_mc();
+        let low_below = cfg.low_below_mc().max(block_below);
         // Plain reads never wait on row locks, but they do queue behind a
         // table lock (DDL); give up after the lock timeout instead. And cut a
         // crawling read off server-side, so it isn't left running after the
@@ -115,14 +147,18 @@ impl CreditCache {
         sqlx::query("SET LOCAL statement_timeout = '5s'")
             .execute(&mut *tx)
             .await?;
-        let blocked = sqlx::query_scalar!(
+        // One pass for both sets: every granted, limited wallet under the low
+        // threshold, flagged when it's also under the block threshold.
+        let short = sqlx::query!(
             r#"
-            SELECT account_id FROM credit_wallets
+            SELECT account_id, balance_mc < $1 AS "blocked!"
+              FROM credit_wallets
              WHERE NOT unlimited
                AND free_grant_period IS NOT NULL
-               AND balance_mc < $1
+               AND balance_mc < $2
             "#,
-            cost_per_invocation_mc,
+            block_below,
+            low_below,
         )
         .fetch_all(&mut *tx)
         .await?;
@@ -136,8 +172,10 @@ impl CreditCache {
         .fetch_all(&mut *tx)
         .await?;
         tx.commit().await?;
-        self.replace(
-            blocked.into_iter().collect(),
+        let (blocked, low): (Vec<_>, Vec<_>) = short.into_iter().partition(|row| row.blocked);
+        self.replace_all(
+            blocked.into_iter().map(|row| row.account_id).collect(),
+            low.into_iter().map(|row| row.account_id).collect(),
             rate_overrides
                 .into_iter()
                 .map(|r| (r.account_id, r.rate_limit_per_min))
@@ -161,7 +199,7 @@ pub(crate) async fn exhausted_cache(pool: &PgPool, account: Uuid) -> std::sync::
     .unwrap();
     let cache = CreditCache::default();
     cache
-        .refresh(pool, super::CreditsConfig::default().cost_per_invocation_mc)
+        .refresh(pool, &CreditsConfig::default())
         .await
         .unwrap();
     assert!(
@@ -257,7 +295,16 @@ mod tests {
         let never_granted = wallet(&pool, -100, false, false).await;
 
         let cache = CreditCache::default();
-        cache.refresh(&pool, cost).await.unwrap();
+        cache
+            .refresh(
+                &pool,
+                &CreditsConfig {
+                    cost_per_invocation_mc: cost,
+                    ..CreditsConfig::default()
+                },
+            )
+            .await
+            .unwrap();
 
         assert!(cache.is_blocked(broke));
         assert!(cache.is_blocked(negative));
@@ -277,9 +324,61 @@ mod tests {
             .unwrap();
 
         let cache = CreditCache::default();
-        cache.refresh(&pool, 100).await.unwrap();
+        cache
+            .refresh(&pool, &CreditsConfig::default())
+            .await
+            .unwrap();
 
         assert_eq!(cache.rate_limit_for(custom, 60), 7);
         assert_eq!(cache.rate_limit_for(plain, 60), 60);
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn refresh_flags_low_wallets_apart_from_blocked_ones(pool: PgPool) {
+        // Cost 100, low below 100,000.
+        let cfg = CreditsConfig::default();
+        let low = wallet(&pool, 99_999, true, false).await;
+        let one_call_left = wallet(&pool, 100, true, false).await;
+        let broke = wallet(&pool, 99, true, false).await;
+        let plenty = wallet(&pool, 100_000, true, false).await;
+        let unlimited = wallet(&pool, 500, true, true).await;
+        let never_granted = wallet(&pool, 500, false, false).await;
+
+        let cache = CreditCache::default();
+        cache.refresh(&pool, &cfg).await.unwrap();
+
+        assert!(cache.is_low(low));
+        assert!(cache.is_low(one_call_left));
+        assert!(!cache.is_low(broke), "blocked, not low");
+        assert!(cache.is_blocked(broke));
+        assert!(!cache.is_low(plenty));
+        assert!(!cache.is_low(unlimited));
+        assert!(!cache.is_low(never_granted));
+        assert_eq!(cache.low_count(), 2);
+        assert_eq!(cache.blocked_count(), 1);
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn with_credits_off_the_refresh_flags_nobody(pool: PgPool) {
+        let low = wallet(&pool, 500, true, false).await;
+        let broke = wallet(&pool, -500, true, false).await;
+        let off = CreditsConfig {
+            enabled: false,
+            ..CreditsConfig::default()
+        };
+        let cache = CreditCache::default();
+        cache.refresh(&pool, &off).await.unwrap();
+        assert!(!cache.is_low(low), "granted before credits went off");
+        assert!(!cache.is_blocked(broke));
+        assert!(!cache.is_stale());
+    }
+
+    #[test]
+    fn a_stale_snapshot_reports_nobody_low() {
+        let cache = CreditCache::new(Duration::from_millis(1));
+        let low = Uuid::now_v7();
+        cache.replace_all(HashSet::new(), HashSet::from([low]), HashMap::new());
+        std::thread::sleep(Duration::from_millis(10));
+        assert!(!cache.is_low(low));
     }
 }

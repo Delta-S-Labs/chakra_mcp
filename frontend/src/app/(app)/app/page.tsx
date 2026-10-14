@@ -198,9 +198,7 @@ export default async function AppDashboard() {
           <StatCard
             label="Credits"
             value={formatCredits(credits.balance_mc)}
-            hint={`~${callsFor(credits.balance_mc, credits.cost_per_invocation_mc).toLocaleString("en-US")} calls · ${
-              credits.purchase ? "Buy credits →" : credits.status === "blocked" ? "out of credits" : "see Credits"
-            }`}
+            hint={creditsHint(credits)}
             href="/app/credits"
           />
         )}
@@ -391,4 +389,14 @@ function formatRelative(iso: string): string {
   const day = Math.round(hr / 24);
   if (day < 7) return `${day}d ago`;
   return new Date(iso).toLocaleDateString();
+}
+
+/** The Credits card's hint. First match wins: out of credits, running low,
+ *  then the usual call count. A Buy link wherever credits can be bought. */
+function creditsHint(credits: CreditsView): string {
+  const buy = credits.purchase ? " · Buy credits →" : "";
+  if (credits.status === "blocked") return `Out of credits${buy}`;
+  const calls = `~${callsFor(credits.balance_mc, credits.cost_per_invocation_mc).toLocaleString("en-US")} calls`;
+  if (credits.low) return `Running low: ${calls}${buy}`;
+  return `${calls} · ${credits.purchase ? "Buy credits →" : "see Credits"}`;
 }

@@ -77,14 +77,9 @@ async fn handle_send_message(
             // account. In-memory only: the credits worker keeps the switch
             // current. In shadow mode a would-block is logged and the call
             // proceeds; when enforcing, it's refused (→ HTTP 429).
-            if let Some(outcome) = state.enforce_limits(authz.caller_account_id, "a2a").await {
-                let reason = match outcome {
-                    crate::limits::LimitOutcome::RateLimited => DenyReason::RateLimited,
-                    crate::limits::LimitOutcome::InsufficientCredits => {
-                        DenyReason::InsufficientCredits
-                    }
-                };
-                return deny_response(&reason);
+            let limits = state.enforce_limits(authz.caller_account_id, "a2a").await;
+            if let Some(outcome) = limits.refusal {
+                return limit_deny_response(outcome, state.credits_url.as_deref());
             }
             let ctx = match compliance_context(&state.db, &authz).await {
                 Ok(c) => c,
@@ -124,11 +119,13 @@ async fn handle_send_message(
                 }
             }
             let cap_name = ctx.name;
-            if authz.target_is_push {
+            let mut response = if authz.target_is_push {
                 handle_authorized_push(state, authz, cap_name, body, headers).await
             } else {
                 handle_authorized_pull(state, authz, cap_name, body).await
-            }
+            };
+            limits.signals.apply(response.headers_mut());
+            response
         }
         Decision::Denied(reason) => deny_response(&reason),
     }
@@ -487,6 +484,61 @@ fn internal_error() -> Response {
         Json(serde_json::json!({ "error": "internal error" })),
     )
         .into_response()
+}
+
+/// A usage-limit refusal: the policy deny shape, plus when to retry (in
+/// `Retry-After` and `data`) and, for credits, the next grant and where to
+/// buy (chakramcp.com only).
+fn limit_deny_response(
+    outcome: crate::limits::LimitOutcome,
+    credits_url: Option<&str>,
+) -> Response {
+    use crate::limits::LimitOutcome;
+    let (reason, retry_after_secs, extra) = match outcome {
+        LimitOutcome::RateLimited {
+            limit,
+            retry_after_secs,
+        } => (
+            DenyReason::RateLimited,
+            retry_after_secs,
+            serde_json::json!({ "limit": limit }),
+        ),
+        LimitOutcome::InsufficientCredits {
+            retry_after_secs,
+            next_grant_at,
+        } => {
+            let mut extra = serde_json::json!({ "next_grant_at": next_grant_at });
+            if let Some(url) = credits_url {
+                extra["credits_url"] = serde_json::json!(url);
+            }
+            (DenyReason::InsufficientCredits, retry_after_secs, extra)
+        }
+    };
+    let mut data = serde_json::json!({
+        "code": reason.data_code(),
+        "retry_after_secs": retry_after_secs,
+    });
+    if let (Some(data), Some(extra)) = (data.as_object_mut(), extra.as_object()) {
+        data.extend(extra.clone());
+    }
+    let mut response = (
+        jsonrpc_to_http(reason.jsonrpc_code()),
+        [(header::CONTENT_TYPE, "application/json")],
+        Json(serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": null,
+            "error": {
+                "code": reason.jsonrpc_code(),
+                "message": reason.message(),
+                "data": data,
+            }
+        })),
+    )
+        .into_response();
+    response
+        .headers_mut()
+        .insert(header::RETRY_AFTER, retry_after_secs.into());
+    response
 }
 
 fn deny_response(reason: &DenyReason) -> Response {
@@ -1113,15 +1165,44 @@ mod tests {
         let app = crate::router(
             crate::state::RelayState::new(pool.clone(), config_v2_on())
                 .with_limits_enforce(true)
-                .with_credit_cache(credits),
+                .with_credit_cache(credits)
+                .with_credits_url(Some("https://chakramcp.test/app/credits".into())),
         );
         let res = app.oneshot(a2a_send_request(&f)).await.unwrap();
         assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert!(res.headers().contains_key(header::RETRY_AFTER));
         let body = parse_body(res).await;
         assert_eq!(body["error"]["code"], -32008);
         assert_eq!(body["error"]["data"]["code"], "chk.limit.credits");
+        assert!(body["error"]["data"]["retry_after_secs"].as_u64().unwrap() >= 1);
+        assert!(body["error"]["data"]["next_grant_at"].is_string());
+        assert_eq!(
+            body["error"]["data"]["credits_url"],
+            "https://chakramcp.test/app/credits"
+        );
         // Refused before dispatch: nothing parked, nothing charged.
         assert_eq!(queued_charges(&pool, f.caller_account_id).await, 0);
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn an_allowed_a2a_call_reports_a_low_balance(pool: PgPool) {
+        let f = seed_full_fixture(&pool).await;
+        let cache = crate::limits::CreditCache::default();
+        cache.replace_all(
+            std::collections::HashSet::new(),
+            std::collections::HashSet::from([f.caller_account_id]),
+            std::collections::HashMap::new(),
+        );
+        let app = crate::router(
+            crate::state::RelayState::new(pool.clone(), config_v2_on())
+                .with_limits_enforce(true)
+                .with_credit_cache(std::sync::Arc::new(cache))
+                .with_rate_limiter(crate::limits::RateLimiter::Counting(Default::default())),
+        );
+        let res = app.oneshot(a2a_send_request(&f)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(res.headers()["chakramcp-credits"], "low");
+        assert_eq!(res.headers()["ratelimit-limit"], "60");
     }
 
     #[sqlx::test(migrations = "../migrations")]

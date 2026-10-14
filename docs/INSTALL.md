@@ -374,6 +374,7 @@ are set:
 | Credits              | `credits_enabled`    | `CREDITS_ENABLED`    | `false` when self-hosted             |
 | Monthly free grant (milli-credits) | `credits_default_monthly_free_mc` | `CREDITS_DEFAULT_MONTHLY_FREE_MC` | `5000000` (5,000 credits) |
 | Cost per call (milli-credits) | `credits_cost_per_invocation_mc` | `CREDITS_COST_PER_INVOCATION_MC` | `100` (0.1 credit) |
+| "Running low" below (milli-credits) | `credits_low_balance_mc` | `CREDITS_LOW_BALANCE_MC` | `100000` (100 credits; at least the cost) |
 | Rate limit per account | `limits_default_rate_per_min` | `LIMITS_DEFAULT_RATE_PER_MIN` | `60` a minute (needs Redis) |
 | Refuse over-limit calls | `limits_enforce`   | `LIMITS_ENFORCE`     | `false`: only logged                 |
 | Redis (rate limiting) | `redis_url`         | `REDIS_URL`          | unset: no rate limiting              |
@@ -385,6 +386,7 @@ are set:
 | App public URL       | `app_base_url`       | `APP_BASE_URL`       | `http://localhost:8080`              |
 | Relay public URL     | `relay_base_url`     | `RELAY_BASE_URL`     | `http://localhost:8090`              |
 | Discovery v2 enabled | `discovery_v2_enabled` | `DISCOVERY_V2`     | `false`                              |
+| Featured account in the directory | (environment only) | `DISCOVERY_FEATURED_ACCOUNT` | unset: none featured |
 | Log filter           | `log_filter`         | `RUST_LOG`           | `info,…=debug,sqlx=warn`             |
 | System One checks    | (env only)           | `SYSTEM_ONE_CHECKS`  | `false`                              |
 | TypeSafe API key     | (env only)           | `TYPESAFE_AI_KEY`    | unset (required when checks are on)  |

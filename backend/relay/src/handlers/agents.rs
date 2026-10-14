@@ -103,6 +103,14 @@ pub struct AgentDto {
     pub avg_rating: Option<f64>,
     /// Count of un-hidden reviews (migration 0023).
     pub review_count: i64,
+    /// When it last pulled its inbox (`agent_heartbeats`, written every
+    /// 30 s). On `GET /v1/agents` only; omitted elsewhere.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_polled_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Capabilities others can see (`network` visibility, public ones
+    /// included). On `GET /v1/agents` only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub network_capability_count: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -171,12 +179,16 @@ pub async fn list_mine(
             a.visibility, a.endpoint_url, a.created_at, a.updated_at,
             acc.slug as account_slug, acc.display_name as account_display_name,
             (SELECT COUNT(*)::bigint FROM agent_capabilities c WHERE c.agent_id = a.id) as "capability_count!",
+            (SELECT COUNT(*)::bigint FROM agent_capabilities c
+                WHERE c.agent_id = a.id AND c.visibility = 'network') as "network_capability_count!",
             (SELECT AVG(rating)::float8 FROM agent_reviews r
                 WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS avg_rating,
             (SELECT COUNT(*)::bigint FROM agent_reviews r
-                WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS "review_count!"
+                WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS "review_count!",
+            h.last_polled_at as "last_polled_at?"
         FROM agents a
         JOIN accounts acc ON acc.id = a.account_id
+        LEFT JOIN agent_heartbeats h ON h.agent_id = a.id
         WHERE a.account_id IN (
             SELECT account_id FROM account_memberships WHERE user_id = $1
         )
@@ -219,6 +231,8 @@ pub async fn list_mine(
                 capability_count: r.capability_count,
                 avg_rating: r.avg_rating,
                 review_count: r.review_count,
+                last_polled_at: r.last_polled_at,
+                network_capability_count: Some(r.network_capability_count),
             })
             .collect(),
     ))
@@ -268,6 +282,8 @@ pub struct NetworkAgentDto {
     pub avg_rating: Option<f64>,
     /// Count of un-hidden reviews (migration 0023).
     pub review_count: i64,
+    /// Pulled its inbox in the last 5 minutes (`agent_heartbeats`).
+    pub online: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -367,12 +383,14 @@ pub async fn list_network(
                 WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS avg_rating,
             (SELECT COUNT(*)::bigint FROM agent_reviews r
                 WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS "review_count!",
+            COALESCE(h.last_polled_at > now() - interval '5 minutes', false) AS "online!",
             EXISTS(
                 SELECT 1 FROM account_memberships m
                 WHERE m.account_id = a.account_id AND m.user_id = $1
             ) as "is_mine!"
         FROM agents a
         JOIN accounts acc ON acc.id = a.account_id
+        LEFT JOIN agent_heartbeats h ON h.agent_id = a.id
         WHERE a.tombstoned_at IS NULL
           AND acc.tombstoned_at IS NULL
           AND (
@@ -460,6 +478,7 @@ pub async fn list_network(
             capability_count: r.capability_count,
             avg_rating: r.avg_rating,
             review_count: r.review_count,
+            online: r.online,
         })
         .collect();
 
@@ -576,6 +595,8 @@ pub async fn get_one(
         capability_count: r.capability_count,
         avg_rating: r.avg_rating,
         review_count: r.review_count,
+        last_polled_at: None,
+        network_capability_count: None,
     }))
 }
 
@@ -791,6 +812,8 @@ pub async fn create(
         capability_count: 0,
         avg_rating: None,
         review_count: 0,
+        last_polled_at: None,
+        network_capability_count: None,
     }))
 }
 
@@ -1007,6 +1030,8 @@ pub async fn update(
         capability_count: r.capability_count,
         avg_rating: r.avg_rating,
         review_count: r.review_count,
+        last_polled_at: None,
+        network_capability_count: None,
     }))
 }
 
@@ -1143,6 +1168,67 @@ mod create_push_mode_tests {
         )
         .unwrap();
         (user_id, account_id, token)
+    }
+
+    /// The agent lists say when an agent last polled, and how much of it
+    /// others can see (for the dashboard's first-run checklist).
+    #[sqlx::test(migrations = "../migrations")]
+    async fn the_lists_report_last_polled_and_online(pool: PgPool) {
+        let (_, account_id, token) = seed_user_with_jwt(&pool).await;
+        let agent = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO agents (id, account_id, slug, display_name, visibility)
+             VALUES ($1, $2, 'polling', 'Polling', 'network')",
+        )
+        .bind(agent)
+        .bind(account_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        for (name, visibility) in [("shown", "network"), ("hidden", "private")] {
+            sqlx::query(
+                "INSERT INTO agent_capabilities (id, agent_id, name, description, input_schema, output_schema, visibility)
+                 VALUES ($1, $2, $3, '', '{}'::jsonb, '{}'::jsonb, $4)",
+            )
+            .bind(Uuid::now_v7())
+            .bind(agent)
+            .bind(name)
+            .bind(visibility)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        sqlx::query("INSERT INTO agent_heartbeats (agent_id, last_polled_at) VALUES ($1, now())")
+            .bind(agent)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let get = |uri: &'static str| {
+            let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+            let token = token.clone();
+            async move {
+                let res = app
+                    .oneshot(
+                        Request::builder()
+                            .uri(uri)
+                            .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(res.status(), StatusCode::OK, "{uri}");
+                let body = res.into_body().collect().await.unwrap().to_bytes();
+                serde_json::from_slice::<serde_json::Value>(&body).unwrap()
+            }
+        };
+        let mine = get("/v1/agents").await;
+        assert!(mine[0]["last_polled_at"].is_string());
+        assert_eq!(mine[0]["capability_count"], 2);
+        assert_eq!(mine[0]["network_capability_count"], 1);
+        let network = get("/v1/network/agents").await;
+        assert_eq!(network["agents"][0]["online"], true);
     }
 
     // Scoped-grants audit: read-filter. A `selected` credential's

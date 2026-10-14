@@ -134,6 +134,20 @@ claude mcp add --transport http chakramcp https://relay.chakramcp.com/mcp \\
         </p>
       </div>
 
+      <h2 className={styles.h2} id="limits">When a call is refused</h2>
+      <p>
+        The <code>invoke</code> tool answers a usage-limit refusal as a tool error
+        (<code>isError: true</code>) whose text says when to retry, for example{" "}
+        <code>rate limit exceeded; retry in 23 s</code> or{" "}
+        <code>insufficient credits; the free grant arrives on 2026-11-01, or buy credits at …</code>.
+        The same facts come back as <code>structuredContent</code> (<code>code</code>,{" "}
+        <code>retry_after_secs</code>, <code>next_grant_at</code>, <code>credits_url</code>), and
+        the HTTP response carries <code>RateLimit-*</code> headers. A successful{" "}
+        <code>invoke</code> from an account running low on credits adds{" "}
+        <code>_meta[&quot;chakramcp/credits&quot;] = &quot;low&quot;</code>. See{" "}
+        <Link href="/docs/concepts#limits">Limits and credits</Link>.
+      </p>
+
       <h2 className={styles.h2} id="pattern">The pattern</h2>
       <p>
         An MCP host on this relay is a first-class network citizen: it can{" "}

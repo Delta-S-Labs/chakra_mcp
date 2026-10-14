@@ -32,11 +32,20 @@ pub enum ApiError {
     #[error("internal: {0}")]
     Internal(#[from] anyhow::Error),
 
+    /// Over the account's per-minute rate limit. Sent with `Retry-After`
+    /// (the rest of the window).
     #[error("rate limit exceeded")]
-    RateLimited,
+    RateLimited { limit: i32, retry_after_secs: u64 },
 
+    /// Out of credits. Sent with `Retry-After` until the next monthly free
+    /// grant (`next_grant_at`); a purchase works at once. `credits_url` is
+    /// where to buy or grant credits, on chakramcp.com only.
     #[error("insufficient credits")]
-    InsufficientCredits,
+    InsufficientCredits {
+        retry_after_secs: u64,
+        next_grant_at: chrono::DateTime<chrono::Utc>,
+        credits_url: Option<String>,
+    },
 
     /// Public sign-up is closed (`SIGNUP_ENABLED`, or a self-hosted server's
     /// default). The operator creates accounts with `chakramcp-server users`.
@@ -67,6 +76,14 @@ struct ErrorBody {
     code: &'static str,
     message: String,
     retryable: bool,
+    /// When to try again, for usage-limit refusals (also in `Retry-After`,
+    /// which browsers may not expose).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    retry_after_secs: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_grant_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    credits_url: Option<String>,
 }
 
 impl IntoResponse for ApiError {
@@ -86,8 +103,10 @@ impl IntoResponse for ApiError {
             // public-invoke quota so clients can tell the two apart). Rate is
             // retryable once the 60s window rolls; credits need a top-up or
             // the next monthly grant.
-            ApiError::RateLimited => (StatusCode::TOO_MANY_REQUESTS, "account_rate_limited", true),
-            ApiError::InsufficientCredits => (
+            ApiError::RateLimited { .. } => {
+                (StatusCode::TOO_MANY_REQUESTS, "account_rate_limited", true)
+            }
+            ApiError::InsufficientCredits { .. } => (
                 StatusCode::TOO_MANY_REQUESTS,
                 "account_credits_exhausted",
                 false,
@@ -102,7 +121,27 @@ impl IntoResponse for ApiError {
             ApiError::PaymentProvider => (StatusCode::BAD_GATEWAY, "payment_provider_error", true),
         };
         let retry_after = match &self {
-            ApiError::SigninRateLimited { retry_after_secs } => Some(*retry_after_secs),
+            ApiError::SigninRateLimited { retry_after_secs }
+            | ApiError::RateLimited {
+                retry_after_secs, ..
+            }
+            | ApiError::InsufficientCredits {
+                retry_after_secs, ..
+            } => Some(*retry_after_secs),
+            _ => None,
+        };
+        let (next_grant_at, credits_url) = match &self {
+            ApiError::InsufficientCredits {
+                next_grant_at,
+                credits_url,
+                ..
+            } => (Some(*next_grant_at), credits_url.clone()),
+            _ => (None, None),
+        };
+        // The sign-in limit keeps its body as it was; the usage limits put
+        // the retry hint in the body too.
+        let body_retry_after = match &self {
+            ApiError::RateLimited { .. } | ApiError::InsufficientCredits { .. } => retry_after,
             _ => None,
         };
 
@@ -111,6 +150,9 @@ impl IntoResponse for ApiError {
                 code,
                 message: self.to_string(),
                 retryable,
+                retry_after_secs: body_retry_after,
+                next_grant_at,
+                credits_url,
             },
         };
         let mut response = (status, Json(body)).into_response();

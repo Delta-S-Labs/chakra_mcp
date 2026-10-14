@@ -7,7 +7,9 @@ use chakramcp_shared::config::SharedConfig;
 
 use crate::compliance::ComplianceChecker;
 use crate::events::UsageRecorder;
-use crate::limits::{CreditCache, CreditsConfig, LimitOutcome, RateLimiter};
+use chakramcp_shared::error::ApiError;
+
+use crate::limits::{CreditCache, CreditsConfig, LimitDecision, LimitOutcome, RateLimiter};
 
 #[derive(Clone)]
 pub struct RelayState {
@@ -37,6 +39,17 @@ pub struct RelayState {
     pub credit_cache: Arc<CreditCache>,
     /// Credit defaults (grant, cost, tick, default rate limit).
     pub credits: CreditsConfig,
+    /// Where an out-of-credits refusal points the caller to buy credits:
+    /// `{frontend}/app/credits` on chakramcp.com, `None` on a self-hosted
+    /// server (which may have no web UI there). Built once at startup.
+    pub credits_url: Option<String>,
+    /// Inbox pulls recorded in memory and flushed to `agent_heartbeats`, for
+    /// the directory's "online" dot (house agents spec §3). Production
+    /// spawns the flusher; tests flush by hand.
+    pub heartbeats: crate::heartbeats::Heartbeats,
+    /// The account whose agents the directory features first
+    /// (`DISCOVERY_FEATURED_ACCOUNT`, chakramcp.com's house agents).
+    pub featured_account: Option<String>,
 }
 
 impl RelayState {
@@ -54,13 +67,16 @@ impl RelayState {
             usage: UsageRecorder::noop(),
             credit_cache: Arc::new(CreditCache::default()),
             credits: CreditsConfig::default(),
+            credits_url: None,
+            heartbeats: crate::heartbeats::Heartbeats::default(),
+            featured_account: None,
         }
     }
 
-    /// The usage-limit gate for `account_id` on `surface`: the outcome to
-    /// refuse with, or `None` to proceed. In-memory only (plus the Redis
-    /// rate check) — see [`crate::limits::enforce`].
-    pub async fn enforce_limits(&self, account_id: Uuid, surface: &str) -> Option<LimitOutcome> {
+    /// The usage-limit gate for `account_id` on `surface`: a refusal, or the
+    /// signals an allowed call reports. In-memory only (plus the Redis rate
+    /// check) — see [`crate::limits::enforce`].
+    pub async fn enforce_limits(&self, account_id: Uuid, surface: &str) -> LimitDecision {
         crate::limits::enforce(
             &self.rate_limiter,
             &self.credit_cache,
@@ -70,6 +86,25 @@ impl RelayState {
             surface,
         )
         .await
+    }
+
+    /// The REST/MCP error for a usage-limit refusal.
+    pub fn refusal_error(&self, outcome: LimitOutcome) -> ApiError {
+        outcome.into_api_error(self.credits_url.clone())
+    }
+
+    /// Point out-of-credits refusals at the web app's credits page (managed
+    /// hosting only).
+    pub fn with_credits_url(mut self, credits_url: Option<String>) -> Self {
+        self.credits_url = credits_url;
+        self
+    }
+
+    /// Feature this account's agents first in the directory. Empty or
+    /// unset features nobody.
+    pub fn with_featured_account(mut self, slug: Option<String>) -> Self {
+        self.featured_account = slug.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty());
+        self
     }
 
     /// Share the credit switches the worker keeps current.

@@ -111,6 +111,11 @@ pub struct InvocationDto {
     pub granter_display_name: Option<String>,
     pub grantee_agent_id: Option<Uuid>,
     pub grantee_display_name: Option<String>,
+    /// The calling agent's account, on inbox pulls only: lets a worker
+    /// apply per-account limits (house agents spec §2.4). `None` on the
+    /// audit-log endpoints.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grantee_account_id: Option<Uuid>,
     pub capability_id: Option<Uuid>,
     pub capability_name: String,
     /// Capability's HITL classification — `"autonomous"` (worker may
@@ -350,8 +355,6 @@ pub async fn invoke(
     user: AuthUser,
     Json(req): Json<InvokeRequest>,
 ) -> Result<axum::response::Response, ApiError> {
-    use axum::response::IntoResponse;
-
     let grant_id = match (req.grant_id, req.capability_id) {
         (Some(_), Some(_)) => {
             return Err(ApiError::InvalidRequest(
@@ -376,9 +379,7 @@ pub async fn invoke(
         (Some(grant_id), None) => grant_id,
     };
 
-    invoke_trusted(state, user, grant_id, req)
-        .await
-        .map(IntoResponse::into_response)
+    invoke_trusted(state, user, grant_id, req).await
 }
 
 async fn invoke_trusted(
@@ -386,7 +387,8 @@ async fn invoke_trusted(
     user: AuthUser,
     grant_id: Uuid,
     req: InvokeRequest,
-) -> Result<(StatusCode, Json<InvokeResponse>), ApiError> {
+) -> Result<axum::response::Response, ApiError> {
+    use axum::response::IntoResponse;
     let outcome = authorize_and_enqueue_trusted(
         &state,
         &user,
@@ -397,14 +399,22 @@ async fn invoke_trusted(
     )
     .await?;
     Ok(match outcome {
-        TrustedOutcome::Enqueued { invocation_id } => (
-            StatusCode::ACCEPTED,
-            Json(InvokeResponse {
-                invocation_id,
-                status: "pending".into(),
-                error: None,
-            }),
-        ),
+        TrustedOutcome::Enqueued {
+            invocation_id,
+            signals,
+        } => {
+            let mut response = (
+                StatusCode::ACCEPTED,
+                Json(InvokeResponse {
+                    invocation_id,
+                    status: "pending".into(),
+                    error: None,
+                }),
+            )
+                .into_response();
+            signals.apply(response.headers_mut());
+            response
+        }
         TrustedOutcome::Rejected {
             invocation_id,
             status,
@@ -416,7 +426,8 @@ async fn invoke_trusted(
                 status: "rejected".into(),
                 error: Some(error),
             }),
-        ),
+        )
+            .into_response(),
     })
 }
 
@@ -432,8 +443,12 @@ async fn invoke_trusted(
 /// caller not a member of the grantee account, usage limits, DB
 /// failures) come back as `Err(ApiError)` instead.
 pub(crate) enum TrustedOutcome {
-    /// Queued as `pending` for the granter to pull from its inbox.
-    Enqueued { invocation_id: Uuid },
+    /// Queued as `pending` for the granter to pull from its inbox. `signals`
+    /// are what the caller is told about its limits (credits P6).
+    Enqueued {
+        invocation_id: Uuid,
+        signals: crate::limits::LimitSignals,
+    },
     /// Recorded as `rejected`. `status` is the HTTP status the REST
     /// surface returns; other surfaces map it onto their own errors.
     Rejected {
@@ -590,13 +605,15 @@ pub(crate) async fn authorize_and_enqueue_trusted(
 
     // Per-account usage limits (rate + credits), keyed on the caller's
     // (grantee's) account. In-memory only. Shadow mode logs a would-block
-    // and proceeds; enforcing returns 429 with an `account_*` code.
-    if let Some(outcome) = state
+    // and proceeds; enforcing returns 429 with an `account_*` code and a
+    // retry hint. An allowed call carries its signals back to the caller.
+    let decision = state
         .enforce_limits(row.grantee_account_id, limits_source)
-        .await
-    {
-        return Err(outcome.into());
+        .await;
+    if let Some(refusal) = decision.refusal {
+        return Err(state.refusal_error(refusal));
     }
+    let signals = decision.signals;
 
     // Freeze the trust context at queue time (migration 0024). Audit
     // log endpoints return this verbatim so they show what was true
@@ -702,7 +719,10 @@ pub(crate) async fn authorize_and_enqueue_trusted(
     .execute(&state.db)
     .await?;
 
-    Ok(TrustedOutcome::Enqueued { invocation_id: id })
+    Ok(TrustedOutcome::Enqueued {
+        invocation_id: id,
+        signals,
+    })
 }
 
 /// Public-invoke path (migration 0022). Caller addresses the capability
@@ -796,8 +816,9 @@ async fn invoke_public(
     .fetch_one(&state.db)
     .await?;
     if used >= i64::from(quota) {
-        let resets_at = next_month_start();
-        return Ok((
+        let now = Utc::now();
+        let resets_at = crate::limits::next_month_start(now);
+        let mut response = (
             StatusCode::TOO_MANY_REQUESTS,
             Json(serde_json::json!({
                 "error": {
@@ -811,18 +832,23 @@ async fn invoke_public(
                 "resets_at": resets_at,
             })),
         )
-            .into_response());
+            .into_response();
+        let retry_after = (resets_at - now).num_seconds().max(1) as u64;
+        response
+            .headers_mut()
+            .insert(axum::http::header::RETRY_AFTER, retry_after.into());
+        return Ok(response);
     }
 
     // Per-account usage limits (rate + credits), keyed on the invoker's
     // account. Independent of the per-capability public quota above: a public
     // invoke must pass both. In-memory only. Shadow mode logs a would-block
     // and proceeds; enforcing returns 429 with an `account_*` code.
-    if let Some(outcome) = state
+    let decision = state
         .enforce_limits(invoker.account_id, "v1_invoke_public")
-        .await
-    {
-        return Err(outcome.into());
+        .await;
+    if let Some(refusal) = decision.refusal {
+        return Err(state.refusal_error(refusal));
     }
 
     // System One compliance (when enabled). No grant or friendship on the
@@ -899,7 +925,7 @@ async fn invoke_public(
     .execute(&state.db)
     .await?;
 
-    Ok((
+    let mut response = (
         StatusCode::ACCEPTED,
         Json(InvokeResponse {
             invocation_id: id,
@@ -907,25 +933,9 @@ async fn invoke_public(
             error: None,
         }),
     )
-        .into_response())
-}
-
-/// First instant of next calendar month, UTC. Used as `resets_at` in
-/// the 429 quota-exhausted response.
-fn next_month_start() -> DateTime<Utc> {
-    use chrono::{Datelike, NaiveDate, TimeZone};
-    let now = Utc::now();
-    let (y, m) = if now.month() == 12 {
-        (now.year() + 1, 1)
-    } else {
-        (now.year(), now.month() + 1)
-    };
-    Utc.from_utc_datetime(
-        &NaiveDate::from_ymd_opt(y, m, 1)
-            .expect("valid date")
-            .and_hms_opt(0, 0, 0)
-            .expect("valid time"),
-    )
+        .into_response();
+    decision.signals.apply(response.headers_mut());
+    Ok(response)
 }
 
 // ─── GET /v1/inbox?agent_id=X[&limit=N] ──────────────────
@@ -957,6 +967,8 @@ pub async fn inbox(
     if !crate::auth::grant_allows_agent(&state.db, &grant, q.agent_id).await? {
         return Err(ApiError::Forbidden);
     }
+    // The agent is online (in memory; flushed in batches).
+    state.heartbeats.record(q.agent_id);
 
     // Atomically claim the oldest pending rows for this agent.
     // FOR UPDATE SKIP LOCKED lets concurrent pollers safely pull
@@ -1006,6 +1018,7 @@ pub async fn inbox(
             i.created_at, i.claimed_at,
             ga.display_name as "granter_display_name?",
             ea.display_name as "grantee_display_name?",
+            ea.account_id   as "grantee_account_id?",
 
             g.status              as "g_status?",
             g.granter_agent_id    as "g_granter_agent_id?",
@@ -1114,6 +1127,7 @@ pub async fn inbox(
                     granter_display_name: r.granter_display_name,
                     grantee_agent_id: r.grantee_agent_id,
                     grantee_display_name: r.grantee_display_name,
+                    grantee_account_id: r.grantee_account_id,
                     capability_id: r.capability_id,
                     capability_name: r.capability_name,
                     semantics: r.capability_semantics,
@@ -1353,6 +1367,7 @@ pub async fn list(
                     granter_display_name: r.granter_display_name,
                     grantee_agent_id: r.grantee_agent_id,
                     grantee_display_name: r.grantee_display_name,
+                    grantee_account_id: None,
                     capability_id: r.capability_id,
                     capability_name: r.capability_name,
                     semantics: r.capability_semantics,
@@ -1446,6 +1461,7 @@ async fn fetch_one(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<InvocationDto
         granter_display_name: r.granter_display_name,
         grantee_agent_id: r.grantee_agent_id,
         grantee_display_name: r.grantee_display_name,
+        grantee_account_id: None,
         capability_id: r.capability_id,
         capability_name: r.capability_name,
         semantics: r.capability_semantics,
@@ -1783,19 +1799,95 @@ mod legacy_v01_contract_tests {
         let app = crate::router(
             crate::state::RelayState::new(pool.clone(), config())
                 .with_limits_enforce(true)
-                .with_credit_cache(credits),
+                .with_credit_cache(credits)
+                .with_credits_url(Some("https://chakramcp.test/app/credits".into())),
         );
         let res = app.oneshot(trusted_invoke(&f)).await.unwrap();
         assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
+        // When to retry: until the next monthly grant (credits P6).
+        let retry_after: u64 = res.headers()[header::RETRY_AFTER]
+            .to_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!((1..=31 * 86_400).contains(&retry_after));
         let body: serde_json::Value =
             serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
         assert_eq!(body["error"]["code"], "account_credits_exhausted");
+        assert_eq!(body["error"]["retry_after_secs"], retry_after);
+        assert!(body["error"]["next_grant_at"].is_string());
+        assert_eq!(
+            body["error"]["credits_url"],
+            "https://chakramcp.test/app/credits"
+        );
 
         let queued: i64 = sqlx::query_scalar("SELECT count(*) FROM credit_charge_queue")
             .fetch_one(&pool)
             .await
             .unwrap();
         assert_eq!(queued, 0, "refused before anything was queued");
+    }
+
+    /// An allowed call says how much of the minute is left and whether the
+    /// account is running low (credits P6).
+    #[sqlx::test(migrations = "../migrations")]
+    async fn an_allowed_invoke_reports_its_limits(pool: PgPool) {
+        let f = seed_demo(&pool).await;
+        let account = grantee_account(&pool, &f).await;
+        let cache = crate::limits::CreditCache::default();
+        cache.replace_all(
+            std::collections::HashSet::new(),
+            std::collections::HashSet::from([account]),
+            std::collections::HashMap::from([(account, 5)]),
+        );
+        let app = crate::router(
+            crate::state::RelayState::new(pool.clone(), config())
+                .with_limits_enforce(true)
+                .with_credit_cache(std::sync::Arc::new(cache))
+                .with_rate_limiter(crate::limits::RateLimiter::Counting(Default::default())),
+        );
+        let res = app.oneshot(trusted_invoke(&f)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::ACCEPTED);
+        let h = res.headers();
+        assert_eq!(h["ratelimit-limit"], "5");
+        assert_eq!(h["ratelimit-remaining"], "4");
+        assert!(h.contains_key("ratelimit-reset"));
+        assert_eq!(h["chakramcp-credits"], "low");
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn a_rate_limited_invoke_says_when_to_retry(pool: PgPool) {
+        let f = seed_demo(&pool).await;
+        let account = grantee_account(&pool, &f).await;
+        let cache = crate::limits::CreditCache::default();
+        cache.replace(
+            std::collections::HashSet::new(),
+            std::collections::HashMap::from([(account, 1)]),
+        );
+        let app = crate::router(
+            crate::state::RelayState::new(pool.clone(), config())
+                .with_limits_enforce(true)
+                .with_credit_cache(std::sync::Arc::new(cache))
+                .with_rate_limiter(crate::limits::RateLimiter::Counting(Default::default())),
+        );
+        let first = app.clone().oneshot(trusted_invoke(&f)).await.unwrap();
+        assert_eq!(first.status(), StatusCode::ACCEPTED);
+        assert!(
+            !first.headers().contains_key("chakramcp-credits"),
+            "not low"
+        );
+        let res = app.oneshot(trusted_invoke(&f)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
+        let retry_after: u64 = res.headers()[header::RETRY_AFTER]
+            .to_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!((1..=60).contains(&retry_after));
+        let body: serde_json::Value =
+            serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        assert_eq!(body["error"]["code"], "account_rate_limited");
+        assert_eq!(body["error"]["retry_after_secs"], retry_after);
     }
 
     #[sqlx::test(migrations = "../migrations")]
@@ -1852,7 +1944,8 @@ mod legacy_v01_contract_tests {
     #[sqlx::test(migrations = "../migrations")]
     async fn v01_pull_mode_full_lifecycle(pool: PgPool) {
         let f = seed_demo(&pool).await;
-        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        let state = crate::state::RelayState::new(pool.clone(), config());
+        let app = crate::router(state.clone());
 
         // ── Bob: POST /v1/invoke ────────────────────────────
         let invoke_res = app
@@ -1955,6 +2048,24 @@ mod legacy_v01_contract_tests {
                 .any(|inv| inv["id"] == invocation_id.to_string()),
             "Alice's inbox should include the parked invocation"
         );
+        // The pulled row names the caller's account (for per-account limits).
+        let pulled = items
+            .iter()
+            .find(|inv| inv["id"] == invocation_id.to_string())
+            .unwrap();
+        assert_eq!(
+            pulled["grantee_account_id"],
+            grantee_account(&pool, &f).await.to_string()
+        );
+        // The pull was recorded as a heartbeat, written on the next flush.
+        assert_eq!(state.heartbeats.flush(&pool).await.unwrap(), 1);
+        let polled: Option<chrono::DateTime<chrono::Utc>> =
+            sqlx::query_scalar("SELECT last_polled_at FROM agent_heartbeats WHERE agent_id = $1")
+                .bind(f.granter_agent_id)
+                .fetch_optional(&pool)
+                .await
+                .unwrap();
+        assert!(polled.is_some(), "the granter is online");
 
         // ── Alice: POST /v1/invocations/{id}/result ─────────
         let result_res = app
@@ -2674,9 +2785,14 @@ mod public_invoke_tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert!(res.headers().contains_key(header::RETRY_AFTER));
         let body: Value =
             serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
         assert_eq!(body["error"]["code"], "account_credits_exhausted");
+        assert!(
+            body["error"].get("credits_url").is_none(),
+            "a self-hosted server sends no buy link"
+        );
         let _ = (f.granter_user, f.invoker_user, f.granter_agent);
     }
 
@@ -2772,6 +2888,10 @@ mod public_invoke_tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert!(
+            res.headers().contains_key(header::RETRY_AFTER),
+            "until the quota resets"
+        );
         let body: Value =
             serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
         assert_eq!(body["error"]["code"], "monthly_quota_exhausted");

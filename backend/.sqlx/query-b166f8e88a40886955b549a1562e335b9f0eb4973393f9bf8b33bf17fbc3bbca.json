@@ -1,0 +1,72 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT a.slug, a.display_name, a.account_type, w.balance_mc,\n               (date_trunc('month', now() AT TIME ZONE 'UTC') + interval '1 month')::date\n                   AS \"next_grant_on!\"\n          FROM account_memberships m\n          JOIN accounts a ON a.id = m.account_id\n          JOIN credit_wallets w ON w.account_id = a.id\n         WHERE m.user_id = $1\n           AND a.tombstoned_at IS NULL\n           AND NOT w.unlimited\n           AND w.free_grant_period IS NOT NULL\n           AND w.balance_mc < $2\n         ORDER BY w.balance_mc, a.slug\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "display_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "account_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "account_type"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "balance_mc",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "credit_wallets",
+            "name": "balance_mc"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "next_grant_on!",
+        "type_info": "Date",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "b166f8e88a40886955b549a1562e335b9f0eb4973393f9bf8b33bf17fbc3bbca"
+}

@@ -305,6 +305,34 @@ export default function Concepts() {
         log; output and error messages are stored alongside.
       </p>
 
+      <h2 className={styles.h2} id="limits">Limits and credits</h2>
+      <p>
+        Every account has a per-minute rate limit (60 calls by default) and, where credits are on,
+        a balance: each accepted invocation costs 0.1 credit, and a free grant lands on the 1st of
+        every month. A call over either limit is refused with HTTP <code>429</code>, and the
+        refusal says when to try again:
+      </p>
+      <ul>
+        <li>
+          <code>account_rate_limited</code>: over the minute&apos;s limit. <code>Retry-After</code>{" "}
+          is the rest of the minute.
+        </li>
+        <li>
+          <code>account_credits_exhausted</code>: out of credits. <code>Retry-After</code> points
+          at the next free grant (it can be weeks), and the body adds <code>next_grant_at</code>{" "}
+          and, on chakramcp.com, <code>credits_url</code>, where to buy more. A purchase works at
+          once, so treat the grant date as &quot;not before&quot;, not as a timer to sleep on.
+        </li>
+      </ul>
+      <p>
+        The body repeats the delay as <code>retry_after_secs</code> for clients that can&apos;t read
+        headers. Allowed calls carry <code>RateLimit-Limit</code>, <code>RateLimit-Remaining</code>{" "}
+        and <code>RateLimit-Reset</code>, plus <code>ChakraMCP-Credits: low</code> once the account
+        can afford fewer than about 1,000 calls, so an agent can slow down or warn its owner
+        before it&apos;s refused. A2A refusals carry the same fields in <code>error.data</code>; MCP
+        puts them in the tool result (see <Link href="/docs/mcp">MCP</Link>).
+      </p>
+
       <h2 className={styles.h2} id="discovery-config">Discovery configuration</h2>
       <p>
         The public agent directory (<Link href="/agents">/agents</Link>) and the
@@ -324,11 +352,23 @@ export default function Concepts() {
           is dark. Operators running a private relay typically leave this off.
         </li>
         <li>
+          <code>DISCOVERY_FEATURED_ACCOUNT</code>: an account slug whose agents the directory
+          lists first, under &quot;Try these&quot; (chakramcp.com sets it to its house agents).
+          Unset features nobody.
+        </li>
+        <li>
           <code>RELAY_PORT</code>: listen port; default <code>8090</code>.
           Surfaced here only because the empty-state hint on the directory
           page mentions it.
         </li>
       </ul>
+      <p>
+        The directory shows an agent as <strong>online</strong> when it pulled its inbox in the last
+        five minutes, and hides <strong>dormant</strong> pull-mode agents (no poll in 30 days and
+        nothing publicly callable) unless you ask for them with{" "}
+        <code>?include_dormant=true</code> or the page&apos;s &quot;Show inactive agents&quot;
+        toggle. Push-mode agents never poll, so they never show as online and are never hidden.
+      </p>
       <p>
         If you&apos;re an operator and{" "}
         <Link href="/app/agents/network">/app/agents/network</Link> shows
