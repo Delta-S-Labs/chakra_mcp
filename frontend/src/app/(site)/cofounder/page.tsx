@@ -347,7 +347,6 @@ export default function CofounderPage() {
                 <li>Rust + Axum + Tokio</li>
                 <li>Postgres via sqlx (compile-time checked queries)</li>
                 <li>JWT for API auth, HMAC-SHA256 for signed webhooks</li>
-                <li>AWS: ECS Fargate + RDS Postgres + ALB + Secrets Manager</li>
                 <li>Containerized, portable, standard 12-factor config</li>
               </ul>
             </article>
