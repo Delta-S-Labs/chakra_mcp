@@ -19,6 +19,8 @@ const tabs: Tab[] = [
   { label: "Friendships", href: "/app/friendships" },
   { label: "Grants", href: "/app/grants" },
   { label: "Inbox", href: "/app/inbox" },
+  { label: "Usage", href: "/app/usage" },
+  { label: "Credits", href: "/app/credits" },
 ];
 
 export function AppNav() {

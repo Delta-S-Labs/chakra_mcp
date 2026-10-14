@@ -443,3 +443,116 @@ groups:
     labels:
       severity: warning
     isPaused: false
+- orgId: 1
+  name: payments
+  folder: ChakraMCP
+  interval: 1m
+  rules:
+  # Credits P4 (docs/superpowers/specs/2026-10-06-credits-p4-purchasing-design.md
+  # §10). Every series starts at 0 when the server does, so increase() sees a
+  # single event even right after a deploy.
+  - uid: credit-purchase-needs-attention
+    title: Credit purchase needs attention
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: sum(increase(chakramcp_credit_purchases_total{status=~"unmatched|unapplied"}[15m]))
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+    noDataState: OK
+    execErrState: Error
+    for: 0m
+    annotations:
+      summary: 'Someone paid for credits and was not credited automatically. Find credits.payment_unmatched or credits.payment_unapplied in the relay logs, then refund in Dodo or grant the credits by hand.'
+    labels:
+      severity: critical
+    isPaused: false
+  - uid: dodo-webhook-failures
+    title: Dodo webhooks failing
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: sum(increase(chakramcp_dodo_webhook_rejected_total{reason=~"bad_signature|bad_json"}[15m]))
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+    noDataState: OK
+    execErrState: Error
+    for: 0m
+    annotations:
+      summary: 'Dodo webhooks are failing their signature check or our parser. Payments are not being credited: check DODO_PAYMENTS_WEBHOOK_KEY, then credits.webhook_rejected / credits.webhook_unparsed in the relay logs. Dodo retries for about 27 hours.'
+    labels:
+      severity: critical
+    isPaused: false
+  - uid: purchase-config-error
+    title: Purchase settings broken
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 300
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: max(chakramcp_purchase_config_error)
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+    noDataState: OK
+    execErrState: Error
+    for: 1m
+    annotations:
+      summary: 'A purchase setting is present but wrong, so buying credits is off and Dodo webhooks get 404s. The relay logged purchasing=off with the reason at startup.'
+    labels:
+      severity: critical
+    isPaused: false

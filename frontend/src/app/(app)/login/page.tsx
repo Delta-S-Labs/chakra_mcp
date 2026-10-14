@@ -1,6 +1,7 @@
 import Link from "next/link";
 import SignInPanel from "./SignInPanel";
 import { AlreadySignedIn } from "./AlreadySignedIn";
+import { safeRedirect } from "@/lib/safe-redirect";
 import styles from "./login.module.css";
 
 /**
@@ -10,6 +11,7 @@ import styles from "./login.module.css";
  *   CAPTCHA_ENABLED       - whether to render the captcha widget
  *   RECAPTCHA_SITE_KEY    - public key for the v2 widget
  *   from                  - query param: where to send the user after success
+ *                           (only a path on this site; see safeRedirect)
  *
  * The actual sign-in click + captcha verify happens in SignInPanel
  * (client component).
@@ -17,9 +19,10 @@ import styles from "./login.module.css";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; reason?: string }>;
+  searchParams: Promise<{ from?: string | string[]; reason?: string | string[] }>;
 }) {
   const { from, reason } = await searchParams;
+  const redirectTo = safeRedirect(from);
   const captchaEnabled = process.env.CAPTCHA_ENABLED !== "false";
   const captchaSiteKey = process.env.RECAPTCHA_SITE_KEY ?? "";
 
@@ -48,7 +51,7 @@ export default async function LoginPage({
               (e.g. revoked). Suppress the "Signed in as / Continue"
               banner outright so the user just sees the login form,
               never a Continue button that loops straight back here. */}
-          {!sessionExpired && <AlreadySignedIn from={from} />}
+          {!sessionExpired && <AlreadySignedIn redirectTo={redirectTo} />}
 
           {sessionExpired && (
             <div className={styles.notice} role="status">
@@ -67,7 +70,7 @@ export default async function LoginPage({
           <SignInPanel
             captchaEnabled={captchaEnabled}
             captchaSiteKey={captchaSiteKey}
-            redirectTo={from || "/app"}
+            redirectTo={redirectTo}
           />
 
           <p className={styles.foot}>

@@ -26,6 +26,7 @@ use uuid::Uuid;
 
 use chakramcp_shared::error::{ApiError, ApiResult};
 use chakramcp_shared::jwt;
+use sqlx::PgPool;
 
 use crate::auth::AuthUser;
 use crate::state::AppState;
@@ -41,7 +42,7 @@ fn sha256_hex(s: &str) -> String {
     hex::encode(h.finalize())
 }
 
-fn random_token(byte_len: usize) -> String {
+pub(crate) fn random_token(byte_len: usize) -> String {
     use rand::RngCore;
     let mut bytes = vec![0u8; byte_len];
     rand::thread_rng().fill_bytes(&mut bytes);
@@ -230,6 +231,11 @@ pub async fn get_client(
     State(state): State<AppState>,
     axum::extract::Path(client_id): axum::extract::Path<String>,
 ) -> ApiResult<Json<ClientPreview>> {
+    Ok(Json(load_client(&state.db, &client_id).await?))
+}
+
+/// A registered client, for a consent page. `NotFound` if unknown.
+pub async fn load_client(db: &PgPool, client_id: &str) -> ApiResult<ClientPreview> {
     let row = sqlx::query!(
         r#"
         SELECT client_id, client_name, redirect_uris, client_uri, scope
@@ -237,17 +243,17 @@ pub async fn get_client(
         "#,
         client_id,
     )
-    .fetch_optional(&state.db)
+    .fetch_optional(db)
     .await?
     .ok_or(ApiError::NotFound)?;
 
-    Ok(Json(ClientPreview {
+    Ok(ClientPreview {
         client_id: row.client_id,
         client_name: row.client_name,
         redirect_uris: row.redirect_uris,
         client_uri: row.client_uri,
         scope: row.scope,
-    }))
+    })
 }
 
 // ─── POST /oauth/issue-code ──────────────────────────────
@@ -296,6 +302,17 @@ pub async fn issue_code(
     user: AuthUser,
     Json(req): Json<IssueCodeRequest>,
 ) -> ApiResult<Json<IssueCodeResponse>> {
+    Ok(Json(issue_code_for(&state.db, user.user_id, &req).await?))
+}
+
+/// Mint an authorization code for a user who consented, after every check
+/// consent needs. Shared by `POST /oauth/issue-code` (the web UI) and the
+/// built-in consent page.
+pub async fn issue_code_for(
+    db: &PgPool,
+    user_id: Uuid,
+    req: &IssueCodeRequest,
+) -> ApiResult<IssueCodeResponse> {
     if req.code_challenge_method != "S256" {
         return Err(ApiError::InvalidRequest(
             "code_challenge_method must be S256".into(),
@@ -339,10 +356,10 @@ pub async fn issue_code(
             JOIN account_memberships m ON m.account_id = a.account_id
             WHERE m.user_id = $1 AND a.id = ANY($2)
             "#,
-            user.user_id,
+            user_id,
             &selected_ids,
         )
-        .fetch_one(&state.db)
+        .fetch_one(db)
         .await?;
         if in_scope as usize != selected_ids.len() {
             return Err(ApiError::InvalidRequest(
@@ -360,7 +377,7 @@ pub async fn issue_code(
         r#"SELECT redirect_uris FROM oauth_clients WHERE client_id = $1"#,
         req.client_id,
     )
-    .fetch_optional(&state.db)
+    .fetch_optional(db)
     .await?
     .ok_or(ApiError::NotFound)?;
 
@@ -383,7 +400,7 @@ pub async fn issue_code(
         "#,
         Uuid::now_v7(),
         req.client_id,
-        user.user_id,
+        user_id,
         code_hash,
         req.code_challenge,
         req.code_challenge_method,
@@ -393,13 +410,13 @@ pub async fn issue_code(
         agent_scope,
         stored_ids,
     )
-    .execute(&state.db)
+    .execute(db)
     .await?;
 
-    Ok(Json(IssueCodeResponse {
+    Ok(IssueCodeResponse {
         code,
         expires_in: AUTH_CODE_TTL_MINUTES * 60,
-    }))
+    })
 }
 
 // ─── POST /oauth/token ───────────────────────────────────
@@ -957,6 +974,11 @@ pub async fn device_session(
     _user: AuthUser,
     Path(user_code): Path<String>,
 ) -> ApiResult<Json<DeviceSessionResponse>> {
+    Ok(Json(device_session_info(&state.db, &user_code).await?))
+}
+
+/// A device-pairing request and where it stands, for a consent page.
+pub async fn device_session_info(db: &PgPool, user_code: &str) -> ApiResult<DeviceSessionResponse> {
     let row = sqlx::query!(
         r#"
         SELECT persona, agent_slug_hint, agent_display_name_hint,
@@ -967,7 +989,7 @@ pub async fn device_session(
         "#,
         user_code,
     )
-    .fetch_optional(&state.db)
+    .fetch_optional(db)
     .await?
     .ok_or(ApiError::NotFound)?;
 
@@ -983,7 +1005,7 @@ pub async fn device_session(
         "pending"
     };
 
-    Ok(Json(DeviceSessionResponse {
+    Ok(DeviceSessionResponse {
         persona: row.persona,
         agent_slug_hint: row.agent_slug_hint,
         agent_display_name_hint: row.agent_display_name_hint,
@@ -991,7 +1013,7 @@ pub async fn device_session(
         agent_visibility_hint: row.agent_visibility_hint,
         expires_at: row.expires_at,
         status,
-    }))
+    })
 }
 
 // ─── POST /oauth/device-approve ───────────────────────────
@@ -1059,6 +1081,18 @@ pub async fn device_approve(
     user: AuthUser,
     Json(req): Json<DeviceApproveRequest>,
 ) -> ApiResult<Json<DeviceApproveResponse>> {
+    Ok(Json(approve_device(&state.db, user.user_id, &req).await?))
+}
+
+/// Approve a device-pairing request as `user_id`: create the agent (or
+/// attach an existing one) and bind it to the device code, so the device's
+/// next poll gets its token. Shared by `POST /oauth/device-approve` and the
+/// built-in pairing page.
+pub async fn approve_device(
+    db: &PgPool,
+    user_id: Uuid,
+    req: &DeviceApproveRequest,
+) -> ApiResult<DeviceApproveResponse> {
     // slug / display_name / visibility are only needed when CREATING a new
     // agent. When attaching an existing one they're ignored.
     let creating = req.existing_agent_id.is_none();
@@ -1094,7 +1128,7 @@ pub async fn device_approve(
         }
     }
 
-    let mut tx = state.db.begin().await?;
+    let mut tx = db.begin().await?;
 
     let row = sqlx::query!(
         r#"
@@ -1144,7 +1178,7 @@ pub async fn device_approve(
               AND acc.tombstoned_at IS NULL
             "#,
             existing_id,
-            user.user_id,
+            user_id,
         )
         .fetch_optional(&mut *tx)
         .await?
@@ -1162,7 +1196,7 @@ pub async fn device_approve(
                 WHERE a.slug = $1 AND m.user_id = $2 AND a.tombstoned_at IS NULL
                 "#,
                 account_slug,
-                user.user_id,
+                user_id,
             )
             .fetch_optional(&mut *tx)
             .await?
@@ -1180,7 +1214,7 @@ pub async fn device_approve(
                 ORDER BY a.created_at ASC
                 LIMIT 1
                 "#,
-                user.user_id,
+                user_id,
             )
             .fetch_optional(&mut *tx)
             .await?
@@ -1204,7 +1238,7 @@ pub async fn device_approve(
             "#,
             agent_id,
             account_id,
-            user.user_id,
+            user_id,
             slug,
             display_name,
             req.agent_description.clone().unwrap_or_default(),
@@ -1247,7 +1281,7 @@ pub async fn device_approve(
             JOIN account_memberships m ON m.account_id = a.account_id
             WHERE m.user_id = $1 AND a.id = ANY($2)
             "#,
-            user.user_id,
+            user_id,
             &selected_ids,
         )
         .fetch_one(&mut *tx)
@@ -1272,7 +1306,7 @@ pub async fn device_approve(
         WHERE id = $1
         "#,
         row.id,
-        user.user_id,
+        user_id,
         final_id,
         agent_scope,
         stored_ids,
@@ -1298,7 +1332,7 @@ pub async fn device_approve(
         VALUES ($1, $2, $3, $4, 'agent', $5, $6, $7)
         "#,
         Uuid::now_v7(),
-        user.user_id,
+        user_id,
         account_id,
         action,
         final_id,
@@ -1310,12 +1344,12 @@ pub async fn device_approve(
 
     tx.commit().await?;
 
-    Ok(Json(DeviceApproveResponse {
+    Ok(DeviceApproveResponse {
         status: "approved",
         agent_id: final_id,
         agent_slug: final_slug,
         account_slug,
-    }))
+    })
 }
 
 // ─── POST /oauth/device-deny ──────────────────────────────
@@ -1329,7 +1363,13 @@ pub async fn device_deny(
     _user: AuthUser,
     Json(req): Json<DeviceDenyRequest>,
 ) -> Result<StatusCode, ApiError> {
-    let mut tx = state.db.begin().await?;
+    deny_device(&state.db, &req.user_code).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Deny a device-pairing request. Denying twice is a no-op.
+pub async fn deny_device(db: &PgPool, user_code: &str) -> ApiResult<()> {
+    let mut tx = db.begin().await?;
     let row = sqlx::query!(
         r#"
         SELECT id, denied_at, approved_at, consumed_at
@@ -1337,7 +1377,7 @@ pub async fn device_deny(
         WHERE user_code = $1
         FOR UPDATE
         "#,
-        req.user_code,
+        user_code,
     )
     .fetch_optional(&mut *tx)
     .await?
@@ -1359,7 +1399,38 @@ pub async fn device_deny(
     }
 
     tx.commit().await?;
-    Ok(StatusCode::NO_CONTENT)
+    Ok(())
+}
+
+/// A live agent the user can pick on a consent page.
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentChoice {
+    pub id: Uuid,
+    pub slug: String,
+    pub display_name: String,
+    pub account_slug: String,
+}
+
+/// The live agents in accounts the user belongs to: what a consent page
+/// can offer for "selected agents" or "link an existing agent".
+pub async fn agents_for_user(db: &PgPool, user_id: Uuid) -> ApiResult<Vec<AgentChoice>> {
+    let rows = sqlx::query_as!(
+        AgentChoice,
+        r#"
+        SELECT ag.id, ag.slug, ag.display_name, acc.slug AS account_slug
+          FROM agents ag
+          JOIN accounts acc ON acc.id = ag.account_id
+          JOIN account_memberships m ON m.account_id = acc.id
+         WHERE m.user_id = $1
+           AND ag.tombstoned_at IS NULL
+           AND acc.tombstoned_at IS NULL
+         ORDER BY acc.slug, ag.slug
+        "#,
+        user_id,
+    )
+    .fetch_all(db)
+    .await?;
+    Ok(rows)
 }
 
 #[cfg(test)]

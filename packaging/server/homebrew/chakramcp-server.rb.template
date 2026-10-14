@@ -49,11 +49,11 @@ class ChakramcpServer < Formula
 
   def caveats
     <<~EOS
-      First-time bootstrap (one-time):
+      First-time setup:
 
         brew services start postgresql@16
         createdb chakramcp
-        chakramcp-server init                    # writes ~/.chakramcp/server.toml
+        chakramcp-server init                    # writes server.toml and prints where
         chakramcp-server migrate                 # applies SQL migrations
 
       Then start it:
@@ -62,18 +62,24 @@ class ChakramcpServer < Formula
         # — or run in the foreground for logs:
         chakramcp-server start
 
+      Create your account. Public sign-up is closed by default:
+
+        chakramcp-server users add you@example.com --name "Your Name" --admin
+
       The app service answers on http://localhost:8080 and the relay
-      on http://localhost:8090. Point the CLI at it with:
+      on http://localhost:8090. Point the CLI at it and sign in: your
+      browser opens the server's own sign-in page.
 
         chakramcp networks add private \
           --app-url http://localhost:8080 \
           --relay-url http://localhost:8090
-        chakramcp login --network private
+        chakramcp networks use private
+        chakramcp login
 
-      Edit ~/.chakramcp/server.toml to change ports, the JWT secret,
-      or admin_email. The web UI is optional and isn't bundled — clone
-      https://github.com/@OWNER_REPO@ and run pnpm dev under frontend/
-      if you want it.
+      Settings live in server.toml: on macOS
+      ~/Library/Application Support/com.chakramcp.chakramcp/server.toml,
+      on Linux ~/.config/chakramcp/server.toml. Upgrading from 0.2.0?
+      Delete its line frontend_base_url = "http://localhost:3000".
     EOS
   end
 

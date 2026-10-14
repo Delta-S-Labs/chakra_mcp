@@ -13,6 +13,7 @@ pub mod config;
 pub mod credits;
 pub mod db;
 pub mod error;
+pub mod hosting;
 pub mod jwt;
 pub mod scope;
 pub mod telemetry;

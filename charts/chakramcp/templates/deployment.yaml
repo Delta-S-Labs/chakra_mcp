@@ -123,6 +123,14 @@ spec:
             - name: FRONTEND_PUBLIC_URL
               value: {{ . | quote }}
             {{- end }}
+            {{- if kindIs "bool" .Values.config.signupEnabled }}
+            - name: SIGNUP_ENABLED
+              value: {{ .Values.config.signupEnabled | quote }}
+            {{- end }}
+            {{- if kindIs "bool" .Values.config.creditsEnabled }}
+            - name: CREDITS_ENABLED
+              value: {{ .Values.config.creditsEnabled | quote }}
+            {{- end }}
             {{- with .Values.config.adminEmail }}
             - name: ADMIN_EMAIL
               value: {{ . | quote }}

@@ -102,6 +102,10 @@ enum Cmd {
     #[command(subcommand)]
     Agents(commands::agents::Cmd),
 
+    /// Create, list and revoke your API keys (for SDKs and MCP clients).
+    #[command(subcommand)]
+    ApiKeys(commands::api_keys::Cmd),
+
     /// View / manage organization accounts you belong to (incl. settings).
     #[command(subcommand, alias = "orgs")]
     Org(commands::orgs::Cmd),
@@ -245,6 +249,7 @@ async fn run() -> Result<()> {
         Cmd::Networks(cmd) => commands::networks::run(cmd, &mut cfg)?,
         Cmd::Agents(cmd) => commands::agents::run(cmd, ApiClient::new(cfg)?).await?,
         Cmd::Org(cmd) => commands::orgs::run(cmd, ApiClient::new(cfg)?).await?,
+        Cmd::ApiKeys(cmd) => commands::api_keys::run(cmd, ApiClient::new(cfg)?).await?,
         Cmd::Network => {
             let api = ApiClient::new(cfg)?;
             let agents: serde_json::Value = api.get_relay("/v1/network/agents").await?;

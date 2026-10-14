@@ -1,0 +1,91 @@
+name: Self-host e2e
+
+# Follows docs/self-hosting/compose.md end to end against this commit's
+# server and CLI: start the stack, create the admin, sign in with the CLI
+# through the server's own pages, pair a device, get an API key, connect
+# as an MCP client, and check the self-hosted defaults (infra/e2e/run.sh).
+#
+# Runs on every PR (skipping its steps when nothing relevant changed), so
+# it can be a required check without leaving other PRs waiting on it.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "infra/docker-compose.prod.yml"
+      - "infra/Caddyfile"
+      - "infra/Dockerfile.release"
+      - "infra/e2e/**"
+      - "docs/self-hosting/**"
+      - ".github/workflows/self-host-e2e.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: self-host-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: Self-host end to end
+    # Older glibc than the image's bookworm, so the binary runs there.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: changes
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            e2e:
+              - 'backend/**'
+              - 'infra/docker-compose.prod.yml'
+              - 'infra/Caddyfile'
+              - 'infra/Dockerfile.release'
+              - 'infra/e2e/**'
+              - 'docs/self-hosting/**'
+              - '.github/workflows/self-host-e2e.yml'
+
+      - name: Nothing to check
+        if: steps.changes.outputs.e2e != 'true'
+        run: echo "No self-hosting changes; skipping."
+
+      - name: Install the Rust toolchain
+        if: steps.changes.outputs.e2e == 'true'
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        if: steps.changes.outputs.e2e == 'true'
+        with:
+          workspaces: backend
+          key: self-host-e2e
+
+      - name: Build the server and the CLI
+        if: steps.changes.outputs.e2e == 'true'
+        working-directory: backend
+        env:
+          SQLX_OFFLINE: "true"
+          CHAKRAMCP_VERSION: e2e
+        run: GIT_SHA="${GITHUB_SHA:0:7}" cargo build --release --locked --bin chakramcp-server --bin chakramcp
+
+      - name: Build the image self-hosters run
+        if: steps.changes.outputs.e2e == 'true'
+        run: |
+          mkdir -p dist
+          cp backend/target/release/chakramcp-server dist/
+          docker build -f infra/Dockerfile.release -t chakramcp-server:e2e .
+
+      - name: Follow the Compose guide
+        if: steps.changes.outputs.e2e == 'true'
+        env:
+          CHAKRAMCP_IMAGE: chakramcp-server:e2e
+        run: |
+          # The runner resolves *.localhost already; this makes sure.
+          echo "127.0.0.1 app.localhost relay.localhost" | sudo tee -a /etc/hosts >/dev/null
+          CHAKRAMCP_CLI="$PWD/backend/target/release/chakramcp" infra/e2e/run.sh

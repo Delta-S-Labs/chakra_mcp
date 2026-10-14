@@ -1,14 +1,16 @@
 import Link from "next/link";
 import { SignupForm } from "./SignupForm";
 import { AlreadySignedIn } from "../login/AlreadySignedIn";
+import { safeRedirect } from "@/lib/safe-redirect";
 import styles from "../login/login.module.css";
 
 export default async function SignupPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string }>;
+  searchParams: Promise<{ from?: string | string[] }>;
 }) {
   const { from } = await searchParams;
+  const redirectTo = safeRedirect(from);
   const captchaEnabled = process.env.CAPTCHA_ENABLED !== "false";
   const captchaSiteKey = process.env.RECAPTCHA_SITE_KEY ?? "";
 
@@ -24,7 +26,7 @@ export default async function SignupPage({
         </header>
 
         <div className={styles.card}>
-          <AlreadySignedIn />
+          <AlreadySignedIn redirectTo={redirectTo} />
 
           <div className={styles.eyebrow}>Sign up</div>
           <h1 className={styles.title}>Create an account.</h1>
@@ -38,7 +40,7 @@ export default async function SignupPage({
           <SignupForm
             captchaEnabled={captchaEnabled}
             captchaSiteKey={captchaSiteKey}
-            redirectTo={from || "/app"}
+            redirectTo={redirectTo}
           />
 
           <p className={styles.foot}>

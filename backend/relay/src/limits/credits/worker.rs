@@ -110,8 +110,12 @@ async fn switches_loop(db: PgPool, cache: Arc<CreditCache>, cfg: CreditsConfig) 
 }
 
 /// One accounting pass: charge the queue, then apply due grants. A failing
-/// step is logged and never stops the other.
+/// step is logged and never stops the other. With credits off, the pass
+/// discards the queue instead.
 pub(crate) async fn account(db: &PgPool, cfg: &CreditsConfig, last_depth: &mut Option<i64>) {
+    if !cfg.enabled {
+        return discard(db, cfg, last_depth).await;
+    }
     let started = Instant::now();
     let budget = CHARGE_BUDGET.min(cfg.sweep_interval);
     let (charged, charge_end) = charge_pass(db, cfg.cost_per_invocation_mc, budget).await;
@@ -157,6 +161,67 @@ pub(crate) async fn account(db: &PgPool, cfg: &CreditsConfig, last_depth: &mut O
     *last_depth = depth;
 }
 
+/// With credits off: drop queued charges in batches and make no grants.
+/// Nothing is billed and no wallet changes, but the queue still drains, so it
+/// can't grow, and turning credits on later starts from an empty queue.
+async fn discard(db: &PgPool, cfg: &CreditsConfig, last_depth: &mut Option<i64>) {
+    let started = Instant::now();
+    let budget = CHARGE_BUDGET.min(cfg.sweep_interval);
+    let mut discarded = 0;
+    let end = loop {
+        match discard_batch(db).await {
+            Ok(Some(rows)) => {
+                discarded += rows;
+                if rows < CHARGE_BATCH || started.elapsed() > budget {
+                    break PassEnd::Done;
+                }
+            }
+            Ok(None) => break PassEnd::LockHeld,
+            Err(e) => {
+                tracing::warn!(error = %e, "discarding queued credit charges failed");
+                break PassEnd::Failed;
+            }
+        }
+    };
+    let depth = match queue_depth(db).await {
+        Ok(depth) => Some(depth),
+        Err(e) => {
+            tracing::warn!(error = %e, "credit queue depth check failed");
+            None
+        }
+    };
+    record_accounting(ChargeTotals::default(), end, true, depth);
+    if discarded > 0 {
+        tracing::debug!(discarded, "credits are off: discarded queued charges");
+    }
+    *last_depth = depth;
+}
+
+/// One discard batch in its own transaction; `None` if another instance
+/// holds the accounting lock.
+async fn discard_batch(db: &PgPool) -> Result<Option<i64>, sqlx::Error> {
+    let Some(mut tx) = begin_accounting(db).await? else {
+        return Ok(None);
+    };
+    let result = sqlx::query_scalar!(
+        r#"
+        WITH drained AS (
+            DELETE FROM credit_charge_queue
+             WHERE invocation_id = ANY(ARRAY(SELECT invocation_id FROM credit_charge_queue
+                                              ORDER BY invocation_id
+                                              LIMIT $1
+                                              FOR UPDATE SKIP LOCKED))
+            RETURNING 1
+        )
+        SELECT count(*) AS "drained!" FROM drained
+        "#,
+        CHARGE_BATCH,
+    )
+    .fetch_one(&mut *tx)
+    .await;
+    finish(tx, result).await.map(Some)
+}
+
 /// Reload the switches. A refresh that fails — or takes longer than a tick,
 /// which counts as failing, so a stall (a dead connection, a crawling query)
 /// can't go unnoticed — leaves the last snapshot in place until it goes
@@ -170,7 +235,7 @@ pub(crate) async fn refresh_switches(
     stale: &mut bool,
 ) {
     let before = cache.blocked_count();
-    let refresh = cache.refresh(db, cfg.cost_per_invocation_mc);
+    let refresh = cache.refresh(db, cfg.block_below_mc());
     let refreshed = match tokio::time::timeout(cfg.sweep_interval, refresh).await {
         Ok(result) => result.map_err(|e| e.to_string()),
         Err(_) => Err(format!("timed out after {:?}", cfg.sweep_interval)),
@@ -470,7 +535,8 @@ mod tests {
     use crate::telemetry::testing::Recorded;
 
     const COST: i64 = 100;
-    const GRANT: i64 = 100_000;
+    /// `CreditsConfig::default()`'s monthly grant: 5,000 credits.
+    const GRANT: i64 = 5_000_000;
 
     async fn seed_account(pool: &PgPool) -> Uuid {
         let owner = Uuid::now_v7();
@@ -898,6 +964,54 @@ mod tests {
     }
 
     #[sqlx::test(migrations = "../migrations")]
+    async fn with_credits_off_the_queue_drains_and_nobody_pays_or_is_blocked(pool: PgPool) {
+        let m = Recorded::start();
+        let cfg = CreditsConfig {
+            enabled: false,
+            ..CreditsConfig::default()
+        };
+        let cache = CreditCache::default();
+
+        // A wallet left from a time credits were on, out of credits.
+        let spent = seed_account(&pool).await;
+        granted_wallet(&pool, spent, 50).await;
+        enqueue(&pool, spent, 3).await;
+        let newcomer = seed_account(&pool).await;
+        enqueue(&pool, newcomer, 2).await;
+
+        account(&pool, &cfg, &mut None).await;
+        refresh_switches(&pool, &cache, &cfg, &mut false).await;
+
+        assert_eq!(
+            count(&pool, "SELECT count(*) FROM credit_charge_queue").await,
+            0
+        );
+        assert_eq!(
+            count(&pool, "SELECT count(*) FROM invocation_charges").await,
+            0
+        );
+        assert_eq!(
+            count(&pool, "SELECT count(*) FROM credit_ledger").await,
+            0,
+            "no grants"
+        );
+        assert_eq!(balance(&pool, spent).await, Some(50), "untouched");
+        assert_eq!(balance(&pool, newcomer).await, None, "no wallet created");
+        assert!(
+            !cache.is_blocked(spent),
+            "nobody is blocked with credits off"
+        );
+
+        assert_eq!(
+            m.counter(names::CREDITS_ACCOUNTING_RUNS_TOTAL, &[("result", "ok")]),
+            1
+        );
+        assert_eq!(m.counter(names::CREDITS_CHARGES_TOTAL, &[]), 0);
+        assert_eq!(m.gauge(names::CREDITS_QUEUE_DEPTH, &[]), Some(0.0));
+        assert_eq!(m.gauge(names::CREDITS_BLOCKED_ACCOUNTS, &[]), Some(0.0));
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
     async fn failed_refreshes_fail_open_once_stale_then_recover(pool: PgPool) {
         let m = Recorded::start();
         let broke = seed_account(&pool).await;
@@ -957,8 +1071,18 @@ mod tests {
             "never loaded, now stalled: flagged (and logged) as stale"
         );
 
+        // Once the lock is gone, the next refresh succeeds and clears the flag.
+        // It gets the default tick, not the 200 ms one: the pool has no idle
+        // connection yet (sqlx pings a connection before taking it back, and
+        // the abandoned refresh's ping waits for its orphaned query), so this
+        // refresh opens a new one, and connecting alone can take over half a
+        // second on a busy CI runner.
         ddl.rollback().await.unwrap();
-        refresh_switches(&wide, &cache, &cfg, &mut stale).await;
+        let unhurried = CreditsConfig {
+            sweep_interval: CreditsConfig::default().sweep_interval,
+            ..cfg
+        };
+        refresh_switches(&wide, &cache, &unhurried, &mut stale).await;
         assert!(!stale && !cache.is_stale());
     }
 

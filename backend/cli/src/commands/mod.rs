@@ -1,4 +1,5 @@
 pub mod agents;
+pub mod api_keys;
 pub mod audit;
 pub mod capabilities;
 pub mod configure;

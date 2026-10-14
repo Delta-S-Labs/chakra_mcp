@@ -49,6 +49,29 @@ pub mod names {
     pub const DB_POOL_CONNECTIONS: &str = "chakramcp_db_pool_connections";
     pub const DB_POOL_MAX_CONNECTIONS: &str = "chakramcp_db_pool_max_connections";
     pub const BUILD_INFO: &str = "chakramcp_build_info";
+    pub const CREDIT_PURCHASES_TOTAL: &str = "chakramcp_credit_purchases_total";
+    pub const DODO_WEBHOOK_REJECTED_TOTAL: &str = "chakramcp_dodo_webhook_rejected_total";
+    pub const PURCHASE_CONFIG_ERROR: &str = "chakramcp_purchase_config_error";
+}
+
+/// `status` values of `chakramcp_credit_purchases_total`.
+pub const PURCHASE_STATUSES: [&str; 4] = ["paid", "failed", "unapplied", "unmatched"];
+/// `reason` values of `chakramcp_dodo_webhook_rejected_total`.
+pub const WEBHOOK_REJECTIONS: [&str; 4] = ["missing_header", "stale", "bad_signature", "bad_json"];
+
+/// Count a credit purchase outcome (one of [`PURCHASE_STATUSES`]).
+pub fn record_purchase(status: &'static str) {
+    counter!(names::CREDIT_PURCHASES_TOTAL, "status" => status).increment(1);
+}
+
+/// Count a refused Dodo webhook (one of [`WEBHOOK_REJECTIONS`]).
+pub fn record_webhook_rejected(reason: &'static str) {
+    counter!(names::DODO_WEBHOOK_REJECTED_TOTAL, "reason" => reason).increment(1);
+}
+
+/// 1 while a purchase setting is present but wrong, so purchasing is off.
+pub fn set_purchase_config_error(error: bool) {
+    gauge!(names::PURCHASE_CONFIG_ERROR).set(if error { 1.0 } else { 0.0 });
 }
 
 /// HTTP latency buckets: 5 ms … 30 s.
@@ -129,7 +152,8 @@ pub fn init_tracing(filter: &str, log_format: Option<&str>) {
 
 /// JSON lines: event fields flattened into the object, plus the current
 /// span's fields (`request_id`, `method`, `route` inside a request).
-fn json_subscriber<W>(filter: EnvFilter, writer: W) -> impl tracing::Subscriber + Send + Sync
+/// Public for `tests/json_logs.rs`, which checks this format.
+pub fn json_subscriber<W>(filter: EnvFilter, writer: W) -> impl tracing::Subscriber + Send + Sync
 where
     W: for<'w> MakeWriter<'w> + Send + Sync + 'static,
 {
@@ -364,6 +388,28 @@ fn describe() {
         BUILD_INFO,
         "Always 1; labelled with the version and git sha."
     );
+    describe_counter!(
+        CREDIT_PURCHASES_TOTAL,
+        "Credit purchase webhooks by outcome (unmatched and unapplied need the operator)."
+    );
+    describe_counter!(
+        DODO_WEBHOOK_REJECTED_TOTAL,
+        "Dodo webhooks refused before processing, by reason."
+    );
+    describe_gauge!(
+        PURCHASE_CONFIG_ERROR,
+        "1 while a purchase setting is present but wrong, so purchasing is off."
+    );
+    // Series appear at their first event, already at 1, and `increase()`
+    // reads such a series as 0. Starting every value at 0 lets an alert see
+    // a single stuck payment, even right after a deploy reset the counters.
+    for status in PURCHASE_STATUSES {
+        counter!(CREDIT_PURCHASES_TOTAL, "status" => status).increment(0);
+    }
+    for reason in WEBHOOK_REJECTIONS {
+        counter!(DODO_WEBHOOK_REJECTED_TOTAL, "reason" => reason).increment(0);
+    }
+    gauge!(PURCHASE_CONFIG_ERROR).set(0.0);
 }
 
 // ─── HTTP ────────────────────────────────────────────────
@@ -522,6 +568,23 @@ mod tests {
             .contains("chakramcp_invocation_duration_seconds_bucket{mode=\"push\",le=\"60\"} 1"));
     }
 
+    #[test]
+    fn purchase_series_start_at_zero() {
+        let recorder = prometheus_builder().build_recorder();
+        let handle = recorder.handle();
+        metrics::with_local_recorder(&recorder, describe);
+        let text = handle.render();
+        for status in PURCHASE_STATUSES {
+            let line = format!("chakramcp_credit_purchases_total{{status=\"{status}\"}} 0");
+            assert!(text.contains(&line), "missing {line}");
+        }
+        for reason in WEBHOOK_REJECTIONS {
+            let line = format!("chakramcp_dodo_webhook_rejected_total{{reason=\"{reason}\"}} 0");
+            assert!(text.contains(&line), "missing {line}");
+        }
+        assert!(text.contains("chakramcp_purchase_config_error 0"));
+    }
+
     #[tokio::test]
     async fn metrics_endpoint_serves_the_text_format() {
         let recorder = prometheus_builder().build_recorder();
@@ -653,42 +716,6 @@ mod tests {
         fn flush(&mut self) -> std::io::Result<()> {
             Ok(())
         }
-    }
-
-    #[tokio::test]
-    async fn json_logs_carry_the_request_span() {
-        let captured = Captured::default();
-        let writer = captured.clone();
-        let subscriber = json_subscriber(EnvFilter::new("info"), move || writer.clone());
-        let _default = tracing::subscriber::set_default(subscriber);
-
-        let router = Router::new().route(
-            "/items/{id}",
-            get(|| async {
-                tracing::info!(answer = 42, "inside the handler");
-                "ok"
-            }),
-        );
-        let response = instrument(router, "app")
-            .oneshot(Request::get("/items/9").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        let id = response.headers()[REQUEST_ID_HEADER]
-            .to_str()
-            .unwrap()
-            .to_owned();
-
-        let out = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
-        let line = out
-            .lines()
-            .find(|l| l.contains("inside the handler"))
-            .expect("the handler's log line");
-        let v: serde_json::Value = serde_json::from_str(line).unwrap();
-        assert_eq!(v["level"], "INFO");
-        assert_eq!(v["answer"], 42, "event fields are flattened");
-        assert_eq!(v["span"]["request_id"], id.as_str());
-        assert_eq!(v["span"]["route"], "/items/{id}");
-        assert_eq!(v["span"]["method"], "GET");
     }
 
     #[test]

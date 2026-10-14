@@ -9,30 +9,30 @@
 class ChakramcpServer < Formula
   desc "Self-hosted ChakraMCP relay (app + relay services in one process)"
   homepage "https://chakramcp.com"
-  version "0.2.0"
+  version "0.3.0"
   license "MIT"
 
   depends_on "postgresql@16"
 
   on_macos do
     on_arm do
-      url "https://github.com/Delta-S-Labs/chakra_mcp/releases/download/cli-v0.2.0/chakramcp-server-0.2.0-aarch64-apple-darwin.tar.gz"
-      sha256 "10fd64aea92b63bb259f9f89bc61a40a2219d43652bf1a7d1e78298eaaadc404"
+      url "https://github.com/Delta-S-Labs/chakra_mcp/releases/download/cli-v0.3.0/chakramcp-server-0.3.0-aarch64-apple-darwin.tar.gz"
+      sha256 "133190634e201ef9411d4cebc306f4754eee585f5bd1d73616c1ca738cbea664"
     end
     on_intel do
-      url "https://github.com/Delta-S-Labs/chakra_mcp/releases/download/cli-v0.2.0/chakramcp-server-0.2.0-x86_64-apple-darwin.tar.gz"
-      sha256 "7fd63fdf65918775936a43d636707beb5e612c1f2a3a3858aa2707e5727ff116"
+      url "https://github.com/Delta-S-Labs/chakra_mcp/releases/download/cli-v0.3.0/chakramcp-server-0.3.0-x86_64-apple-darwin.tar.gz"
+      sha256 "3b1a2604d328eb09e9a8a31eab36b9d9e17af5f630b94fc22182e6a8680f58a8"
     end
   end
 
   on_linux do
     on_arm do
-      url "https://github.com/Delta-S-Labs/chakra_mcp/releases/download/cli-v0.2.0/chakramcp-server-0.2.0-aarch64-unknown-linux-gnu.tar.gz"
-      sha256 "bcde1dcdff850c18560d44cb220756851a70764f1f30cfe9b07d61da81eaa877"
+      url "https://github.com/Delta-S-Labs/chakra_mcp/releases/download/cli-v0.3.0/chakramcp-server-0.3.0-aarch64-unknown-linux-gnu.tar.gz"
+      sha256 "c81bf9d8a78299be83427a0a5d2b8910e91df415504a3bf16534329c4b9dfe8b"
     end
     on_intel do
-      url "https://github.com/Delta-S-Labs/chakra_mcp/releases/download/cli-v0.2.0/chakramcp-server-0.2.0-x86_64-unknown-linux-gnu.tar.gz"
-      sha256 "756ba239d37e52cc731a859dbe0c0608a4d02dc0caf2c98666c8098a1b3f3223"
+      url "https://github.com/Delta-S-Labs/chakra_mcp/releases/download/cli-v0.3.0/chakramcp-server-0.3.0-x86_64-unknown-linux-gnu.tar.gz"
+      sha256 "943232fad8a292e3a674e35c5d478913c91f60722f4c81502fd18c2f607edc8d"
     end
   end
 
@@ -49,11 +49,11 @@ class ChakramcpServer < Formula
 
   def caveats
     <<~EOS
-      First-time bootstrap (one-time):
+      First-time setup:
 
         brew services start postgresql@16
         createdb chakramcp
-        chakramcp-server init                    # writes ~/.chakramcp/server.toml
+        chakramcp-server init                    # writes server.toml and prints where
         chakramcp-server migrate                 # applies SQL migrations
 
       Then start it:
@@ -62,18 +62,24 @@ class ChakramcpServer < Formula
         # — or run in the foreground for logs:
         chakramcp-server start
 
+      Create your account. Public sign-up is closed by default:
+
+        chakramcp-server users add you@example.com --name "Your Name" --admin
+
       The app service answers on http://localhost:8080 and the relay
-      on http://localhost:8090. Point the CLI at it with:
+      on http://localhost:8090. Point the CLI at it and sign in: your
+      browser opens the server's own sign-in page.
 
         chakramcp networks add private \
           --app-url http://localhost:8080 \
           --relay-url http://localhost:8090
-        chakramcp login --network private
+        chakramcp networks use private
+        chakramcp login
 
-      Edit ~/.chakramcp/server.toml to change ports, the JWT secret,
-      or admin_email. The web UI is optional and isn't bundled — clone
-      https://github.com/Delta-S-Labs/chakra_mcp and run pnpm dev under frontend/
-      if you want it.
+      Settings live in server.toml: on macOS
+      ~/Library/Application Support/com.chakramcp.chakramcp/server.toml,
+      on Linux ~/.config/chakramcp/server.toml. Upgrading from 0.2.0?
+      Delete its line frontend_base_url = "http://localhost:3000".
     EOS
   end
 

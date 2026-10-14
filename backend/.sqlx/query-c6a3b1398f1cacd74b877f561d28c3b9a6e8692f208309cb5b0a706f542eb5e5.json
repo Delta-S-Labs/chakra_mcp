@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH drained AS (\n            DELETE FROM credit_charge_queue\n             WHERE invocation_id = ANY(ARRAY(SELECT invocation_id FROM credit_charge_queue\n                                              ORDER BY invocation_id\n                                              LIMIT $1\n                                              FOR UPDATE SKIP LOCKED))\n            RETURNING 1\n        )\n        SELECT count(*) AS \"drained!\" FROM drained\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "drained!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "c6a3b1398f1cacd74b877f561d28c3b9a6e8692f208309cb5b0a706f542eb5e5"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM signin_failures WHERE window_started_at < now() - interval '1 day'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "c62b42251fb3052fe231bcd196b63bb976802066cb3e31ca30def9673a5bd3a2"
+}
