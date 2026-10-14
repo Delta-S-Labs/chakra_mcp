@@ -777,4 +777,32 @@ export function listUsageEvents(
   return request<UsageEventsResponse>(`/v1/usage/events${q ? `?${q}` : ""}`, { token });
 }
 
+// ─── Featured agents (the house agents) ────────────────────
+
+/** An agent from `GET /v1/discovery/featured`: the featured account's agents
+ *  (chakramcp.com's house agents), then online agents anyone can call. */
+export interface FeaturedAgent {
+  id: string;
+  account_slug: string;
+  agent_slug: string;
+  display_name: string;
+  description: string;
+  online: boolean;
+  featured: boolean;
+  public_capabilities: { id: string; name: string; description: string }[];
+}
+
+/** Featured agents; empty on any error, so callers can just leave them out.
+ *  Public, and cached for 30 seconds. */
+export async function getFeaturedAgents(): Promise<FeaturedAgent[]> {
+  try {
+    const res = await fetch(`${BASE}/v1/discovery/featured`, { next: { revalidate: 30 } });
+    if (!res.ok) return [];
+    const body = (await res.json()) as { agents?: FeaturedAgent[] };
+    return body.agents ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export const relayBaseUrl = BASE;

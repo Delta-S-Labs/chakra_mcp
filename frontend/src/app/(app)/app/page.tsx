@@ -2,9 +2,12 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { ApiClientError, apiBaseUrl, getMe, getOrgCredits, type CreditsView } from "@/lib/api";
+import { GetStartedCard } from "@/components/get-started/GetStartedCard";
 import { callsFor } from "@/lib/credits-math";
 import { formatCredits, formatElapsed } from "@/lib/format";
+import { deriveGetStarted } from "@/lib/get-started";
 import {
+  getFeaturedAgents,
   listFriendships,
   listGrants,
   listInvocations,
@@ -69,6 +72,7 @@ export default async function AppDashboard() {
   let friendships: Awaited<ReturnType<typeof listFriendships>> = [];
   let grants: Awaited<ReturnType<typeof listGrants>> = [];
   let invocations: Awaited<ReturnType<typeof listInvocations>> = [];
+  let featured: Awaited<ReturnType<typeof getFeaturedAgents>> = [];
   let relayError: string | null = null;
 
   // No backend token in the session means the NextAuth cookie is alive
@@ -98,11 +102,13 @@ export default async function AppDashboard() {
   }
 
   try {
-    [agents, friendships, grants, invocations] = await Promise.all([
+    // The featured agents (for the checklist's Guide command) never throw.
+    [agents, friendships, grants, invocations, featured] = await Promise.all([
       listMyAgents(token),
       listFriendships(token, { direction: "all" }),
       listGrants(token, { direction: "all" }),
       listInvocations(token, { direction: "all" }),
+      getFeaturedAgents(),
     ]);
   } catch (err) {
     if (isUnauthorized(err)) {
@@ -149,6 +155,8 @@ export default async function AppDashboard() {
   const recentInvocations = [...invocations]
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
     .slice(0, 5);
+  // Only from a complete picture: a relay error would show every step undone.
+  const getStarted = relayError ? null : deriveGetStarted({ agents, invocations, featured });
 
   return (
     <>
@@ -192,6 +200,8 @@ export default async function AppDashboard() {
           )}
         </section>
       )}
+
+      {getStarted && <GetStartedCard getStarted={getStarted} />}
 
       <section className={styles.statGrid}>
         {credits && credits.enabled && (

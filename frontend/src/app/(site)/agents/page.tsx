@@ -21,6 +21,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { getFeaturedAgents } from "@/lib/relay";
+
 import styles from "./agents.module.css";
 
 const RELAY_BASE =
@@ -51,29 +53,6 @@ interface DiscoveryAgent {
   online?: boolean;
   /** One of the featured account's agents (chakramcp.com's house agents). */
   featured?: boolean;
-}
-
-interface FeaturedAgent {
-  id: string;
-  account_slug: string;
-  agent_slug: string;
-  display_name: string;
-  description: string;
-  online: boolean;
-  featured: boolean;
-  public_capabilities: { id: string; name: string; description: string }[];
-}
-
-/** The "Try these" strip. Empty (and hidden) on any error. */
-async function fetchFeatured(): Promise<FeaturedAgent[]> {
-  try {
-    const res = await fetch(`${RELAY_BASE}/v1/discovery/featured`, { next: { revalidate: 30 } });
-    if (!res.ok) return [];
-    const body = (await res.json()) as { agents?: FeaturedAgent[] };
-    return body.agents ?? [];
-  } catch {
-    return [];
-  }
 }
 
 interface DiscoveryResponse {
@@ -147,7 +126,7 @@ export default async function AgentsPage({
 
   const [data, featured] = await Promise.all([
     fetchDirectory(params),
-    hasActiveFilter(sp) ? Promise.resolve([]) : fetchFeatured(),
+    hasActiveFilter(sp) ? Promise.resolve([]) : getFeaturedAgents(),
   ]);
 
   return (
