@@ -84,7 +84,11 @@ export function BuyCredits({
       setPhase(next);
       // Fresh balance, payments and history, and drop `?checkout=` so a
       // reload doesn't start confirming again.
-      startTransition(() => router.replace(`/app/credits?account=${encodeURIComponent(slug)}`));
+      startTransition(() => {
+        router.replace(`/app/credits?account=${encodeURIComponent(slug)}`);
+        // The layout's credits banner doesn't re-render on navigation.
+        router.refresh();
+      });
     };
 
     const tick = async () => {

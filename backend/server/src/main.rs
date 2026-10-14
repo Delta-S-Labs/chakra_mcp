@@ -157,6 +157,9 @@ fn init(
          # credits_enabled = false\n\
          # credits_default_monthly_free_mc = 5000000\n\
          # credits_cost_per_invocation_mc = 100\n\
+         # Below this balance an account is \"running low\": agents see a\n\
+         # ChakraMCP-Credits: low header (default 100 credits, at least the cost).\n\
+         # credits_low_balance_mc = 100000\n\
          # Rate limit per account (needs redis_url); limits_enforce turns\n\
          # refusals on (off: over-limit calls are only logged).\n\
          # limits_default_rate_per_min = 60\n\
@@ -255,7 +258,7 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
     let credit_cache = std::sync::Arc::new(chakramcp_relay::limits::CreditCache::new(
         credits.stale_after(),
     ));
-    if let Err(e) = credit_cache.refresh(&pool, credits.block_below_mc()).await {
+    if let Err(e) = credit_cache.refresh(&pool, &credits).await {
         tracing::warn!(error = %e, "initial credit refresh failed; the worker will retry");
     }
     let worker_pool =
@@ -283,6 +286,10 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
         ))
         .with_limits_enforce(cfg.limits_enforce)
         .with_credits_config(credits)
+        .with_credits_url(chakramcp_relay::limits::credits_url(
+            cfg.hosting.is_managed(),
+            &cfg.shared.frontend_base_url,
+        ))
         .with_credit_cache(credit_cache)
         .with_compliance(chakramcp_relay::compliance::ComplianceChecker::from_env());
     // Usage metering runs on a background writer so requests never wait on it.

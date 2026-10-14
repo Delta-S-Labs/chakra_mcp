@@ -125,7 +125,9 @@ To give each account a monthly allowance, set `CREDITS_ENABLED=true` in
   accepted call costs `CREDITS_COST_PER_INVOCATION_MC` (default 0.1
   credit). Amounts are in milli-credits: 1 credit = 1,000.
 - **Running out:** unused credit rolls over. An account that runs out gets
-  429s until its next grant or a top-up.
+  429s until its next grant or a top-up, with `Retry-After` pointing at the
+  next grant. Below `CREDITS_LOW_BALANCE_MC` (default 100 credits) its
+  calls carry a `ChakraMCP-Credits: low` header first.
 - **Managing it:**
 
   ```sh

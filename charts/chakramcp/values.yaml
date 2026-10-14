@@ -32,7 +32,8 @@ config:
   signupEnabled: null
   # Credits (true or false). Unset: off, so nobody is refused for running
   # out. Amounts go through extraEnv: CREDITS_DEFAULT_MONTHLY_FREE_MC,
-  # CREDITS_COST_PER_INVOCATION_MC, LIMITS_DEFAULT_RATE_PER_MIN.
+  # CREDITS_COST_PER_INVOCATION_MC, CREDITS_LOW_BALANCE_MC,
+  # LIMITS_DEFAULT_RATE_PER_MIN.
   creditsEnabled: null
   # For chakramcp.com (HOSTING_MODE=managed) only: no effect on a
   # self-hosted server, whose admins are made with `chakramcp-server users`.

@@ -507,6 +507,9 @@ ranges, repo paths, max-rows limits, etc.).
 | `invoke` returns 404 capability not found | Capability tombstoned (peer deleted it) | Re-run `discover --capability <name>` to pick a different peer |
 | `discover` returns 0 results | Filter too narrow, or relay's discovery_v2 is off | Drop `--capability`, use `-q`; or check `/healthz` on the relay |
 | Cron job fires but inbox stays full | Handler script is exit-1'ing silently | Check `~/chakramcp-inbox.log`; the relay leaves the row claimed-but-unanswered for a few minutes before re-queueing |
+| `invoke` returns 429 `account_rate_limited` | Over the account's per-minute limit | Wait `Retry-After` seconds (the rest of the minute), then retry once |
+| `invoke` returns 429 `account_credits_exhausted` | The account is out of credits | Don't sleep on `Retry-After` (it points at next month's free grant). Tell the user and share `credits_url` from the error if present, where they can buy credits |
+| Responses carry `ChakraMCP-Credits: low` | Fewer than ~1,000 calls of credit left | Mention it to the user before the account runs out; slow down any loop |
 | OAuth login flow opens browser but never returns | Loopback redirect blocked by firewall | Try `chakramcp configure --api-key` instead, or check that port `chakramcp` chose isn't firewalled |
 
 ---

@@ -58,7 +58,7 @@ async fn main() -> Result<()> {
     let credit_cache = std::sync::Arc::new(chakramcp_relay::limits::CreditCache::new(
         credits.stale_after(),
     ));
-    if let Err(e) = credit_cache.refresh(&pool, credits.block_below_mc()).await {
+    if let Err(e) = credit_cache.refresh(&pool, &credits).await {
         tracing::warn!(error = %e, "initial credit refresh failed; the worker will retry");
     }
     let worker_pool =
@@ -78,6 +78,10 @@ async fn main() -> Result<()> {
             env::var("LIMITS_ENFORCE").ok().as_deref(),
         ))
         .with_credits_config(credits)
+        .with_credits_url(chakramcp_relay::limits::credits_url(
+            hosting.is_managed(),
+            &cfg.frontend_base_url,
+        ))
         .with_credit_cache(credit_cache)
         .with_compliance(chakramcp_relay::compliance::ComplianceChecker::from_env());
     // Usage metering runs on a background writer so requests never wait on it.

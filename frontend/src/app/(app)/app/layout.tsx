@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
@@ -7,6 +7,7 @@ import { BottomTabBar } from "./BottomTabBar";
 import { CommandPalette } from "./CommandPalette";
 import { UserMenu } from "./UserMenu";
 import { PostHogIdentify } from "@/components/analytics/PostHogIdentify";
+import { CreditAlertBanner } from "@/components/credits/CreditAlertBanner";
 import styles from "./shell.module.css";
 
 /**
@@ -59,6 +60,12 @@ export default async function AppShellLayout({ children }: { children: ReactNode
             isAdmin={!!is_admin}
           />
         </header>
+
+        {/* Accounts running low or out of credits. Streams in on its own so
+            it never holds up the page. */}
+        <Suspense fallback={null}>
+          <CreditAlertBanner />
+        </Suspense>
 
         <main className={styles.main}>{children}</main>
       </div>

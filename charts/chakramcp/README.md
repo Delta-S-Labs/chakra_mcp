@@ -38,7 +38,7 @@ non-root user with a read-only root filesystem.
 | `config.appPublicUrl`, `config.relayPublicUrl` | from the Ingress hosts | The URLs the server advertises: OAuth redirects and discovery documents |
 | `config.frontendPublicUrl` | `appPublicUrl` | Where sign-in and pairing links point. The server serves its own sign-in pages at `appPublicUrl`; set this only if you run the web UI |
 | `config.signupEnabled` | unset (closed) | Public sign-up. Create accounts with `chakramcp-server users add` (see `NOTES.txt`) |
-| `config.creditsEnabled` | unset (off) | Credits: a monthly allowance per account. Amounts via `extraEnv` (`CREDITS_DEFAULT_MONTHLY_FREE_MC`, `CREDITS_COST_PER_INVOCATION_MC`, `LIMITS_DEFAULT_RATE_PER_MIN`) |
+| `config.creditsEnabled` | unset (off) | Credits: a monthly allowance per account. Amounts via `extraEnv` (`CREDITS_DEFAULT_MONTHLY_FREE_MC`, `CREDITS_COST_PER_INVOCATION_MC`, `CREDITS_LOW_BALANCE_MC`, `LIMITS_DEFAULT_RATE_PER_MIN`) |
 | `config.adminEmail` | `""` | chakramcp.com only (`HOSTING_MODE=managed`); no effect on a self-hosted server |
 | `config.limitsEnforce` | `true` | `false`: over-limit calls are only logged |
 | `config.discoveryV2` | `true` | |

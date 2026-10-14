@@ -87,7 +87,8 @@ turning credits on. Run the commands with
 
 - `config.signupEnabled` and `config.creditsEnabled` set the switches.
   Credit amounts go through `extraEnv`: `CREDITS_DEFAULT_MONTHLY_FREE_MC`,
-  `CREDITS_COST_PER_INVOCATION_MC`, `LIMITS_DEFAULT_RATE_PER_MIN`.
+  `CREDITS_COST_PER_INVOCATION_MC`, `CREDITS_LOW_BALANCE_MC`,
+  `LIMITS_DEFAULT_RATE_PER_MIN`.
 - `config.adminEmail` has no effect on a self-hosted server.
 
 ## Postgres and Redis
