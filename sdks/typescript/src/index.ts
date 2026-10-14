@@ -125,8 +125,10 @@ export class ChakraMCP {
    * use `invokeAndWait` to also poll for the terminal result.
    */
   async invoke(args: InvokeRequest): Promise<InvokeResponse> {
+    // Exactly one of grant_id (friend tier) or capability_id (public tier).
+    const target = args.grant_id !== undefined ? { grant_id: args.grant_id } : { capability_id: args.capability_id };
     return this.relayRequest<InvokeResponse>("POST", "/v1/invoke", {
-      grant_id: args.grant_id,
+      ...target,
       grantee_agent_id: args.grantee_agent_id,
       input: args.input,
     });

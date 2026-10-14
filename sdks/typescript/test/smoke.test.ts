@@ -96,6 +96,26 @@ describe("ChakraMCP", () => {
     ]);
   });
 
+  it("invoke sends capability_id for a public call, grant_id for a friend call", async () => {
+    const bodies: unknown[] = [];
+    const sdk = new ChakraMCP({
+      apiKey: "ck_test",
+      relayUrl: "http://relay",
+      fetch: mockFetch(async (req) => {
+        bodies.push(await req.json());
+        return new Response(JSON.stringify({ invocation_id: "inv1", status: "pending", error: null }), {
+          status: 200,
+        });
+      }),
+    });
+    await sdk.invoke({ capability_id: "cap-1", grantee_agent_id: "me", input: { q: 1 } });
+    await sdk.invoke({ grant_id: "grant-1", grantee_agent_id: "me", input: {} });
+    expect(bodies).toEqual([
+      { capability_id: "cap-1", grantee_agent_id: "me", input: { q: 1 } },
+      { grant_id: "grant-1", grantee_agent_id: "me", input: {} },
+    ]);
+  });
+
   it("invokeAndWait polls until terminal", async () => {
     let calls = 0;
     const fetchStub = vi.fn(
