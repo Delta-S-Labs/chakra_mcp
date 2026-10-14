@@ -138,7 +138,14 @@ jobs:
           SQLX_OFFLINE: "true"
         # GIT_SHA (the image tag's short sha) is baked into the binary and
         # reported as chakramcp_build_info{git_sha} for deploy markers.
-        run: GIT_SHA="${GITHUB_SHA:0:7}" cargo build --release --bin chakramcp-server --locked
+        # CHAKRAMCP_VERSION is the latest release (each release PR bumps
+        # cli/Cargo.toml), reported by --version, MCP serverInfo and the
+        # relay's user agent instead of the crates' 0.1.0.
+        run: |
+          CHAKRAMCP_VERSION=$(sed -n 's/^version = "\(.*\)"$/\1/p' cli/Cargo.toml | head -1)
+          [ -n "$CHAKRAMCP_VERSION" ] || { echo "::error::no version in cli/Cargo.toml"; exit 1; }
+          CHAKRAMCP_VERSION="$CHAKRAMCP_VERSION" GIT_SHA="${GITHUB_SHA:0:7}" \
+            cargo build --release --bin chakramcp-server --locked
 
       # ─── Stage binary where Dockerfile.thin expects it ────────
       - name: Stage binary
