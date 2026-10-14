@@ -43,6 +43,13 @@ pub struct RelayState {
     /// `{frontend}/app/credits` on chakramcp.com, `None` on a self-hosted
     /// server (which may have no web UI there). Built once at startup.
     pub credits_url: Option<String>,
+    /// Inbox pulls recorded in memory and flushed to `agent_heartbeats`, for
+    /// the directory's "online" dot (house agents spec §3). Production
+    /// spawns the flusher; tests flush by hand.
+    pub heartbeats: crate::heartbeats::Heartbeats,
+    /// The account whose agents the directory features first
+    /// (`DISCOVERY_FEATURED_ACCOUNT`, chakramcp.com's house agents).
+    pub featured_account: Option<String>,
 }
 
 impl RelayState {
@@ -61,6 +68,8 @@ impl RelayState {
             credit_cache: Arc::new(CreditCache::default()),
             credits: CreditsConfig::default(),
             credits_url: None,
+            heartbeats: crate::heartbeats::Heartbeats::default(),
+            featured_account: None,
         }
     }
 
@@ -88,6 +97,13 @@ impl RelayState {
     /// hosting only).
     pub fn with_credits_url(mut self, credits_url: Option<String>) -> Self {
         self.credits_url = credits_url;
+        self
+    }
+
+    /// Feature this account's agents first in the directory. Empty or
+    /// unset features nobody.
+    pub fn with_featured_account(mut self, slug: Option<String>) -> Self {
+        self.featured_account = slug.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty());
         self
     }
 

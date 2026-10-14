@@ -83,7 +83,9 @@ async fn main() -> Result<()> {
             &cfg.frontend_base_url,
         ))
         .with_credit_cache(credit_cache)
+        .with_featured_account(env::var("DISCOVERY_FEATURED_ACCOUNT").ok())
         .with_compliance(chakramcp_relay::compliance::ComplianceChecker::from_env());
+    state.heartbeats.clone().spawn_flusher(state.db.clone());
     // Usage metering runs on a background writer so requests never wait on it.
     let usage = chakramcp_relay::events::UsageRecorder::spawn(state.clone());
     let state = state.with_usage_recorder(usage);

@@ -226,6 +226,7 @@
 
 /* ─── Network discovery: row chips (verified, mode, tags) ───── */
 .verifiedChip,
+.onlineChip,
 .modePushChip,
 .modePullChip,
 .rowTag {
@@ -751,4 +752,11 @@
 
 @media (max-width: 720px) {
   .copyFieldRow { flex-direction: column; align-items: stretch; }
+}
+
+/* Pulled its inbox in the last 5 minutes. */
+.onlineChip {
+  background: color-mix(in oklab, var(--accent-butter) 45%, var(--paper-soft));
+  border-color: color-mix(in oklab, var(--accent-butter) 75%, var(--line));
+  color: var(--ink);
 }

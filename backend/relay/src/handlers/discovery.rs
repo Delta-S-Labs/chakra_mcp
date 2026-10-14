@@ -76,6 +76,9 @@ pub struct DiscoveryQuery {
     pub verified: Option<bool>,
     /// Comma-separated tags. All must match (AND).
     pub tags: Option<String>,
+    /// Also list dormant agents: pull-mode agents that haven't polled in
+    /// 30 days (or ever) and have nothing publicly callable. Hidden by
+    /// default.
     pub include_dormant: Option<bool>,
     pub limit: Option<i64>,
     pub cursor: Option<String>,
@@ -105,6 +108,12 @@ pub struct DiscoveryAgent {
     pub avg_rating: Option<f64>,
     /// Count of un-hidden reviews. Migration 0023.
     pub review_count: i64,
+    /// Pulled its inbox in the last 5 minutes (`agent_heartbeats`). Push
+    /// agents don't poll, so they never show as online.
+    pub online: bool,
+    /// Belongs to the featured account (`DISCOVERY_FEATURED_ACCOUNT`:
+    /// chakramcp.com's house agents).
+    pub featured: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -184,12 +193,23 @@ pub async fn search(State(state): State<RelayState>, Query(q): Query<DiscoveryQu
                 (SELECT AVG(rating)::float8 FROM agent_reviews r
                     WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS avg_rating,
                 (SELECT COUNT(*)::bigint FROM agent_reviews r
-                    WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS review_count
+                    WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS review_count,
+                COALESCE(h.last_polled_at > now() - interval '5 minutes', false) AS online,
+                ($11::text IS NOT NULL AND acc.slug = $11::text) AS featured
               FROM agents a
               JOIN accounts acc ON acc.id = a.account_id
+              LEFT JOIN agent_heartbeats h ON h.agent_id = a.id
              WHERE a.tombstoned_at  IS NULL
                AND acc.tombstoned_at IS NULL
                AND a.visibility = 'network'
+               -- Dormant pull agents are hidden unless asked for.
+               AND ($10::boolean OR NOT (
+                       a.mode = 'pull'
+                       AND (h.last_polled_at IS NULL
+                            OR h.last_polled_at < now() - interval '30 days')
+                       AND NOT EXISTS (
+                           SELECT 1 FROM agent_capabilities c
+                            WHERE c.agent_id = a.id AND c.public_invoke = true)))
                AND ($1::text IS NULL OR a.search_vec @@ to_tsquery('simple', $1::text))
                AND ($2::jsonb   IS NULL OR EXISTS (
                        SELECT 1 FROM agent_capabilities c
@@ -221,7 +241,9 @@ pub async fn search(State(state): State<RelayState>, Query(q): Query<DiscoveryQu
             verified    AS "verified!",
             has_public_capabilities AS "has_public_capabilities!",
             avg_rating,
-            review_count AS "review_count!"
+            review_count AS "review_count!",
+            online      AS "online!",
+            featured    AS "featured!"
           FROM q
         "#,
         q.q.as_deref().and_then(to_tsquery),
@@ -237,6 +259,8 @@ pub async fn search(State(state): State<RelayState>, Query(q): Query<DiscoveryQu
         cursor.as_ref().map(|c| c.id),
         limit as i32,
         capability_name,
+        q.include_dormant.unwrap_or(false),
+        state.featured_account.as_deref(),
     )
     .fetch_all(&state.db)
     .await;
@@ -272,9 +296,17 @@ pub async fn search(State(state): State<RelayState>, Query(q): Query<DiscoveryQu
             SELECT COUNT(*)::bigint AS "n!"
               FROM agents a
               JOIN accounts acc ON acc.id = a.account_id
+              LEFT JOIN agent_heartbeats h ON h.agent_id = a.id
              WHERE a.tombstoned_at  IS NULL
                AND acc.tombstoned_at IS NULL
                AND a.visibility = 'network'
+               AND ($7::boolean OR NOT (
+                       a.mode = 'pull'
+                       AND (h.last_polled_at IS NULL
+                            OR h.last_polled_at < now() - interval '30 days')
+                       AND NOT EXISTS (
+                           SELECT 1 FROM agent_capabilities c
+                            WHERE c.agent_id = a.id AND c.public_invoke = true)))
                AND ($1::text IS NULL OR a.search_vec @@ to_tsquery('simple', $1::text))
                AND ($2::jsonb   IS NULL OR EXISTS (
                        SELECT 1 FROM agent_capabilities c
@@ -296,6 +328,7 @@ pub async fn search(State(state): State<RelayState>, Query(q): Query<DiscoveryQu
                 Some(tags.as_slice())
             },
             capability_name,
+            q.include_dormant.unwrap_or(false),
         )
         .fetch_one(&state.db)
         .await
@@ -325,6 +358,8 @@ pub async fn search(State(state): State<RelayState>, Query(q): Query<DiscoveryQu
             has_public_capabilities: r.has_public_capabilities,
             avg_rating: r.avg_rating,
             review_count: r.review_count,
+            online: r.online,
+            featured: r.featured,
         })
         .collect();
 
@@ -341,6 +376,131 @@ pub async fn search(State(state): State<RelayState>, Query(q): Query<DiscoveryQu
             next_cursor,
             total_estimate,
         }),
+    )
+        .into_response()
+}
+
+// ─── Featured ──────────────────────────────────────────────
+
+/// How many agents `GET /v1/discovery/featured` returns at most.
+const FEATURED_LIMIT: i64 = 12;
+
+/// A publicly callable capability, so a page can show a working call.
+#[derive(Debug, Serialize)]
+pub struct FeaturedCapability {
+    pub id: Uuid,
+    pub name: String,
+    pub description: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FeaturedAgent {
+    pub id: Uuid,
+    pub account_slug: String,
+    pub agent_slug: String,
+    pub display_name: String,
+    pub description: String,
+    pub mode: String,
+    pub verified: bool,
+    pub online: bool,
+    pub featured: bool,
+    pub public_capabilities: Vec<FeaturedCapability>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FeaturedResponse {
+    pub agents: Vec<FeaturedAgent>,
+}
+
+/// `GET /v1/discovery/featured`: agents worth trying first. The featured
+/// account's agents (the house agents), then online agents with something
+/// publicly callable, up to 12. A short list apart from the main one, so
+/// its cursor stays stable.
+pub async fn featured(State(state): State<RelayState>) -> Response {
+    if !state.config.discovery_v2_enabled {
+        return not_found("discovery not enabled");
+    }
+    let rows = match sqlx::query!(
+        r#"
+        SELECT a.id, acc.slug AS account_slug, a.slug AS agent_slug,
+               a.display_name, a.description, a.mode,
+               acc.verified_at IS NOT NULL AS "verified!",
+               COALESCE(h.last_polled_at > now() - interval '5 minutes', false) AS "online!",
+               ($1::text IS NOT NULL AND acc.slug = $1::text) AS "featured!"
+          FROM agents a
+          JOIN accounts acc ON acc.id = a.account_id
+          LEFT JOIN agent_heartbeats h ON h.agent_id = a.id
+         WHERE a.tombstoned_at IS NULL
+           AND acc.tombstoned_at IS NULL
+           AND a.visibility = 'network'
+           AND (($1::text IS NOT NULL AND acc.slug = $1::text)
+                OR (h.last_polled_at > now() - interval '5 minutes'
+                    AND EXISTS (SELECT 1 FROM agent_capabilities c
+                                 WHERE c.agent_id = a.id AND c.public_invoke = true)))
+         ORDER BY 9 DESC, h.last_polled_at DESC NULLS LAST, a.created_at
+         LIMIT $2
+        "#,
+        state.featured_account.as_deref(),
+        FEATURED_LIMIT,
+    )
+    .fetch_all(&state.db)
+    .await
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!(error = %e, "featured discovery query failed");
+            return internal_error();
+        }
+    };
+    let ids: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
+    let caps = match sqlx::query!(
+        r#"
+        SELECT id, agent_id, name, description
+          FROM agent_capabilities
+         WHERE agent_id = ANY($1) AND public_invoke = true AND visibility = 'network'
+         ORDER BY name
+        "#,
+        &ids,
+    )
+    .fetch_all(&state.db)
+    .await
+    {
+        Ok(caps) => caps,
+        Err(e) => {
+            tracing::error!(error = %e, "featured capabilities query failed");
+            return internal_error();
+        }
+    };
+    let agents = rows
+        .into_iter()
+        .map(|r| FeaturedAgent {
+            public_capabilities: caps
+                .iter()
+                .filter(|c| c.agent_id == r.id)
+                .map(|c| FeaturedCapability {
+                    id: c.id,
+                    name: c.name.clone(),
+                    description: c.description.clone(),
+                })
+                .collect(),
+            id: r.id,
+            account_slug: r.account_slug,
+            agent_slug: r.agent_slug,
+            display_name: r.display_name,
+            description: r.description,
+            mode: r.mode,
+            verified: r.verified,
+            online: r.online,
+            featured: r.featured,
+        })
+        .collect();
+    (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "application/json"),
+            (header::CACHE_CONTROL, "public, max-age=30, s-maxage=60"),
+        ],
+        Json(FeaturedResponse { agents }),
     )
         .into_response()
 }
@@ -525,20 +685,211 @@ mod tests {
         .unwrap();
     }
 
+    /// Search with dormant agents included: the seeded agents never poll,
+    /// and most tests here are about filters, not the dormant rule (which
+    /// has its own tests through `get_json`).
     async fn search_url(pool: PgPool, q: &str) -> serde_json::Value {
-        let app = crate::router(crate::state::RelayState::new(pool, config()));
+        let q = if q.contains("include_dormant") {
+            q.to_owned()
+        } else if q.is_empty() {
+            "?include_dormant=true".to_owned()
+        } else {
+            format!("{q}&include_dormant=true")
+        };
+        get_json(
+            crate::state::RelayState::new(pool, config()),
+            &format!("/v1/discovery/agents{q}"),
+        )
+        .await
+    }
+
+    async fn get_json(state: crate::state::RelayState, uri: &str) -> serde_json::Value {
+        let app = crate::router(state);
         let res = app
-            .oneshot(
-                Request::builder()
-                    .uri(format!("/v1/discovery/agents{q}"))
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
         let body = res.into_body().collect().await.unwrap().to_bytes();
         serde_json::from_slice(&body).unwrap()
+    }
+
+    async fn heartbeat(pool: &PgPool, agent: Uuid, ago: &str) {
+        sqlx::query(
+            "INSERT INTO agent_heartbeats (agent_id, last_polled_at)
+             VALUES ($1, now() - $2::interval)",
+        )
+        .bind(agent)
+        .bind(ago)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    async fn make_public(pool: &PgPool, agent: Uuid, name: &str) -> Uuid {
+        let id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO agent_capabilities
+                (id, agent_id, name, description, input_schema, output_schema, visibility,
+                 public_invoke, public_monthly_quota_per_agent)
+             VALUES ($1, $2, $3, 'callable by anyone', '{}'::jsonb, '{}'::jsonb, 'network', true, 10)",
+        )
+        .bind(id)
+        .bind(agent)
+        .bind(name)
+        .execute(pool)
+        .await
+        .unwrap();
+        id
+    }
+
+    fn slugs(body: &serde_json::Value) -> Vec<String> {
+        body["agents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| a["agent_slug"].as_str().unwrap().to_owned())
+            .collect()
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn dormant_agents_are_hidden_unless_asked_for(pool: PgPool) {
+        let acct = seed_account(&pool, "acme", false).await;
+        let online = seed_agent(&pool, acct, "online", "Online", "polls", "pull", &[]).await;
+        let recent = seed_agent(
+            &pool,
+            acct,
+            "recent",
+            "Recent",
+            "polled last week",
+            "pull",
+            &[],
+        )
+        .await;
+        let stale = seed_agent(
+            &pool,
+            acct,
+            "stale",
+            "Stale",
+            "polled long ago",
+            "pull",
+            &[],
+        )
+        .await;
+        seed_agent(&pool, acct, "never", "Never", "never polled", "pull", &[]).await;
+        let public = seed_agent(
+            &pool,
+            acct,
+            "public",
+            "Public",
+            "never polled, but callable",
+            "pull",
+            &[],
+        )
+        .await;
+        seed_agent(
+            &pool,
+            acct,
+            "pushy",
+            "Pushy",
+            "push agents never poll",
+            "push",
+            &[],
+        )
+        .await;
+        heartbeat(&pool, online, "1 minute").await;
+        heartbeat(&pool, recent, "7 days").await;
+        heartbeat(&pool, stale, "40 days").await;
+        make_public(&pool, public, "echo").await;
+
+        let state = crate::state::RelayState::new(pool.clone(), config());
+        let body = get_json(state.clone(), "/v1/discovery/agents").await;
+        let mut shown = slugs(&body);
+        shown.sort();
+        assert_eq!(shown, ["online", "public", "pushy", "recent"]);
+        assert_eq!(body["total_estimate"], 4, "the count uses the same filter");
+
+        let all = get_json(state, "/v1/discovery/agents?include_dormant=true").await;
+        assert_eq!(all["agents"].as_array().unwrap().len(), 6);
+        assert_eq!(all["total_estimate"], 6);
+
+        let row = |slug: &str| {
+            body["agents"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|a| a["agent_slug"] == slug)
+                .unwrap()
+                .clone()
+        };
+        assert_eq!(row("online")["online"], true);
+        assert_eq!(row("recent")["online"], false);
+        assert_eq!(row("pushy")["online"], false);
+        assert_eq!(row("online")["featured"], false, "no featured account set");
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn the_featured_list_puts_the_house_agents_first(pool: PgPool) {
+        let house = seed_account(&pool, "chakramcp", true).await;
+        let other = seed_account(&pool, "someone", false).await;
+        let guide = seed_agent(
+            &pool,
+            house,
+            "guide",
+            "ChakraMCP Guide",
+            "answers",
+            "pull",
+            &[],
+        )
+        .await;
+        let ask = make_public(&pool, guide, "guide.ask").await;
+        // An online, callable agent elsewhere; an online one with nothing
+        // public; an offline callable one.
+        let echo = seed_agent(&pool, other, "echo", "Echo", "echoes", "pull", &[]).await;
+        make_public(&pool, echo, "echo.say").await;
+        heartbeat(&pool, echo, "30 seconds").await;
+        let quiet = seed_agent(
+            &pool,
+            other,
+            "quiet",
+            "Quiet",
+            "nothing public",
+            "pull",
+            &[],
+        )
+        .await;
+        heartbeat(&pool, quiet, "30 seconds").await;
+        let away = seed_agent(&pool, other, "away", "Away", "offline", "pull", &[]).await;
+        make_public(&pool, away, "away.do").await;
+
+        let state = crate::state::RelayState::new(pool.clone(), config())
+            .with_featured_account(Some("chakramcp".into()));
+        let body = get_json(state.clone(), "/v1/discovery/featured").await;
+        assert_eq!(slugs(&body), ["guide", "echo"]);
+        let first = &body["agents"][0];
+        assert_eq!(first["featured"], true);
+        assert_eq!(first["id"], guide.to_string());
+        assert_eq!(first["public_capabilities"][0]["id"], ask.to_string());
+        assert_eq!(first["public_capabilities"][0]["name"], "guide.ask");
+        assert_eq!(body["agents"][1]["online"], true);
+
+        // The main list marks them too.
+        let main = get_json(state, "/v1/discovery/agents").await;
+        let guide_row = main["agents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["agent_slug"] == "guide")
+            .unwrap();
+        assert_eq!(guide_row["featured"], true);
+
+        // With no featured account, only online callable agents.
+        let plain = get_json(
+            crate::state::RelayState::new(pool, config()),
+            "/v1/discovery/featured",
+        )
+        .await;
+        assert_eq!(slugs(&plain), ["echo"]);
     }
 
     #[sqlx::test(migrations = "../migrations")]

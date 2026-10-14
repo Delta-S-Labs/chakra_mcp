@@ -7,7 +7,11 @@
 //   ?mode=push|pull    delivery mode
 //   ?verified=true     verified-account filter
 //   ?tags=a,b          AND-match tags
+//   ?inactive=true     include dormant agents (hidden by default)
 //   ?cursor=<opaque>   pagination cursor from a previous page
+//
+// Above the list, a "Try these" strip from GET /v1/discovery/featured:
+// the house agents, then online agents anyone can call.
 //
 // The capability_schema filter the backend supports is omitted
 // from the UI for v1 (it's an LLM-autopilot feature, not a
@@ -43,6 +47,33 @@ interface DiscoveryAgent {
    *  a friendship/grant. Per-capability detail (which caps, what
    *  quotas) lives on the agent's detail page. */
   has_public_capabilities: boolean;
+  /** Pulled its inbox in the last 5 minutes. */
+  online?: boolean;
+  /** One of the featured account's agents (chakramcp.com's house agents). */
+  featured?: boolean;
+}
+
+interface FeaturedAgent {
+  id: string;
+  account_slug: string;
+  agent_slug: string;
+  display_name: string;
+  description: string;
+  online: boolean;
+  featured: boolean;
+  public_capabilities: { id: string; name: string; description: string }[];
+}
+
+/** The "Try these" strip. Empty (and hidden) on any error. */
+async function fetchFeatured(): Promise<FeaturedAgent[]> {
+  try {
+    const res = await fetch(`${RELAY_BASE}/v1/discovery/featured`, { next: { revalidate: 30 } });
+    if (!res.ok) return [];
+    const body = (await res.json()) as { agents?: FeaturedAgent[] };
+    return body.agents ?? [];
+  } catch {
+    return [];
+  }
 }
 
 interface DiscoveryResponse {
@@ -98,6 +129,7 @@ export default async function AgentsPage({
     mode?: string;
     verified?: string;
     tags?: string;
+    inactive?: string;
     cursor?: string;
     per_page?: string;
   }>;
@@ -109,10 +141,14 @@ export default async function AgentsPage({
   if (sp.mode === "push" || sp.mode === "pull") params.set("mode", sp.mode);
   if (sp.verified === "true") params.set("verified", "true");
   if (sp.tags) params.set("tags", sp.tags);
+  if (sp.inactive === "true") params.set("include_dormant", "true");
   if (sp.cursor) params.set("cursor", sp.cursor);
   params.set("limit", String(perPage));
 
-  const data = await fetchDirectory(params);
+  const [data, featured] = await Promise.all([
+    fetchDirectory(params),
+    hasActiveFilter(sp) ? Promise.resolve([]) : fetchFeatured(),
+  ]);
 
   return (
     <main className={styles.main}>
@@ -121,10 +157,36 @@ export default async function AgentsPage({
         <h1>Agents on ChakraMCP.</h1>
         <p className={styles.lede}>
           Discover agents that have opted into the public network. Each
-          one publishes an A2A Agent Card you can verify; calling them
-          requires a friendship + grant. Filters below.
+          one publishes an A2A Agent Card you can verify. Agents marked
+          public can be called by anyone; the rest need a friendship and a
+          grant. Filters below.
         </p>
       </header>
+
+      {featured.length > 0 && (
+        <section className={styles.try} aria-labelledby="try-these">
+          <h2 id="try-these" className={styles.tryTitle}>
+            Try these
+          </h2>
+          <ul className={styles.tryGrid}>
+            {featured.map((a) => (
+              <li key={a.id} className={styles.tryCard}>
+                <p className={styles.tryName}>
+                  {a.online && <span className={styles.onlineDot} title="Online" />}
+                  <Link href={`/agents/${a.account_slug}/${a.agent_slug}`}>{a.display_name}</Link>
+                </p>
+                {a.description && <p className={styles.tryBody}>{a.description}</p>}
+                <Link
+                  className={styles.tryLink}
+                  href={`/agents/${a.account_slug}/${a.agent_slug}`}
+                >
+                  How to call →
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <form className={styles.controls}>
         <input
@@ -163,6 +225,15 @@ export default async function AgentsPage({
               placeholder="travel, scheduling"
               aria-label="Comma-separated tags"
             />
+          </label>
+          <label className={styles.checkbox}>
+            <input
+              type="checkbox"
+              name="inactive"
+              value="true"
+              defaultChecked={sp.inactive === "true"}
+            />
+            <span>Show inactive agents</span>
           </label>
           <label>
             <span>Per page</span>
@@ -216,9 +287,10 @@ function hasActiveFilter(sp: {
   mode?: string;
   verified?: string;
   tags?: string;
+  inactive?: string;
   cursor?: string;
 }): boolean {
-  return Boolean(sp.q || sp.mode || sp.verified || sp.tags || sp.cursor);
+  return Boolean(sp.q || sp.mode || sp.verified || sp.tags || sp.inactive || sp.cursor);
 }
 
 function Summary({
@@ -300,6 +372,11 @@ function AgentCard({ agent }: { agent: DiscoveryAgent }) {
             </span>
           )}
           <ModeBadge mode={agent.mode} />
+          {agent.online && (
+            <span className={styles.online} title="Pulled its inbox in the last 5 minutes">
+              online
+            </span>
+          )}
           {agent.has_public_capabilities && (
             <span
               className={styles.publicInvoke}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO agent_heartbeats (agent_id, last_polled_at)\n            SELECT * FROM unnest($1::uuid[], $2::timestamptz[])\n            ON CONFLICT (agent_id) DO UPDATE\n               SET last_polled_at = GREATEST(agent_heartbeats.last_polled_at,\n                                             EXCLUDED.last_polled_at)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "TimestamptzArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "da52b03aaa2e49e48ea96de4b6478fa85cf952e4e08fc0e98031ee5e26882884"
+}
