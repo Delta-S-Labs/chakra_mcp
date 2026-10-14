@@ -347,7 +347,6 @@ export default function CofounderPage() {
                 <li>Rust + Axum + Tokio</li>
                 <li>Postgres via sqlx (compile-time checked queries)</li>
                 <li>JWT for API auth, HMAC-SHA256 for signed webhooks</li>
-                <li>AWS: ECS Fargate + RDS Postgres + ALB + Secrets Manager</li>
                 <li>Containerized, portable, standard 12-factor config</li>
               </ul>
             </article>
@@ -356,7 +355,7 @@ export default function CofounderPage() {
               <ul>
                 <li>Next.js 16 App Router, React 19, TypeScript</li>
                 <li>CSS modules + design tokens (no Tailwind)</li>
-                <li>motion/react for scroll &amp; state animations</li>
+                <li>CSS animations and scroll timelines (no animation library)</li>
                 <li>Netlify via the Next.js plugin</li>
               </ul>
             </article>
