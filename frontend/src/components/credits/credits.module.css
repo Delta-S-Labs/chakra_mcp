@@ -417,3 +417,15 @@
   .table th,
   .table td { padding: 0.5rem 0.55rem; }
 }
+
+.lowNotice {
+  margin: 0;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid color-mix(in oklab, var(--accent-butter) 70%, var(--line));
+  border-radius: 0.5rem;
+  background: color-mix(in oklab, var(--accent-butter) 40%, var(--paper-soft));
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: var(--ink);
+}

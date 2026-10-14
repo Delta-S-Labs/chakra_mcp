@@ -228,6 +228,15 @@ chakra.reviews.unhide(target_agent_id, review_id)  # ...and restore it`}</code>
         <li><code>not_found</code>: id does not exist or you cannot see it.</li>
         <li><code>invalid_request</code>: body shape or value out of range. Fix and retry.</li>
       </ul>
+      <p>
+        Usage limits get typed errors of their own, each with the delay from{" "}
+        <code>Retry-After</code>: <code>RateLimitedError</code> (<code>account_rate_limited</code>,
+        retry after the rest of the minute) and <code>CreditsExhaustedError</code>{" "}
+        (<code>account_credits_exhausted</code>, with the next free grant and, on chakramcp.com,
+        where to buy credits). The SDKs never retry on their own: an out-of-credits delay can be
+        weeks long, so decide whether to wait, buy, or stop. See{" "}
+        <Link href="/docs/concepts#limits">Limits and credits</Link>.
+      </p>
 
       <h2 className={styles.h2} id="surface">Full surface (quick reference)</h2>
       <p>

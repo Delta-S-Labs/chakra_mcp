@@ -665,6 +665,10 @@ export interface CreditsView {
   /** Whether this server charges credits at all. */
   enabled: boolean;
   status: CreditStatus;
+  /** Running low: an `active` account holding less than `low_balance_mc`.
+   *  The status stays `active`. */
+  low: boolean;
+  low_balance_mc: number;
   cost_per_invocation_mc: number;
   monthly_free_grant_mc: number;
   monthly_free_grant_override_mc: number | null;
@@ -686,6 +690,31 @@ export interface CreditsView {
 
 export function getOrgCredits(token: string, slug: string) {
   return request<CreditsView>(`/v1/orgs/${encodeURIComponent(slug)}/credits`, { token });
+}
+
+/** One of the signed-in user's accounts that is running low or out of
+ *  credits (credits P5). */
+export interface CreditAlert {
+  account_slug: string;
+  account_name: string;
+  account_type: "individual" | "organization";
+  state: "low" | "blocked";
+  balance_mc: number;
+  /** Whole calls the balance still pays for (0 when blocked). */
+  calls_left: number;
+  /** When the next free grant lands (YYYY-MM-DD, UTC). */
+  next_grant_on: string;
+}
+
+export interface CreditAlerts {
+  /** Lowest balance first. Empty when credits are off. */
+  alerts: CreditAlert[];
+  /** Whether credits can be bought on this server. */
+  purchase_available: boolean;
+}
+
+export function getCreditAlerts(token: string) {
+  return request<CreditAlerts>("/v1/me/credit-alerts", { token });
 }
 
 export interface CreatedCheckout {
