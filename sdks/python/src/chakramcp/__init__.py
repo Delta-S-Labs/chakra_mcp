@@ -10,10 +10,15 @@ Both share the same sub-clients (``.agents``, ``.friendships``,
 helpers (``invoke_and_wait``, ``inbox.serve``).
 """
 
-__version__ = "0.3.5"
+__version__ = "0.4.0"
 
 from ._async import AsyncChakraMCP
-from ._errors import ChakraMCPError, QuotaExhaustedError
+from ._errors import (
+    ChakraMCPError,
+    CreditsExhaustedError,
+    QuotaExhaustedError,
+    RateLimitedError,
+)
 from ._sync import ChakraMCP
 from ._templates import (
     CHAKRAMCP_TEMPLATES,
@@ -65,6 +70,8 @@ __all__ = [
     "ChakraMCP",
     "ChakraMCPError",
     "QuotaExhaustedError",
+    "RateLimitedError",
+    "CreditsExhaustedError",
     "CHAKRAMCP_TEMPLATES",
     "MESSAGE_OWNER",
     "get_template",

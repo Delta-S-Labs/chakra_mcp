@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Any
 
 import httpx
 import pytest
@@ -16,6 +17,9 @@ from chakramcp import (
     AsyncChakraMCP,
     ChakraMCP,
     ChakraMCPError,
+    CreditsExhaustedError,
+    QuotaExhaustedError,
+    RateLimitedError,
 )
 
 
@@ -200,6 +204,208 @@ async def test_async_me(app_url: str, relay_url: str) -> None:
     async with AsyncChakraMCP(api_key="ck_test", app_url=app_url, relay_url=relay_url) as c:
         me = await c.me()
     assert me["user"]["email"] == "bob@example.com"
+
+
+# ─── Usage limits ─────────────────────────────────────────
+
+_INVOKE_BODY = {"capability_id": "cap", "grantee_agent_id": "agent", "input": {}}
+
+
+def _invoke_error(
+    app_url: str,
+    relay_url: str,
+    status: int,
+    body: dict[str, Any],
+    headers: dict[str, str] | None = None,
+) -> ChakraMCPError:
+    """Run a sync `invoke` against one canned error and return what it raised."""
+    respx.post(f"{relay_url}/v1/invoke").respond(status, json=body, headers=headers)
+    with (
+        ChakraMCP(api_key="ck_test", app_url=app_url, relay_url=relay_url) as c,
+        pytest.raises(ChakraMCPError) as ei,
+    ):
+        c.invoke(_INVOKE_BODY)
+    return ei.value
+
+
+@respx.mock
+def test_rate_limited_uses_retry_after_header(app_url: str, relay_url: str) -> None:
+    err = _invoke_error(
+        app_url,
+        relay_url,
+        429,
+        {
+            "error": {
+                "code": "account_rate_limited",
+                "message": "rate limit exceeded",
+                "retryable": True,
+                "retry_after_secs": 30,
+            }
+        },
+        {"retry-after": "23"},
+    )
+    assert isinstance(err, RateLimitedError)
+    assert err.status == 429
+    assert err.code == "account_rate_limited"
+    assert err.message == "rate limit exceeded"
+    # The header wins over the body.
+    assert err.retry_after_secs == 23
+
+
+@respx.mock
+def test_credits_exhausted_with_credits_url(app_url: str, relay_url: str) -> None:
+    err = _invoke_error(
+        app_url,
+        relay_url,
+        429,
+        {
+            "error": {
+                "code": "account_credits_exhausted",
+                "message": "insufficient credits",
+                "retryable": False,
+                "retry_after_secs": 1300000,
+                "next_grant_at": "2026-11-01T00:00:00Z",
+                "credits_url": "https://chakramcp.com/app/credits",
+            }
+        },
+        {"retry-after": "1300000"},
+    )
+    assert isinstance(err, CreditsExhaustedError)
+    assert err.code == "account_credits_exhausted"
+    assert err.retry_after_secs == 1300000
+    assert err.next_grant_at == "2026-11-01T00:00:00Z"
+    assert err.credits_url == "https://chakramcp.com/app/credits"
+
+
+@respx.mock
+async def test_async_credits_exhausted_self_hosted_has_no_credits_url(
+    app_url: str, relay_url: str
+) -> None:
+    respx.post(f"{relay_url}/v1/invoke").respond(
+        429,
+        json={
+            "error": {
+                "code": "account_credits_exhausted",
+                "message": "insufficient credits",
+                "retryable": False,
+                "retry_after_secs": 86400,
+                "next_grant_at": "2026-11-01T00:00:00Z",
+            }
+        },
+        headers={"retry-after": "86400"},
+    )
+    async with AsyncChakraMCP(api_key="ck_test", app_url=app_url, relay_url=relay_url) as c:
+        with pytest.raises(CreditsExhaustedError) as ei:
+            await c.invoke(_INVOKE_BODY)
+    assert ei.value.retry_after_secs == 86400
+    assert ei.value.next_grant_at == "2026-11-01T00:00:00Z"
+    assert ei.value.credits_url is None
+
+
+@respx.mock
+def test_retry_after_from_body_without_header(app_url: str, relay_url: str) -> None:
+    err = _invoke_error(
+        app_url,
+        relay_url,
+        429,
+        {
+            "error": {
+                "code": "account_rate_limited",
+                "message": "rate limit exceeded",
+                "retryable": True,
+                "retry_after_secs": 17,
+            }
+        },
+    )
+    assert isinstance(err, RateLimitedError)
+    assert err.retry_after_secs == 17
+
+
+@respx.mock
+def test_quota_exhausted_gains_retry_after(app_url: str, relay_url: str) -> None:
+    err = _invoke_error(
+        app_url,
+        relay_url,
+        429,
+        {
+            "error": {
+                "code": "monthly_quota_exhausted",
+                "message": "monthly quota exhausted",
+                "retryable": False,
+            },
+            "quota": 100,
+            "resets_at": "2026-11-01T00:00:00Z",
+        },
+        {"retry-after": "1300000"},
+    )
+    assert isinstance(err, QuotaExhaustedError)
+    assert err.quota == 100
+    assert err.resets_at == "2026-11-01T00:00:00Z"
+    assert err.retry_after_secs == 1300000
+
+
+@respx.mock
+def test_older_server_limit_errors_have_no_new_fields(app_url: str, relay_url: str) -> None:
+    credits = _invoke_error(
+        app_url,
+        relay_url,
+        429,
+        {
+            "error": {
+                "code": "account_credits_exhausted",
+                "message": "insufficient credits",
+                "retryable": False,
+            }
+        },
+    )
+    assert isinstance(credits, CreditsExhaustedError)
+    assert credits.retry_after_secs is None
+    assert credits.next_grant_at is None
+    assert credits.credits_url is None
+
+    rate = _invoke_error(
+        app_url,
+        relay_url,
+        429,
+        {"error": {"code": "account_rate_limited", "message": "rate limit exceeded"}},
+    )
+    assert isinstance(rate, RateLimitedError)
+    assert rate.retry_after_secs is None
+
+    quota = _invoke_error(
+        app_url,
+        relay_url,
+        429,
+        {
+            "error": {"code": "monthly_quota_exhausted", "message": "monthly quota exhausted"},
+            "quota": 100,
+            "resets_at": "2026-11-01T00:00:00Z",
+        },
+    )
+    assert isinstance(quota, QuotaExhaustedError)
+    assert quota.retry_after_secs is None
+
+
+@respx.mock
+def test_other_errors_carry_retry_after_only_when_sent(app_url: str, relay_url: str) -> None:
+    forbidden = _invoke_error(
+        app_url,
+        relay_url,
+        403,
+        {"error": {"code": "forbidden", "message": "forbidden"}},
+    )
+    assert type(forbidden) is ChakraMCPError
+    assert forbidden.retry_after_secs is None
+
+    unavailable = _invoke_error(
+        app_url,
+        relay_url,
+        503,
+        {"error": {"code": "unavailable", "message": "try later"}},
+        {"retry-after": "5"},
+    )
+    assert type(unavailable) is ChakraMCPError
+    assert unavailable.retry_after_secs == 5
 
 
 def _hitl_inv_json(inv_id: str = "inv-hitl", *, semantics: str = "human_in_loop") -> dict:
