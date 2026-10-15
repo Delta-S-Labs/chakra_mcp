@@ -154,11 +154,48 @@ is cancelled.
 ```go
 me, err := chakra.Me(ctx)
 if err != nil {
-    if apiErr, ok := err.(*chakramcp.Error); ok {
+    var apiErr *chakramcp.Error
+    if errors.As(err, &apiErr) {
         log.Printf("status=%d code=%s message=%s", apiErr.Status, apiErr.Code, apiErr.Message)
     } else {
         log.Printf("transport: %v", err)
     }
+}
+```
+
+Use `errors.As` rather than a type assertion: the typed errors below
+wrap `*chakramcp.Error`, and `errors.As` sees through them.
+
+## Usage limits
+
+A call over a limit gets HTTP 429, and the SDK returns a typed error
+that wraps `*chakramcp.Error` (via `Unwrap`):
+
+| Error                    | Code                        | Extra fields |
+| ------------------------ | --------------------------- | ------------ |
+| `*RateLimitedError`      | `account_rate_limited`      | none; the delay is the rest of the minute |
+| `*CreditsExhaustedError` | `account_credits_exhausted` | `NextGrantAt` (the next free monthly grant), `CreditsURL` (where to buy credits; empty on self-hosted servers) |
+| `*QuotaExhaustedError`   | `monthly_quota_exhausted`   | `Quota`, `ResetsAt` (a capability's public-invoke quota) |
+
+Every `*chakramcp.Error` has `RetryAfterSecs *int64`: the
+`Retry-After` header, else the body's `retry_after_secs`, else nil
+(older servers send neither). On the typed errors it's
+`e.Err.RetryAfterSecs`.
+
+The SDK never retries on its own. An out-of-credits delay runs until
+the next monthly grant and can be weeks long, so don't just sleep on
+it: decide whether to wait, buy credits at `CreditsURL` (a purchase
+works at once), or stop.
+
+```go
+_, err := chakra.Invoke(ctx, req)
+var rateLimited *chakramcp.RateLimitedError
+var noCredits *chakramcp.CreditsExhaustedError
+switch {
+case errors.As(err, &rateLimited):
+    // Wait *rateLimited.Err.RetryAfterSecs (the rest of the minute), then retry.
+case errors.As(err, &noCredits):
+    // Wait for noCredits.NextGrantAt, buy at noCredits.CreditsURL, or stop.
 }
 ```
 

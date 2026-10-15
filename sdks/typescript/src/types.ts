@@ -354,6 +354,12 @@ export class ChakraMCPError extends Error {
     public readonly status: number,
     public readonly code: string,
     message: string,
+    /**
+     * Seconds to wait before retrying, when the server says: the
+     * `Retry-After` header, else the body's `retry_after_secs`.
+     * Undefined when it says neither (most errors, and older servers).
+     */
+    public readonly retry_after_secs?: number,
   ) {
     super(message);
     this.name = "ChakraMCPError";
@@ -372,9 +378,42 @@ export class QuotaExhaustedError extends ChakraMCPError {
     message: string,
     public readonly quota: number,
     public readonly resets_at: string,
+    retry_after_secs?: number,
   ) {
-    super(429, "monthly_quota_exhausted", message);
+    super(429, "monthly_quota_exhausted", message, retry_after_secs);
     this.name = "QuotaExhaustedError";
+  }
+}
+
+/**
+ * Thrown when the calling account is over its per-minute rate limit
+ * (HTTP 429 + body code `account_rate_limited`). `retry_after_secs`
+ * is the rest of the minute. The SDK doesn't retry on its own.
+ */
+export class RateLimitedError extends ChakraMCPError {
+  constructor(message: string, retry_after_secs?: number) {
+    super(429, "account_rate_limited", message, retry_after_secs);
+    this.name = "RateLimitedError";
+  }
+}
+
+/**
+ * Thrown when the calling account is out of credits (HTTP 429 + body
+ * code `account_credits_exhausted`). `retry_after_secs` runs until the
+ * next free monthly grant (`next_grant_at`, a UTC instant) and can be
+ * weeks long; buying credits works at once. `credits_url` is where to
+ * buy them, and is absent on self-hosted servers. All three are absent
+ * on older servers.
+ */
+export class CreditsExhaustedError extends ChakraMCPError {
+  constructor(
+    message: string,
+    retry_after_secs?: number,
+    public readonly next_grant_at?: string,
+    public readonly credits_url?: string,
+  ) {
+    super(429, "account_credits_exhausted", message, retry_after_secs);
+    this.name = "CreditsExhaustedError";
   }
 }
 

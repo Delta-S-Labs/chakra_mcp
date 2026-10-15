@@ -213,3 +213,285 @@ async fn inbox_serve_dispatches_and_responds_then_cancels() {
     assert!(dispatched.load(Ordering::SeqCst) >= 1);
     assert!(result_mock.calls_async().await >= 1);
 }
+
+// ─── Usage limits ─────────────────────────────────────────
+
+/// Run `invoke` against a server that answers with one canned error
+/// and return what it got back.
+async fn invoke_error(status: u16, retry_after: Option<&str>, body: serde_json::Value) -> Error {
+    let server = MockServer::start_async().await;
+    server
+        .mock_async(|when, then| {
+            when.method(POST).path("/v1/invoke");
+            let mut then = then
+                .status(status)
+                .header("content-type", "application/json");
+            if let Some(v) = retry_after {
+                then = then.header("retry-after", v);
+            }
+            then.json_body(body);
+        })
+        .await;
+    let chakra = _common::build(&server);
+    chakra
+        .invoke(&InvokeRequest {
+            grant_id: None,
+            capability_id: Some("cap".into()),
+            grantee_agent_id: "agent".into(),
+            input: json!({}),
+        })
+        .await
+        .expect_err("invoke fails")
+}
+
+fn next_grant() -> chrono::DateTime<chrono::Utc> {
+    "2026-11-01T00:00:00Z".parse().unwrap()
+}
+
+#[tokio::test]
+async fn rate_limited_uses_retry_after_header() {
+    let err = invoke_error(
+        429,
+        Some("23"),
+        json!({ "error": {
+            "code": "account_rate_limited",
+            "message": "rate limit exceeded",
+            "retryable": true,
+            "retry_after_secs": 30,
+        }}),
+    )
+    .await;
+    // The header wins over the body.
+    assert_eq!(err.retry_after_secs(), Some(23));
+    match err {
+        Error::RateLimited {
+            message,
+            retry_after_secs,
+        } => {
+            assert_eq!(message, "rate limit exceeded");
+            assert_eq!(retry_after_secs, Some(23));
+        }
+        other => panic!("expected RateLimited, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn credits_exhausted_with_credits_url() {
+    let err = invoke_error(
+        429,
+        Some("1300000"),
+        json!({ "error": {
+            "code": "account_credits_exhausted",
+            "message": "insufficient credits",
+            "retryable": false,
+            "retry_after_secs": 1300000,
+            "next_grant_at": "2026-11-01T00:00:00Z",
+            "credits_url": "https://chakramcp.com/app/credits",
+        }}),
+    )
+    .await;
+    match err {
+        Error::CreditsExhausted {
+            retry_after_secs,
+            next_grant_at,
+            credits_url,
+            ..
+        } => {
+            assert_eq!(retry_after_secs, Some(1_300_000));
+            assert_eq!(next_grant_at, Some(next_grant()));
+            assert_eq!(
+                credits_url.as_deref(),
+                Some("https://chakramcp.com/app/credits")
+            );
+        }
+        other => panic!("expected CreditsExhausted, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn credits_exhausted_self_hosted_has_no_credits_url() {
+    let err = invoke_error(
+        429,
+        Some("86400"),
+        json!({ "error": {
+            "code": "account_credits_exhausted",
+            "message": "insufficient credits",
+            "retryable": false,
+            "retry_after_secs": 86400,
+            "next_grant_at": "2026-11-01T00:00:00Z",
+        }}),
+    )
+    .await;
+    match err {
+        Error::CreditsExhausted {
+            retry_after_secs,
+            next_grant_at,
+            credits_url,
+            ..
+        } => {
+            assert_eq!(retry_after_secs, Some(86400));
+            assert_eq!(next_grant_at, Some(next_grant()));
+            assert_eq!(credits_url, None);
+        }
+        other => panic!("expected CreditsExhausted, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn retry_after_from_body_without_header() {
+    let err = invoke_error(
+        429,
+        None,
+        json!({ "error": {
+            "code": "account_rate_limited",
+            "message": "rate limit exceeded",
+            "retryable": true,
+            "retry_after_secs": 17,
+        }}),
+    )
+    .await;
+    assert!(
+        matches!(
+            err,
+            Error::RateLimited {
+                retry_after_secs: Some(17),
+                ..
+            }
+        ),
+        "got {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn quota_exhausted_gains_retry_after() {
+    let err = invoke_error(
+        429,
+        Some("1300000"),
+        json!({
+            "error": {
+                "code": "monthly_quota_exhausted",
+                "message": "monthly quota exhausted",
+                "retryable": false,
+            },
+            "quota": 100,
+            "resets_at": "2026-11-01T00:00:00Z",
+        }),
+    )
+    .await;
+    match err {
+        Error::QuotaExhausted {
+            quota,
+            resets_at,
+            retry_after_secs,
+            ..
+        } => {
+            assert_eq!(quota, 100);
+            assert_eq!(resets_at, next_grant());
+            assert_eq!(retry_after_secs, Some(1_300_000));
+        }
+        other => panic!("expected QuotaExhausted, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn older_server_limit_errors_have_no_new_fields() {
+    let credits = invoke_error(
+        429,
+        None,
+        json!({ "error": {
+            "code": "account_credits_exhausted",
+            "message": "insufficient credits",
+            "retryable": false,
+        }}),
+    )
+    .await;
+    assert!(
+        matches!(
+            credits,
+            Error::CreditsExhausted {
+                retry_after_secs: None,
+                next_grant_at: None,
+                credits_url: None,
+                ..
+            }
+        ),
+        "got {credits:?}"
+    );
+
+    let rate = invoke_error(
+        429,
+        None,
+        json!({ "error": { "code": "account_rate_limited", "message": "rate limit exceeded" } }),
+    )
+    .await;
+    assert!(
+        matches!(
+            rate,
+            Error::RateLimited {
+                retry_after_secs: None,
+                ..
+            }
+        ),
+        "got {rate:?}"
+    );
+
+    let quota = invoke_error(
+        429,
+        None,
+        json!({
+            "error": { "code": "monthly_quota_exhausted", "message": "monthly quota exhausted" },
+            "quota": 100,
+            "resets_at": "2026-11-01T00:00:00Z",
+        }),
+    )
+    .await;
+    assert!(
+        matches!(
+            quota,
+            Error::QuotaExhausted {
+                retry_after_secs: None,
+                ..
+            }
+        ),
+        "got {quota:?}"
+    );
+}
+
+#[tokio::test]
+async fn other_errors_carry_retry_after_only_when_sent() {
+    let forbidden = invoke_error(
+        403,
+        None,
+        json!({ "error": { "code": "forbidden", "message": "forbidden" } }),
+    )
+    .await;
+    assert!(
+        matches!(
+            forbidden,
+            Error::Api {
+                status: 403,
+                retry_after_secs: None,
+                ..
+            }
+        ),
+        "got {forbidden:?}"
+    );
+
+    let unavailable = invoke_error(
+        503,
+        Some("5"),
+        json!({ "error": { "code": "unavailable", "message": "try later" } }),
+    )
+    .await;
+    assert!(
+        matches!(
+            unavailable,
+            Error::Api {
+                status: 503,
+                retry_after_secs: Some(5),
+                ..
+            }
+        ),
+        "got {unavailable:?}"
+    );
+}

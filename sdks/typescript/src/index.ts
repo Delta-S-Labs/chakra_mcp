@@ -33,7 +33,9 @@ import {
   AgentSummary,
   Capability,
   ChakraMCPError,
+  CreditsExhaustedError,
   QuotaExhaustedError,
+  RateLimitedError,
   CreateAgentRequest,
   CreateCapabilityRequest,
   CreateGrantRequest,
@@ -56,6 +58,7 @@ import {
   RevokeGrantRequest,
   TERMINAL_STATUSES,
   UpdateAgentRequest,
+  UpdateCapabilityRequest,
   Visibility,
   WriteReviewRequest,
 } from "./types.js";
@@ -122,8 +125,10 @@ export class ChakraMCP {
    * use `invokeAndWait` to also poll for the terminal result.
    */
   async invoke(args: InvokeRequest): Promise<InvokeResponse> {
+    // Exactly one of grant_id (friend tier) or capability_id (public tier).
+    const target = args.grant_id !== undefined ? { grant_id: args.grant_id } : { capability_id: args.capability_id };
     return this.relayRequest<InvokeResponse>("POST", "/v1/invoke", {
-      grant_id: args.grant_id,
+      ...target,
       grantee_agent_id: args.grantee_agent_id,
       input: args.input,
     });
@@ -193,42 +198,83 @@ export class ChakraMCP {
         parsed = JSON.parse(text);
       } catch {
         if (!res.ok) {
-          throw new ChakraMCPError(res.status, "invalid_response", text);
+          throw new ChakraMCPError(res.status, "invalid_response", text, retryAfterSecs(res, null));
         }
         throw new ChakraMCPError(res.status, "invalid_response", `non-JSON response: ${text}`);
       }
     }
     if (!res.ok) {
-      const env = parsed as
-        | {
-            error?: { code?: string; message?: string };
-            quota?: number;
-            resets_at?: string;
-          }
-        | null;
-      // Public-invoke monthly quota: 429 with a structured payload.
-      // Surface as a typed error so callers can back off cleanly
-      // without parsing the envelope themselves.
-      if (
-        res.status === 429 &&
-        env?.error?.code === "monthly_quota_exhausted" &&
-        typeof env.quota === "number" &&
-        typeof env.resets_at === "string"
-      ) {
-        throw new QuotaExhaustedError(
-          env.error.message ?? "monthly quota exhausted",
-          env.quota,
-          env.resets_at,
-        );
+      const env = parsed as ErrorEnvelope | null;
+      const retryAfter = retryAfterSecs(res, env);
+      // Usage limits (429s) carry structured payloads. Surface them
+      // as typed errors so callers can back off cleanly without
+      // parsing the envelope themselves.
+      if (res.status === 429) {
+        // Public-invoke monthly quota on the target capability.
+        if (
+          env?.error?.code === "monthly_quota_exhausted" &&
+          typeof env.quota === "number" &&
+          typeof env.resets_at === "string"
+        ) {
+          throw new QuotaExhaustedError(
+            env.error.message ?? "monthly quota exhausted",
+            env.quota,
+            env.resets_at,
+            retryAfter,
+          );
+        }
+        // The calling account's own limits.
+        if (env?.error?.code === "account_rate_limited") {
+          throw new RateLimitedError(env.error.message ?? "rate limit exceeded", retryAfter);
+        }
+        if (env?.error?.code === "account_credits_exhausted") {
+          throw new CreditsExhaustedError(
+            env.error.message ?? "insufficient credits",
+            retryAfter,
+            stringOrUndefined(env.error.next_grant_at),
+            stringOrUndefined(env.error.credits_url),
+          );
+        }
       }
       throw new ChakraMCPError(
         res.status,
         env?.error?.code ?? "unknown",
         env?.error?.message ?? res.statusText,
+        retryAfter,
       );
     }
     return parsed as T;
   }
+}
+
+/** The standard error body. Fields past code + message are optional. */
+interface ErrorEnvelope {
+  error?: {
+    code?: string;
+    message?: string;
+    retry_after_secs?: unknown;
+    next_grant_at?: unknown;
+    credits_url?: unknown;
+  };
+  quota?: number;
+  resets_at?: string;
+}
+
+/**
+ * The retry delay in seconds: the `Retry-After` header when it's a
+ * whole number of seconds, else the body's `retry_after_secs`, else
+ * undefined (older servers send neither).
+ */
+function retryAfterSecs(res: Response, env: ErrorEnvelope | null): number | undefined {
+  const header = res.headers.get("retry-after")?.trim();
+  if (header && /^\d+$/.test(header)) return Number(header);
+  const body = env?.error?.retry_after_secs;
+  if (typeof body === "number" && Number.isInteger(body) && body >= 0) return body;
+  return undefined;
+}
+
+function stringOrUndefined(v: unknown): string | undefined {
+  return typeof v === "string" ? v : undefined;
 }
 
 // ─── Sub-clients ─────────────────────────────────────────
@@ -285,6 +331,16 @@ export class AgentsClient {
         body,
       );
     },
+    update: (
+      agentId: string,
+      capabilityId: string,
+      body: UpdateCapabilityRequest,
+    ): Promise<Capability> =>
+      this.chakra.relayRequest(
+        "PATCH",
+        `/v1/agents/${encodeURIComponent(agentId)}/capabilities/${encodeURIComponent(capabilityId)}`,
+        body,
+      ),
     delete: (agentId: string, capabilityId: string): Promise<void> =>
       this.chakra.relayRequest(
         "DELETE",
