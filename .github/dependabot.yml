@@ -23,6 +23,13 @@ updates:
     open-pull-requests-limit: 3
     labels: ["deps", "sdk-ts"]
 
+  # chakramcp.com's house agents (Ping and the ChakraMCP Guide).
+  - package-ecosystem: npm
+    directory: "/infra/house-agents"
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 3
+    labels: ["deps", "house-agents"]
+
   # Rust workspace deps. Group the heavy ecosystems so we don't
   # ship 20 PRs every time hyper bumps its tower-internal versions.
   - package-ecosystem: cargo
