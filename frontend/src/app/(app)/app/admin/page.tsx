@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { adminListUsers, adminListOrgs, adminListApiKeys } from "@/lib/api";
 import { StatusPill } from "@/components/credits/CreditsPanel";
 import { formatCredits } from "@/lib/format";
+import { redirectIfUnauthorized } from "@/lib/session-expired";
 import styles from "./admin.module.css";
 
 export default async function AdminPage() {
@@ -25,6 +26,7 @@ export default async function AdminPage() {
       adminListApiKeys(token),
     ]);
   } catch (err) {
+    redirectIfUnauthorized(err, "/app/admin");
     backendError = err instanceof Error ? err.message : "Backend unavailable.";
   }
 

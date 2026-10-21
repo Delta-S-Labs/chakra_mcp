@@ -6,6 +6,7 @@ import { getOrgCredits, listOrgs, type CreditsView, type Org } from "@/lib/api";
 import { BuyCredits } from "@/components/credits/BuyCredits";
 import { CreditsPanel } from "@/components/credits/CreditsPanel";
 import { formatCredits } from "@/lib/format";
+import { redirectIfUnauthorized } from "@/lib/session-expired";
 import styles from "./credits.module.css";
 
 export const metadata: Metadata = {
@@ -37,6 +38,7 @@ export default async function CreditsPage({
   try {
     accounts = await listOrgs(token);
   } catch (err) {
+    redirectIfUnauthorized(err, "/app/credits");
     error = err instanceof Error ? err.message : "Couldn't load your accounts.";
   }
 
@@ -53,6 +55,7 @@ export default async function CreditsPage({
     try {
       view = await getOrgCredits(token, current.slug);
     } catch (err) {
+      redirectIfUnauthorized(err, "/app/credits");
       error = err instanceof Error ? err.message : "Couldn't load credits.";
     }
   }

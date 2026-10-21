@@ -10,6 +10,7 @@ import {
   type CreditsView,
 } from "@/lib/api";
 import { CreditsPanel } from "@/components/credits/CreditsPanel";
+import { redirectIfUnauthorized } from "@/lib/session-expired";
 import { AdminCreditControls } from "./AdminCreditControls";
 import styles from "../../admin.module.css";
 
@@ -37,6 +38,7 @@ export default async function AdminAccountCreditsPage({
       adminListOrgs(token),
     ]);
   } catch (err) {
+    redirectIfUnauthorized(err, `/app/admin/accounts/${id}`);
     if (err instanceof ApiClientError && (err.status === 404 || err.status === 400)) {
       notFound();
     }

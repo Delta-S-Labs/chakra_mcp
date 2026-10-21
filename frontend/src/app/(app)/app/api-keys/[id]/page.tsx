@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@/auth";
 import { getApiKey, getApiKeyUsage } from "@/lib/api";
+import { redirectIfUnauthorized } from "@/lib/session-expired";
 import { KeyDetailClient } from "./KeyDetailClient";
 import styles from "./detail.module.css";
 
@@ -44,6 +45,7 @@ export default async function ApiKeyDetailPage({
       }),
     ]);
   } catch (err) {
+    redirectIfUnauthorized(err, `/app/api-keys/${id}`);
     backendError = err instanceof Error ? err.message : "Backend unavailable.";
   }
 

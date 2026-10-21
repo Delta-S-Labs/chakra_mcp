@@ -5,6 +5,7 @@ import {
   listFriendships,
   type NetworkAgent,
 } from "@/lib/relay";
+import { redirectIfUnauthorized } from "@/lib/session-expired";
 import { ProposeForm } from "./ProposeForm";
 import { FriendshipsList } from "./FriendshipsList";
 import styles from "./friendships.module.css";
@@ -40,6 +41,7 @@ export default async function FriendshipsPage() {
       network = n.agents;
       friendships = f;
     } catch (err) {
+      redirectIfUnauthorized(err, "/app/friendships");
       backendError = err instanceof Error ? err.message : "Relay unavailable.";
     }
   }

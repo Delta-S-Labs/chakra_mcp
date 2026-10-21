@@ -6,6 +6,7 @@ import {
   listNetworkAgents,
   type NetworkAgent,
 } from "@/lib/relay";
+import { redirectIfUnauthorized } from "@/lib/session-expired";
 import { CreateAgentForm } from "./CreateAgentForm";
 import styles from "./agents.module.css";
 
@@ -38,6 +39,7 @@ export default async function AgentsPage() {
       networkAgents = n.agents.filter((a) => !a.is_mine).slice(0, 6);
       orgs = o;
     } catch (err) {
+      redirectIfUnauthorized(err, "/app/agents");
       backendError = err instanceof Error ? err.message : "Relay unavailable.";
     }
   }

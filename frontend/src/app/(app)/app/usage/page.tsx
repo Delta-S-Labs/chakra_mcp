@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { auth } from "@/auth";
 import { getUsageSummary, type UsageSummary } from "@/lib/api";
 import { listUsageEvents, type UsageActionCount } from "@/lib/relay";
+import { redirectIfUnauthorized } from "@/lib/session-expired";
 import { computeRange, readRangeParam, readScopeParam } from "./range";
 import { UsageView } from "./UsageView";
 import styles from "./usage.module.css";
@@ -47,6 +48,7 @@ export default async function UsagePage({
         scope: scopeKey,
       });
     } catch (err) {
+      redirectIfUnauthorized(err, "/app/usage");
       backendError =
         err instanceof Error ? err.message : "Couldn't load usage data.";
     }
