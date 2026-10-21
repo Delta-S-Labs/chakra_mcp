@@ -1,0 +1,13 @@
+# The build context is the repo root; send only what the Dockerfile copies.
+*
+!infra/house-agents/package.json
+!infra/house-agents/package-lock.json
+!infra/house-agents/tsconfig.json
+!infra/house-agents/tsconfig.build.json
+!infra/house-agents/scripts/
+!infra/house-agents/src/
+!README.md
+!docs/INSTALL.md
+!docs/self-hosting/
+!frontend/public/llms.txt
+!.claude/skills/chakramcp-agent/SKILL.md

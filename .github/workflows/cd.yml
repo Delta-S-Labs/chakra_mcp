@@ -10,6 +10,9 @@ name: CD (deploy on merge to main)
 #   - Always → sync infra/observability/ and bring the observability
 #                                     stack up to date (a no-op when
 #                                     nothing changed)
+#   - Always → rebuild + restart the house agents (infra/house-agents/)
+#                                     when their image's inputs changed;
+#                                     skipped until their keys are set
 #
 # Branch protection on `main` already enforces:
 #   - PR with required status checks green
@@ -38,7 +41,7 @@ on:
         required: true
         type: choice
         default: both
-        options: [both, frontend, backend, observability]
+        options: [both, frontend, backend, observability, house-agents]
 
 concurrency:
   group: cd-${{ github.ref }}
@@ -418,3 +421,112 @@ jobs:
         run: |
           ssh -i ~/.ssh/lightsail ubuntu@"$LIGHTSAIL_HOST" \
               "cd /opt/chakramcp && observability/scripts/deploy.sh '${CHANGED}'"
+
+  # ─── House agents (chakramcp.com only) ──────────────────────────
+  # Ping and the ChakraMCP Guide (infra/house-agents/). The image is built
+  # here on the runner (the VM is too small to build) and loaded over SSH;
+  # it never goes to a registry. Runs on every push but only redeploys when
+  # the image's inputs changed (or on `which: house-agents`), and does
+  # nothing until HOUSE_CHAKRAMCP_API_KEY and HOUSE_ANTHROPIC_API_KEY are in
+  # the VM's .env. Needs deploy-backend: that job syncs the compose file.
+  deploy-house-agents:
+    name: Deploy house agents (Lightsail)
+    needs: [detect, deploy-backend]
+    if: |
+      always() &&
+      needs.detect.result == 'success' &&
+      (needs.deploy-backend.result == 'success' || needs.deploy-backend.result == 'skipped') &&
+      contains(fromJSON('["auto", "both", "house-agents"]'), needs.detect.outputs.force_which)
+    runs-on: ubuntu-22.04
+    env:
+      LIGHTSAIL_HOST: 54.84.88.246
+      FORCE: ${{ needs.detect.outputs.force_which == 'house-agents' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.LIGHTSAIL_SSH_KEY }}" > ~/.ssh/lightsail
+          chmod 600 ~/.ssh/lightsail
+          ssh-keyscan -H "$LIGHTSAIL_HOST" >> ~/.ssh/known_hosts
+
+      # Everything the image is built from (see the Dockerfile's COPYs).
+      - name: Decide whether to deploy
+        id: plan
+        run: |
+          set -euo pipefail
+          hash=$(git ls-files -s infra/house-agents README.md docs/INSTALL.md docs/self-hosting \
+            frontend/public/llms.txt .claude/skills/chakramcp-agent/SKILL.md | sha256sum | cut -c1-16)
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
+          # Key names only: the values never leave the VM.
+          # shellcheck disable=SC2016 # runs on the VM
+          state=$(ssh -i ~/.ssh/lightsail ubuntu@"$LIGHTSAIL_HOST" 'cd /opt/chakramcp
+            keys=0
+            for k in HOUSE_CHAKRAMCP_API_KEY HOUSE_ANTHROPIC_API_KEY; do
+              grep -q "^$k=..*" .env && keys=$((keys + 1))
+            done
+            echo "$keys $(cat .house-agents-hash 2>/dev/null || echo none)"')
+          read -r keys deployed <<< "$state"
+          if [ "$keys" != 2 ]; then
+            echo "::notice::House agents not configured (HOUSE_CHAKRAMCP_API_KEY and HOUSE_ANTHROPIC_API_KEY in the VM's .env); skipping. See infra/house-agents/README.md."
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          elif [ "$deployed" = "$hash" ] && [ "$FORCE" != true ]; then
+            echo "House agents image $hash already deployed."
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Deploying house agents $hash (was $deployed)."
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build the image
+        if: steps.plan.outputs.deploy == 'true'
+        run: |
+          docker build -f infra/house-agents/Dockerfile \
+            -t "chakramcp-house-agents:${{ steps.plan.outputs.hash }}" .
+
+      - name: Load it on the VM and restart
+        if: steps.plan.outputs.deploy == 'true'
+        env:
+          HASH: ${{ steps.plan.outputs.hash }}
+        run: |
+          set -euo pipefail
+          docker save "chakramcp-house-agents:$HASH" | gzip \
+            | ssh -i ~/.ssh/lightsail ubuntu@"$LIGHTSAIL_HOST" 'gunzip | docker load'
+          # shellcheck disable=SC2087 # $HASH expands here, the rest on the VM
+          ssh -i ~/.ssh/lightsail ubuntu@"$LIGHTSAIL_HOST" bash -s <<EOF
+          set -euo pipefail
+          cd /opt/chakramcp
+          docker tag "chakramcp-house-agents:$HASH" chakramcp-house-agents:latest
+          # --no-deps: never touch the relay from here.
+          docker compose --profile house-agents up -d --no-deps --force-recreate house-agents
+          c=\$(docker compose ps -q house-agents)
+          want=\$(docker image inspect -f '{{.Id}}' "chakramcp-house-agents:$HASH")
+          [ "\$(docker inspect -f '{{.Image}}' "\$c")" = "\$want" ] || {
+            echo "house-agents isn't running the new image"; exit 1; }
+          # Up once it has found its agents on the relay. A bad setting exits
+          # at once, and the restart policy shows it as restarts.
+          # (Logs are read into a variable: under pipefail, grep -q closing a
+          # pipe early would fail the pipeline.)
+          started=false
+          for _ in \$(seq 1 30); do
+            [ "\$(docker inspect -f '{{.RestartCount}}' "\$c")" = 0 ] || break
+            logs=\$(docker logs "\$c" 2>&1)
+            if grep -q '"msg":"started"' <<< "\$logs"; then started=true; break; fi
+            sleep 3
+          done
+          if [ "\$started" != true ]; then
+            docker logs --tail 20 "\$c"; exit 1
+          fi
+          sleep 5   # the Claude check runs just after startup
+          logs=\$(docker logs "\$c" 2>&1)
+          if grep -q '"msg":"claude.check_failed"' <<< "\$logs"; then
+            echo "::warning::The Guide's Claude check failed: see the house-agents logs."
+          fi
+          echo "$HASH" > .house-agents-hash
+          # Keep only the image in use.
+          docker image ls chakramcp-house-agents --format '{{.Tag}}' \
+            | grep -vx -e latest -e "$HASH" | sed 's/^/chakramcp-house-agents:/' \
+            | xargs -r docker image rm >/dev/null || true
+          docker logs --tail 5 "\$c"
+          EOF
