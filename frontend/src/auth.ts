@@ -57,6 +57,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       clientId: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       allowDangerousEmailAccountLinking: true,
+      // Always show Google's account chooser. Without it, Google signs in
+      // silently with the browser's one Google session, so after signing out
+      // here there's no way to pick a different account.
+      authorization: { params: { prompt: "select_account" } },
     }),
     Credentials({
       id: "password",
