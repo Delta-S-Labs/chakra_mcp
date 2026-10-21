@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getOrg, getOrgSettings } from "@/lib/api";
+import { redirectIfUnauthorized } from "@/lib/session-expired";
 import { SettingsForm } from "./SettingsForm";
 import styles from "../../orgs.module.css";
 
@@ -35,7 +36,8 @@ export default async function OrgSettingsPage({
       getOrg(token, slug),
       getOrgSettings(token, slug),
     ]);
-  } catch {
+  } catch (err) {
+    redirectIfUnauthorized(err, `/app/orgs/${slug}/settings`);
     notFound();
   }
 

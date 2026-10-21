@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getMe } from "@/lib/api";
 import { listMyAgents, type Agent } from "@/lib/relay";
+import { redirectIfUnauthorized } from "@/lib/session-expired";
 import styles from "../orgs/orgs.module.css";
 
 /**
@@ -40,6 +41,7 @@ export default async function AccountPage() {
     const me = await getMe(token);
     personal = me.memberships.find((m) => m.account_type === "individual") ?? null;
   } catch (err) {
+    redirectIfUnauthorized(err, "/app/account");
     backendError = err instanceof Error ? err.message : "Backend unavailable.";
   }
 
@@ -58,6 +60,7 @@ export default async function AccountPage() {
         .filter((a) => a.account_id === personal.account_id)
         .sort((x, y) => x.display_name.localeCompare(y.display_name));
     } catch (err) {
+      redirectIfUnauthorized(err, "/app/account");
       relayError = err instanceof Error ? err.message : "Relay unavailable.";
     }
   }

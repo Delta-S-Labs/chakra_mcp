@@ -5,6 +5,7 @@ import {
   listMyAgents,
   type Friendship,
 } from "@/lib/relay";
+import { redirectIfUnauthorized } from "@/lib/session-expired";
 import { CreateGrantForm } from "./CreateGrantForm";
 import { GrantsList } from "./GrantsList";
 import styles from "./grants.module.css";
@@ -37,6 +38,7 @@ export default async function GrantsPage() {
       grants = g;
       friendships = f;
     } catch (err) {
+      redirectIfUnauthorized(err, "/app/grants");
       backendError = err instanceof Error ? err.message : "Relay unavailable.";
     }
   }

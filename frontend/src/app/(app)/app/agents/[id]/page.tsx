@@ -11,6 +11,7 @@ import {
   type ReviewListResponse,
 } from "@/lib/relay";
 import { StarRating } from "@/components/StarRating";
+import { redirectIfUnauthorized } from "@/lib/session-expired";
 import { EditAgentForm } from "./EditAgentForm";
 import { CapabilitiesPanel } from "./CapabilitiesPanel";
 import { ReviewsPanel } from "./ReviewsPanel";
@@ -32,6 +33,7 @@ export default async function AgentDetailPage({
   try {
     agent = await getAgent(token, id);
   } catch (err) {
+    redirectIfUnauthorized(err, `/app/agents/${id}`);
     if (err instanceof RelayClientError && err.status === 404) {
       notFound();
     }

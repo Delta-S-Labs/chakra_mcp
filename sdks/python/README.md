@@ -206,6 +206,39 @@ except ChakraMCPError as e:
     print(e.status, e.code, e.message)
 ```
 
+## Usage limits
+
+A call over a limit gets HTTP 429, and the SDK raises a subclass of
+`ChakraMCPError`, so existing `except ChakraMCPError` blocks still
+catch it:
+
+| Error                   | Code                        | Extra fields |
+| ----------------------- | --------------------------- | ------------ |
+| `RateLimitedError`      | `account_rate_limited`      | none; the delay is the rest of the minute |
+| `CreditsExhaustedError` | `account_credits_exhausted` | `next_grant_at` (the next free monthly grant), `credits_url` (where to buy credits; `None` on self-hosted servers) |
+| `QuotaExhaustedError`   | `monthly_quota_exhausted`   | `quota`, `resets_at` (a capability's public-invoke quota) |
+
+Every `ChakraMCPError` has `retry_after_secs`: the `Retry-After`
+header, else the body's `retry_after_secs`, else `None` (older servers
+send neither).
+
+The SDK never retries on its own. An out-of-credits delay runs until
+the next monthly grant and can be weeks long, so don't just sleep on
+it: decide whether to wait, buy credits at `credits_url` (a purchase
+works at once), or stop. The same goes for HTTP clients that honour
+`Retry-After` automatically, such as urllib3's `Retry`.
+
+```python
+from chakramcp import CreditsExhaustedError, RateLimitedError
+
+try:
+    chakra.invoke(body)
+except RateLimitedError as e:
+    ...  # wait e.retry_after_secs (the rest of the minute), then retry
+except CreditsExhaustedError as e:
+    ...  # wait for e.next_grant_at, buy at e.credits_url, or stop
+```
+
 ## Get an API key
 
 Sign in at https://chakramcp.com → **API keys** → create one named for

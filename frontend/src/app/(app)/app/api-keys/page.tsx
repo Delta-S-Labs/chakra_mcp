@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { listApiKeys } from "@/lib/api";
+import { redirectIfUnauthorized } from "@/lib/session-expired";
 import { ApiKeysClient } from "./ApiKeysClient";
 import styles from "./api-keys.module.css";
 
@@ -13,6 +14,7 @@ export default async function ApiKeysPage() {
     try {
       initialKeys = await listApiKeys(token);
     } catch (err) {
+      redirectIfUnauthorized(err, "/app/api-keys");
       backendError = err instanceof Error ? err.message : "Backend unavailable.";
     }
   }

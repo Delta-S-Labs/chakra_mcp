@@ -232,6 +232,7 @@ pub(crate) async fn decode<T: DeserializeOwned>(resp: Response) -> Result<T> {
         return serde_json::from_value(serde_json::Value::Null).map_err(Into::into);
     }
     let status = resp.status();
+    let retry_after = retry_after_header(&resp);
     let body = resp.text().await?;
     if status.is_success() {
         if body.is_empty() {
@@ -239,31 +240,7 @@ pub(crate) async fn decode<T: DeserializeOwned>(resp: Response) -> Result<T> {
         }
         return serde_json::from_str(&body).map_err(Into::into);
     }
-    if let Ok(env) = serde_json::from_str::<serde_json::Value>(&body) {
-        if let Some(err) = decode_quota_exhausted(status, &env) {
-            return Err(err);
-        }
-        if let Some(obj) = env.get("error").and_then(|e| e.as_object()) {
-            return Err(Error::Api {
-                status: status.as_u16(),
-                code: obj
-                    .get("code")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown")
-                    .to_string(),
-                message: obj
-                    .get("message")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string(),
-            });
-        }
-    }
-    Err(Error::Api {
-        status: status.as_u16(),
-        code: "unknown".to_string(),
-        message: body,
-    })
+    Err(api_error(status, retry_after, body))
 }
 
 pub(crate) async fn decode_no_body(resp: Response) -> Result<()> {
@@ -271,58 +248,98 @@ pub(crate) async fn decode_no_body(resp: Response) -> Result<()> {
         return Ok(());
     }
     let status = resp.status();
+    let retry_after = retry_after_header(&resp);
     let body = resp.text().await?;
+    Err(api_error(status, retry_after, body))
+}
+
+/// The `Retry-After` header, when it's a whole number of seconds.
+fn retry_after_header(resp: &Response) -> Option<u64> {
+    resp.headers()
+        .get(reqwest::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
+}
+
+/// Turn a non-2xx response into an [`Error`]. `retry_after` is the
+/// `Retry-After` header; the body's `retry_after_secs` stands in when
+/// it's missing.
+fn api_error(status: StatusCode, retry_after: Option<u64>, body: String) -> Error {
     if let Ok(env) = serde_json::from_str::<serde_json::Value>(&body) {
-        if let Some(err) = decode_quota_exhausted(status, &env) {
-            return Err(err);
-        }
         if let Some(obj) = env.get("error").and_then(|e| e.as_object()) {
-            return Err(Error::Api {
+            let retry_after_secs =
+                retry_after.or_else(|| obj.get("retry_after_secs").and_then(|v| v.as_u64()));
+            if let Some(err) = decode_usage_limit(status, &env, obj, retry_after_secs) {
+                return err;
+            }
+            return Error::Api {
                 status: status.as_u16(),
-                code: obj
-                    .get("code")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown")
-                    .to_string(),
-                message: obj
-                    .get("message")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string(),
-            });
+                code: str_field(obj, "code").unwrap_or("unknown").to_string(),
+                message: str_field(obj, "message").unwrap_or("").to_string(),
+                retry_after_secs,
+            };
         }
     }
-    Err(Error::Api {
+    Error::Api {
         status: status.as_u16(),
         code: "unknown".to_string(),
         message: body,
-    })
+        retry_after_secs: retry_after,
+    }
 }
 
-/// Surface the public-invoke monthly-quota 429 as the typed
-/// `Error::QuotaExhausted` rather than the generic `Error::Api`, so
-/// callers can pattern-match on it for back-off without parsing the
-/// envelope themselves.
-fn decode_quota_exhausted(status: StatusCode, env: &serde_json::Value) -> Option<Error> {
+/// Surface the usage-limit 429s as typed variants rather than the
+/// generic `Error::Api`, so callers can pattern-match on them for
+/// back-off without parsing the envelope themselves.
+fn decode_usage_limit(
+    status: StatusCode,
+    env: &serde_json::Value,
+    err_obj: &serde_json::Map<String, serde_json::Value>,
+    retry_after_secs: Option<u64>,
+) -> Option<Error> {
     if status != StatusCode::TOO_MANY_REQUESTS {
         return None;
     }
-    let err_obj = env.get("error")?.as_object()?;
-    if err_obj.get("code")?.as_str()? != "monthly_quota_exhausted" {
-        return None;
+    let message = str_field(err_obj, "message").unwrap_or("").to_string();
+    match str_field(err_obj, "code")? {
+        // Public-invoke monthly quota on the target capability.
+        "monthly_quota_exhausted" => {
+            let quota = env.get("quota")?.as_i64()? as i32;
+            let resets_at = parse_utc(env.get("resets_at")?.as_str()?)?;
+            Some(Error::QuotaExhausted {
+                message,
+                quota,
+                resets_at,
+                retry_after_secs,
+            })
+        }
+        // The calling account's own limits.
+        "account_rate_limited" => Some(Error::RateLimited {
+            message,
+            retry_after_secs,
+        }),
+        "account_credits_exhausted" => Some(Error::CreditsExhausted {
+            message,
+            retry_after_secs,
+            next_grant_at: str_field(err_obj, "next_grant_at").and_then(parse_utc),
+            credits_url: str_field(err_obj, "credits_url").map(str::to_string),
+        }),
+        _ => None,
     }
-    let quota = env.get("quota")?.as_i64()? as i32;
-    let resets_at_str = env.get("resets_at")?.as_str()?;
-    let resets_at = chrono::DateTime::parse_from_rfc3339(resets_at_str)
-        .ok()?
-        .with_timezone(&chrono::Utc);
-    Some(Error::QuotaExhausted {
-        message: err_obj
-            .get("message")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string(),
-        quota,
-        resets_at,
-    })
+}
+
+fn str_field<'a>(
+    obj: &'a serde_json::Map<String, serde_json::Value>,
+    key: &str,
+) -> Option<&'a str> {
+    obj.get(key).and_then(|v| v.as_str())
+}
+
+fn parse_utc(s: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    chrono::DateTime::parse_from_rfc3339(s)
+        .ok()
+        .map(|t| t.with_timezone(&chrono::Utc))
 }

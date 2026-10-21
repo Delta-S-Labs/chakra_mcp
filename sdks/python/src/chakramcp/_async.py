@@ -124,6 +124,9 @@ class AsyncChakraMCP:
 
         Plus ``grantee_agent_id`` (the agent making the call — you must
         be a member of its account) and ``input`` (the JSON payload).
+
+        An account over its rate limit or out of credits gets
+        :class:`RateLimitedError` or :class:`CreditsExhaustedError`.
         """
         return await self._relay("POST", "/v1/invoke", body)
 

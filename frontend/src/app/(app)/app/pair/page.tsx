@@ -14,6 +14,7 @@ import { CodeEntryForm } from "./CodeEntryForm";
 import { ConsentForm, type PairableAgent } from "./ConsentForm";
 import { PairingsList } from "./PairingsList";
 import styles from "./pair.module.css";
+import { isUnauthorized, sessionExpiredUrl } from "@/lib/session-expired";
 
 export const metadata: Metadata = {
   title: "Pair an agent · ChakraMCP",
@@ -125,15 +126,11 @@ export default async function PairPage({
   } catch (err) {
     if (err instanceof ApiClientError && err.status === 404) {
       lookupError = "We can't find that pairing code. It may have expired.";
-    } else if (
-      (err instanceof ApiClientError && err.status === 401) ||
-      (err instanceof Error && /\b401\b|unauthoriz/i.test(err.message))
-    ) {
+    } else if (isUnauthorized(err)) {
       // Stale/dead backend token: a valid NextAuth cookie can still carry an
       // expired JWT (see auth.ts), so we arrive here "logged in" while the
-      // authed device-session lookup 401s. Detect it by status OR message
-      // (mirrors /app/page.tsx's isUnauthorized) and bounce to login with
-      // the code preserved, rather than rendering the raw "unauthorized".
+      // authed device-session lookup 401s. Bounce to login with the code
+      // preserved, rather than rendering the raw "unauthorized".
       sessionExpired = true;
     } else {
       lookupError =
@@ -143,7 +140,7 @@ export default async function PairPage({
   // redirect() throws NEXT_REDIRECT, so it must run OUTSIDE the try/catch
   // above — otherwise the catch would swallow the control-flow throw.
   if (sessionExpired) {
-    redirect(`/login?from=${encodeURIComponent(fromUrl)}&reason=session_expired`);
+    redirect(sessionExpiredUrl(fromUrl));
   }
 
   // Agents the user already owns — offered as "pair an existing agent"

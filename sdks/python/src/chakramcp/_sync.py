@@ -116,6 +116,9 @@ class ChakraMCP:
     def invoke(self, body: dict[str, Any]) -> InvokeResponse:
         """Enqueue an invocation. Returns immediately; use
         :py:meth:`invoke_and_wait` to also poll until terminal.
+
+        Usage limits raise :class:`RateLimitedError`,
+        :class:`CreditsExhaustedError` or :class:`QuotaExhaustedError`.
         """
         return self._relay("POST", "/v1/invoke", body)
 

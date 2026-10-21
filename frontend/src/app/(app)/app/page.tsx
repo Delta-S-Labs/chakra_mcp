@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { ApiClientError, apiBaseUrl, getMe, getOrgCredits, type CreditsView } from "@/lib/api";
+import { apiBaseUrl, getMe, getOrgCredits, type CreditsView } from "@/lib/api";
+import { GetStartedCard } from "@/components/get-started/GetStartedCard";
 import { callsFor } from "@/lib/credits-math";
 import { formatCredits, formatElapsed } from "@/lib/format";
+import { deriveGetStarted } from "@/lib/get-started";
 import {
+  getFeaturedAgents,
   listFriendships,
   listGrants,
   listInvocations,
@@ -12,6 +15,7 @@ import {
   type Invocation,
   type InvocationStatus,
 } from "@/lib/relay";
+import { redirectIfUnauthorized, sessionExpiredUrl } from "@/lib/session-expired";
 import styles from "./dashboard.module.css";
 
 /**
@@ -34,15 +38,6 @@ function isLocalBackend(): boolean {
   } catch {
     return false;
   }
-}
-
-/** Sniff a 401-shaped failure regardless of how it bubbled up. */
-function isUnauthorized(err: unknown): boolean {
-  if (err instanceof ApiClientError) return err.status === 401;
-  if (err instanceof Error) {
-    return /\b401\b|unauthorized/i.test(err.message);
-  }
-  return false;
 }
 
 /**
@@ -69,6 +64,7 @@ export default async function AppDashboard() {
   let friendships: Awaited<ReturnType<typeof listFriendships>> = [];
   let grants: Awaited<ReturnType<typeof listGrants>> = [];
   let invocations: Awaited<ReturnType<typeof listInvocations>> = [];
+  let featured: Awaited<ReturnType<typeof getFeaturedAgents>> = [];
   let relayError: string | null = null;
 
   // No backend token in the session means the NextAuth cookie is alive
@@ -77,7 +73,7 @@ export default async function AppDashboard() {
   // their session was crafted by a stale cookie. Either way, kick them
   // back to sign in afresh rather than rendering a half-broken shell.
   if (!token) {
-    redirect("/login?reason=session_expired&from=%2Fapp");
+    redirect(sessionExpiredUrl("/app"));
   }
 
   try {
@@ -85,29 +81,26 @@ export default async function AppDashboard() {
     surveyRequired = me.survey_required;
     memberships = me.memberships;
   } catch (err) {
-    if (isUnauthorized(err)) {
-      // The backend revoked or expired the token. Most commonly this
-      // is the post-logout flow where the NextAuth cookie outlived the
-      // server-side `revoked_tokens` entry — see auth-actions.ts for
-      // the known Netlify + NextAuth v5 beta cookie-clearing edge
-      // cases. Redirect to sign-in so the user can re-auth cleanly;
-      // /login shows a banner when `reason=session_expired`.
-      redirect("/login?reason=session_expired&from=%2Fapp");
-    }
+    // The backend revoked or expired the token. Most commonly this
+    // is the post-logout flow where the NextAuth cookie outlived the
+    // server-side `revoked_tokens` entry — see auth-actions.ts for
+    // the known Netlify + NextAuth v5 beta cookie-clearing edge
+    // cases.
+    redirectIfUnauthorized(err, "/app");
     backendError = err instanceof Error ? err.message : "Backend unavailable.";
   }
 
   try {
-    [agents, friendships, grants, invocations] = await Promise.all([
+    // The featured agents (for the checklist's Guide command) never throw.
+    [agents, friendships, grants, invocations, featured] = await Promise.all([
       listMyAgents(token),
       listFriendships(token, { direction: "all" }),
       listGrants(token, { direction: "all" }),
       listInvocations(token, { direction: "all" }),
+      getFeaturedAgents(),
     ]);
   } catch (err) {
-    if (isUnauthorized(err)) {
-      redirect("/login?reason=session_expired&from=%2Fapp");
-    }
+    redirectIfUnauthorized(err, "/app");
     relayError = err instanceof Error ? err.message : "Relay unavailable.";
   }
 
@@ -149,6 +142,8 @@ export default async function AppDashboard() {
   const recentInvocations = [...invocations]
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
     .slice(0, 5);
+  // Only from a complete picture: a relay error would show every step undone.
+  const getStarted = relayError ? null : deriveGetStarted({ agents, invocations, featured });
 
   return (
     <>
@@ -192,6 +187,8 @@ export default async function AppDashboard() {
           )}
         </section>
       )}
+
+      {getStarted && <GetStartedCard getStarted={getStarted} />}
 
       <section className={styles.statGrid}>
         {credits && credits.enabled && (

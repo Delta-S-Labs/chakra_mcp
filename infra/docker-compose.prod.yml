@@ -172,6 +172,36 @@ services:
       timeout: 3s
       retries: 6
 
+  # chakramcp.com only: the house agents, Ping and the ChakraMCP Guide
+  # (infra/house-agents/). Behind a profile, so `docker compose up -d` never
+  # starts them; CD builds the image, ships it to the VM and starts it once
+  # HOUSE_CHAKRAMCP_API_KEY and HOUSE_ANTHROPIC_API_KEY are in .env.
+  house-agents:
+    profiles: ["house-agents"]
+    image: ${HOUSE_AGENTS_IMAGE:-chakramcp-house-agents:latest}
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      relay: { condition: service_healthy }
+    environment:
+      HOUSE_CHAKRAMCP_API_KEY: ${HOUSE_CHAKRAMCP_API_KEY:-}
+      HOUSE_ANTHROPIC_API_KEY: ${HOUSE_ANTHROPIC_API_KEY:-}
+      # The org that owns the house agents (and DISCOVERY_FEATURED_ACCOUNT).
+      HOUSE_ACCOUNT_SLUG: ${HOUSE_ACCOUNT_SLUG:-chakramcp}
+      # What the Guide may spend on Claude per rolling 24 hours, in dollars.
+      HOUSE_DAILY_BUDGET_USD: ${HOUSE_DAILY_BUDGET_USD:-10}
+      # Comma-separated agent or account ids turned away by both agents.
+      HOUSE_BLOCKED_AGENTS: ${HOUSE_BLOCKED_AGENTS:-}
+      HOUSE_BLOCKED_ACCOUNTS: ${HOUSE_BLOCKED_ACCOUNTS:-}
+      HOUSE_RELAY_URL: http://relay:8090
+      HOUSE_APP_URL: http://relay:8080
+    volumes:
+      - house_agents_data:/data   # conversations + limit counters (SQLite)
+    networks: [internal]
+    mem_limit: 256m
+    # A Guide answer can take up to two minutes; let it finish and post.
+    stop_grace_period: 150s
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
@@ -211,3 +241,4 @@ volumes:
   pgdata:
   caddy_data:
   caddy_config:
+  house_agents_data:
