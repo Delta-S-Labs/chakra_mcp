@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { auth } from "@/auth";
 import { getOrg, listMembers } from "@/lib/api";
 import { listMyAgents, type Agent } from "@/lib/relay";
+import { redirectIfUnauthorized } from "@/lib/session-expired";
 import { InviteForm } from "./InviteForm";
 import { MoveAgentButton } from "./MoveAgentButton";
 import { DeleteOrgButton } from "./DeleteOrgButton";
@@ -22,7 +23,8 @@ export default async function OrgDetailsPage({
   let members: Awaited<ReturnType<typeof listMembers>>;
   try {
     [org, members] = await Promise.all([getOrg(token, slug), listMembers(token, slug)]);
-  } catch {
+  } catch (err) {
+    redirectIfUnauthorized(err, `/app/orgs/${slug}`);
     notFound();
   }
 
@@ -35,6 +37,7 @@ export default async function OrgDetailsPage({
   try {
     allMyAgents = await listMyAgents(token);
   } catch (err) {
+    redirectIfUnauthorized(err, `/app/orgs/${slug}`);
     relayError = err instanceof Error ? err.message : "Relay unavailable.";
   }
   const agents = allMyAgents

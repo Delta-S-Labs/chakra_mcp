@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { listMyAgents, listInvocations, listAuditEvents, type AuditEvent } from "@/lib/relay";
+import { redirectIfUnauthorized } from "@/lib/session-expired";
 import { AuditList } from "./AuditList";
 import { LocalTime } from "./LocalTime";
 import styles from "./audit.module.css";
@@ -35,6 +36,7 @@ export default async function AuditPage() {
       agents = ag;
       writeTrail = audit.events;
     } catch (err) {
+      redirectIfUnauthorized(err, "/app/audit");
       backendError = err instanceof Error ? err.message : "Relay unavailable.";
     }
   }

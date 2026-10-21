@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { listInvocations, listMyAgents, type Invocation } from "@/lib/relay";
+import { redirectIfUnauthorized } from "@/lib/session-expired";
 import { InboxView } from "./InboxView";
 import styles from "./inbox.module.css";
 
@@ -35,6 +36,7 @@ export default async function InboxPage() {
         }
       }
     } catch (err) {
+      redirectIfUnauthorized(err, "/app/inbox");
       backendError = err instanceof Error ? err.message : "Relay unavailable.";
     }
   }

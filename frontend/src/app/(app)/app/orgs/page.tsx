@@ -2,6 +2,7 @@ import Link from "next/link";
 import { auth } from "@/auth";
 import { listOrgs } from "@/lib/api";
 import { listMyAgents, type Agent } from "@/lib/relay";
+import { redirectIfUnauthorized } from "@/lib/session-expired";
 import { CreateOrgForm } from "./CreateOrgForm";
 import styles from "./orgs.module.css";
 
@@ -24,6 +25,7 @@ export default async function OrgsPage() {
       orgs = o;
       agents = a;
     } catch (err) {
+      redirectIfUnauthorized(err, "/app/orgs");
       backendError = err instanceof Error ? err.message : "Backend unavailable.";
     }
   }

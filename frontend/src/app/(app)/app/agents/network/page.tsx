@@ -2,6 +2,7 @@ import Link from "next/link";
 import { auth } from "@/auth";
 import { listNetworkAgents, type NetworkAgent } from "@/lib/relay";
 import { StarRating } from "@/components/StarRating";
+import { redirectIfUnauthorized } from "@/lib/session-expired";
 import styles from "../agents.module.css";
 
 /**
@@ -61,6 +62,7 @@ export default async function NetworkAgentsPage({
       agents = res.agents;
       nextCursor = res.next_cursor ?? null;
     } catch (err) {
+      redirectIfUnauthorized(err, "/app/agents/network");
       backendError = err instanceof Error ? err.message : "Relay unavailable.";
     }
   }
