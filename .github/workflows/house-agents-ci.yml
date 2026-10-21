@@ -1,0 +1,64 @@
+name: House agents CI
+
+# chakramcp.com's house agents (infra/house-agents/): typecheck, test, build
+# the docs bundle (which fails if the docs outgrow the Guide's prompt), and
+# build the image. Also runs when the bundled docs change.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/house-agents/**"
+      - "README.md"
+      - "docs/INSTALL.md"
+      - "docs/self-hosting/**"
+      - "frontend/public/llms.txt"
+      - ".claude/skills/chakramcp-agent/SKILL.md"
+      - ".github/workflows/house-agents-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "infra/house-agents/**"
+      - "README.md"
+      - "docs/INSTALL.md"
+      - "docs/self-hosting/**"
+      - "frontend/public/llms.txt"
+      - ".claude/skills/chakramcp-agent/SKILL.md"
+      - ".github/workflows/house-agents-ci.yml"
+
+concurrency:
+  group: house-agents-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test + build
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: infra/house-agents
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: infra/house-agents/package-lock.json
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: Test
+        run: npm test
+
+      - name: Build (with the docs bundle)
+        run: rm -rf dist && npm run build
+
+      - name: Audit runtime dependencies
+        run: npm audit --omit=dev --audit-level=moderate
+
+      - name: Build the image
+        working-directory: .
+        run: docker build -f infra/house-agents/Dockerfile -t chakramcp-house-agents:ci .
