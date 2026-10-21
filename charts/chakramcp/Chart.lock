@@ -4,12 +4,12 @@ dependencies:
   version: 29.35.0
 - name: loki
   repository: oci://ghcr.io/grafana-community/helm-charts
-  version: 18.15.1
+  version: 18.17.1
 - name: grafana
   repository: oci://ghcr.io/grafana-community/helm-charts
   version: 13.5.0
 - name: alloy
   repository: https://grafana.github.io/helm-charts
   version: 1.13.1
-digest: sha256:bb36414d423438ccb9b836405494c5e2e5a91e1c16ecabb5a0d58861b786ae2e
-generated: "2026-10-14T17:07:28.254177+05:30"
+digest: sha256:56c9ea95b83a1c8b6629678679860893b8d4446d7282e135cd151201fe6402cb
+generated: "2026-10-21T21:38:09.578638982Z"
