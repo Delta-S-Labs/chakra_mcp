@@ -760,8 +760,12 @@ export interface UsageActionCount {
 
 export interface UsageEventsResponse {
   events: UsageEvent[];
+  /** Totals over every event the server still keeps (`retention_days`). */
   totals_by_action: UsageActionCount[];
   total: number;
+  /** Days of events the server keeps; `null` when it keeps them forever.
+   *  Absent on older servers. */
+  retention_days?: number | null;
   next_cursor?: string;
 }
 

@@ -70,6 +70,10 @@ async fn main() -> Result<()> {
         ]);
     }
 
+    // Usage events older than this are deleted (USAGE_RETENTION_DAYS, default
+    // 90 days; 0 keeps them). A bad value stops startup.
+    let usage_retention =
+        chakramcp_relay::retention::usage_retention_days(|key| env::var(key).ok())?;
     let state = RelayState::new(pool, cfg.clone())
         .with_rate_limiter(chakramcp_relay::limits::RateLimiter::from_redis_url(
             env::var("REDIS_URL").ok().as_deref(),
@@ -84,8 +88,12 @@ async fn main() -> Result<()> {
         ))
         .with_credit_cache(credit_cache)
         .with_featured_account(env::var("DISCOVERY_FEATURED_ACCOUNT").ok())
+        .with_usage_retention_days(usage_retention)
         .with_compliance(chakramcp_relay::compliance::ComplianceChecker::from_env());
     state.heartbeats.clone().spawn_flusher(state.db.clone());
+    if let Some(days) = usage_retention {
+        chakramcp_relay::retention::spawn_usage_pruner(state.db.clone(), days);
+    }
     // Usage metering runs on a background writer so requests never wait on it.
     let usage = chakramcp_relay::events::UsageRecorder::spawn(state.clone());
     let state = state.with_usage_recorder(usage);

@@ -39,6 +39,7 @@ export default async function UsagePage({
   let initial: UsageSummary | null = null;
   let meterTotals: UsageActionCount[] = [];
   let meterGrand = 0;
+  let meterRetentionDays: number | null | undefined;
   let backendError: string | null = null;
 
   if (token) {
@@ -58,6 +59,7 @@ export default async function UsagePage({
       const ev = await listUsageEvents(token, { limit: 1 });
       meterTotals = ev.totals_by_action;
       meterGrand = ev.total;
+      meterRetentionDays = ev.retention_days;
     } catch {
       /* no-op: section just won't render */
     }
@@ -112,7 +114,10 @@ export default async function UsagePage({
             ))}
           </ul>
           <div className={styles.meterGrand}>
-            {meterGrand.toLocaleString()} requests total
+            {meterGrand.toLocaleString()}{" "}
+            {typeof meterRetentionDays === "number"
+              ? `requests in the last ${meterRetentionDays} days`
+              : "requests total"}
           </div>
         </section>
       )}
