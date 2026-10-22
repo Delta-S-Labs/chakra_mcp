@@ -94,6 +94,8 @@ async fn main() -> Result<()> {
     if let Some(days) = usage_retention {
         chakramcp_relay::retention::spawn_usage_pruner(state.db.clone(), days);
     }
+    // Owner consent: expire undecided requests and prune old notices.
+    chakramcp_relay::consent::expiry::spawn_expiry_worker(state.db.clone());
     // Usage metering runs on a background writer so requests never wait on it.
     let usage = chakramcp_relay::events::UsageRecorder::spawn(state.clone());
     let state = state.with_usage_recorder(usage);

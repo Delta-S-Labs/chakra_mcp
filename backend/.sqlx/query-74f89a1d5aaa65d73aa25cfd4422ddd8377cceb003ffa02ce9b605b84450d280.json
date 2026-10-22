@@ -1,0 +1,343 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT cr.id, cr.kind, cr.status, cr.invocation_id, cr.terms, cr.approved_terms,\n               cr.expires_at, cr.created_at, cr.decided_at, cr.decision_note,\n               cr.capability_id, cr.granter_agent_id, cr.grantee_agent_id,\n               cr.grantee_account_id,\n               ga.account_id AS granter_account_id, ga.display_name AS granter_display_name,\n               ea.display_name AS \"grantee_display_name?\",\n               eacc.slug AS \"grantee_account_slug?\",\n               eacc.display_name AS \"grantee_account_display_name?\",\n               (eacc.verified_at IS NOT NULL) AS \"grantee_verified!\",\n               cap.name AS \"capability_name?\", cap.description AS \"capability_description?\",\n               cap.consent_approvers AS \"approvers?\",\n               cap.consent_max_validity_secs AS \"max_validity_secs?\",\n               i.input_preview, i.grant_id, g.purpose AS \"grant_purpose?\",\n               EXISTS (\n                   SELECT 1 FROM account_memberships m\n                    WHERE m.user_id = $2 AND m.account_id = ga.account_id\n               ) AS \"member!\"\n          FROM consent_requests cr\n          JOIN relay_invocations i ON i.id = cr.invocation_id\n          JOIN agents ga ON ga.id = cr.granter_agent_id\n          LEFT JOIN agents ea ON ea.id = cr.grantee_agent_id\n          LEFT JOIN accounts eacc ON eacc.id = cr.grantee_account_id\n          LEFT JOIN agent_capabilities cap ON cap.id = cr.capability_id\n          LEFT JOIN grants g ON g.id = i.grant_id\n         WHERE cr.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "invocation_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "invocation_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "terms",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "terms"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "approved_terms",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "approved_terms"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "expires_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "decided_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "decided_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "decision_note",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "decision_note"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "capability_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "capability_id"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "granter_agent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "granter_agent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "grantee_agent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "grantee_agent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "grantee_account_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "grantee_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "granter_account_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "granter_display_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "grantee_display_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "grantee_account_slug?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "grantee_account_display_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "grantee_verified!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 20,
+        "name": "capability_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 21,
+        "name": "capability_description?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 22,
+        "name": "approvers?",
+        "type_info": "UuidArray",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "consent_approvers"
+          }
+        }
+      },
+      {
+        "ordinal": 23,
+        "name": "max_validity_secs?",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "consent_max_validity_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 24,
+        "name": "input_preview",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "input_preview"
+          }
+        }
+      },
+      {
+        "ordinal": 25,
+        "name": "grant_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "grant_id"
+          }
+        }
+      },
+      {
+        "ordinal": 26,
+        "name": "grant_purpose?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "grants",
+            "name": "purpose"
+          }
+        }
+      },
+      {
+        "ordinal": 27,
+        "name": "member!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      null,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "74f89a1d5aaa65d73aa25cfd4422ddd8377cceb003ffa02ce9b605b84450d280"
+}

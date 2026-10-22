@@ -17,6 +17,7 @@ use uuid::Uuid;
 
 use chakramcp_shared::error::ApiError;
 use chakramcp_shared::jwt;
+use chakramcp_shared::sessions::is_delegated_token;
 
 use crate::state::AppState;
 
@@ -162,20 +163,6 @@ impl FromRequestParts<AppState> for InteractiveUser {
         }
         Ok(Self(user))
     }
-}
-
-/// Whether this JWT was minted for an OAuth client or a device pairing.
-async fn is_delegated_token(db: &PgPool, jti: Uuid) -> Result<bool, ApiError> {
-    Ok(sqlx::query_scalar!(
-        r#"
-        SELECT EXISTS (SELECT 1 FROM oauth_authorizations WHERE minted_jti = $1)
-            OR EXISTS (SELECT 1 FROM oauth_device_codes WHERE minted_jti = $1)
-            AS "delegated!"
-        "#,
-        jti,
-    )
-    .fetch_one(db)
-    .await?)
 }
 
 /// Hash an API key with SHA-256 and return the lowercase hex digest.

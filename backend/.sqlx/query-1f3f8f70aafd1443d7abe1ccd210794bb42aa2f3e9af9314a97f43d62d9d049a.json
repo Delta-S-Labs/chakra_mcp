@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE consent_requests\n           SET status = 'approved', decided_by_user_id = $2, decided_at = now(),\n               approved_terms = $3, consent_id = $4\n         WHERE id = $1 AND status = 'pending'\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Jsonb",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1f3f8f70aafd1443d7abe1ccd210794bb42aa2f3e9af9314a97f43d62d9d049a"
+}

@@ -28,6 +28,7 @@ use uuid::Uuid;
 use chakramcp_shared::error::ApiError;
 
 use crate::auth::{user_is_member, AuthUser};
+use crate::consent::visibility::shown_input;
 use crate::handlers::invoke::TrustedOutcome;
 use crate::state::RelayState;
 
@@ -216,6 +217,13 @@ fn api_err_to_rpc(e: ApiError) -> RpcError {
             (ERR_INVALID_REQUEST, e.to_string())
         }
         PaymentProvider => (ERR_INTERNAL, e.to_string()),
+        PayloadTooLarge { code, message } => {
+            return RpcError {
+                code: ERR_INVALID_PARAMS,
+                message: message.clone(),
+                data: Some(json!({ "code": code })),
+            };
+        }
         Database(_) | Auth(_) | Internal(_) => (ERR_INTERNAL, e.to_string()),
     };
     RpcError {
@@ -278,14 +286,23 @@ fn tools_list_result() -> Value {
                     }
                 })),
             tool("invoke",
-                "Enqueue an invocation against a granted capability. Returns immediately with invocation_id; poll with poll_invocation.",
+                "Enqueue an invocation against a granted capability. Returns immediately with invocation_id; poll with poll_invocation. If the capability asks its owner first, status is 'awaiting_consent' until one of the owner's approvers decides, unless a standing consent covers it.",
                 json!({
                     "type": "object",
                     "required": ["grant_id", "grantee_agent_id", "input"],
                     "properties": {
                         "grant_id": { "type": "string", "format": "uuid" },
                         "grantee_agent_id": { "type": "string", "format": "uuid", "description": "One of your agents — the caller side." },
-                        "input": { "type": "object" }
+                        "input": { "type": "object" },
+                        "consent_terms": {
+                            "type": "object",
+                            "description": "Only for capabilities that ask their owner first: what you're asking the owner to approve. The owner may narrow it, never widen it.",
+                            "properties": {
+                                "purpose": { "type": "string", "maxLength": 500 },
+                                "valid_for": { "type": "string", "description": "'once' (default), '<n>h' (1-720) or '<n>d' (1-30): how long later requests are covered without asking again." },
+                                "max_requests": { "type": "integer", "minimum": 1, "maximum": 10000, "description": "Most requests a standing consent covers." }
+                            }
+                        }
                     }
                 })),
             tool("poll_invocation",
@@ -314,7 +331,7 @@ fn tools_list_result() -> Value {
                     "properties": {
                         "direction": { "type": "string", "enum": ["all", "outbound", "inbound"], "description": "inbound = calls served BY your agents (you are the granter); outbound = calls your agents issued (you are the caller). Defaults to 'all'." },
                         "agent_id": { "type": "string", "format": "uuid", "description": "Restrict to invocations where this agent is the granter or grantee." },
-                        "status": { "type": "string", "enum": ["pending", "in_progress", "rejected", "succeeded", "failed", "timeout"], "description": "e.g. 'in_progress' for claimed-but-unanswered work." },
+                        "status": { "type": "string", "enum": ["pending", "in_progress", "rejected", "succeeded", "failed", "timeout", "awaiting_consent"], "description": "e.g. 'in_progress' for claimed-but-unanswered work, 'awaiting_consent' for calls held for the owner's approval." },
                         "limit": { "type": "integer", "minimum": 1, "maximum": 200, "default": 50 }
                     }
                 })),
@@ -800,7 +817,13 @@ async fn list_invocations(db: &PgPool, user: &AuthUser, args: Value) -> Result<V
     if let Some(s) = a.status.as_deref() {
         if !matches!(
             s,
-            "pending" | "in_progress" | "rejected" | "succeeded" | "failed" | "timeout"
+            "pending"
+                | "in_progress"
+                | "rejected"
+                | "succeeded"
+                | "failed"
+                | "timeout"
+                | "awaiting_consent"
         ) {
             return Err(ApiError::InvalidRequest("invalid status".into()));
         }
@@ -816,10 +839,17 @@ async fn list_invocations(db: &PgPool, user: &AuthUser, args: Value) -> Result<V
                i.granter_agent_id, ga.display_name as "granter_display_name?",
                i.grantee_agent_id, ea.display_name as "grantee_display_name?",
                i.input_preview, i.output_preview, i.error_message,
-               i.elapsed_ms, i.created_at, i.claimed_at
+               i.elapsed_ms, i.created_at, i.claimed_at,
+               EXISTS(
+                   SELECT 1 FROM account_memberships m
+                   WHERE m.user_id = $1 AND m.account_id = ga.account_id
+               ) as "i_served!",
+               cr.status as "consent_status?"
         FROM relay_invocations i
         LEFT JOIN agents ga ON ga.id = i.granter_agent_id
         LEFT JOIN agents ea ON ea.id = i.grantee_agent_id
+        -- Held input stays hidden from the target side (owner consent §4.3).
+        LEFT JOIN consent_requests cr ON cr.invocation_id = i.id AND cr.kind = 'request'
         WHERE
             (
                 ($2::boolean AND ea.account_id IN (
@@ -852,7 +882,7 @@ async fn list_invocations(db: &PgPool, user: &AuthUser, args: Value) -> Result<V
             "granter_display_name": r.granter_display_name,
             "grantee_agent_id": r.grantee_agent_id,
             "grantee_display_name": r.grantee_display_name,
-            "input_preview": r.input_preview,
+            "input_preview": shown_input(r.i_served, r.consent_status.as_deref(), r.input_preview),
             "output_preview": r.output_preview,
             "error_message": r.error_message,
             "elapsed_ms": r.elapsed_ms,
@@ -970,6 +1000,8 @@ async fn invoke(
         grant_id: Uuid,
         grantee_agent_id: Uuid,
         input: Value,
+        #[serde(default)]
+        consent_terms: Option<crate::consent::terms::ConsentTerms>,
     }
     let a: A = serde_json::from_value(args)
         .map_err(|e| ApiError::InvalidRequest(format!("bad invoke args: {e}")))?;
@@ -983,15 +1015,34 @@ async fn invoke(
         a.grant_id,
         a.grantee_agent_id,
         &a.input,
+        a.consent_terms.as_ref(),
         "mcp",
     )
     .await?
     {
         TrustedOutcome::Enqueued {
             invocation_id,
+            consent_request_id,
+            signals,
+        } => {
+            let mut out = json!({ "invocation_id": invocation_id, "status": "pending" });
+            if let Some(id) = consent_request_id {
+                out["consent_request_id"] = json!(id);
+            }
+            Ok((out, signals))
+        }
+        // The capability asks its owner first: held until an approver
+        // decides (owner consent §4).
+        TrustedOutcome::Held {
+            invocation_id,
+            consent_request_id,
             signals,
         } => Ok((
-            json!({ "invocation_id": invocation_id, "status": "pending" }),
+            json!({
+                "invocation_id": invocation_id,
+                "status": "awaiting_consent",
+                "consent_request_id": consent_request_id,
+            }),
             signals,
         )),
         // The rejection is already recorded; surface it as a tool error.
@@ -1023,8 +1074,16 @@ async fn poll_invocation(db: &PgPool, user: &AuthUser, args: Value) -> Result<Va
                    JOIN agents a ON a.account_id = m.account_id
                    WHERE m.user_id = $1
                      AND (a.id = i.granter_agent_id OR a.id = i.grantee_agent_id)
-               ) as "may_view!"
+               ) as "may_view!",
+               EXISTS(
+                   SELECT 1 FROM account_memberships m
+                   JOIN agents a ON a.account_id = m.account_id
+                   WHERE m.user_id = $1 AND a.id = i.granter_agent_id
+               ) as "i_served!",
+               cr.status as "consent_status?"
         FROM relay_invocations i
+        -- Held input stays hidden from the target side (owner consent §4.3).
+        LEFT JOIN consent_requests cr ON cr.invocation_id = i.id AND cr.kind = 'request'
         WHERE i.id = $2
         "#,
         user.user_id,
@@ -1044,7 +1103,7 @@ async fn poll_invocation(db: &PgPool, user: &AuthUser, args: Value) -> Result<Va
         "capability_name": r.capability_name,
         "elapsed_ms": r.elapsed_ms,
         "error_message": r.error_message,
-        "input_preview": r.input_preview,
+        "input_preview": shown_input(r.i_served, r.consent_status.as_deref(), r.input_preview),
         "output_preview": r.output_preview,
         "created_at": r.created_at,
         "claimed_at": r.claimed_at,
@@ -1108,6 +1167,8 @@ async fn pull_inbox(state: &RelayState, user: &AuthUser, args: Value) -> Result<
         return Ok(json!([]));
     }
     let ids: Vec<Uuid> = claimed.into_iter().map(|r| r.id).collect();
+    // Consent tokens for approved requests, minted on first delivery.
+    let mut consents = crate::consent::deliver::deliver(state, &ids).await?;
 
     let rows = sqlx::query!(
         r#"
@@ -1126,15 +1187,21 @@ async fn pull_inbox(state: &RelayState, user: &AuthUser, args: Value) -> Result<
 
     Ok(json!(rows
         .into_iter()
-        .map(|r| json!({
-            "invocation_id": r.id,
-            "capability_name": r.capability_name,
-            "grantee_agent_id": r.grantee_agent_id,
-            "grantee_display_name": r.grantee_display_name,
-            "input": r.input_preview,
-            "created_at": r.created_at,
-            "claimed_at": r.claimed_at,
-        }))
+        .map(|r| {
+            let mut item = json!({
+                "invocation_id": r.id,
+                "capability_name": r.capability_name,
+                "grantee_agent_id": r.grantee_agent_id,
+                "grantee_display_name": r.grantee_display_name,
+                "input": r.input_preview,
+                "created_at": r.created_at,
+                "claimed_at": r.claimed_at,
+            });
+            if let Some(consent) = consents.remove(&r.id) {
+                item["consent"] = json!(consent);
+            }
+            item
+        })
         .collect::<Vec<_>>()))
 }
 

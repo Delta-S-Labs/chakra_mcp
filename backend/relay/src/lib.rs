@@ -13,6 +13,7 @@ use tower_http::cors::{Any, CorsLayer};
 pub mod agent_card;
 pub mod auth;
 pub mod compliance;
+pub mod consent;
 pub mod events;
 pub mod forwarder;
 pub mod handlers;
@@ -184,6 +185,23 @@ pub fn router(state: RelayState) -> Router {
         .route("/v1/grants/{id}/revoke", post(handlers::grants::revoke))
         // ─── Invoke + inbox + audit log ────────────────
         .route("/v1/invoke", post(handlers::invoke::invoke))
+        // Owner consent: deciding on held requests (web sessions only), and
+        // a request's status for either side.
+        .route("/v1/approvals", get(handlers::approvals::list))
+        .route("/v1/approvals/{id}", get(handlers::approvals::get_one))
+        .route(
+            "/v1/approvals/{id}/approve",
+            post(handlers::approvals::approve),
+        )
+        .route("/v1/approvals/{id}/deny", post(handlers::approvals::deny))
+        .route(
+            "/v1/consents/{id}/revoke",
+            post(handlers::approvals::revoke_consent),
+        )
+        .route(
+            "/v1/consent-requests/{id}",
+            get(handlers::approvals::status),
+        )
         .route("/v1/inbox", get(handlers::invoke::inbox))
         .route("/v1/invocations", get(handlers::invoke::list))
         .route("/v1/invocations/{id}", get(handlers::invoke::get_one))

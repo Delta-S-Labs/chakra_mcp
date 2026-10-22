@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM agent_notices\n         WHERE id IN (\n               SELECT id FROM agent_notices\n                WHERE created_at < now() - make_interval(days => $1)\n                ORDER BY created_at\n                LIMIT $2)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2a6f6dc9c1788d0c74de0ef23c0c9514e08d42f267b6c18fe0170135345daba2"
+}

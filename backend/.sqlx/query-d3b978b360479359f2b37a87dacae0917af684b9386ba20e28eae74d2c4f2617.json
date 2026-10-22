@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT u.id, u.display_name\n          FROM account_memberships m\n          JOIN users u ON u.id = m.user_id\n         WHERE m.account_id = $1\n           AND (m.user_id = ANY($2)\n                OR (m.role IN ('owner', 'admin')\n                    AND NOT EXISTS (\n                        SELECT 1 FROM account_memberships listed\n                         WHERE listed.account_id = $1 AND listed.user_id = ANY($2))))\n         ORDER BY u.display_name\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "display_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "display_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "d3b978b360479359f2b37a87dacae0917af684b9386ba20e28eae74d2c4f2617"
+}

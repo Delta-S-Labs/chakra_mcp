@@ -64,6 +64,11 @@ pub enum ApiError {
     /// The payment provider (Dodo) failed or didn't answer in time.
     #[error("the payment provider couldn't start a checkout: try again")]
     PaymentProvider,
+
+    /// A body the relay must keep whole is too large, e.g. the input to a
+    /// capability that asks its owner first (`chk.request.too_large`).
+    #[error("{message}")]
+    PayloadTooLarge { code: &'static str, message: String },
 }
 
 #[derive(Serialize)]
@@ -119,6 +124,7 @@ impl IntoResponse for ApiError {
                 (StatusCode::TOO_MANY_REQUESTS, "too_many_checkouts", true)
             }
             ApiError::PaymentProvider => (StatusCode::BAD_GATEWAY, "payment_provider_error", true),
+            ApiError::PayloadTooLarge { code, .. } => (StatusCode::PAYLOAD_TOO_LARGE, *code, false),
         };
         let retry_after = match &self {
             ApiError::SigninRateLimited { retry_after_secs }

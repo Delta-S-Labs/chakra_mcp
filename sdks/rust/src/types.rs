@@ -32,8 +32,12 @@ pub enum GrantStatus {
     Expired,
 }
 
+/// An invocation's status. Non-exhaustive: the relay may add statuses, and
+/// any it adds that this version doesn't know read as `Unknown` instead of
+/// failing to parse.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum InvocationStatus {
     Pending,
     InProgress,
@@ -41,6 +45,12 @@ pub enum InvocationStatus {
     Failed,
     Rejected,
     Timeout,
+    /// Held until the target agent's owner approves it: the capability asks
+    /// first. Becomes `Pending` on approval, `Rejected` if denied or expired.
+    AwaitingConsent,
+    /// A status this SDK version doesn't know.
+    #[serde(other)]
+    Unknown,
 }
 
 impl InvocationStatus {
@@ -197,6 +207,10 @@ pub struct InvokeResponse {
     pub invocation_id: String,
     pub status: InvocationStatus,
     pub error: Option<String>,
+    /// Set when the capability asks its owner first: the request is held
+    /// (`AwaitingConsent`) or a standing consent covered it (`Pending`).
+    #[serde(default)]
+    pub consent_request_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -468,4 +482,37 @@ pub struct EligibleReviewer {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EligibilityResponse {
     pub eligible: Vec<EligibleReviewer>,
+}
+
+#[cfg(test)]
+mod status_tests {
+    use super::*;
+
+    #[test]
+    fn statuses_parse_including_new_and_unknown_ones() {
+        let parse = |s: &str| serde_json::from_value::<InvocationStatus>(serde_json::json!(s));
+        assert_eq!(
+            parse("awaiting_consent").unwrap(),
+            InvocationStatus::AwaitingConsent
+        );
+        assert_eq!(parse("in_progress").unwrap(), InvocationStatus::InProgress);
+        assert_eq!(parse("something_new").unwrap(), InvocationStatus::Unknown);
+        assert!(!InvocationStatus::AwaitingConsent.is_terminal());
+        assert!(!InvocationStatus::Unknown.is_terminal());
+
+        let held: InvokeResponse = serde_json::from_value(serde_json::json!({
+            "invocation_id": "i",
+            "status": "awaiting_consent",
+            "error": null,
+            "consent_request_id": "c",
+        }))
+        .unwrap();
+        assert_eq!(held.status, InvocationStatus::AwaitingConsent);
+        assert_eq!(held.consent_request_id.as_deref(), Some("c"));
+        let plain: InvokeResponse = serde_json::from_value(serde_json::json!({
+            "invocation_id": "i", "status": "pending", "error": null,
+        }))
+        .unwrap();
+        assert_eq!(plain.consent_request_id, None);
+    }
 }

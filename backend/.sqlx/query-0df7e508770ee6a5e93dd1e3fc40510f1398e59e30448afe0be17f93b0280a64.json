@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE relay_invocations SET status = 'rejected', error_message = $2\n         WHERE id = $1 AND status = 'awaiting_consent'\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0df7e508770ee6a5e93dd1e3fc40510f1398e59e30448afe0be17f93b0280a64"
+}

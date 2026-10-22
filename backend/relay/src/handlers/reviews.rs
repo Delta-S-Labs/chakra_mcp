@@ -243,7 +243,9 @@ pub async fn write(
               SELECT 1 FROM relay_invocations i
               WHERE i.grantee_agent_id = $3
                 AND i.capability_id = c.id
-                AND i.status <> 'rejected'
+                -- A request held for the owner's approval doesn't count:
+                -- the owner never let it through (owner consent §4.6).
+                AND i.status NOT IN ('rejected', 'awaiting_consent')
           )
         "#,
         &req.tagged_capability_ids,
@@ -613,8 +615,9 @@ pub async fn eligibility(
     resolve_target(&state, target_agent_id).await?;
 
     // Per reviewer-agent the caller owns, list the target's
-    // capability ids the reviewer has invoked (status != 'rejected').
-    // One query, ARRAY_AGG'd per reviewer.
+    // capability ids the reviewer has invoked (neither rejected nor held
+    // for the owner's approval, matching `write`). One query, ARRAY_AGG'd
+    // per reviewer.
     let rows = sqlx::query!(
         r#"
         SELECT
@@ -627,7 +630,7 @@ pub async fn eligibility(
         FROM agents ra
         JOIN account_memberships m ON m.account_id = ra.account_id
         LEFT JOIN relay_invocations i ON i.grantee_agent_id = ra.id
-            AND i.status <> 'rejected'
+            AND i.status NOT IN ('rejected', 'awaiting_consent')
         LEFT JOIN agent_capabilities c ON c.id = i.capability_id
             AND c.agent_id = $1
         WHERE m.user_id = $2

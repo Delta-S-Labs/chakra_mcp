@@ -449,17 +449,22 @@ pub async fn delete(
 ) -> ApiResult<axum::http::StatusCode> {
     let acct = agent_account_for_member(&state, &user, agent_id).await?;
 
+    // Requests held for the owner's approval can no longer be delivered:
+    // cancel them with the capability (owner consent §9).
+    let mut tx = state.db.begin().await?;
     let res = sqlx::query!(
         r#"DELETE FROM agent_capabilities WHERE id = $1 AND agent_id = $2"#,
         cap_id,
         agent_id
     )
-    .execute(&state.db)
+    .execute(&mut *tx)
     .await?;
 
     if res.rows_affected() == 0 {
         return Err(ApiError::NotFound);
     }
+    crate::consent::cascade::cancel_for_capability(&mut tx, cap_id, "Capability deleted").await?;
+    tx.commit().await?;
 
     crate::events::record_audit(
         &state.db,

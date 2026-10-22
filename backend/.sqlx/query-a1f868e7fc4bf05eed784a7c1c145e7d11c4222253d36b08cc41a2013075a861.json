@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT cap.id, cap.name, cap.description, cap.agent_id AS granter_agent_id,\n               cap.public_invoke, cap.public_monthly_quota_per_agent,\n               ga.visibility AS granter_visibility, ga.mode AS granter_mode\n        FROM agent_capabilities cap\n        JOIN agents ga ON ga.id = cap.agent_id\n        WHERE cap.id = $1\n        ",
+  "query": "\n        SELECT cap.id, cap.name, cap.description, cap.agent_id AS granter_agent_id,\n               cap.public_invoke, cap.public_monthly_quota_per_agent,\n               cap.consent_required, cap.consent_max_validity_secs, cap.consent_wait_secs,\n               ga.visibility AS granter_visibility, ga.mode AS granter_mode\n        FROM agent_capabilities cap\n        JOIN agents ga ON ga.id = cap.agent_id\n        WHERE cap.id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -71,6 +71,39 @@
       },
       {
         "ordinal": 6,
+        "name": "consent_required",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "consent_required"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "consent_max_validity_secs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "consent_max_validity_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "consent_wait_secs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "consent_wait_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
         "name": "granter_visibility",
         "type_info": "Text",
         "origin": {
@@ -81,7 +114,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 10,
         "name": "granter_mode",
         "type_info": "Text",
         "origin": {
@@ -105,8 +138,11 @@
       false,
       true,
       false,
+      false,
+      false,
+      false,
       false
     ]
   },
-  "hash": "02313d35db2331a6eea4127c3c9943fa1252d176339ab2646b3abcf89f061539"
+  "hash": "a1f868e7fc4bf05eed784a7c1c145e7d11c4222253d36b08cc41a2013075a861"
 }

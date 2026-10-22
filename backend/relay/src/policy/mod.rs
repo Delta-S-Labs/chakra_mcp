@@ -34,10 +34,9 @@
 //! the JWT-minter+forwarder (push) or the inbox bridge (pull).
 //!
 //! Notes:
-//! - Consent is in the design spec but the schema has no
-//!   consent_records yet. When that lands, a new `ConsentRequired`
-//!   variant slots in between Grant and TargetUnreachable. Out of
-//!   scope for D4.
+//! - Owner consent isn't a deny here: a capability that asks its owner
+//!   first holds the call after authorization instead (`crate::consent`,
+//!   docs/superpowers/specs/2026-10-23-owner-consent-design.md).
 //! - Health for "TargetUnreachable" uses the same threshold as the
 //!   refresh job (`agent_card_fetched_at` >= now() - 4h is healthy
 //!   for push; pull always passes since `inbox.serve()` polling

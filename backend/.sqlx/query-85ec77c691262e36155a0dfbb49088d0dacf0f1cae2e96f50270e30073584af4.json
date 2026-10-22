@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n                   SELECT 1 FROM agent_capabilities\n                    WHERE agent_id = $1 AND consent_required\n               ) AS \"asks_first!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "asks_first!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "85ec77c691262e36155a0dfbb49088d0dacf0f1cae2e96f50270e30073584af4"
+}

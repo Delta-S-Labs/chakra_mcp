@@ -1,0 +1,168 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT cr.kind, cr.status, cr.invocation_id, cr.terms, cr.expires_at,\n               cr.capability_id, cr.granter_agent_id, cr.grantee_agent_id,\n               cr.grantee_account_id,\n               ga.account_id AS granter_account_id,\n               cap.consent_approvers AS \"approvers?\",\n               cap.consent_max_validity_secs AS \"max_validity_secs?\",\n               EXISTS (\n                   SELECT 1 FROM account_memberships m\n                    WHERE m.user_id = $2 AND m.account_id = ga.account_id\n               ) AS \"member!\"\n          FROM consent_requests cr\n          JOIN agents ga ON ga.id = cr.granter_agent_id\n          LEFT JOIN agent_capabilities cap ON cap.id = cr.capability_id\n         WHERE cr.id = $1\n           FOR UPDATE OF cr\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "invocation_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "invocation_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "terms",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "terms"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "expires_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "capability_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "capability_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "granter_agent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "granter_agent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "grantee_agent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "grantee_agent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "grantee_account_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "grantee_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "granter_account_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "approvers?",
+        "type_info": "UuidArray",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "consent_approvers"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "max_validity_secs?",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "consent_max_validity_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "member!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "a7e391e4a2a95d691ef7ac4e38c6793ce7fdca49defbc5e69135f6e540196630"
+}

@@ -20,7 +20,9 @@ use axum::{
 
 use crate::agent_card::keys::KeyStore;
 use crate::forwarder::{forward_push, ForwardError, ForwardOutcome};
-use crate::inbox_bridge::{get_task, park, GetTaskError, ParkError};
+use crate::inbox_bridge::{
+    get_task, park, GetTaskError, ParkConsent, ParkError, CONSENT_TERMS_METADATA_KEY,
+};
 use crate::policy::{evaluate, Authorized, Decision, DenyReason};
 use crate::state::RelayState;
 
@@ -119,10 +121,16 @@ async fn handle_send_message(
                 }
             }
             let cap_name = ctx.name;
+            // Push agents can't require consent (owner consent §11), so the
+            // gate only applies to parked calls.
+            let consent = ctx.consent_required.then_some(ParkConsent {
+                max_validity_secs: ctx.consent_max_validity_secs,
+                wait_secs: ctx.consent_wait_secs,
+            });
             let mut response = if authz.target_is_push {
                 handle_authorized_push(state, authz, cap_name, body, headers).await
             } else {
-                handle_authorized_pull(state, authz, cap_name, body).await
+                handle_authorized_pull(state, authz, cap_name, body, consent).await
             };
             limits.signals.apply(response.headers_mut());
             response
@@ -375,8 +383,9 @@ async fn handle_authorized_pull(
     authz: Authorized,
     capability_name: String,
     body: Bytes,
+    consent: Option<ParkConsent>,
 ) -> Response {
-    match park(&state.db, &authz, &capability_name, body).await {
+    match park(&state.db, &authz, &capability_name, body, consent).await {
         Ok(parked) => (
             StatusCode::OK,
             [(header::CONTENT_TYPE, "application/json")],
@@ -401,8 +410,26 @@ async fn handle_authorized_pull(
             })),
         )
             .into_response(),
+        Err(ParkError::BadConsentTerms(detail)) => (
+            StatusCode::BAD_REQUEST,
+            [(header::CONTENT_TYPE, "application/json")],
+            Json(serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": null,
+                "error": {
+                    "code": -32602,
+                    "message": format!("bad consent terms in params.metadata[\"{CONSENT_TERMS_METADATA_KEY}\"]: {detail}"),
+                    "data": { "code": "chk.consent.bad_terms" }
+                }
+            })),
+        )
+            .into_response(),
         Err(ParkError::Db(e)) => {
             tracing::error!(error = %e, "park failed");
+            internal_error()
+        }
+        Err(ParkError::Enqueue(e)) => {
+            tracing::error!(error = %e, "park (consent) failed");
             internal_error()
         }
     }
@@ -416,6 +443,9 @@ struct ComplianceContext {
     grant_purpose: Option<String>,
     proposer_message: Option<String>,
     response_message: Option<String>,
+    consent_required: bool,
+    consent_max_validity_secs: i32,
+    consent_wait_secs: i32,
 }
 
 async fn compliance_context(
@@ -425,6 +455,7 @@ async fn compliance_context(
     let row = sqlx::query!(
         r#"
         SELECT cap.name, cap.description,
+               cap.consent_required, cap.consent_max_validity_secs, cap.consent_wait_secs,
                g.purpose           as "grant_purpose?",
                f.proposer_message  as "proposer_message?",
                f.response_message  as "response_message?"
@@ -454,6 +485,9 @@ async fn compliance_context(
         grant_purpose: row.grant_purpose,
         proposer_message: row.proposer_message,
         response_message: row.response_message,
+        consent_required: row.consent_required,
+        consent_max_validity_secs: row.consent_max_validity_secs,
+        consent_wait_secs: row.consent_wait_secs,
     })
 }
 
@@ -1442,6 +1476,106 @@ mod tests {
         }
         b.body(Body::from(serde_json::to_vec(&body).unwrap()))
             .unwrap()
+    }
+
+    /// A capability that asks its owner first holds the A2A call: the task
+    /// starts `auth-required` and stays so on tasks/get, no charge is
+    /// queued, and the terms come from `params.metadata` (owner consent
+    /// §4.1, §8).
+    #[sqlx::test(migrations = "../migrations")]
+    async fn consent_required_call_is_held_as_auth_required(pool: PgPool) {
+        let f = seed_full_fixture(&pool).await;
+        sqlx::query(
+            "UPDATE agent_capabilities
+                SET consent_required = true, consent_max_validity_secs = 86400
+              WHERE id = $1",
+        )
+        .bind(f.capability_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config_v2_on()));
+        let send = |id: i32, metadata: serde_json::Value| {
+            req_with_body(
+                &path_for(&f),
+                Some(&f.api_key_plaintext),
+                Some(&f.caller_agent_id.to_string()),
+                Some(&f.capability_id.to_string()),
+                serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "method": "SendMessage",
+                    "params": {"text": "book it", "metadata": metadata}
+                }),
+            )
+        };
+
+        let bad = app
+            .clone()
+            .oneshot(send(
+                1,
+                serde_json::json!({ CONSENT_TERMS_METADATA_KEY: {"valid_for": "9y"} }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(bad.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            parse_body(bad).await["error"]["data"]["code"],
+            "chk.consent.bad_terms"
+        );
+
+        let res = app
+            .clone()
+            .oneshot(send(
+                2,
+                serde_json::json!({ CONSENT_TERMS_METADATA_KEY: {"valid_for": "30d"} }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = parse_body(res).await;
+        assert_eq!(body["result"]["status"]["state"], "auth-required");
+        let task_id = body["result"]["id"].as_str().unwrap().to_string();
+        let task_uuid: Uuid = task_id.parse().unwrap();
+
+        let (status, terms): (String, serde_json::Value) = sqlx::query_as(
+            "SELECT i.status, cr.terms FROM relay_invocations i
+               JOIN consent_requests cr ON cr.invocation_id = i.id WHERE i.id = $1",
+        )
+        .bind(task_uuid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(status, "awaiting_consent");
+        // Capped at the publisher's longest consent.
+        assert_eq!(terms["valid_for"], "1d");
+        let charged: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM credit_charge_queue WHERE invocation_id = $1)",
+        )
+        .bind(task_uuid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(!charged);
+
+        let polled = app
+            .oneshot(req_with_body(
+                &path_for(&f),
+                Some(&f.api_key_plaintext),
+                Some(&f.caller_agent_id.to_string()),
+                None,
+                serde_json::json!({
+                    "jsonrpc": "2.0", "id": 3, "method": "tasks/get", "params": {"id": task_id}
+                }),
+            ))
+            .await
+            .unwrap();
+        let polled = parse_body(polled).await;
+        assert_eq!(polled["result"]["status"]["state"], "auth-required");
+        assert_eq!(
+            polled["result"]["status"]["message"],
+            "Waiting for the owner's approval"
+        );
     }
 
     #[sqlx::test(migrations = "../migrations")]

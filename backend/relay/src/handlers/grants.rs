@@ -458,9 +458,11 @@ pub async fn revoke(
     // invocations that depend on it. Without this second UPDATE the
     // worker would still pull queued rows off the inbox, run them,
     // and post results against a now-revoked grant — defeating the
-    // intent of the revoke. We only touch `pending` rows; anything
-    // already `in_progress` has been pulled and is presumably being
-    // handled, and the result-posting path can decide its own fate.
+    // intent of the revoke. We only touch `pending` rows (and
+    // `awaiting_consent` ones, held for the owner's approval, whose
+    // consent requests are cancelled too); anything already
+    // `in_progress` has been pulled and is presumably being handled, and
+    // the result-posting path can decide its own fate.
     let mut tx = state.db.begin().await?;
     sqlx::query!(
         r#"
@@ -479,16 +481,28 @@ pub async fn revoke(
     .await?;
     let cancelled = sqlx::query!(
         r#"
-        UPDATE relay_invocations
-        SET status = 'rejected',
-            error_message = COALESCE(error_message, 'grant revoked while queued')
-        WHERE grant_id = $1 AND status = 'pending'
+        WITH rejected AS (
+            UPDATE relay_invocations
+            SET status = 'rejected',
+                error_message = COALESCE(error_message, 'grant revoked while queued')
+            WHERE grant_id = $1 AND status IN ('pending', 'awaiting_consent')
+            RETURNING id
+        ),
+        consent_cancelled AS (
+            UPDATE consent_requests
+               SET status = 'cancelled', decided_at = now(), decision_note = 'grant revoked'
+             WHERE invocation_id IN (SELECT id FROM rejected) AND status = 'pending'
+            RETURNING id
+        )
+        SELECT (SELECT count(*) FROM rejected) AS "rejected!",
+               (SELECT count(*) FROM consent_cancelled) AS "consent_cancelled!"
         "#,
         id,
     )
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
+    .fetch_one(&mut *tx)
+    .await?;
+    let consent_cancelled = cancelled.consent_cancelled as u64;
+    let cancelled = cancelled.rejected as u64;
     tx.commit().await?;
     crate::telemetry::record_invocation_outcome(
         crate::telemetry::Mode::Pull,
@@ -496,6 +510,7 @@ pub async fn revoke(
         0,
         cancelled,
     );
+    crate::consent::metrics::record("cancelled", consent_cancelled);
 
     crate::events::record_audit(
         &state.db,

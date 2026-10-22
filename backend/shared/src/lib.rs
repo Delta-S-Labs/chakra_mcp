@@ -6,6 +6,7 @@
 //! * Common error envelope shape
 //! * Scoped agent-grant resolution (the shared scope guard, so REST and
 //!   MCP enforce `agent_scope` identically)
+//! * Telling a person's web session from delegated tokens (`sessions`)
 //! * Telemetry: tracing init (text/JSON logs), Prometheus metrics, request IDs
 
 pub mod auto_friendship;
@@ -16,4 +17,5 @@ pub mod error;
 pub mod hosting;
 pub mod jwt;
 pub mod scope;
+pub mod sessions;
 pub mod telemetry;
