@@ -128,7 +128,7 @@ services:
   # GitHub, Google or a generic OIDC provider when configured; each provider
   # admits only whom GRAFANA_ROLE_ATTRIBUTE_PATH maps to a role (strict).
   grafana:
-    image: grafana/grafana:13.2.3
+    image: grafana/grafana:13.2.4
     restart: unless-stopped
     logging: *logging
     depends_on: [prometheus, loki]
