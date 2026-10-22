@@ -17,6 +17,7 @@ test("an agent gets 10 Guide questions an hour, then a retry time", () => {
   assert.equal(v.ok, false);
   // The first call was 10 minutes ago: it rolls off in 50 minutes.
   assert.equal(!v.ok && v.retryAfterSecs, 50 * 60);
+  assert.equal(!v.ok && v.limit, "agent_hour");
   // Another agent is unaffected.
   assert.deepEqual(limiter.check("guide.ask", "b", "acct2", limits), { ok: true });
   c.advance(50 * 60_000);
@@ -30,18 +31,18 @@ test("spend limits: per agent, per account and for everyone", () => {
   const id = limiter.record("guide.ask", "a", "acct");
   limiter.addCost(id, 1.0);
   let v = limiter.check("guide.ask", "a", "acct", limits);
-  assert.ok(!v.ok && v.reason.includes("this agent"));
+  assert.ok(!v.ok && v.reason.includes("this agent") && v.limit === "agent_usd");
   assert.ok(!v.ok && v.retryAfterSecs === DAY_MS / 1000);
 
   // A second agent in the same account: the account's $2 is reached next.
   limiter.addCost(limiter.record("guide.ask", "b", "acct"), 1.0);
   v = limiter.check("guide.ask", "c", "acct", limits);
-  assert.ok(!v.ok && v.reason.includes("account"));
+  assert.ok(!v.ok && v.reason.includes("account") && v.limit === "account_usd");
 
   // Everyone's $3 budget.
   limiter.addCost(limiter.record("guide.ask", "d", "other"), 1.0);
   v = limiter.check("guide.ask", "e", "third", limits);
-  assert.ok(!v.ok && v.reason.includes("budget"));
+  assert.ok(!v.ok && v.reason.includes("budget") && v.limit === "global_usd");
   assert.equal(limiter.spentToday("guide.ask"), 3);
 });
 

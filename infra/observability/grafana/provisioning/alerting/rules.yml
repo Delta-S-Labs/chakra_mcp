@@ -556,3 +556,116 @@ groups:
     labels:
       severity: critical
     isPaused: false
+- orgId: 1
+  name: house-agents
+  folder: ChakraMCP
+  interval: 1m
+  rules:
+  # chakramcp.com's house agents, Ping and the ChakraMCP Guide
+  # (infra/house-agents/). Elsewhere these queries come back empty, so the
+  # rules stay quiet (noDataState OK). Not shipped in the Helm chart.
+  - uid: house-agents-offline
+    title: House agents offline
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: postgres
+      model:
+        refId: A
+        editorMode: code
+        format: table
+        rawQuery: true
+        rawSql: "SELECT EXTRACT(EPOCH FROM now() - max(h.last_polled_at)) AS value FROM agent_heartbeats h JOIN agents a ON a.id = h.agent_id JOIN accounts acc ON acc.id = a.account_id WHERE acc.slug = 'chakramcp' AND a.tombstoned_at IS NULL"
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 600
+    noDataState: OK
+    execErrState: Error
+    for: 5m
+    annotations:
+      summary: 'The house agents last pulled their inbox{{ with $values.A }} {{ humanizeDuration .Value }}{{ end }} ago (they poll every 5 s): is the house-agents container running? docker compose --profile house-agents ps'
+    labels:
+      severity: warning
+    isPaused: false
+  - uid: guide-spend-near-cap
+    title: Guide spend near its daily cap
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 86400
+        to: 0
+      datasourceUid: loki
+      model:
+        refId: A
+        expr: 'sum(sum_over_time({service="house-agents"} | json | msg="guide.answered" | unwrap cost_usd | __error__="" [24h]))'
+        queryType: instant
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            # 80% of the default HOUSE_DAILY_BUDGET_USD (10): move it with the budget.
+            - 8
+    noDataState: OK
+    execErrState: Error
+    for: 5m
+    annotations:
+      summary: 'The Guide has spent{{ with $values.A }} {{ printf "%.2f" .Value }}{{ end }} USD on Claude in the last 24 hours. At HOUSE_DAILY_BUDGET_USD (10 by default) it stops answering until older spend rolls off.'
+    labels:
+      severity: warning
+    isPaused: false
+  - uid: guide-claude-failing
+    title: Guide's Claude calls failing
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 1800
+        to: 0
+      datasourceUid: loki
+      model:
+        refId: A
+        expr: 'sum(count_over_time({service="house-agents"} | json | msg="guide.claude_failed" [30m]))'
+        queryType: instant
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 2
+    noDataState: OK
+    execErrState: Error
+    for: 0m
+    annotations:
+      summary: '{{ with $values.A }}{{ humanize .Value }}{{ else }}Several{{ end }} Guide questions failed at Claude in 30 minutes. The status in the guide.claude_failed log lines says why: 401 (key), 429 or 529 (busy), 400 (request).'
+    labels:
+      severity: warning
+    isPaused: false

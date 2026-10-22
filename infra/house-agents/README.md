@@ -114,8 +114,17 @@ docker compose logs house-agents | grep -E 'guide.spend|guide.answered'
 docker compose --profile house-agents stop house-agents          # pause both agents
 ```
 
+- **Dashboard.** Grafana's **House agents** dashboard shows the service's
+  activity from its logs: questions, spend against the daily cap, answer
+  times, refusals by reason, pings, new friends and errors. It also shows
+  the last inbox poll, from Postgres.
+- **Alerts.** Three alert rules warn when:
+  - the agents haven't polled for 10 minutes;
+  - spend passes $8 in 24 hours (80% of the default cap);
+  - more than two Claude calls fail in 30 minutes.
 - **Spend.** `guide.spend` is logged hourly with the last 24 hours' spend.
-  Each `guide.answered` carries its cost.
+  Each `guide.answered` carries its cost, and each refusal logs `guide.refused`
+  or `ping.refused` with its `reason` (and `limit`).
 - **Startup check.** `claude.check_failed` at startup means the Anthropic key
   or the request shape is wrong. It's a free `count_tokens` call.
 - **Changing settings.** After changing a setting in `.env`, run

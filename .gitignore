@@ -71,3 +71,7 @@ charts/chakramcp/charts/
 
 # Credits P4: Dodo test-mode keys for the local end-to-end run (never committed).
 backend/.env.dodo-test
+
+# Python bytecode
+__pycache__/
+*.pyc

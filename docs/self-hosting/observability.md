@@ -9,10 +9,16 @@
 - **Loki** keeps logs for 14 days.
 - **Grafana** serves the dashboards and evaluates the alert rules.
 
-You get four dashboards (**Overview**, **Infrastructure**, **Logs** and
-**Revenue**) and fifteen alert rules. They're the same files production
-runs. Revenue shows credit purchases, read straight from Postgres; it stays
-empty on a server that doesn't sell credits, which is any self-hosted one.
+You get six dashboards and eighteen alert rules, the same files production
+runs:
+- **Overview**, **Infrastructure** and **Logs**.
+- **Activation**: sign-ups, agents and calls, and how far new accounts get
+  (an agent, connected, a first call, a published capability). Read from
+  Postgres.
+- **Revenue**: credit purchases, from Postgres. It stays empty on a server
+  that doesn't sell credits, which is any self-hosted one.
+- **House agents**: chakramcp.com's Ping and ChakraMCP Guide. It stays empty
+  elsewhere, and so do its three alert rules.
 
 ## Requirements
 
@@ -34,7 +40,7 @@ missing. If the journal is volatile, enabling persistent storage takes
    - `GRAFANA_DOMAIN`: that hostname;
    - `GRAFANA_ADMIN_PASSWORD`: the `admin` login;
    - `PG_MONITOR_PASSWORD`: the read-only Postgres role the collector
-     and Grafana's Revenue dashboard log in as.
+     and Grafana's Postgres dashboards log in as.
 
    After setting `GRAFANA_DOMAIN`, apply it to Caddy:
    `docker compose -f docker-compose.prod.yml up -d caddy`.
@@ -149,9 +155,14 @@ obs logs --tail 50 grafana
   `<ip>` comes from `docker inspect` on the container.
 - **What Grafana can read in Postgres:** it logs in as
   `chakramcp_monitor`, which has Postgres's read-only statistics
-  (`pg_monitor`) plus SELECT on the credit columns the Revenue dashboard
-  needs: amounts, statuses, times and account ids. It can't read emails,
-  user ids, payment ids or ledger metadata, and every query stops after
+  (`pg_monitor`) plus SELECT on just the columns its dashboards read:
+  - for Revenue, credit amounts, statuses, times and account ids;
+  - for Activation and House agents, the ids, kinds, statuses and times of
+    accounts, agents, capabilities and calls, and account slugs (the public
+    handle).
+
+  It can't read emails, user ids, display names, payment ids, ledger
+  metadata or what calls sent and returned. Every query stops after
   5 seconds. `deploy.sh` grants these through
   `observability/scripts/ensure-monitor-role.sh` on every run.
 - **Rotating `PG_MONITOR_PASSWORD`:**
@@ -187,7 +198,8 @@ For kube-prometheus-stack or anything like it, the chart renders:
   get the Overview; with `observability.loki.enabled`, also the Logs
   dashboard and the Overview's log panel. The Infrastructure dashboard is
   Compose-only; on Kubernetes, the cluster's own dashboards cover nodes
-  and pods. So is Revenue: only chakramcp.com sells credits.
+  and pods. So are Revenue, Activation and House agents, which read
+  Postgres directly.
 - **Alert rules**: a ConfigMap labelled `grafana_alert: "1"`.
   kube-prometheus-stack's alerts sidecar is **off** by default and only
   watches Grafana's namespace, so turn it on and let it see the rules:

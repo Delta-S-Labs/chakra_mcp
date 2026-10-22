@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Create the chakramcp_monitor role the collector's Postgres exporter and
-# Grafana's Revenue dashboard log in as: a member of pg_monitor (read-only
-# statistics), plus SELECT on the credit columns that dashboard reads.
-# Never emails, user ids, payment ids or ledger metadata. Idempotent. The password is sent only when the role is created — a
+# Grafana's Postgres dashboards log in as: a member of pg_monitor (read-only
+# statistics), plus SELECT on just the columns those dashboards read: credit
+# columns (Revenue), and ids, kinds, statuses and times of accounts (plus
+# their slug, the public handle), agents, capabilities and calls (Activation,
+# House agents). Never emails, user ids, display names, descriptions, payment
+# ids, ledger metadata or call inputs/outputs. Idempotent. The password is sent only when the role is created — a
 # failing statement is logged verbatim, and Postgres's logs go to Loki.
 # Rotating it is a manual step (docs/CI-CD.md).
 #
@@ -51,7 +54,12 @@ BEGIN
     ['credit_checkouts', 'id,account_id,amount_cents,currency,credits_mc,status,unapplied_reason,created_at,updated_at,paid_at'],
     ['credit_ledger', 'id,account_id,delta_mc,reason,created_at'],
     ['credit_wallets', 'account_id,balance_mc,unlimited'],
-    ['invocation_charges', 'account_id,cost_mc,charged_at']
+    ['invocation_charges', 'account_id,cost_mc,charged_at'],
+    ['accounts', 'id,slug,account_type,created_at,tombstoned_at'],
+    ['agents', 'id,account_id,created_at,tombstoned_at'],
+    ['agent_capabilities', 'agent_id,visibility,public_invoke,created_at'],
+    ['agent_heartbeats', 'agent_id,last_polled_at'],
+    ['relay_invocations', 'granter_agent_id,grantee_agent_id,status,created_at,claimed_at']
   ] LOOP
     SELECT string_agg(quote_ident(column_name), ', ') INTO cols
       FROM information_schema.columns
