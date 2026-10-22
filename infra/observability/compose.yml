@@ -123,8 +123,8 @@ services:
     networks: [observability]
 
   # Dashboards and alerting. The only piece reachable from outside, through
-  # Caddy at GRAFANA_DOMAIN. On the internal network too, for the Revenue
-  # dashboard's read-only Postgres login (the collector's chakramcp_monitor). Sign-in: the admin login form by default, plus
+  # Caddy at GRAFANA_DOMAIN. On the internal network too, for the Postgres
+  # dashboards' read-only login (the collector's chakramcp_monitor). Sign-in: the admin login form by default, plus
   # GitHub, Google or a generic OIDC provider when configured; each provider
   # admits only whom GRAFANA_ROLE_ATTRIBUTE_PATH maps to a role (strict).
   grafana:

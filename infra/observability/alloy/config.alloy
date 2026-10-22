@@ -233,9 +233,10 @@ loki.process "logs" {
 		action   = "drop"
 	}
 
-	// The relay and Caddy log JSON: lift `level` into a (lower-case) label.
+	// The relay, Caddy and the house agents log JSON: lift `level` into a
+	// (lower-case) label.
 	stage.match {
-		selector = "{service=~\"relay|migrate|caddy\"}"
+		selector = "{service=~\"relay|migrate|caddy|house-agents\"}"
 
 		stage.json {
 			expressions = {level = "level"}

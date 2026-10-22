@@ -31,13 +31,24 @@ export function guideLimits(dailyBudgetUsd: number): Limits {
 
 export const PING_LIMITS: Limits = { perAgentHour: 100 };
 
+/** Which limit refused a call, for logs and dashboards. */
+export type LimitId =
+  | "agent_hour"
+  | "agent_day"
+  | "agent_usd"
+  | "account_day"
+  | "account_usd"
+  | "global_day"
+  | "global_usd";
+
 export type Verdict =
   | { ok: true }
-  | { ok: false; reason: string; retryAfterSecs: number };
+  | { ok: false; limit: LimitId; reason: string; retryAfterSecs: number };
 
 type Scope = "agent" | "account" | "all";
 
 interface Rule {
+  id: LimitId;
   scope: Scope;
   windowMs: number;
   max: number;
@@ -47,16 +58,16 @@ interface Rule {
 
 function rules(limits: Limits): Rule[] {
   const out: Rule[] = [];
-  const add = (scope: Scope, windowMs: number, max: number | undefined, usd: boolean, reason: string) => {
-    if (max !== undefined) out.push({ scope, windowMs, max, usd, reason });
+  const add = (id: LimitId, scope: Scope, windowMs: number, max: number | undefined, usd: boolean, reason: string) => {
+    if (max !== undefined) out.push({ id, scope, windowMs, max, usd, reason });
   };
-  add("agent", HOUR_MS, limits.perAgentHour, false, `at most ${limits.perAgentHour} calls an hour per agent`);
-  add("agent", DAY_MS, limits.perAgentDay, false, `at most ${limits.perAgentDay} calls a day per agent`);
-  add("agent", DAY_MS, limits.perAgentDayUsd, true, "this agent has used its share for today");
-  add("account", DAY_MS, limits.perAccountDay, false, `at most ${limits.perAccountDay} calls a day per account`);
-  add("account", DAY_MS, limits.perAccountDayUsd, true, "agents in this account have used their share for today");
-  add("all", DAY_MS, limits.globalDay, false, "the daily limit for everyone has been reached");
-  add("all", DAY_MS, limits.globalDayUsd, true, "the daily budget for everyone has been used");
+  add("agent_hour", "agent", HOUR_MS, limits.perAgentHour, false, `at most ${limits.perAgentHour} calls an hour per agent`);
+  add("agent_day", "agent", DAY_MS, limits.perAgentDay, false, `at most ${limits.perAgentDay} calls a day per agent`);
+  add("agent_usd", "agent", DAY_MS, limits.perAgentDayUsd, true, "this agent has used its share for today");
+  add("account_day", "account", DAY_MS, limits.perAccountDay, false, `at most ${limits.perAccountDay} calls a day per account`);
+  add("account_usd", "account", DAY_MS, limits.perAccountDayUsd, true, "agents in this account have used their share for today");
+  add("global_day", "all", DAY_MS, limits.globalDay, false, "the daily limit for everyone has been reached");
+  add("global_usd", "all", DAY_MS, limits.globalDayUsd, true, "the daily budget for everyone has been used");
   return out;
 }
 
@@ -87,7 +98,7 @@ export class Limiter {
         .get(...params, offset) as { at: number } | undefined;
       const at = freed?.at ?? now;
       const retryAfterSecs = Math.max(1, Math.ceil((at + rule.windowMs - now) / 1000));
-      return { ok: false, reason: rule.reason, retryAfterSecs };
+      return { ok: false, limit: rule.id, reason: rule.reason, retryAfterSecs };
     }
     return { ok: true };
   }

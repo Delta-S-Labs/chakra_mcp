@@ -28,16 +28,46 @@ interface Caller {
   accountId: string | null;
 }
 
+/** Why a call was turned away, for the logs (never the call's content). */
+export type RefusalReason = "capability" | "no_caller" | "blocked" | "input" | "busy" | "limit" | "restarting";
+
+/** A refusal: what to tell the caller, and what to log. */
+interface Refusal {
+  reason: RefusalReason;
+  message: string;
+  limit?: string;
+}
+
+function refusal(reason: RefusalReason, message: string, limit?: string): Refusal {
+  return { reason, message, ...(limit ? { limit } : {}) };
+}
+
 /** Who's calling, or why the call is refused. */
-function caller(inv: HouseInvocation, house: HouseAgent, blocked: Blocklist): Caller | string {
-  if (inv.capability_name !== house.capabilityName) return `${house.slug} has no capability "${inv.capability_name}".`;
+function caller(inv: HouseInvocation, house: HouseAgent, blocked: Blocklist): Caller | Refusal {
+  if (inv.capability_name !== house.capabilityName) {
+    return refusal("capability", `${house.slug} has no capability "${inv.capability_name}".`);
+  }
   const agentId = inv.grantee_agent_id;
-  if (!agentId) return "The relay didn't say which agent is calling.";
+  if (!agentId) return refusal("no_caller", "The relay didn't say which agent is calling.");
   const accountId = inv.grantee_account_id ?? null;
   if (blocked.agents.has(agentId.toLowerCase()) || (accountId && blocked.accounts.has(accountId.toLowerCase()))) {
-    return "This agent can't call the house agents.";
+    return refusal("blocked", "This agent can't call the house agents.");
   }
   return { agentId, accountId };
+}
+
+function isRefusal(v: Caller | Refusal): v is Refusal {
+  return "reason" in v;
+}
+
+/** Logs a refusal: ids and the reason category only. */
+function logRefusal(event: string, inv: HouseInvocation, r: Refusal): void {
+  log.info(event, {
+    invocation_id: inv.id,
+    agent_id: inv.grantee_agent_id ?? null,
+    reason: r.reason,
+    limit: r.limit ?? null,
+  });
 }
 
 function limited(reason: string, retryAfterSecs: number): string {
@@ -86,16 +116,23 @@ export interface PingDeps {
 export async function handlePing(deps: PingDeps, inv: HouseInvocation): Promise<void> {
   const who = caller(inv, deps.house, deps.blocked);
   let outcome: Outcome;
-  if (typeof who === "string") {
-    outcome = failed(who);
+  let refused: Refusal | null = null;
+  if (isRefusal(who)) {
+    refused = who;
   } else {
     const verdict = deps.limiter.check(deps.house.capabilityName, who.agentId, who.accountId, PING_LIMITS);
     if (!verdict.ok) {
-      outcome = failed(limited(verdict.reason, verdict.retryAfterSecs));
+      refused = refusal("limit", limited(verdict.reason, verdict.retryAfterSecs), verdict.limit);
     } else {
       deps.limiter.record(deps.house.capabilityName, who.agentId, who.accountId);
-      outcome = { status: "succeeded", output: pingOutput(inv.input_preview, new Date()) };
     }
+  }
+  if (refused) {
+    logRefusal("ping.refused", inv, refused);
+    outcome = failed(refused.message);
+  } else {
+    log.info("ping.answered", { invocation_id: inv.id, agent_id: inv.grantee_agent_id ?? null });
+    outcome = { status: "succeeded", output: pingOutput(inv.input_preview, new Date()) };
   }
   await respond(deps.chakra, inv, outcome, RESPOND_DEADLINE_MS);
 }
@@ -163,17 +200,20 @@ export interface GuideDeps {
  */
 export async function handleGuide(deps: GuideDeps, inv: HouseInvocation): Promise<void> {
   const deadline = () => (deps.stopping() ? RESPOND_DEADLINE_STOPPING_MS : RESPOND_DEADLINE_MS);
-  const refuse = (msg: string) => respond(deps.chakra, inv, failed(msg), deadline()).then(() => undefined);
+  const refuse = (r: Refusal) => {
+    logRefusal("guide.refused", inv, r);
+    return respond(deps.chakra, inv, failed(r.message), deadline()).then(() => undefined);
+  };
 
   const who = caller(inv, deps.house, deps.blocked);
-  if (typeof who === "string") return refuse(who);
+  if (isRefusal(who)) return refuse(who);
   const input = parseGuideInput(inv.input_preview);
-  if (typeof input === "string") return refuse(input);
+  if (typeof input === "string") return refuse(refusal("input", input));
   if (deps.lock.pending(who.agentId) >= MAX_PENDING_PER_AGENT) {
-    return refuse("One question at a time: wait for the Guide's answer to your previous question.");
+    return refuse(refusal("busy", "One question at a time: wait for the Guide's answer to your previous question."));
   }
   const verdict = deps.limiter.check(deps.house.capabilityName, who.agentId, who.accountId, deps.limits);
-  if (!verdict.ok) return refuse(limited(verdict.reason, verdict.retryAfterSecs));
+  if (!verdict.ok) return refuse(refusal("limit", limited(verdict.reason, verdict.retryAfterSecs), verdict.limit));
   const callId = deps.limiter.record(deps.house.capabilityName, who.agentId, who.accountId);
 
   return deps.lock.run(who.agentId, async () => {
@@ -183,7 +223,9 @@ export async function handleGuide(deps: GuideDeps, inv: HouseInvocation): Promis
     let outcome: Outcome;
     try {
       if (deps.stopping()) {
-        outcome = failed("The Guide is restarting. Ask again in a minute.");
+        const r = refusal("restarting", "The Guide is restarting. Ask again in a minute.");
+        logRefusal("guide.refused", inv, r);
+        outcome = failed(r.message);
       } else {
         const answer = await ask(deps.claude, deps.sessions, who.agentId, input.question, input.newSession, (usd) => {
           costUsd += usd;
