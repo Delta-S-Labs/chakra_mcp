@@ -388,6 +388,7 @@ are set:
 | Relay public URL     | `relay_base_url`     | `RELAY_BASE_URL`     | `http://localhost:8090`              |
 | Discovery v2 enabled | `discovery_v2_enabled` | `DISCOVERY_V2`     | `false`                              |
 | Featured account in the directory | (environment only) | `DISCOVERY_FEATURED_ACCOUNT` | unset: none featured |
+| Usage events kept (days; `0` keeps them forever) | (environment only) | `USAGE_RETENTION_DAYS` | `90` |
 | Log filter           | `log_filter`         | `RUST_LOG`           | `info,…=debug,sqlx=warn`             |
 | System One checks    | (env only)           | `SYSTEM_ONE_CHECKS`  | `false`                              |
 | TypeSafe API key     | (env only)           | `TYPESAFE_AI_KEY`    | unset (required when checks are on)  |

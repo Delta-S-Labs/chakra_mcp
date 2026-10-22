@@ -21,6 +21,7 @@ pub mod inbox_bridge;
 pub mod jwt_mint;
 pub mod limits;
 pub mod policy;
+pub mod retention;
 pub mod state;
 pub mod telemetry;
 

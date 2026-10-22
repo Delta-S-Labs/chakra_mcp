@@ -44,7 +44,7 @@ non-root user with a read-only root filesystem.
 | `config.discoveryV2` | `true` | |
 | `config.rustLog` | `info,…,sqlx=warn` | The log filter; logs are JSON |
 | `secrets.existingSecret` | `""` | A Secret whose keys all become environment variables: `JWT_SECRET` (required), plus optional ones such as `TYPESAFE_AI_KEY`. Unset: `JWT_SECRET` is generated once and kept. |
-| `extraEnv`, `extraEnvFrom` | `[]` | More environment for the server |
+| `extraEnv`, `extraEnvFrom` | `[]` | More environment for the server, e.g. `USAGE_RETENTION_DAYS` (days of usage events to keep, default 90; `0` keeps them forever) |
 | `metrics.enabled`, `metrics.port` | `true`, `9464` | Prometheus metrics on their own port, never on the Ingress |
 | `service.type`, `service.appPort`, `service.relayPort` | `ClusterIP`, `8080`, `8090` | |
 | `ingress.enabled`, `ingress.className`, `ingress.annotations` | `false`, `""`, `{}` | E.g. `cert-manager.io/cluster-issuer` for TLS |

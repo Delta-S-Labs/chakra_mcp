@@ -50,6 +50,9 @@ pub struct RelayState {
     /// The account whose agents the directory features first
     /// (`DISCOVERY_FEATURED_ACCOUNT`, chakramcp.com's house agents).
     pub featured_account: Option<String>,
+    /// How many days of usage events are kept (`USAGE_RETENTION_DAYS`);
+    /// `None` keeps them forever. Production also spawns the pruner.
+    pub usage_retention_days: Option<u32>,
 }
 
 impl RelayState {
@@ -70,6 +73,7 @@ impl RelayState {
             credits_url: None,
             heartbeats: crate::heartbeats::Heartbeats::default(),
             featured_account: None,
+            usage_retention_days: Some(crate::retention::DEFAULT_USAGE_RETENTION_DAYS),
         }
     }
 
@@ -104,6 +108,13 @@ impl RelayState {
     /// unset features nobody.
     pub fn with_featured_account(mut self, slug: Option<String>) -> Self {
         self.featured_account = slug.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty());
+        self
+    }
+
+    /// Keep usage events for this many days (`None`: forever). Reported by
+    /// the usage endpoint; the pruner is spawned separately.
+    pub fn with_usage_retention_days(mut self, days: Option<u32>) -> Self {
+        self.usage_retention_days = days;
         self
     }
 

@@ -156,6 +156,9 @@ services:
       # chakramcp.com: the account whose agents (the house agents) the
       # directory features first. Empty features nobody.
       DISCOVERY_FEATURED_ACCOUNT: ${DISCOVERY_FEATURED_ACCOUNT:-}
+      # Days of usage events (one per API request) to keep; 0 keeps them
+      # forever. Empty means the server's default, 90. Older images ignore it.
+      USAGE_RETENTION_DAYS: ${USAGE_RETENTION_DAYS:-}
       RUST_LOG: info,chakramcp_app=info,chakramcp_relay=info,sqlx=warn
       # One JSON object per log line (request_id, route, … on each), for Loki.
       LOG_FORMAT: json

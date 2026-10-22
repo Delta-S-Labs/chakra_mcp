@@ -188,10 +188,13 @@ pub struct UsageActionCount {
 #[derive(Debug, Serialize)]
 pub struct UsageListResponse {
     pub events: Vec<UsageEventDto>,
-    /// Totals by action over the caller's whole history — a billing
-    /// preview, independent of the current page.
+    /// Totals by action over every event still kept (see
+    /// `retention_days`), independent of the current page.
     pub totals_by_action: Vec<UsageActionCount>,
     pub total: i64,
+    /// How many days of events the server keeps; `null` when it keeps them
+    /// forever. The totals cover this window.
+    pub retention_days: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<String>,
 }
@@ -249,7 +252,7 @@ pub async fn usage_list(
         None
     };
 
-    // Billing preview: counts by action across the caller's full history.
+    // Counts by action across every event still kept (USAGE_RETENTION_DAYS).
     let totals = sqlx::query!(
         r#"
         SELECT action, COUNT(*)::bigint AS "count!"
@@ -291,6 +294,7 @@ pub async fn usage_list(
             })
             .collect(),
         total,
+        retention_days: state.usage_retention_days,
         next_cursor,
     }))
 }
