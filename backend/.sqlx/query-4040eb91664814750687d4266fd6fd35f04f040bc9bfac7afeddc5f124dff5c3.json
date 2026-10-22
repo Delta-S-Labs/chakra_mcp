@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        UPDATE agent_capabilities\n        SET description = COALESCE($3, description),\n            input_schema = COALESCE($4, input_schema),\n            output_schema = COALESCE($5, output_schema),\n            visibility = COALESCE($6, visibility),\n            public_invoke = COALESCE($7, public_invoke),\n            public_monthly_quota_per_agent = $8\n        WHERE id = $1 AND agent_id = $2\n        RETURNING id, agent_id, name, description, input_schema, output_schema,\n                  visibility, created_at, updated_at,\n                  public_invoke, public_monthly_quota_per_agent\n        ",
+  "query": "\n        INSERT INTO agent_capabilities\n            (id, agent_id, name, description, input_schema, output_schema,\n             visibility, semantics, created_by_user_id,\n             public_invoke, public_monthly_quota_per_agent,\n             consent_required, consent_approvers, consent_max_validity_secs,\n             consent_wait_secs)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)\n        ON CONFLICT (agent_id, name) DO NOTHING\n        RETURNING id, agent_id, name, description, input_schema, output_schema,\n                  visibility, created_at, updated_at,\n                  public_invoke, public_monthly_quota_per_agent, semantics\n        ",
   "describe": {
     "columns": [
       {
@@ -123,6 +123,17 @@
             "name": "public_monthly_quota_per_agent"
           }
         }
+      },
+      {
+        "ordinal": 11,
+        "name": "semantics",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "semantics"
+          }
+        }
       }
     ],
     "parameters": {
@@ -130,10 +141,17 @@
         "Uuid",
         "Uuid",
         "Text",
+        "Text",
         "Jsonb",
         "Jsonb",
         "Text",
+        "Text",
+        "Uuid",
         "Bool",
+        "Int4",
+        "Bool",
+        "UuidArray",
+        "Int4",
         "Int4"
       ]
     },
@@ -148,8 +166,9 @@
       false,
       false,
       false,
-      true
+      true,
+      false
     ]
   },
-  "hash": "0b1e45ac5f570415972ca93e18b0c0eec5b4bd0c1b37b599396fdb3743663a5c"
+  "hash": "4040eb91664814750687d4266fd6fd35f04f040bc9bfac7afeddc5f124dff5c3"
 }

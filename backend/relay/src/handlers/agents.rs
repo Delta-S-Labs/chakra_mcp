@@ -93,6 +93,10 @@ pub struct AgentDto {
     pub description: String,
     pub visibility: String,
     pub endpoint_url: Option<String>,
+    /// `pull` (polls its inbox) or `push` (takes calls at its own A2A
+    /// endpoint). Push agents can't ask their owner first (owner consent
+    /// §11).
+    pub mode: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
     /// True when the requesting user is a member of the owning account.
@@ -176,7 +180,7 @@ pub async fn list_mine(
         r#"
         SELECT
             a.id, a.account_id, a.slug, a.display_name, a.description,
-            a.visibility, a.endpoint_url, a.created_at, a.updated_at,
+            a.visibility, a.endpoint_url, a.mode, a.created_at, a.updated_at,
             acc.slug as account_slug, acc.display_name as account_display_name,
             (SELECT COUNT(*)::bigint FROM agent_capabilities c WHERE c.agent_id = a.id) as "capability_count!",
             (SELECT COUNT(*)::bigint FROM agent_capabilities c
@@ -225,6 +229,7 @@ pub async fn list_mine(
                 description: r.description,
                 visibility: r.visibility,
                 endpoint_url: r.endpoint_url,
+                mode: r.mode,
                 created_at: r.created_at,
                 updated_at: r.updated_at,
                 is_mine: true,
@@ -535,7 +540,7 @@ pub async fn get_one(
         r#"
         SELECT
             a.id, a.account_id, a.slug, a.display_name, a.description,
-            a.visibility, a.endpoint_url, a.created_at, a.updated_at,
+            a.visibility, a.endpoint_url, a.mode, a.created_at, a.updated_at,
             acc.slug as account_slug, acc.display_name as account_display_name,
             (SELECT COUNT(*)::bigint FROM agent_capabilities c WHERE c.agent_id = a.id) as "capability_count!",
             (SELECT AVG(rating)::float8 FROM agent_reviews r
@@ -589,6 +594,7 @@ pub async fn get_one(
         description: r.description,
         visibility: r.visibility,
         endpoint_url: if manageable { r.endpoint_url } else { None },
+        mode: r.mode,
         created_at: r.created_at,
         updated_at: r.updated_at,
         is_mine: manageable,
@@ -691,7 +697,7 @@ pub async fn create(
              created_by_client_id, created_by_api_key_id)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         ON CONFLICT (account_id, slug) WHERE tombstoned_at IS NULL DO NOTHING
-        RETURNING id, account_id, slug, display_name, description, visibility, endpoint_url, created_at, updated_at
+        RETURNING id, account_id, slug, display_name, description, visibility, endpoint_url, mode, created_at, updated_at
         "#,
         id,
         req.account_id,
@@ -806,6 +812,7 @@ pub async fn create(
         description: inserted.description,
         visibility: inserted.visibility,
         endpoint_url: inserted.endpoint_url,
+        mode: inserted.mode,
         created_at: inserted.created_at,
         updated_at: inserted.updated_at,
         is_mine: true,
@@ -1006,7 +1013,7 @@ pub async fn update(
         r#"
         SELECT
             a.id, a.account_id, a.slug, a.display_name, a.description,
-            a.visibility, a.endpoint_url, a.created_at, a.updated_at,
+            a.visibility, a.endpoint_url, a.mode, a.created_at, a.updated_at,
             acc.slug as account_slug, acc.display_name as account_display_name,
             (SELECT COUNT(*)::bigint FROM agent_capabilities c WHERE c.agent_id = a.id) as "capability_count!",
             (SELECT AVG(rating)::float8 FROM agent_reviews r
@@ -1045,6 +1052,7 @@ pub async fn update(
         description: r.description,
         visibility: r.visibility,
         endpoint_url: r.endpoint_url,
+        mode: r.mode,
         created_at: r.created_at,
         updated_at: r.updated_at,
         is_mine: true,

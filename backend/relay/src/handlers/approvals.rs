@@ -169,7 +169,8 @@ async fn waiting(state: &RelayState, user_id: Uuid) -> ApiResult<Vec<ApprovalSum
         .collect())
 }
 
-/// Unrevoked, unexpired consents on agents in the user's accounts.
+/// Consents that still cover requests (unrevoked, unexpired, not used up)
+/// on agents in the user's accounts.
 async fn active(state: &RelayState, user_id: Uuid) -> ApiResult<Vec<ConsentSummary>> {
     let rows = sqlx::query!(
         r#"
@@ -185,6 +186,8 @@ async fn active(state: &RelayState, user_id: Uuid) -> ApiResult<Vec<ConsentSumma
           LEFT JOIN accounts eacc ON eacc.id = ea.account_id
           LEFT JOIN agent_capabilities cap ON cap.id = c.capability_id
          WHERE c.revoked_at IS NULL AND c.valid_until > now()
+           -- A consent whose requests are used up covers nothing more.
+           AND (c.max_requests IS NULL OR c.used < c.max_requests)
          ORDER BY c.created_at DESC
          LIMIT $2
         "#,

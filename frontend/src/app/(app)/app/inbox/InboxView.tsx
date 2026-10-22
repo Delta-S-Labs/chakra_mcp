@@ -8,6 +8,7 @@ import {
   type Agent,
   type Invocation,
 } from "@/lib/relay";
+import { isHeldInput } from "@/lib/consent";
 import styles from "./inbox.module.css";
 
 export function InboxView({
@@ -280,7 +281,13 @@ function Row({
 
       <div className={styles.section}>
         <div className={styles.sectionTitle}>Input</div>
-        <pre className={styles.pre}>{JSON.stringify(item.input_preview, null, 2)}</pre>
+        {isHeldInput(item.input_preview) ? (
+          <p className={styles.body}>
+            Held for the owner&apos;s approval. The input shows once it&apos;s approved.
+          </p>
+        ) : (
+          <pre className={styles.pre}>{JSON.stringify(item.input_preview, null, 2)}</pre>
+        )}
       </div>
 
       {isOpen ? (
@@ -353,8 +360,9 @@ function StatusBadge({ status }: { status: Invocation["status"] }) {
       ? styles.badgeOk
       : status === "in_progress"
       ? styles.badgeWarn
-      : status === "pending"
+      : status === "pending" || status === "awaiting_consent"
       ? styles.badgeNeutral
       : styles.badgeBad;
-  return <span className={`${styles.badge} ${cls}`}>{status}</span>;
+  const label = status === "awaiting_consent" ? "awaiting approval" : status;
+  return <span className={`${styles.badge} ${cls}`}>{label}</span>;
 }

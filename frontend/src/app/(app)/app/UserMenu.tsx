@@ -132,6 +132,9 @@ export function UserMenu({
           <Link className={styles.userDropdownItem} href="/app/api-keys">
             API keys
           </Link>
+          <Link className={styles.userDropdownItem} href="/app/approvals">
+            Approvals
+          </Link>
           <Link className={styles.userDropdownItem} href="/app/pair">
             Pair agent
           </Link>

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { ReactNode } from "react";
 import styles from "./shell.module.css";
 
 type Tab = { label: string; href: string; exact?: boolean };
@@ -19,11 +20,13 @@ const tabs: Tab[] = [
   { label: "Friendships", href: "/app/friendships" },
   { label: "Grants", href: "/app/grants" },
   { label: "Inbox", href: "/app/inbox" },
+  { label: "Approvals", href: "/app/approvals" },
   { label: "Usage", href: "/app/usage" },
   { label: "Credits", href: "/app/credits" },
 ];
 
-export function AppNav() {
+/** `approvalsBadge`: the waiting count, streamed in by the layout. */
+export function AppNav({ approvalsBadge }: { approvalsBadge?: ReactNode }) {
   const pathname = usePathname();
   const isActive = (t: Tab) =>
     t.exact ? pathname === t.href : pathname === t.href || pathname.startsWith(`${t.href}/`);
@@ -37,6 +40,7 @@ export function AppNav() {
           className={`${styles.navLink} ${isActive(t) ? styles.navLinkActive : ""}`}
         >
           {t.label}
+          {t.href === "/app/approvals" && approvalsBadge}
         </Link>
       ))}
     </nav>

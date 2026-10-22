@@ -1047,3 +1047,127 @@ async fn notices_carry_the_link_once_and_never_the_input(pool: PgPool) {
     assert_eq!(status["status"], "pending");
     assert!(status.get("input").is_none());
 }
+
+// ─── Publishing consent settings ─────────────────────────
+
+#[sqlx::test(migrations = "../migrations")]
+async fn publishing_sets_and_checks_consent(pool: PgPool) {
+    let f = seed_demo(&pool).await;
+    let (alice_user, alice_account) = alice(&pool, &f).await;
+    let carol = member(&pool, alice_account, "member").await;
+    let carol_email: String = sqlx::query_scalar("SELECT email FROM users WHERE id = $1")
+        .bind(carol)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let key = api_key(&pool, alice_user).await;
+    let caps = format!("/v1/agents/{}/capabilities", f.granter_agent_id);
+
+    let (status, cap) = send(
+        &pool,
+        "POST",
+        &caps,
+        &key,
+        Some(json!({
+            "name": "pay_invoice",
+            "consent": {"required": true, "approvers": [carol_email], "max_validity": "7d", "wait": "2h"},
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{cap}");
+    assert_eq!(
+        cap["consent"],
+        json!({"required": true, "approvers": [carol], "max_validity": "7d", "wait": "2h"})
+    );
+    assert_eq!(cap["semantics"], "autonomous");
+
+    // Outsiders see that it asks first, not who decides.
+    let (_, listed) = send(&pool, "GET", &caps, &f.caller_token, None).await;
+    let seen = listed
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["name"] == "pay_invoice")
+        .unwrap()
+        .clone();
+    assert_eq!(seen["consent"]["required"], true);
+    assert!(seen["consent"].get("approvers").is_none());
+
+    // Bad values are refused.
+    for bad in [
+        json!({"approvers": ["nobody@example.test"]}),
+        json!({"max_validity": "2d"}),
+        json!({"wait": "1m"}),
+    ] {
+        let (status, body) = send(
+            &pool,
+            "POST",
+            &caps,
+            &key,
+            Some(json!({"name": "other", "consent": bad})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    }
+
+    // Update: absent fields keep their value; turning it off works.
+    let (status, updated) = send(
+        &pool,
+        "PATCH",
+        &format!("{caps}/{}", cap["id"].as_str().unwrap()),
+        &key,
+        Some(json!({"consent": {"required": false}})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{updated}");
+    assert_eq!(updated["consent"]["required"], false);
+    assert_eq!(updated["consent"]["wait"], "2h");
+
+    // A push-mode agent can't ask first.
+    sqlx::query(
+        "UPDATE agents SET mode = 'push',
+                agent_card_url = 'https://alice.example/.well-known/agent-card.json'
+          WHERE id = $1",
+    )
+    .bind(f.granter_agent_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (status, _) = send(
+        &pool,
+        "POST",
+        &caps,
+        &key,
+        Some(json!({"name": "pushed", "consent": {"required": true}})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+}
+
+#[sqlx::test(migrations = "../migrations")]
+async fn mcp_publish_takes_consent(pool: PgPool) {
+    let f = seed_demo(&pool).await;
+    let (alice_user, _) = alice(&pool, &f).await;
+    let key = api_key(&pool, alice_user).await;
+    let published = mcp(
+        &pool,
+        &key,
+        "publish_capability",
+        json!({
+            "agent_id": f.granter_agent_id,
+            "name": "book_room",
+            "consent": {"required": true, "max_validity": "1d"},
+        }),
+    )
+    .await;
+    assert_eq!(published["consent"]["required"], true);
+    assert_eq!(published["consent"]["max_validity"], "1d");
+    assert_eq!(published["consent"]["wait"], "1d");
+    let required: bool = sqlx::query_scalar(
+        "SELECT consent_required FROM agent_capabilities WHERE name = 'book_room'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(required);
+}

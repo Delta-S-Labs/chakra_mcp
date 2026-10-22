@@ -30,6 +30,52 @@ use crate::client::ApiClient;
 use crate::print;
 use crate::templates::{get_template, known_templates};
 
+/// Owner consent settings, on `add` and `update`.
+#[derive(clap::Args, Debug, Default, Clone)]
+pub struct ConsentFlags {
+    /// Hold every request until one of the agent's owners approves it on
+    /// the web; the agent gets a notice with the link (`inbox notices`).
+    /// Pull-mode agents only.
+    #[arg(long, conflicts_with = "no_ask_first")]
+    pub ask_first: bool,
+    /// Stop asking first. Requests already held still wait for a decision.
+    #[arg(long)]
+    pub no_ask_first: bool,
+    /// Who may approve: a member's email or user id (repeat for more).
+    /// Without it, the account's owners and admins decide.
+    #[arg(long = "approver")]
+    pub approvers: Vec<String>,
+    /// The longest standing consent an approver may grant.
+    #[arg(long, value_parser = ["once", "1h", "1d", "7d", "30d"])]
+    pub max_consent: Option<String>,
+    /// How long a held request waits for a decision: `<n>m`, `<n>h` or
+    /// `<n>d`, from 5m to 7d (default 24h).
+    #[arg(long)]
+    pub consent_wait: Option<String>,
+}
+
+impl ConsentFlags {
+    /// The `consent` object for the request body, if any flag was given.
+    pub fn to_json(&self) -> Option<Value> {
+        let mut consent = serde_json::Map::new();
+        if self.ask_first {
+            consent.insert("required".into(), Value::Bool(true));
+        } else if self.no_ask_first {
+            consent.insert("required".into(), Value::Bool(false));
+        }
+        if !self.approvers.is_empty() {
+            consent.insert("approvers".into(), json!(self.approvers));
+        }
+        if let Some(v) = &self.max_consent {
+            consent.insert("max_validity".into(), json!(v));
+        }
+        if let Some(w) = &self.consent_wait {
+            consent.insert("wait".into(), json!(w));
+        }
+        (!consent.is_empty()).then_some(Value::Object(consent))
+    }
+}
+
 #[derive(Subcommand, Debug)]
 pub enum Cmd {
     /// List the capabilities published by one of your agents.
@@ -91,6 +137,8 @@ pub enum Cmd {
         /// month, resets on the 1st.
         #[arg(long)]
         monthly_quota: Option<i32>,
+        #[command(flatten)]
+        consent: ConsentFlags,
     },
     /// List the reserved capability templates available with
     /// `add --template <id>`. Names are stable across SDK + CLI;
@@ -128,6 +176,8 @@ pub enum Cmd {
         /// public-invoke; otherwise updates the cap.
         #[arg(long)]
         monthly_quota: Option<i32>,
+        #[command(flatten)]
+        consent: ConsentFlags,
     },
     /// Soft-delete a capability. Existing grants are revoked.
     Delete {
@@ -168,6 +218,7 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             semantics,
             public_invoke,
             monthly_quota,
+            consent,
         } => {
             let mut payload = if let Some(tpl_id) = template {
                 // Template path: load the canonical body, then apply
@@ -221,6 +272,9 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             if let Some(q) = monthly_quota {
                 payload["public_monthly_quota_per_agent"] = json!(q);
             }
+            if let Some(c) = consent.to_json() {
+                payload["consent"] = c;
+            }
             let body: Value = api
                 .post_relay(&format!("/v1/agents/{agent}/capabilities"), &payload)
                 .await?;
@@ -251,6 +305,7 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             public_invoke,
             no_public_invoke,
             monthly_quota,
+            consent,
         } => {
             let mut payload = serde_json::Map::new();
             if let Some(d) = description {
@@ -275,9 +330,12 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             if let Some(q) = monthly_quota {
                 payload.insert("public_monthly_quota_per_agent".into(), json!(q));
             }
+            if let Some(c) = consent.to_json() {
+                payload.insert("consent".into(), c);
+            }
             if payload.is_empty() {
                 return Err(anyhow!(
-                    "nothing to update — pass at least one of --description, --visibility, --input-schema, --output-schema, --public-invoke, --no-public-invoke, --monthly-quota"
+                    "nothing to update — pass at least one of --description, --visibility, --input-schema, --output-schema, --public-invoke, --no-public-invoke, --monthly-quota, --ask-first, --no-ask-first, --approver, --max-consent, --consent-wait"
                 ));
             }
             let body: Value = api
@@ -294,5 +352,36 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
                 .await?;
             print(&json!({ "deleted": true, "agent_id": agent, "capability_id": cap }))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn consent_flags_build_the_consent_object() {
+        assert_eq!(ConsentFlags::default().to_json(), None);
+        let flags = ConsentFlags {
+            ask_first: true,
+            approvers: vec!["ada@example.test".into()],
+            max_consent: Some("7d".into()),
+            consent_wait: Some("2h".into()),
+            ..ConsentFlags::default()
+        };
+        assert_eq!(
+            flags.to_json(),
+            Some(json!({
+                "required": true,
+                "approvers": ["ada@example.test"],
+                "max_validity": "7d",
+                "wait": "2h",
+            }))
+        );
+        let off = ConsentFlags {
+            no_ask_first: true,
+            ..ConsentFlags::default()
+        };
+        assert_eq!(off.to_json(), Some(json!({"required": false})));
     }
 }
