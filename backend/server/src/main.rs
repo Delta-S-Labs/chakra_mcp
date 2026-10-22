@@ -280,6 +280,10 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
     if app_state.upsert_secret.is_none() {
         tracing::warn!("UPSERT_SHARED_SECRET is not set: Google/GitHub sign-in is disabled");
     }
+    // Usage events older than this are deleted (USAGE_RETENTION_DAYS, default
+    // 90 days; 0 keeps them). A bad value stops startup.
+    let usage_retention =
+        chakramcp_relay::retention::usage_retention_days(|key| std::env::var(key).ok())?;
     let relay_state = RelayState::new(pool, cfg.shared.clone())
         .with_rate_limiter(chakramcp_relay::limits::RateLimiter::from_redis_url(
             cfg.redis_url.as_deref(),
@@ -292,11 +296,15 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
         ))
         .with_credit_cache(credit_cache)
         .with_featured_account(std::env::var("DISCOVERY_FEATURED_ACCOUNT").ok())
+        .with_usage_retention_days(usage_retention)
         .with_compliance(chakramcp_relay::compliance::ComplianceChecker::from_env());
     relay_state
         .heartbeats
         .clone()
         .spawn_flusher(relay_state.db.clone());
+    if let Some(days) = usage_retention {
+        chakramcp_relay::retention::spawn_usage_pruner(relay_state.db.clone(), days);
+    }
     // Usage metering runs on a background writer so requests never wait on it.
     let usage = chakramcp_relay::events::UsageRecorder::spawn(relay_state.clone());
     let relay_state = relay_state.with_usage_recorder(usage);
