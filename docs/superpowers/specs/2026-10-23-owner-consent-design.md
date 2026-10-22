@@ -104,8 +104,14 @@ truncation marker (`truncate_for_audit`). A2A already refuses bodies over 16 KB 
    - `inbox_bridge::park` (A2A, ~127). It stores the raw SendMessage `params` as the
      input.
 
-   **All three get the same consent CTE**, built by one shared SQL fragment so that
-   no path can skip it. For a consent-required capability, the CTE is extended:
+   **All three get the same consent CTE**, so that no path can skip it.
+   - `sqlx::query!` accepts only string literals, optionally joined with `+`, so a
+     `const` or `format!` fragment won't compile.
+   - Instead, a `macro_rules!` wrapper splices the CTE text into each call's literal.
+     The queries stay checked, and stay in the offline cache that the production
+     build needs.
+
+   For a consent-required capability, the CTE is extended:
    - **Use a covering consent.** One conditional statement:
      `UPDATE consents SET used = used + 1 WHERE capability_id = … AND
      grantee_agent_id = … AND revoked_at IS NULL AND valid_until > now() AND
@@ -203,7 +209,9 @@ claimed.
 - **Revoking a grant.** The cascade in `grants.rs` (~482) rejects the grant's
   `pending` invocations. It also rejects `awaiting_consent` ones and cancels their
   consent requests.
-- **Ending a friendship.** Its grants are revoked, so the same cascade applies.
+- **Friendships.** Nothing can end an accepted friendship today (`friendships.rs`
+  `cancel` only works on proposed ones), so there is no cascade to add. If a
+  friendship stops being accepted, the approval re-check (§4.4) catches it.
 - **Reviews.** Eligibility in `reviews.rs` (~243) counts any invocation that isn't
   `rejected`. It must also exclude `awaiting_consent`, so a held request doesn't let
   the requester review an agent whose owner never approved the call.
@@ -271,9 +279,10 @@ production yet, so this is just enough to notice a future rotation.
 | `iat`, `exp` | For `request`: `iat` + 24 hours. For `reply`: `iat` + 30 days. |
 
 **Minting.** Each token is minted once and stored on its consent request (`token`).
-- **Request tokens** are minted when an approver approves. If a standing consent
-  covered the request, the token is minted when the inbox first delivers the
-  invocation, with one extra write that only consent-covered invocations pay.
+- **Request tokens** are minted when the inbox first delivers the invocation, whether
+  an approver approved it or a standing consent covered it. That way a pull agent
+  that polls rarely never receives an already-expired token. It costs one extra
+  write, paid only by consent-required invocations.
 - **Reply tokens** are minted at release.
 
 Minting never happens on the invocation path.
@@ -359,8 +368,10 @@ offline to confirm that this exact input was approved.
   human-in-the-loop handler receives `approve_url` after posting a draft.
 - **TypeScript and Python:** `verifyConsentToken(token, {jwksUrl, value?})`. It checks
   `typ`, the signature, the expiry and, when `value` is given, the JCS SHA-256.
-- **Versions:** TypeScript and Python 0.5.0, Go and Rust 0.3.0. These are breaking
-  changes (§11).
+- **Versions.** Rust 0.3.0 ships with PR 1, before gate 1 goes live (§11). It adds
+  the new statuses, a `#[serde(other)] Unknown` variant, and `#[non_exhaustive]` on
+  the status enum. With PR 4, the full SDK work ships as TypeScript and Python 0.5.0,
+  Go v0.3.0 and Rust 0.4.0. These are breaking changes (§11).
 
 **CLI**
 - `invoke --consent <once|Nh|Nd> --consent-max N --purpose "…"`
@@ -471,8 +482,8 @@ follow-up migration that rejects any remaining `awaiting_consent` rows.
     loses the race sees the outcome.
   - Consent uses are taken by the conditional update in §4.1.
   - A draft approval checks `draft_sha256` (§5.3).
-- **Revocation** stops future approvals at once. Invocations already delivered are
-  unaffected.
+- **Revocation.** Revoking a consent stops it covering new requests at once.
+  Requests it already admitted are unaffected, whether delivered or not.
 - **Privacy.**
   - Held input is hidden from the target (§4.3), and is shown only to approvers on
     the approval page.
@@ -501,8 +512,9 @@ follow-up migration that rejects any remaining `awaiting_consent` rows.
       invocation was created, so retrying creates duplicate consent requests;
     - any list, get or poll that includes an `awaiting_consent` row.
 
-    Rust users need 0.3.0, which adds the statuses and a `#[serde(other)] Unknown`
-    variant so that future statuses don't break it. Go 0.3.0 reads the new fields.
+    Rust 0.3.0 adds the statuses and a `#[serde(other)] Unknown` variant, so that
+    future statuses don't break it. It is released with PR 1, before any capability
+    can require consent, and Rust users need it. Go v0.3.0 reads the new fields.
   - The release notes say all this.
 - **Push-mode agents.**
   - The relay forwards A2A calls to them at once, so it can't hold a call or a reply.
@@ -578,13 +590,15 @@ the PR that ships its web page.
    - the expiry worker;
    - credits at approval;
    - the cascades in §4.6;
-   - the push-mode refusal.
+   - the push-mode refusal;
+   - Rust SDK 0.3.0 with the new statuses (§8), released before PR 2 merges.
 
    The publish and update APIs don't accept `consent` yet, so `consent.required` can
    only be set by tests.
 2. **Gate 1 live.** The web side and the inputs that turn it on:
-   - web: the approval page, the Approvals page, the dashboard banner, and "Ask before
-     delivering requests" in capability settings;
+   - web: the approval page, the Approvals page, the dashboard banner, and the
+     Approvals section of capability settings (approvers, wait, and "Ask before
+     delivering requests");
    - `consent` on REST, MCP and CLI publish and update;
    - `consent_terms` on REST, MCP, CLI and A2A invoke;
    - `GET /v1/inbox/notices`, MCP `pull_notices` and `consent_status`, and CLI
@@ -592,10 +606,10 @@ the PR that ships its web page.
 3. **Gate 2, all at once,** so `human_in_loop` calls never break in production:
    - `submit_result`, shared by REST and MCP, and verified `human_in_loop`;
    - the draft view on the approval page;
-   - the web inbox fix and approvers in the Approvals section of capability settings;
+   - the web inbox fix, and "A person writes the reply" in the Approvals section;
    - CLI output with the confirmation link.
 4. **SDKs, examples and docs:**
-   - SDKs: TypeScript and Python first, then the Go and Rust types.
+   - SDKs: TypeScript and Python first, then Go and the rest of Rust.
    - The HITL examples: `examples/workers/pull-worker-with-hitl.ts`,
      `pull_worker_with_hitl.py` and `examples/voice-agent-demo`.
    - Docs: a concepts section ("Consent and verified human-in-the-loop"), the MCP,
