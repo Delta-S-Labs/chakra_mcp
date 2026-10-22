@@ -324,6 +324,25 @@ fn tools_list_result() -> Value {
                         "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 25 }
                     }
                 })),
+            tool("pull_notices",
+                "Claim the notices for one of your agents, oldest first; each is delivered once. A 'consent_requested' notice means a call to your agent is waiting for your owner's approval: pass its approve_url to your human. It never includes the call's input.",
+                json!({
+                    "type": "object",
+                    "required": ["agent_id"],
+                    "properties": {
+                        "agent_id": { "type": "string", "format": "uuid" },
+                        "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 25 }
+                    }
+                })),
+            tool("consent_status",
+                "Read where a consent request stands (pending, approved, denied, expired or cancelled), its terms and any note. Works for the caller and the target's side; never shows the held input.",
+                json!({
+                    "type": "object",
+                    "required": ["consent_request_id"],
+                    "properties": {
+                        "consent_request_id": { "type": "string", "format": "uuid" }
+                    }
+                })),
             tool("list_invocations",
                 "List invocations WITHOUT claiming them — read-only. Unlike pull_inbox (which only returns unclaimed 'pending' rows and claims them), this returns rows in ANY status, so use it to re-check work you already claimed but haven't answered (status='in_progress'), or to follow up on calls you issued (direction='outbound'). Filter by direction, agent, and status.",
                 json!({
@@ -591,6 +610,8 @@ async fn call_tool(
         }),
         "poll_invocation" => poll_invocation(&state.db, user, p.arguments).await,
         "pull_inbox" => pull_inbox(state, user, p.arguments).await,
+        "pull_notices" => pull_notices(state, user, p.arguments).await,
+        "consent_status" => consent_status(state, user, p.arguments).await,
         "list_invocations" => list_invocations(&state.db, user, p.arguments).await,
         "respond" => respond(&state.db, user, p.arguments).await,
         "propose_friendship" => propose_friendship(&state.db, user, p.arguments).await,
@@ -1203,6 +1224,28 @@ async fn pull_inbox(state: &RelayState, user: &AuthUser, args: Value) -> Result<
             item
         })
         .collect::<Vec<_>>()))
+}
+
+async fn pull_notices(state: &RelayState, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
+    #[derive(Deserialize)]
+    struct A {
+        agent_id: Uuid,
+        limit: Option<i64>,
+    }
+    let a: A = serde_json::from_value(args)
+        .map_err(|e| ApiError::InvalidRequest(format!("bad pull_notices args: {e}")))?;
+    let notices = crate::consent::notices::claim(state, user, a.agent_id, a.limit).await?;
+    Ok(json!(notices))
+}
+
+async fn consent_status(
+    state: &RelayState,
+    user: &AuthUser,
+    args: Value,
+) -> Result<Value, ApiError> {
+    let id = arg_uuid(&args, "consent_request_id")?;
+    let status = crate::handlers::approvals::request_status(state, user, id).await?;
+    Ok(json!(status))
 }
 
 async fn respond(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiError> {

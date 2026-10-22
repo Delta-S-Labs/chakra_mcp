@@ -5,6 +5,8 @@
 //!   MCP clients;
 //! - `/signup`, while sign-up is open;
 //! - `/app/pair` and `/qr`: approving a device pairing, and its QR handoff;
+//! - `/app/approvals/{id}`: approving a request held for the owner's
+//!   consent;
 //! - `POST /logout`.
 //!
 //! They sit on the same paths as chakramcp.com's web UI, so the discovery
@@ -17,6 +19,7 @@
 //! tokens plus an `Origin` check on every form post (`csrf`), and strict
 //! response headers, same-origin `return_to` and `/qr` (`security`).
 
+mod approvals;
 mod authorize;
 mod csrf;
 mod pair;
@@ -44,6 +47,10 @@ pub fn router() -> Router<AppState> {
         )
         .route("/signup", get(signup::show).post(signup::submit))
         .route("/app/pair", get(pair::show).post(pair::submit))
+        .route(
+            "/app/approvals/{id}",
+            get(approvals::show).post(approvals::submit),
+        )
         .route("/qr", get(qr::show))
         .route("/logout", post(session::logout))
         .route("/assets/pages.css", get(security::stylesheet))

@@ -45,7 +45,8 @@ impl Validity {
         }
     }
 
-    fn parse(raw: &str) -> Result<Self, String> {
+    /// Parse `once`, `<n>h` or `<n>d`.
+    pub fn parse(raw: &str) -> Result<Self, String> {
         let raw = raw.trim();
         if raw == "once" {
             return Ok(Validity::Once);
@@ -152,6 +153,20 @@ impl ConsentTerms {
         .normalized()
     }
 
+    /// In words, for approval pages: "Just this request", "For 7 days",
+    /// "For 7 days, up to 5 requests".
+    pub fn describe(&self) -> String {
+        let window = match self.valid_for {
+            Validity::Once => return "Just this request".to_owned(),
+            Validity::Secs(s) => describe_window(s),
+        };
+        match self.max_requests {
+            Some(1) => format!("For {window}, 1 request"),
+            Some(n) => format!("For {window}, up to {n} requests"),
+            None => format!("For {window}"),
+        }
+    }
+
     /// Whether `self` (approved) stays within `requested` and the
     /// publisher's limit: never longer, never more requests, same purpose.
     pub fn within(&self, requested: &ConsentTerms, max_validity_secs: i32) -> bool {
@@ -169,6 +184,48 @@ impl ConsentTerms {
             (_, None) => true,
             (Some(approved), Some(asked)) => approved <= asked,
             (None, Some(_)) => false,
+        }
+    }
+}
+
+/// "1 hour", "36 hours", "1 day", "7 days".
+fn describe_window(secs: i64) -> String {
+    let (n, unit) = if secs % DAY == 0 {
+        (secs / DAY, "day")
+    } else {
+        (secs / HOUR, "hour")
+    };
+    if n == 1 {
+        format!("1 {unit}")
+    } else {
+        format!("{n} {unit}s")
+    }
+}
+
+/// The validities an approver may choose for a request asking `requested`
+/// on a capability allowing at most `max_validity_secs`, longest first: the
+/// request itself, the standard shorter windows, then "once".
+pub fn narrowing_options(requested: Validity, max_validity_secs: i32) -> Vec<Validity> {
+    let ceiling = requested.secs().min(i64::from(max_validity_secs));
+    let mut options: Vec<Validity> = Vec::new();
+    if ceiling > 0 {
+        options.push(Validity::Secs(ceiling));
+        for secs in [30 * DAY, 7 * DAY, DAY, HOUR] {
+            if secs < ceiling {
+                options.push(Validity::Secs(secs));
+            }
+        }
+    }
+    options.push(Validity::Once);
+    options
+}
+
+impl Validity {
+    /// How long, for a choice on an approval page.
+    pub fn label(self) -> String {
+        match self {
+            Validity::Once => "Just this request".to_owned(),
+            Validity::Secs(s) => describe_window(s),
         }
     }
 }
@@ -241,6 +298,34 @@ mod tests {
         let single = terms("30d", Some(5)).capped(0);
         assert_eq!(single.valid_for, Validity::Once);
         assert_eq!(single.max_requests, None);
+    }
+
+    #[test]
+    fn describes_terms_in_words() {
+        assert_eq!(terms("once", None).describe(), "Just this request");
+        assert_eq!(terms("7d", None).describe(), "For 7 days");
+        assert_eq!(
+            terms("1d", Some(5)).describe(),
+            "For 1 day, up to 5 requests"
+        );
+        assert_eq!(terms("36h", Some(1)).describe(), "For 36 hours, 1 request");
+    }
+
+    #[test]
+    fn narrowing_options_never_exceed_the_request_or_the_limit() {
+        let d: i32 = 86400;
+        let opts = |asked: &str, max: i32| {
+            narrowing_options(Validity::parse(asked).unwrap(), max)
+                .into_iter()
+                .map(|v| v.to_string())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(opts("30d", 7 * d), ["7d", "1d", "1h", "once"]);
+        assert_eq!(opts("36h", 30 * d), ["36h", "1d", "1h", "once"]);
+        assert_eq!(opts("7d", 30 * d), ["7d", "1d", "1h", "once"]);
+        assert_eq!(opts("once", 30 * d), ["once"]);
+        assert_eq!(opts("7d", 0), ["once"]);
+        assert_eq!(Validity::Secs(3600).label(), "1 hour");
     }
 
     #[test]

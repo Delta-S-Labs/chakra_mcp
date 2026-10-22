@@ -1,0 +1,42 @@
+{% extends "pages/base.html" %}
+{% block content %}
+<h1>{{ heading }}</h1>
+<p class="lead"><strong>{{ requester }}</strong>{% if verified %} <span class="muted">(verified)</span>{% endif %} asks to use <strong>{{ capability }}</strong> on your agent <strong>{{ target }}</strong>.</p>
+<dl class="facts">
+  <dt>Who's asking</dt><dd>{{ requester }}{% if let Some(account) = requester_account %} <span class="muted">{{ account }}</span>{% endif %}</dd>
+  <dt>What</dt><dd>{{ capability }}{% if let Some(description) = capability_description %}<br><span class="muted">{{ description }}</span>{% endif %}</dd>
+  {% if let Some(purpose) = purpose %}<dt>Why</dt><dd>{{ purpose }}</dd>{% endif %}
+  {% if let Some(grant_purpose) = grant_purpose %}<dt>Your grant says</dt><dd>{{ grant_purpose }}</dd>{% endif %}
+  <dt>For how long</dt><dd>{{ asked }}</dd>
+  <dt>{% if pending %}Decide by{% else %}Asked on{% endif %}</dt><dd>{% if pending %}{{ expires_at }}{% else %}{{ created_at }}{% endif %}</dd>
+</dl>
+{% if !input.is_empty() %}
+<h2 class="aside">What they're sending</h2>
+<dl class="facts">
+  {% for field in input %}<dt>{{ field.name }}</dt><dd><code>{{ field.value }}</code></dd>
+  {% endfor %}
+</dl>
+{% endif %}
+{% if let Some(error) = error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+{% if pending && may_decide %}
+<form method="post" action="{{ action }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <fieldset>
+    <legend>Approve for</legend>
+    {% for option in validity %}<label class="choice"><input type="radio" name="valid_for" value="{{ option.value }}"{% if option.checked %} checked{% endif %}> {{ option.label }}</label>
+    {% endfor %}
+    {% if standing_allowed %}<label>At most this many requests <span class="muted">{% if let Some(asked) = asked_max %}up to {{ asked }}{% else %}blank for no limit{% endif %}</span><input name="max_requests" inputmode="numeric" value="{{ max_requests }}"></label>{% endif %}
+  </fieldset>
+  <label>Note if you deny <span class="muted">the requester sees it</span><input name="note" maxlength="500" value="{{ note }}"></label>
+  <div class="actions">
+    <button type="submit" name="step" value="approve">Approve</button>
+    <button type="submit" name="step" value="deny" class="secondary">Deny</button>
+  </div>
+</form>
+{% else if pending %}
+<p>Only {{ approvers }} can decide on this request.</p>
+{% else %}
+<p>{{ outcome }}</p>
+{% endif %}
+<p class="muted">Signed in as {{ user_email }}.</p>
+{% endblock %}

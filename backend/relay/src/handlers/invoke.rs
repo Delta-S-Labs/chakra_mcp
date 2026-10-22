@@ -1309,6 +1309,20 @@ pub async fn inbox(
     ))
 }
 
+// ─── GET /v1/inbox/notices?agent_id=X[&limit=N] ──────────
+/// Claim the agent's undelivered notices, oldest first: e.g. a request
+/// waiting for its owner's approval, with the link to pass on (owner
+/// consent §4.2). Each notice is delivered once.
+pub async fn inbox_notices(
+    State(state): State<RelayState>,
+    user: AuthUser,
+    Query(q): Query<InboxQuery>,
+) -> ApiResult<Json<Vec<crate::consent::notices::Notice>>> {
+    Ok(Json(
+        crate::consent::notices::claim(&state, &user, q.agent_id, q.limit).await?,
+    ))
+}
+
 // ─── POST /v1/invocations/{id}/result ────────────────────
 //
 // Returns `Response` (rather than `ApiResult<Json<InvocationDto>>`) so

@@ -368,7 +368,7 @@ fn signin(
             title: "Sign in".into(),
             host: origin.host(),
             lead: format!("to continue to {}", request.client.client_name),
-            action: "/oauth/authorize",
+            action: "/oauth/authorize".into(),
             csrf: csrf.to_owned(),
             hidden: request.hidden(true),
             email: email.to_owned(),

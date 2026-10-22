@@ -28,6 +28,15 @@ pub enum Cmd {
     },
     /// Show the current state of one invocation.
     Status { invocation: String },
+    /// Claim your agent's notices, oldest first; each is shown once. A
+    /// `consent_requested` notice means a call is waiting for your approval:
+    /// open its `approve_url`, signed in, to approve or deny it.
+    Notices {
+        #[arg(long)]
+        agent: String,
+        #[arg(long, default_value_t = 25)]
+        limit: i64,
+    },
 }
 
 pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
@@ -71,6 +80,12 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
         Cmd::Status { invocation } => {
             let v: Value = api
                 .get_relay(&format!("/v1/invocations/{invocation}"))
+                .await?;
+            print(&v)
+        }
+        Cmd::Notices { agent, limit } => {
+            let v: Value = api
+                .get_relay(&format!("/v1/inbox/notices?agent_id={agent}&limit={limit}"))
                 .await?;
             print(&v)
         }

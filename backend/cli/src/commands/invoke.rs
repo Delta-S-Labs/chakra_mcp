@@ -74,6 +74,37 @@ pub struct SendArgs {
     /// Poll until the invocation reaches a terminal status, then print the row.
     #[arg(long)]
     pub wait: bool,
+    /// For a capability that asks its owner first: how long you're asking
+    /// to be allowed to call it without asking again — `once` (the
+    /// default), `<n>h` or `<n>d`. The owner may approve less.
+    #[arg(long)]
+    pub consent: Option<String>,
+    /// With `--consent`: the most calls the approval should cover.
+    #[arg(long)]
+    pub consent_max: Option<i32>,
+    /// Why you're asking, shown to the owner when they decide.
+    #[arg(long)]
+    pub purpose: Option<String>,
+}
+
+impl SendArgs {
+    /// `consent_terms` for the invoke body, if any consent flag was given.
+    fn consent_terms(&self) -> Option<Value> {
+        if self.consent.is_none() && self.consent_max.is_none() && self.purpose.is_none() {
+            return None;
+        }
+        let mut terms = json!({});
+        if let Some(valid_for) = &self.consent {
+            terms["valid_for"] = json!(valid_for);
+        }
+        if let Some(max) = self.consent_max {
+            terms["max_requests"] = json!(max);
+        }
+        if let Some(purpose) = &self.purpose {
+            terms["purpose"] = json!(purpose);
+        }
+        Some(terms)
+    }
 }
 
 #[derive(Subcommand, Debug)]
@@ -177,11 +208,12 @@ async fn legacy_send(send: SendArgs, api: &ApiClient) -> Result<()> {
     // Exactly one of --grant (trusted) or --capability (public-invoke).
     // Clap's `conflicts_with` on --grant already rejects both at the
     // arg layer; this is the "neither" guard with a useful message.
+    let consent_terms = send.consent_terms();
     let as_agent = send
         .as_agent
         .ok_or_else(|| anyhow::anyhow!("--as is required"))?;
     let input = read_json_arg(&send.input)?;
-    let body = match (send.grant, send.capability) {
+    let mut body = match (send.grant, send.capability) {
         (Some(grant), None) => json!({
             "grant_id": grant,
             "grantee_agent_id": as_agent,
@@ -205,7 +237,18 @@ async fn legacy_send(send: SendArgs, api: &ApiClient) -> Result<()> {
             ));
         }
     };
+    if let Some(terms) = consent_terms {
+        body["consent_terms"] = terms;
+    }
     let resp: Value = api.post_relay("/v1/invoke", &body).await?;
+    if resp.get("status").and_then(Value::as_str) == Some("awaiting_consent") {
+        eprintln!(
+            "Waiting for the owner's approval (request {}). Their agent gets the link to approve it.",
+            resp.get("consent_request_id")
+                .and_then(Value::as_str)
+                .unwrap_or("?")
+        );
+    }
 
     if !send.wait {
         return print(&resp);
@@ -829,6 +872,30 @@ pub(crate) async fn ensure_run(e: EnsureArgs, api: &ApiClient) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn consent_flags_become_consent_terms() {
+        let args = Args::try_parse_from([
+            "invoke",
+            "--grant",
+            "g",
+            "--as",
+            "a",
+            "--consent",
+            "7d",
+            "--consent-max",
+            "5",
+            "--purpose",
+            "weekly sync",
+        ])
+        .unwrap();
+        assert_eq!(
+            args.send.consent_terms(),
+            Some(json!({"valid_for": "7d", "max_requests": 5, "purpose": "weekly sync"}))
+        );
+        let plain = Args::try_parse_from(["invoke", "--grant", "g", "--as", "a"]).unwrap();
+        assert_eq!(plain.send.consent_terms(), None);
+    }
 
     #[test]
     fn peer_ref_account_form() {

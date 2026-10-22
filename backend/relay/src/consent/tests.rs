@@ -966,3 +966,84 @@ async fn an_agent_that_asks_first_cant_become_push_mode(pool: PgPool) {
         .unwrap()
         .contains("ask its owner"));
 }
+
+// ─── Notices and status ──────────────────────────────────
+
+/// One MCP tool call's result payload.
+async fn mcp(pool: &PgPool, token: &str, name: &str, arguments: Value) -> Value {
+    let (_, body) = send(
+        pool,
+        "POST",
+        "/mcp",
+        token,
+        Some(json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": { "name": name, "arguments": arguments },
+        })),
+    )
+    .await;
+    let result = &body["result"];
+    assert_eq!(result["isError"], json!(false), "{body}");
+    result.get("structuredContent").cloned().unwrap_or_else(|| {
+        serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap()
+    })
+}
+
+#[sqlx::test(migrations = "../migrations")]
+async fn notices_carry_the_link_once_and_never_the_input(pool: PgPool) {
+    let f = seed_demo(&pool).await;
+    ask_first(&pool, &f, 0).await;
+    let (alice_user, _) = alice(&pool, &f).await;
+    let alice_key = api_key(&pool, alice_user).await;
+    let (_, req) = hold(&pool, &f, Some(json!({"purpose": "weekly sync"}))).await;
+    let path = format!("/v1/inbox/notices?agent_id={}", f.granter_agent_id);
+
+    // Only the target's side may pull them.
+    assert_eq!(
+        send(&pool, "GET", &path, &f.caller_token, None).await.0,
+        StatusCode::FORBIDDEN
+    );
+
+    let (status, notices) = send(&pool, "GET", &path, &alice_key, None).await;
+    assert_eq!(status, StatusCode::OK, "{notices}");
+    let notice = &notices[0];
+    assert_eq!(notice["kind"], "consent_requested");
+    let request = &notice["consent_request"];
+    assert_eq!(request["id"], json!(req));
+    assert_eq!(request["capability_name"], "propose_slots");
+    assert_eq!(request["requester"]["agent_display_name"], "Bob Caller");
+    assert_eq!(request["terms"]["purpose"], "weekly sync");
+    assert_eq!(
+        request["approve_url"],
+        format!("http://localhost:3000/app/approvals/{req}")
+    );
+    assert!(
+        !notices.to_string().contains("duration_min"),
+        "never the input"
+    );
+    // Delivered once.
+    assert_eq!(
+        send(&pool, "GET", &path, &alice_key, None).await.1,
+        json!([])
+    );
+
+    // MCP: the same notices, and the request's status for the caller.
+    let (_, req2) = hold(&pool, &f, None).await;
+    let pulled = mcp(
+        &pool,
+        &alice_key,
+        "pull_notices",
+        json!({"agent_id": f.granter_agent_id}),
+    )
+    .await;
+    assert_eq!(pulled[0]["consent_request"]["id"], json!(req2));
+    let status = mcp(
+        &pool,
+        &f.caller_token,
+        "consent_status",
+        json!({"consent_request_id": req2}),
+    )
+    .await;
+    assert_eq!(status["status"], "pending");
+    assert!(status.get("input").is_none());
+}

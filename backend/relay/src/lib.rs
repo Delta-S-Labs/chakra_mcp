@@ -203,6 +203,7 @@ pub fn router(state: RelayState) -> Router {
             get(handlers::approvals::status),
         )
         .route("/v1/inbox", get(handlers::invoke::inbox))
+        .route("/v1/inbox/notices", get(handlers::invoke::inbox_notices))
         .route("/v1/invocations", get(handlers::invoke::list))
         .route("/v1/invocations/{id}", get(handlers::invoke::get_one))
         .route(

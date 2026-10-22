@@ -1,0 +1,192 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH claimed AS (\n            UPDATE agent_notices n\n               SET delivered_at = now()\n             WHERE n.id IN (\n                   SELECT id FROM agent_notices\n                    WHERE agent_id = $1 AND delivered_at IS NULL\n                    ORDER BY created_at\n                    LIMIT $2\n                    FOR UPDATE SKIP LOCKED)\n            RETURNING n.id, n.kind, n.payload, n.created_at\n        )\n        SELECT c.id, c.kind, c.created_at,\n               cr.id AS \"cr_id?\", cr.invocation_id AS \"cr_invocation_id?\",\n               cr.status AS \"cr_status?\", cr.terms AS \"cr_terms?\",\n               cr.expires_at AS \"cr_expires_at?\", cr.capability_id AS \"cr_capability_id?\",\n               cr.grantee_agent_id AS \"requester_agent_id?\",\n               cr.grantee_account_id AS \"requester_account_id?\",\n               cap.name AS \"capability_name?\",\n               ea.display_name AS \"requester_display_name?\",\n               eacc.display_name AS \"requester_account_display_name?\",\n               (eacc.verified_at IS NOT NULL) AS \"requester_verified?\"\n          FROM claimed c\n          LEFT JOIN consent_requests cr\n                 ON c.kind = 'consent_requested'\n                AND cr.id = (c.payload->>'consent_request_id')::uuid\n          LEFT JOIN agent_capabilities cap ON cap.id = cr.capability_id\n          LEFT JOIN agents ea ON ea.id = cr.grantee_agent_id\n          LEFT JOIN accounts eacc ON eacc.id = cr.grantee_account_id\n         ORDER BY c.created_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "agent_notices",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_notices",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "agent_notices",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "cr_id?",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "cr_invocation_id?",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "invocation_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "cr_status?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "cr_terms?",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "terms"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "cr_expires_at?",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "expires_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "cr_capability_id?",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "capability_id"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "requester_agent_id?",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "grantee_agent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "requester_account_id?",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "grantee_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "capability_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "requester_display_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "requester_account_display_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "requester_verified?",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "a0ef768009c0c04527b31b312e9c220a2d4021588a53b802b7d44e886efbfffb"
+}

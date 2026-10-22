@@ -781,6 +781,7 @@ async fn managed_servers_serve_no_pages(pool: PgPool) {
         "/oauth/authorize",
         "/signup",
         "/app/pair",
+        "/app/approvals/0199f1f0-0000-7000-8000-000000000000",
         "/qr",
         "/assets/pages.css",
     ] {
@@ -790,6 +791,295 @@ async fn managed_servers_serve_no_pages(pool: PgPool) {
             "{path}"
         );
     }
+}
+
+/// A request from another account's agent to Ada's capability, held for
+/// her approval: (request id, invocation id). As the relay's enqueue writes
+/// them, with a grant and an accepted friendship behind it.
+async fn held_request(pool: &PgPool, ada: Uuid, terms: Value) -> (Uuid, Uuid) {
+    let ada_account: Uuid =
+        sqlx::query_scalar("SELECT account_id FROM account_memberships WHERE user_id = $1")
+            .bind(ada)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    let (other_user, other_account) = (Uuid::now_v7(), Uuid::now_v7());
+    sqlx::query(
+        "INSERT INTO users (id, email, display_name, password_hash) VALUES ($1, $2, 'Bob', 'x')",
+    )
+    .bind(other_user)
+    .bind(format!("bob-{other_user}@example.test"))
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO accounts (id, slug, display_name, account_type, owner_user_id)
+         VALUES ($1, $2, 'Bob Co', 'individual', $3)",
+    )
+    .bind(other_account)
+    .bind(format!("bob-{other_account}"))
+    .bind(other_user)
+    .execute(pool)
+    .await
+    .unwrap();
+    let (target, caller, cap, grant) = (
+        Uuid::now_v7(),
+        Uuid::now_v7(),
+        Uuid::now_v7(),
+        Uuid::now_v7(),
+    );
+    sqlx::query(
+        "INSERT INTO agents (id, account_id, slug, display_name, visibility)
+         VALUES ($1, $2, $3, 'Ada Calendar', 'network'), ($4, $5, $6, 'Bob Booker', 'network')",
+    )
+    .bind(target)
+    .bind(ada_account)
+    .bind(format!("cal-{target}"))
+    .bind(caller)
+    .bind(other_account)
+    .bind(format!("booker-{caller}"))
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO agent_capabilities
+            (id, agent_id, name, description, input_schema, output_schema,
+             consent_required, consent_max_validity_secs)
+         VALUES ($1, $2, 'book_slot', 'Books a meeting slot.', '{}', '{}', true, 604800)",
+    )
+    .bind(cap)
+    .bind(target)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO friendships (id, proposer_agent_id, target_agent_id, status, decided_at)
+         VALUES ($1, $2, $3, 'accepted', now())",
+    )
+    .bind(Uuid::now_v7())
+    .bind(caller)
+    .bind(target)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO grants (id, granter_agent_id, grantee_agent_id, capability_id, status)
+         VALUES ($1, $2, $3, $4, 'active')",
+    )
+    .bind(grant)
+    .bind(target)
+    .bind(caller)
+    .bind(cap)
+    .execute(pool)
+    .await
+    .unwrap();
+    let (invocation, request) = (Uuid::now_v7(), Uuid::now_v7());
+    sqlx::query(
+        "INSERT INTO relay_invocations
+            (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
+             capability_name, invoked_by_user_id, status, input_preview)
+         VALUES ($1, $2, $3, $4, $5, 'book_slot', $6, 'awaiting_consent',
+                 '{\"date\": \"2026-10-24\", \"minutes\": 30}')",
+    )
+    .bind(invocation)
+    .bind(grant)
+    .bind(target)
+    .bind(caller)
+    .bind(cap)
+    .bind(other_user)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO consent_requests
+            (id, kind, invocation_id, capability_id, granter_agent_id, grantee_agent_id,
+             grantee_account_id, status, terms, expires_at)
+         VALUES ($1, 'request', $2, $3, $4, $5, $6, 'pending', $7, now() + interval '1 day')",
+    )
+    .bind(request)
+    .bind(invocation)
+    .bind(cap)
+    .bind(target)
+    .bind(caller)
+    .bind(other_account)
+    .bind(terms)
+    .execute(pool)
+    .await
+    .unwrap();
+    (request, invocation)
+}
+
+#[sqlx::test(migrations = "../migrations")]
+async fn approval_page_approves_narrowed_and_denies(pool: PgPool) {
+    let ada = seed(&pool).await;
+    let (request, invocation) = held_request(
+        &pool,
+        ada,
+        serde_json::json!({"purpose": "Book our weekly sync", "valid_for": "7d", "max_requests": 5}),
+    )
+    .await;
+    let path = format!("/app/approvals/{request}");
+
+    // Signed out: sign in first, then back to the request.
+    let mut browser = Browser::new(state(&pool));
+    let signin = browser.get(&path).await;
+    assert!(
+        signin.body.contains("decide on a request"),
+        "{}",
+        signin.body
+    );
+    let done = browser
+        .submit(
+            &path,
+            &signin,
+            &[("email", "ada@example.test"), ("password", PASSWORD)],
+        )
+        .await;
+    assert_eq!(done.status, StatusCode::SEE_OTHER, "{}", done.body);
+    assert_eq!(done.location(), path);
+    let form = browser.get(&path).await;
+    assert_eq!(form.status, StatusCode::OK, "{}", form.body);
+    for text in [
+        "Approve a request?",
+        "Bob Booker",
+        "book_slot",
+        "Book our weekly sync",
+        "For 7 days, up to 5 requests",
+        "2026-10-24",
+        "value=\"1d\"",
+    ] {
+        assert!(form.body.contains(text), "missing {text}: {}", form.body);
+    }
+
+    // Wider than asked is refused, and the form comes back with the error.
+    let wider = browser
+        .submit(
+            &path,
+            &form,
+            &[
+                ("step", "approve"),
+                ("valid_for", "7d"),
+                ("max_requests", "9"),
+            ],
+        )
+        .await;
+    assert_eq!(wider.status, StatusCode::BAD_REQUEST, "{}", wider.body);
+    let approved = browser
+        .submit(
+            &path,
+            &wider,
+            &[
+                ("step", "approve"),
+                ("valid_for", "1d"),
+                ("max_requests", "2"),
+            ],
+        )
+        .await;
+    assert_eq!(approved.status, StatusCode::OK, "{}", approved.body);
+    assert!(approved.body.contains("Approved"));
+    let (status, terms): (String, Value) =
+        sqlx::query_as("SELECT status, approved_terms FROM consent_requests WHERE id = $1")
+            .bind(request)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(status, "approved");
+    assert_eq!(terms["valid_for"], "1d");
+    assert_eq!(terms["max_requests"], 2);
+    let inv: String = sqlx::query_scalar("SELECT status FROM relay_invocations WHERE id = $1")
+        .bind(invocation)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(inv, "pending");
+    // Decided: the page shows the outcome, no form.
+    let after = browser.get(&path).await;
+    assert!(after.body.contains("Approved on"), "{}", after.body);
+    assert!(
+        after.body.contains("for 1 day, up to 2 requests"),
+        "{}",
+        after.body
+    );
+    assert!(!after.body.contains("name=\"step\" value=\"approve\""));
+
+    // Deny another, with a note.
+    let (request, invocation) =
+        held_request(&pool, ada, serde_json::json!({"valid_for": "once"})).await;
+    let path = format!("/app/approvals/{request}");
+    let form = browser.get(&path).await;
+    assert!(form.body.contains("Just this request"));
+    let denied = browser
+        .submit(&path, &form, &[("step", "deny"), ("note", "not this week")])
+        .await;
+    assert_eq!(denied.status, StatusCode::OK, "{}", denied.body);
+    let (inv, error): (String, Option<String>) =
+        sqlx::query_as("SELECT status, error_message FROM relay_invocations WHERE id = $1")
+            .bind(invocation)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(inv, "rejected");
+    assert_eq!(error.as_deref(), Some("The owner declined: not this week"));
+}
+
+#[sqlx::test(migrations = "../migrations")]
+async fn only_approvers_get_the_form(pool: PgPool) {
+    let ada = seed(&pool).await;
+    let (request, _) = held_request(&pool, ada, serde_json::json!({})).await;
+    // The capability lists someone else in Ada's account as its approver.
+    let ada_account: Uuid =
+        sqlx::query_scalar("SELECT account_id FROM account_memberships WHERE user_id = $1")
+            .bind(ada)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let carol = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO users (id, email, display_name, password_hash) VALUES ($1, $2, 'Carol', 'x')",
+    )
+    .bind(carol)
+    .bind(format!("carol-{carol}@example.test"))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO account_memberships (id, account_id, user_id, role) VALUES ($1, $2, $3, 'member')",
+    )
+    .bind(Uuid::now_v7())
+    .bind(ada_account)
+    .bind(carol)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE agent_capabilities SET consent_approvers = ARRAY[$1]::uuid[]")
+        .bind(carol)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let path = format!("/app/approvals/{request}");
+    let mut browser = Browser::new(state(&pool));
+    let signin = browser.get(&path).await;
+    browser
+        .submit(
+            &path,
+            &signin,
+            &[("email", "ada@example.test"), ("password", PASSWORD)],
+        )
+        .await;
+    let page = browser.get(&path).await;
+    assert!(page.body.contains("Only Carol can decide"), "{}", page.body);
+    assert!(!page.body.contains("name=\"step\" value=\"approve\""));
+    // The input isn't shown to non-approvers either.
+    assert!(!page.body.contains("2026-10-24"));
+    // Posting anyway (with the sign-in page's CSRF token) is refused too.
+    let refused = browser.submit(&path, &signin, &[("step", "approve")]).await;
+    assert_eq!(refused.status, StatusCode::BAD_REQUEST);
+    assert!(
+        refused.body.contains("approvers can decide on it"),
+        "{}",
+        refused.body
+    );
 }
 
 #[test]

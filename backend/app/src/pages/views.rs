@@ -27,7 +27,7 @@ pub(crate) struct SigninPage {
     pub title: String,
     pub host: String,
     pub lead: String,
-    pub action: &'static str,
+    pub action: String,
     pub csrf: String,
     pub hidden: Vec<Hidden>,
     pub email: String,
@@ -110,4 +110,50 @@ pub(crate) struct MessagePage {
     pub heading: String,
     pub message: String,
     pub link: Option<Link>,
+}
+
+/// A choice on the approval page.
+pub(crate) struct Choice {
+    pub value: String,
+    pub label: String,
+    pub checked: bool,
+}
+
+/// A top-level field of a held request's input.
+pub(crate) struct Field {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Template)]
+#[template(path = "pages/approval.html")]
+pub(crate) struct ApprovalPage {
+    pub title: String,
+    pub host: String,
+    pub heading: String,
+    pub action: String,
+    pub csrf: String,
+    pub user_email: String,
+    pub requester: String,
+    pub requester_account: Option<String>,
+    pub verified: bool,
+    pub capability: String,
+    pub capability_description: Option<String>,
+    pub target: String,
+    pub purpose: Option<String>,
+    pub grant_purpose: Option<String>,
+    pub asked: String,
+    pub expires_at: String,
+    pub created_at: String,
+    pub input: Vec<Field>,
+    pub pending: bool,
+    pub may_decide: bool,
+    pub approvers: String,
+    pub outcome: String,
+    pub validity: Vec<Choice>,
+    pub standing_allowed: bool,
+    pub asked_max: Option<i32>,
+    pub max_requests: String,
+    pub note: String,
+    pub error: Option<String>,
 }
