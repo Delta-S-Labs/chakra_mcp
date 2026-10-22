@@ -53,12 +53,25 @@ pub mod names {
     pub const CREDIT_PURCHASES_TOTAL: &str = "chakramcp_credit_purchases_total";
     pub const DODO_WEBHOOK_REJECTED_TOTAL: &str = "chakramcp_dodo_webhook_rejected_total";
     pub const PURCHASE_CONFIG_ERROR: &str = "chakramcp_purchase_config_error";
+    pub const CONSENT_REQUESTS_TOTAL: &str = "chakramcp_consent_requests_total";
+    pub const CONSENT_PENDING: &str = "chakramcp_consent_pending";
 }
 
 /// `status` values of `chakramcp_credit_purchases_total`.
 pub const PURCHASE_STATUSES: [&str; 4] = ["paid", "failed", "unapplied", "unmatched"];
 /// `reason` values of `chakramcp_dodo_webhook_rejected_total`.
 pub const WEBHOOK_REJECTIONS: [&str; 4] = ["missing_header", "stale", "bad_signature", "bad_json"];
+/// `outcome` values of `chakramcp_consent_requests_total` (owner consent):
+/// a request held for approval or covered by a standing consent, then how
+/// each held one ended.
+pub const CONSENT_OUTCOMES: [&str; 6] = [
+    "held",
+    "covered",
+    "approved",
+    "denied",
+    "expired",
+    "cancelled",
+];
 
 /// Count a credit purchase outcome (one of [`PURCHASE_STATUSES`]).
 pub fn record_purchase(status: &'static str) {
@@ -415,6 +428,17 @@ fn describe() {
         counter!(DODO_WEBHOOK_REJECTED_TOTAL, "reason" => reason).increment(0);
     }
     gauge!(PURCHASE_CONFIG_ERROR).set(0.0);
+    describe_counter!(
+        CONSENT_REQUESTS_TOTAL,
+        "Owner consent requests by kind and outcome (held, covered, then how held ones ended)."
+    );
+    describe_gauge!(
+        CONSENT_PENDING,
+        "Consent requests waiting for an approver's decision."
+    );
+    for outcome in CONSENT_OUTCOMES {
+        counter!(CONSENT_REQUESTS_TOTAL, "kind" => "request", "outcome" => outcome).increment(0);
+    }
 }
 
 // ─── HTTP ────────────────────────────────────────────────
@@ -588,6 +612,20 @@ mod tests {
             assert!(text.contains(&line), "missing {line}");
         }
         assert!(text.contains("chakramcp_purchase_config_error 0"));
+    }
+
+    #[test]
+    fn consent_series_start_at_zero() {
+        let recorder = prometheus_builder().build_recorder();
+        let handle = recorder.handle();
+        metrics::with_local_recorder(&recorder, describe);
+        let text = handle.render();
+        for outcome in CONSENT_OUTCOMES {
+            let line = format!(
+                "chakramcp_consent_requests_total{{kind=\"request\",outcome=\"{outcome}\"}} 0"
+            );
+            assert!(text.contains(&line), "missing {line}");
+        }
     }
 
     #[tokio::test]

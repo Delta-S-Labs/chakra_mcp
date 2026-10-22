@@ -53,6 +53,8 @@ pub struct RelayState {
     /// How many days of usage events are kept (`USAGE_RETENTION_DAYS`);
     /// `None` keeps them forever. Production also spawns the pruner.
     pub usage_retention_days: Option<u32>,
+    /// The signing key for consent tokens, cached (owner consent §6).
+    pub consent_signer: Arc<crate::consent::signer::ConsentSigner>,
 }
 
 impl RelayState {
@@ -61,6 +63,7 @@ impl RelayState {
     /// signature every existing caller (incl. tests) relies on; production
     /// chains the builders below.
     pub fn new(db: PgPool, config: SharedConfig) -> Self {
+        let consent_signer = Arc::new(crate::consent::signer::ConsentSigner::new(db.clone()));
         Self {
             db,
             config: Arc::new(config),
@@ -74,6 +77,7 @@ impl RelayState {
             heartbeats: crate::heartbeats::Heartbeats::default(),
             featured_account: None,
             usage_retention_days: Some(crate::retention::DEFAULT_USAGE_RETENTION_DAYS),
+            consent_signer,
         }
     }
 

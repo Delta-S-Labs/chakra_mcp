@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT EXISTS (\n            SELECT 1 FROM account_memberships m\n             WHERE m.account_id = $2 AND m.user_id = $1\n               AND (m.user_id = ANY($3)\n                    OR (m.role IN ('owner', 'admin')\n                        AND NOT EXISTS (\n                            SELECT 1 FROM account_memberships listed\n                             WHERE listed.account_id = $2 AND listed.user_id = ANY($3))))\n        ) AS \"may_decide!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "may_decide!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "6529b27b015f063e0ba4d141d4c7b6d0f1b4ad71a3cf8e09c5e82abc8c1c02cb"
+}

@@ -1,0 +1,155 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT cr.id, cr.invocation_id, cr.capability_id, cr.granter_agent_id,\n               cr.grantee_agent_id, cr.consent_id, cr.decided_at, cr.decided_by_user_id,\n               COALESCE(cr.approved_terms, cr.terms) AS \"terms!\",\n               cr.token, i.input_preview,\n               c.approved_by_user_id AS \"consent_approver?\"\n          FROM consent_requests cr\n          JOIN relay_invocations i ON i.id = cr.invocation_id\n          LEFT JOIN consents c ON c.id = cr.consent_id\n         WHERE cr.invocation_id = ANY($1)\n           AND cr.kind = 'request'\n           AND cr.status = 'approved'\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "invocation_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "invocation_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "capability_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "capability_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "granter_agent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "granter_agent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "grantee_agent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "grantee_agent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "consent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "consent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "decided_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "decided_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "decided_by_user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "decided_by_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "terms!",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "token",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "token"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "input_preview",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "input_preview"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "consent_approver?",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consents",
+            "name": "approved_by_user_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      null,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "261d6fe8ea2ea5fd721b9f0b1b8c4a637937aed4e338da81f8185f52e97fc8c4"
+}

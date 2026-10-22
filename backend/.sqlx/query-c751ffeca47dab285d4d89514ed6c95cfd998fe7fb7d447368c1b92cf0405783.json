@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH released AS (\n            UPDATE relay_invocations SET status = 'pending'\n             WHERE id = $1 AND status = 'awaiting_consent'\n            RETURNING id\n        )\n        INSERT INTO credit_charge_queue (invocation_id, account_id)\n        SELECT id, $2 FROM released\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c751ffeca47dab285d4d89514ed6c95cfd998fe7fb7d447368c1b92cf0405783"
+}

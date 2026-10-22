@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO consents\n                (id, capability_id, granter_agent_id, grantee_agent_id, purpose,\n                 valid_from, valid_until, max_requests, used, approved_by_user_id)\n            VALUES ($1, $2, $3, $4, $5, now(), now() + $6::bigint * interval '1 second',\n                    $7, 1, $8)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Int8",
+        "Int4",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "60c9bb98f0332e6b631f4b247d02310835b0ad7eb9c8461533d1d78703247964"
+}

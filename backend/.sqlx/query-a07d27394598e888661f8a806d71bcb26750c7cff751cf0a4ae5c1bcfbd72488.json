@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH cancelled AS (\n            UPDATE consent_requests\n               SET status = 'cancelled', decided_at = now(), decision_note = $2\n             WHERE (granter_agent_id = $1 OR grantee_agent_id = $1)\n               AND status = 'pending'\n            RETURNING invocation_id, kind\n        ),\n        rejected AS (\n            UPDATE relay_invocations i\n               SET status = 'rejected', error_message = $2\n              FROM cancelled c\n             WHERE i.id = c.invocation_id\n               AND c.kind = 'request'\n               AND i.status = 'awaiting_consent'\n            RETURNING i.id\n        ),\n        revoked AS (\n            UPDATE consents SET revoked_at = now()\n             WHERE (granter_agent_id = $1 OR grantee_agent_id = $1)\n               AND revoked_at IS NULL\n        )\n        SELECT (SELECT count(*) FROM cancelled) AS \"cancelled!\",\n               (SELECT count(*) FROM rejected) AS \"rejected!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "cancelled!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "rejected!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "a07d27394598e888661f8a806d71bcb26750c7cff751cf0a4ae5c1bcfbd72488"
+}

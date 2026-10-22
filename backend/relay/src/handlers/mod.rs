@@ -1,5 +1,6 @@
 pub mod a2a;
 pub mod agents;
+pub mod approvals;
 pub mod capabilities;
 pub mod discovery;
 pub mod events_read;

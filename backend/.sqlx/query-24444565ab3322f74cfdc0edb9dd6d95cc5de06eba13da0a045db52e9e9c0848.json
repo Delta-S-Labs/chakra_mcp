@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE consents SET revoked_at = now(), revoked_by_user_id = $3\n             WHERE capability_id = $1 AND grantee_agent_id = $2 AND revoked_at IS NULL\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "24444565ab3322f74cfdc0edb9dd6d95cc5de06eba13da0a045db52e9e9c0848"
+}

@@ -1,0 +1,173 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT c.id, c.capability_id, cap.name AS \"capability_name?\",\n               c.granter_agent_id, ga.display_name AS granter_display_name,\n               c.grantee_agent_id, ea.display_name AS \"grantee_display_name?\",\n               eacc.display_name AS \"grantee_account_display_name?\",\n               c.purpose, c.valid_from, c.valid_until, c.max_requests, c.used\n          FROM consents c\n          JOIN agents ga ON ga.id = c.granter_agent_id\n          JOIN account_memberships m ON m.account_id = ga.account_id AND m.user_id = $1\n          LEFT JOIN agents ea ON ea.id = c.grantee_agent_id\n          LEFT JOIN accounts eacc ON eacc.id = ea.account_id\n          LEFT JOIN agent_capabilities cap ON cap.id = c.capability_id\n         WHERE c.revoked_at IS NULL AND c.valid_until > now()\n         ORDER BY c.created_at DESC\n         LIMIT $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consents",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "capability_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consents",
+            "name": "capability_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "capability_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "granter_agent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consents",
+            "name": "granter_agent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "granter_display_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "grantee_agent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consents",
+            "name": "grantee_agent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "grantee_display_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "grantee_account_display_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "purpose",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "consents",
+            "name": "purpose"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "valid_from",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "consents",
+            "name": "valid_from"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "valid_until",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "consents",
+            "name": "valid_until"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "max_requests",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "consents",
+            "name": "max_requests"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "used",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "consents",
+            "name": "used"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "f2170497c7b9d8b2a0032bac64744f4bc35ee5837aa2238bb17f3f4d326e464d"
+}

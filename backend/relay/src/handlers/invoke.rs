@@ -67,6 +67,10 @@ use chakramcp_shared::error::{ApiError, ApiResult};
 
 use crate::auth::{user_is_member, AuthUser};
 use crate::compliance;
+use crate::consent::deliver::{self as consent_deliver, ConsentDto};
+use crate::consent::enqueue::{self as consent_enqueue, Enqueued, NewInvocation};
+use crate::consent::terms::ConsentTerms;
+use crate::consent::visibility::shown_input;
 use crate::state::RelayState;
 
 const PREVIEW_BYTE_LIMIT: usize = 16 * 1024;
@@ -94,6 +98,10 @@ pub struct InvokeRequest {
     /// invoker for audit + quota + later review attribution.
     pub grantee_agent_id: Uuid,
     pub input: Value,
+    /// Proposed consent terms, used when the capability asks its owner
+    /// first (owner consent §4.1); ignored otherwise.
+    #[serde(default)]
+    pub consent_terms: Option<ConsentTerms>,
 }
 
 #[derive(Debug, Serialize)]
@@ -101,6 +109,10 @@ pub struct InvokeResponse {
     pub invocation_id: Uuid,
     pub status: String,
     pub error: Option<String>,
+    /// Set when the capability asks its owner first: the request is held
+    /// (`awaiting_consent`) or a standing consent covered it (`pending`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consent_request_id: Option<Uuid>,
 }
 
 #[derive(Debug, Serialize)]
@@ -146,6 +158,11 @@ pub struct InvocationDto {
     pub friendship_context: Option<FriendshipContext>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub grant_context: Option<GrantContext>,
+    /// For a capability that asks its owner first: what was approved, and
+    /// the consent token proving it (owner consent §4.5). Present once the
+    /// request is approved; the token is minted when the inbox delivers it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consent: Option<ConsentDto>,
     /// Which trust path authorised this invocation, computed at read
     /// time from the row's `grant_id`:
     ///
@@ -373,6 +390,7 @@ pub async fn invoke(
                 capability_id,
                 req.grantee_agent_id,
                 &req.input,
+                req.consent_terms.as_ref(),
             )
             .await;
         }
@@ -395,12 +413,14 @@ async fn invoke_trusted(
         grant_id,
         req.grantee_agent_id,
         &req.input,
+        req.consent_terms.as_ref(),
         "v1_invoke",
     )
     .await?;
     Ok(match outcome {
         TrustedOutcome::Enqueued {
             invocation_id,
+            consent_request_id,
             signals,
         } => {
             let mut response = (
@@ -409,6 +429,25 @@ async fn invoke_trusted(
                     invocation_id,
                     status: "pending".into(),
                     error: None,
+                    consent_request_id,
+                }),
+            )
+                .into_response();
+            signals.apply(response.headers_mut());
+            response
+        }
+        TrustedOutcome::Held {
+            invocation_id,
+            consent_request_id,
+            signals,
+        } => {
+            let mut response = (
+                StatusCode::ACCEPTED,
+                Json(InvokeResponse {
+                    invocation_id,
+                    status: "awaiting_consent".into(),
+                    error: None,
+                    consent_request_id: Some(consent_request_id),
                 }),
             )
                 .into_response();
@@ -425,6 +464,7 @@ async fn invoke_trusted(
                 invocation_id,
                 status: "rejected".into(),
                 error: Some(error),
+                consent_request_id: None,
             }),
         )
             .into_response(),
@@ -445,8 +485,17 @@ async fn invoke_trusted(
 pub(crate) enum TrustedOutcome {
     /// Queued as `pending` for the granter to pull from its inbox. `signals`
     /// are what the caller is told about its limits (credits P6).
+    /// `consent_request_id` is set when a standing consent covered it.
     Enqueued {
         invocation_id: Uuid,
+        consent_request_id: Option<Uuid>,
+        signals: crate::limits::LimitSignals,
+    },
+    /// Held as `awaiting_consent` until the owner's approver decides (the
+    /// capability asks first; owner consent §4).
+    Held {
+        invocation_id: Uuid,
+        consent_request_id: Uuid,
         signals: crate::limits::LimitSignals,
     },
     /// Recorded as `rejected`. `status` is the HTTP status the REST
@@ -474,15 +523,20 @@ pub(crate) enum TrustedOutcome {
 ///   6. per-account usage limits (`limits_source` labels the surface)
 ///
 /// The input is truncated for audit and the trust context (friendship +
-/// grant) is frozen into `trust_snapshot` at queue time.
+/// grant) is frozen into `trust_snapshot` at queue time. A capability that
+/// asks its owner first holds the request instead of queuing it, unless a
+/// standing consent covers it (owner consent §4.1).
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn authorize_and_enqueue_trusted(
     state: &RelayState,
     user: &AuthUser,
     grant_id: Uuid,
     grantee_agent_id: Uuid,
     input: &Value,
+    consent_terms: Option<&ConsentTerms>,
     limits_source: &'static str,
 ) -> Result<TrustedOutcome, ApiError> {
+    consent_enqueue::validate_terms(consent_terms)?;
     let input_preview = truncate_for_audit(input);
 
     // Resolve the grant + agents + capability.
@@ -498,6 +552,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
             cap.name as capability_name,
             cap.visibility as capability_visibility,
             cap.description as capability_description,
+            cap.consent_required, cap.consent_max_validity_secs, cap.consent_wait_secs,
             -- Accepted friendship between the two agents, in either
             -- direction. LEFT JOIN so a missing one surfaces as a
             -- recorded rejection rather than a bare 404.
@@ -603,6 +658,17 @@ pub(crate) async fn authorize_and_enqueue_trusted(
         return reject(StatusCode::CONFLICT, PUSH_TARGET_ERROR.into()).await;
     }
 
+    // A capability that asks first must receive its input whole.
+    let gate = consent_enqueue::gate_for(
+        row.consent_required,
+        consent_terms,
+        row.consent_max_validity_secs,
+        row.consent_wait_secs,
+    );
+    if gate.is_some() {
+        consent_enqueue::check_input_size(input)?;
+    }
+
     // Per-account usage limits (rate + credits), keyed on the caller's
     // (grantee's) account. In-memory only. Shadow mode logs a would-block
     // and proceeds; enforcing returns 429 with an `account_*` code and a
@@ -691,6 +757,39 @@ pub(crate) async fn authorize_and_enqueue_trusted(
     // the credits worker), so the charge exists exactly when the row does and
     // costs no extra round trip. Charged against the grantee/caller account.
     let id = Uuid::now_v7();
+    if let Some(gate) = &gate {
+        let enqueued = consent_enqueue::enqueue_consent_required(
+            &state.db,
+            NewInvocation {
+                id,
+                grant_id: Some(row.grant_id),
+                granter_agent_id: row.granter_agent_id,
+                grantee_agent_id: row.grantee_agent_id,
+                capability_id: row.capability_id,
+                capability_name: &row.capability_name,
+                invoked_by_user_id: user.user_id,
+                input_preview: &input_preview,
+                api_key_id: user.api_key_id,
+                minted_jti: user.minted_jti,
+                trust_snapshot: Some(&trust_snapshot),
+                charge_account_id: row.grantee_account_id,
+            },
+            gate,
+        )
+        .await?;
+        return Ok(match enqueued {
+            Enqueued::Covered { consent_request_id } => TrustedOutcome::Enqueued {
+                invocation_id: id,
+                consent_request_id: Some(consent_request_id),
+                signals,
+            },
+            Enqueued::Held { consent_request_id } => TrustedOutcome::Held {
+                invocation_id: id,
+                consent_request_id,
+                signals,
+            },
+        });
+    }
     sqlx::query!(
         r#"
         WITH charge AS (
@@ -721,6 +820,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
 
     Ok(TrustedOutcome::Enqueued {
         invocation_id: id,
+        consent_request_id: None,
         signals,
     })
 }
@@ -736,8 +836,10 @@ async fn invoke_public(
     capability_id: Uuid,
     grantee_agent_id: Uuid,
     input: &Value,
+    consent_terms: Option<&ConsentTerms>,
 ) -> Result<axum::response::Response, ApiError> {
     use axum::response::IntoResponse;
+    consent_enqueue::validate_terms(consent_terms)?;
     let input_preview = truncate_for_audit(input);
 
     // Resolve the capability + its owning agent. We hide existence of
@@ -747,6 +849,7 @@ async fn invoke_public(
         r#"
         SELECT cap.id, cap.name, cap.description, cap.agent_id AS granter_agent_id,
                cap.public_invoke, cap.public_monthly_quota_per_agent,
+               cap.consent_required, cap.consent_max_validity_secs, cap.consent_wait_secs,
                ga.visibility AS granter_visibility, ga.mode AS granter_mode
         FROM agent_capabilities cap
         JOIN agents ga ON ga.id = cap.agent_id
@@ -795,6 +898,17 @@ async fn invoke_public(
     // owner would never receive them (see the trusted path).
     if cap.granter_mode == "push" {
         return Err(ApiError::Conflict(PUSH_TARGET_ERROR.into()));
+    }
+
+    // A capability that asks first must receive its input whole.
+    let gate = consent_enqueue::gate_for(
+        cap.consent_required,
+        consent_terms,
+        cap.consent_max_validity_secs,
+        cap.consent_wait_secs,
+    );
+    if gate.is_some() {
+        consent_enqueue::check_input_size(input)?;
     }
 
     // Per-invoker monthly quota. Calendar month (resets on the 1st).
@@ -886,6 +1000,7 @@ async fn invoke_public(
                     invocation_id: id,
                     status: "rejected".into(),
                     error: Some(reason),
+                    consent_request_id: None,
                 }),
             )
                 .into_response());
@@ -898,6 +1013,43 @@ async fn invoke_public(
     // One statement writes the row and queues its credit charge (drained by
     // the credits worker), against the invoker's account.
     let id = Uuid::now_v7();
+    if let Some(gate) = &gate {
+        let enqueued = consent_enqueue::enqueue_consent_required(
+            &state.db,
+            NewInvocation {
+                id,
+                grant_id: None,
+                granter_agent_id: cap.granter_agent_id,
+                grantee_agent_id,
+                capability_id,
+                capability_name: &cap.name,
+                invoked_by_user_id: user.user_id,
+                input_preview: &input_preview,
+                api_key_id: user.api_key_id,
+                minted_jti: user.minted_jti,
+                trust_snapshot: trust_snapshot.as_ref(),
+                charge_account_id: invoker.account_id,
+            },
+            gate,
+        )
+        .await?;
+        let status = match enqueued {
+            Enqueued::Covered { .. } => "pending",
+            Enqueued::Held { .. } => "awaiting_consent",
+        };
+        let mut response = (
+            StatusCode::ACCEPTED,
+            Json(InvokeResponse {
+                invocation_id: id,
+                status: status.into(),
+                error: None,
+                consent_request_id: Some(enqueued.consent_request_id()),
+            }),
+        )
+            .into_response();
+        decision.signals.apply(response.headers_mut());
+        return Ok(response);
+    }
     sqlx::query!(
         r#"
         WITH charge AS (
@@ -931,6 +1083,7 @@ async fn invoke_public(
             invocation_id: id,
             status: "pending".into(),
             error: None,
+            consent_request_id: None,
         }),
     )
         .into_response();
@@ -1005,6 +1158,8 @@ pub async fn inbox(
     }
 
     let ids: Vec<Uuid> = claimed.into_iter().map(|r| r.id).collect();
+    // Consent tokens for approved requests, minted on first delivery.
+    let mut consents = consent_deliver::deliver(&state, &ids).await?;
     // Bundle in friendship + grant context. The relay just verified
     // both before queuing this row, so the receiving agent doesn't
     // need to re-check — saves an LLM tool call (or three) per
@@ -1147,6 +1302,7 @@ pub async fn inbox(
                     },
                     friendship_context,
                     grant_context,
+                    consent: consents.remove(&r.id),
                 }
             })
             .collect(),
@@ -1279,7 +1435,13 @@ pub async fn list(
     if let Some(s) = q.status.as_deref() {
         if !matches!(
             s,
-            "pending" | "in_progress" | "rejected" | "succeeded" | "failed" | "timeout"
+            "pending"
+                | "in_progress"
+                | "rejected"
+                | "succeeded"
+                | "failed"
+                | "timeout"
+                | "awaiting_consent"
         ) {
             return Err(ApiError::InvalidRequest("invalid status".into()));
         }
@@ -1303,6 +1465,12 @@ pub async fn list(
             ga.display_name as "granter_display_name?",
             ea.display_name as "grantee_display_name?",
             cap.semantics   as "capability_semantics?",
+            cr.id           as "cr_id?",
+            cr.status       as "cr_status?",
+            cr.consent_id   as "cr_consent_id?",
+            cr.decided_at   as "cr_decided_at?",
+            COALESCE(cr.approved_terms, cr.terms) as "cr_terms?",
+            cr.token        as "cr_token?",
             EXISTS(
                 SELECT 1 FROM account_memberships m
                 WHERE m.user_id = $1 AND m.account_id = ga.account_id
@@ -1315,6 +1483,9 @@ pub async fn list(
         LEFT JOIN agents ga ON ga.id = i.granter_agent_id
         LEFT JOIN agents ea ON ea.id = i.grantee_agent_id
         LEFT JOIN agent_capabilities cap ON cap.id = i.capability_id
+        -- The gate-1 consent request, if the capability asked first: hides
+        -- held input from the target side, and carries `consent`.
+        LEFT JOIN consent_requests cr ON cr.invocation_id = i.id AND cr.kind = 'request'
         WHERE
             (
                 -- $2 = want_grantee_is_me (I sent this call OUT)
@@ -1360,6 +1531,15 @@ pub async fn list(
             .map(|r| {
                 let (friendship_context, grant_context) =
                     contexts_from_snapshot(r.trust_snapshot.as_ref());
+                let i_served = r.i_served.unwrap_or(false);
+                let consent = consent_deliver::read_dto(
+                    r.cr_id,
+                    r.cr_status.as_deref(),
+                    r.cr_consent_id,
+                    r.cr_decided_at,
+                    r.cr_terms.clone(),
+                    r.cr_token.clone(),
+                );
                 InvocationDto {
                     id: r.id,
                     grant_id: r.grant_id,
@@ -1374,11 +1554,11 @@ pub async fn list(
                     status: r.status,
                     elapsed_ms: r.elapsed_ms,
                     error_message: r.error_message,
-                    input_preview: r.input_preview,
+                    input_preview: shown_input(i_served, r.cr_status.as_deref(), r.input_preview),
                     output_preview: r.output_preview,
                     created_at: r.created_at,
                     claimed_at: r.claimed_at,
-                    i_served: r.i_served.unwrap_or(false),
+                    i_served,
                     i_invoked: r.i_invoked.unwrap_or(false),
                     tier: if r.grant_id.is_some() {
                         "friend".into()
@@ -1387,6 +1567,7 @@ pub async fn list(
                     },
                     friendship_context,
                     grant_context,
+                    consent,
                 }
             })
             .collect(),
@@ -1425,6 +1606,12 @@ async fn fetch_one(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<InvocationDto
             ga.display_name as "granter_display_name?",
             ea.display_name as "grantee_display_name?",
             cap.semantics   as "capability_semantics?",
+            cr.id           as "cr_id?",
+            cr.status       as "cr_status?",
+            cr.consent_id   as "cr_consent_id?",
+            cr.decided_at   as "cr_decided_at?",
+            COALESCE(cr.approved_terms, cr.terms) as "cr_terms?",
+            cr.token        as "cr_token?",
             EXISTS(
                 SELECT 1 FROM account_memberships m
                 WHERE m.user_id = $1 AND m.account_id = ga.account_id
@@ -1437,6 +1624,9 @@ async fn fetch_one(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<InvocationDto
         LEFT JOIN agents ga ON ga.id = i.granter_agent_id
         LEFT JOIN agents ea ON ea.id = i.grantee_agent_id
         LEFT JOIN agent_capabilities cap ON cap.id = i.capability_id
+        -- The gate-1 consent request, if the capability asked first: hides
+        -- held input from the target side, and carries `consent`.
+        LEFT JOIN consent_requests cr ON cr.invocation_id = i.id AND cr.kind = 'request'
         WHERE i.id = $2
         "#,
         user_id,
@@ -1453,6 +1643,14 @@ async fn fetch_one(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<InvocationDto
     }
 
     let (friendship_context, grant_context) = contexts_from_snapshot(r.trust_snapshot.as_ref());
+    let consent = consent_deliver::read_dto(
+        r.cr_id,
+        r.cr_status.as_deref(),
+        r.cr_consent_id,
+        r.cr_decided_at,
+        r.cr_terms,
+        r.cr_token,
+    );
 
     Ok(InvocationDto {
         id: r.id,
@@ -1468,7 +1666,7 @@ async fn fetch_one(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<InvocationDto
         status: r.status,
         elapsed_ms: r.elapsed_ms,
         error_message: r.error_message,
-        input_preview: r.input_preview,
+        input_preview: shown_input(i_served, r.cr_status.as_deref(), r.input_preview),
         output_preview: r.output_preview,
         created_at: r.created_at,
         claimed_at: r.claimed_at,
@@ -1481,6 +1679,7 @@ async fn fetch_one(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<InvocationDto
         },
         friendship_context,
         grant_context,
+        consent,
     })
 }
 
@@ -1513,7 +1712,7 @@ fn contexts_from_snapshot(
 }
 
 #[cfg(test)]
-mod legacy_v01_contract_tests {
+pub(crate) mod legacy_v01_contract_tests {
     //! D6 regression gate: the v0.1.0 SDK contract for the legacy
     //! pull-mode endpoints must continue to work post-A2A migration,
     //! since v0.1.0 of `chakramcp` (Python) and `@chakramcp/sdk` (TS)
@@ -1540,7 +1739,7 @@ mod legacy_v01_contract_tests {
     use tower::ServiceExt;
     use uuid::Uuid;
 
-    pub(super) fn config() -> SharedConfig {
+    pub(crate) fn config() -> SharedConfig {
         SharedConfig {
             database_url: "ignored".into(),
             jwt_secret: "test-secret".into(),
@@ -1560,7 +1759,7 @@ mod legacy_v01_contract_tests {
     /// Seed the same shape as `examples/scheduler-demo/setup.py`:
     /// two accounts, one agent each, friendship, grant. Returns the
     /// caller's ck_ token, both agent ids, and the grant id.
-    pub(super) struct DemoFixture {
+    pub(crate) struct DemoFixture {
         pub caller_token: String,
         pub caller_user_id: Uuid,
         pub granter_agent_id: Uuid,
@@ -1569,7 +1768,7 @@ mod legacy_v01_contract_tests {
         pub capability_id: Uuid,
     }
 
-    pub(super) async fn seed_demo(pool: &PgPool) -> DemoFixture {
+    pub(crate) async fn seed_demo(pool: &PgPool) -> DemoFixture {
         let alice_user = Uuid::now_v7(); // granter / inbox.serve side
         let bob_user = Uuid::now_v7(); // grantee / invoke side
         for (uid, name) in [(alice_user, "Alice"), (bob_user, "Bob")] {

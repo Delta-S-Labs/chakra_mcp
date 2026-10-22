@@ -33,6 +33,8 @@ use serde::Serialize;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::consent::enqueue::{self as consent_enqueue, Enqueued, NewInvocation};
+use crate::consent::terms::ConsentTerms;
 use crate::policy::Authorized;
 
 #[derive(Debug, thiserror::Error)]
@@ -41,7 +43,29 @@ pub enum ParkError {
     Db(#[from] sqlx::Error),
     #[error("inbound body is too large to park (limit 16 KB; got {0})")]
     BodyTooLarge(usize),
+    /// `params.metadata["chakramcp.consent_terms"]` didn't parse or was out
+    /// of range.
+    #[error("bad consent terms: {0}")]
+    BadConsentTerms(String),
+    #[error("{0}")]
+    Enqueue(chakramcp_shared::error::ApiError),
 }
+
+/// Where an A2A caller proposes consent terms (owner consent §4.1): the
+/// same shape as REST's `consent_terms`, in the SendMessage params'
+/// metadata.
+pub const CONSENT_TERMS_METADATA_KEY: &str = "chakramcp.consent_terms";
+
+/// The settings of a capability that asks its owner first.
+#[derive(Debug, Clone, Copy)]
+pub struct ParkConsent {
+    pub max_validity_secs: i32,
+    pub wait_secs: i32,
+}
+
+/// The A2A task state and message for a call held for approval.
+pub const HELD_STATE: &str = "auth-required";
+pub const HELD_MESSAGE: &str = "Waiting for the owner's approval";
 
 /// Result of a successful park: the task id (= invocation row id),
 /// the JSON-RPC request id we'll echo on the response, and a
@@ -86,12 +110,15 @@ pub enum A2aPart {
 
 const PREVIEW_BYTES: usize = 16 * 1024;
 
-/// Park an authorized pull-mode A2A call.
+/// Park an authorized pull-mode A2A call. A capability that asks its owner
+/// first (`consent`) holds the call instead, unless a standing consent
+/// covers it; the task then starts as `auth-required`.
 pub async fn park(
     db: &PgPool,
     authz: &Authorized,
     capability_name: &str,
     request_body: Bytes,
+    consent: Option<ParkConsent>,
 ) -> Result<Parked, ParkError> {
     if request_body.len() > PREVIEW_BYTES {
         return Err(ParkError::BodyTooLarge(request_body.len()));
@@ -114,6 +141,66 @@ pub async fn park(
         .unwrap_or(serde_json::Value::Null);
 
     let task_id = Uuid::now_v7();
+    if let Some(consent) = consent {
+        let terms = match params
+            .get("metadata")
+            .and_then(|m| m.get(CONSENT_TERMS_METADATA_KEY))
+        {
+            Some(raw) => {
+                let terms: ConsentTerms = serde_json::from_value(raw.clone())
+                    .map_err(|e| ParkError::BadConsentTerms(e.to_string()))?;
+                terms.validate().map_err(ParkError::BadConsentTerms)?;
+                Some(terms)
+            }
+            None => None,
+        };
+        let gate = consent_enqueue::gate_for(
+            true,
+            terms.as_ref(),
+            consent.max_validity_secs,
+            consent.wait_secs,
+        )
+        .expect("gate_for(true, ..) is Some");
+        let enqueued = consent_enqueue::enqueue_consent_required(
+            db,
+            NewInvocation {
+                id: task_id,
+                grant_id: Some(authz.grant_id),
+                granter_agent_id: authz.target_agent_id,
+                grantee_agent_id: authz.caller_agent_id,
+                capability_id: authz.capability_id,
+                capability_name,
+                invoked_by_user_id: authz.caller_user_id,
+                input_preview: &params,
+                api_key_id: authz.api_key_id,
+                minted_jti: authz.minted_jti,
+                trust_snapshot: None,
+                charge_account_id: authz.caller_account_id,
+            },
+            &gate,
+        )
+        .await
+        .map_err(ParkError::Enqueue)?;
+        let status = match enqueued {
+            Enqueued::Covered { .. } => A2aTaskStatus {
+                state: "submitted".to_string(),
+                message: None,
+            },
+            Enqueued::Held { .. } => A2aTaskStatus {
+                state: HELD_STATE.to_string(),
+                message: Some(HELD_MESSAGE.to_string()),
+            },
+        };
+        return Ok(Parked {
+            task_id,
+            jsonrpc_id,
+            task: A2aTask {
+                id: task_id.to_string(),
+                status,
+                artifacts: vec![],
+            },
+        });
+    }
     // `api_key_id` attributes the invocation to the **caller** (grantee
     // side) — the credential the policy gate just validated. NULL when
     // the caller authenticated with a user JWT instead of a ck_ key.
@@ -202,6 +289,7 @@ pub async fn get_task(
 
     let state = match row.status.as_str() {
         "pending" => "submitted",
+        "awaiting_consent" => HELD_STATE,
         "in_progress" => "working",
         "succeeded" => "completed",
         "failed" => "failed",
@@ -220,11 +308,16 @@ pub async fn get_task(
         }
     }
 
+    let message = if state == HELD_STATE {
+        Some(HELD_MESSAGE.to_string())
+    } else {
+        row.error_message
+    };
     Ok(A2aTask {
         id: task_id.to_string(),
         status: A2aTaskStatus {
             state: state.to_string(),
-            message: row.error_message,
+            message,
         },
         artifacts,
     })
@@ -356,7 +449,7 @@ mod tests {
         let body = Bytes::from_static(
             br#"{"jsonrpc":"2.0","id":42,"method":"SendMessage","params":{"message":"hi"}}"#,
         );
-        let parked = park(&pool, &authz, "do", body).await.unwrap();
+        let parked = park(&pool, &authz, "do", body, None).await.unwrap();
 
         assert_eq!(parked.jsonrpc_id, serde_json::json!(42));
         assert_eq!(parked.task.status.state, "submitted");
@@ -390,7 +483,7 @@ mod tests {
         let (u, ca, cg, ta, tg, c, g) = seed_for_park(&pool).await;
         let authz = sample_authz_for(u, ca, cg, ta, tg, c, g);
         let body = Bytes::from_static(b"this is not json{{");
-        let parked = park(&pool, &authz, "do", body).await.unwrap();
+        let parked = park(&pool, &authz, "do", body, None).await.unwrap();
         let row = sqlx::query!(
             "SELECT status, input_preview FROM relay_invocations WHERE id = $1",
             parked.task_id,
@@ -410,7 +503,7 @@ mod tests {
         let authz = sample_authz_for(u, ca, cg, ta, tg, c, g);
         // 17 KB > 16 KB cap.
         let body = Bytes::from(vec![b'a'; 17 * 1024]);
-        let r = park(&pool, &authz, "do", body).await;
+        let r = park(&pool, &authz, "do", body, None).await;
         assert!(matches!(r, Err(ParkError::BodyTooLarge(_))));
     }
 
@@ -422,7 +515,7 @@ mod tests {
         let body = Bytes::from_static(
             br#"{"jsonrpc":"2.0","id":"req-abc","method":"SendMessage","params":{}}"#,
         );
-        let parked = park(&pool, &authz, "do", body).await.unwrap();
+        let parked = park(&pool, &authz, "do", body, None).await.unwrap();
         assert_eq!(parked.jsonrpc_id, serde_json::json!("req-abc"));
     }
 
@@ -431,7 +524,7 @@ mod tests {
         let (u, ca, cg, ta, tg, c, g) = seed_for_park(&pool).await;
         let authz = sample_authz_for(u, ca, cg, ta, tg, c, g);
         let body = Bytes::from_static(br#"{"jsonrpc":"2.0","method":"SendMessage","params":{}}"#);
-        let parked = park(&pool, &authz, "do", body).await.unwrap();
+        let parked = park(&pool, &authz, "do", body, None).await.unwrap();
         assert_eq!(parked.jsonrpc_id, serde_json::Value::Null);
     }
 
@@ -462,7 +555,7 @@ mod tests {
 
         let body =
             Bytes::from_static(br#"{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{}}"#);
-        let parked = park(&pool, &authz, "do", body).await.unwrap();
+        let parked = park(&pool, &authz, "do", body, None).await.unwrap();
 
         let row_key_id: Option<Uuid> = sqlx::query_scalar!(
             r#"SELECT api_key_id FROM relay_invocations WHERE id = $1"#,

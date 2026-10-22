@@ -54,6 +54,31 @@ impl FromRequestParts<RelayState> for AuthUser {
     }
 }
 
+/// A person signed in to the web app: not an API key, and not a token
+/// minted for an OAuth client or a device pairing (MCP clients, the CLI,
+/// agents). Owner consent decisions need one, so an agent holding its
+/// owner's API key can't approve its own requests (consent spec §7).
+#[derive(Debug, Clone)]
+pub struct InteractiveUser(pub AuthUser);
+
+impl FromRequestParts<RelayState> for InteractiveUser {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &RelayState,
+    ) -> Result<Self, Self::Rejection> {
+        let user = AuthUser::from_request_parts(parts, state).await?;
+        let Some(jti) = user.minted_jti.filter(|_| user.api_key_id.is_none()) else {
+            return Err(ApiError::Forbidden);
+        };
+        if chakramcp_shared::sessions::is_delegated_token(&state.db, jti).await? {
+            return Err(ApiError::Forbidden);
+        }
+        Ok(Self(user))
+    }
+}
+
 /// Resolve an `Authorization` header value into an [`AuthUser`], or `None`
 /// if it's missing/invalid/revoked. Shared by the extractor and the usage
 /// middleware (which needs to attribute requests without going through the

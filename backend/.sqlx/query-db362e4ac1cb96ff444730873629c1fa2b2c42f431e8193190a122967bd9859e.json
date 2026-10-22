@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT i.id, i.status, i.elapsed_ms, i.error_message,\n               i.input_preview, i.output_preview,\n               i.created_at, i.claimed_at, i.capability_name,\n               EXISTS(\n                   SELECT 1 FROM account_memberships m\n                   JOIN agents a ON a.account_id = m.account_id\n                   WHERE m.user_id = $1\n                     AND (a.id = i.granter_agent_id OR a.id = i.grantee_agent_id)\n               ) as \"may_view!\"\n        FROM relay_invocations i\n        WHERE i.id = $2\n        ",
+  "query": "\n        SELECT i.id, i.status, i.elapsed_ms, i.error_message,\n               i.input_preview, i.output_preview,\n               i.created_at, i.claimed_at, i.capability_name,\n               EXISTS(\n                   SELECT 1 FROM account_memberships m\n                   JOIN agents a ON a.account_id = m.account_id\n                   WHERE m.user_id = $1\n                     AND (a.id = i.granter_agent_id OR a.id = i.grantee_agent_id)\n               ) as \"may_view!\",\n               EXISTS(\n                   SELECT 1 FROM account_memberships m\n                   JOIN agents a ON a.account_id = m.account_id\n                   WHERE m.user_id = $1 AND a.id = i.granter_agent_id\n               ) as \"i_served!\",\n               cr.status as \"consent_status?\"\n        FROM relay_invocations i\n        -- Held input stays hidden from the target side (owner consent §4.3).\n        LEFT JOIN consent_requests cr ON cr.invocation_id = i.id AND cr.kind = 'request'\n        WHERE i.id = $2\n        ",
   "describe": {
     "columns": [
       {
@@ -107,6 +107,23 @@
         "name": "may_view!",
         "type_info": "Bool",
         "origin": "Expression"
+      },
+      {
+        "ordinal": 10,
+        "name": "i_served!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 11,
+        "name": "consent_status?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "status"
+          }
+        }
       }
     ],
     "parameters": {
@@ -125,8 +142,10 @@
       false,
       true,
       false,
-      null
+      null,
+      null,
+      true
     ]
   },
-  "hash": "4f2ebfb99338343d120df6d01395b68369aedb99295b9f40ec4ec700b55a2fc5"
+  "hash": "db362e4ac1cb96ff444730873629c1fa2b2c42f431e8193190a122967bd9859e"
 }

@@ -196,6 +196,13 @@ match chakra.invoke(&req).await {
 `QuotaExhausted`, so an exhaustive `match` on `Error`, or a pattern
 that lists every field without `..`, needs updating.
 
+**0.3.0 is a breaking change.** `InvocationStatus` gains `AwaitingConsent`
+(a call held until the target agent's owner approves it) and `Unknown`, and
+is now `#[non_exhaustive]`: statuses the relay adds later read as `Unknown`
+instead of failing to parse. An exhaustive `match` on it needs a `_` arm.
+`InvokeResponse` gains `consent_request_id`. Older versions fail to parse
+any response that carries `awaiting_consent`.
+
 ## Get an API key
 
 Sign in at https://chakramcp.com → **API keys** → create one named for

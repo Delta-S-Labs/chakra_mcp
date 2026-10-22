@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE consent_requests c\n               SET token = t.token\n              FROM unnest($1::uuid[], $2::text[]) AS t(id, token)\n             WHERE c.id = t.id AND c.token IS NULL\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e280734fc878287024447a6e40691fcfbaa96863a2eaee127342739da0d63a38"
+}

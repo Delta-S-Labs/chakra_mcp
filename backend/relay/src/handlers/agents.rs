@@ -904,6 +904,27 @@ pub async fn update(
         Some(raw) => CardChange::SetToPush(validate_agent_card_url(raw)?),
     };
 
+    // The relay forwards calls to a push agent at once, so it can't hold
+    // them for the owner's approval (owner consent §11).
+    if matches!(card_change, CardChange::SetToPush(_)) {
+        let asks_first = sqlx::query_scalar!(
+            r#"SELECT EXISTS (
+                   SELECT 1 FROM agent_capabilities
+                    WHERE agent_id = $1 AND consent_required
+               ) AS "asks_first!""#,
+            id,
+        )
+        .fetch_one(&state.db)
+        .await?;
+        if asks_first {
+            return Err(ApiError::Conflict(
+                "this agent has capabilities that ask its owner before delivering requests; \
+                 turn that off before giving it an endpoint"
+                    .into(),
+            ));
+        }
+    }
+
     let (set_card, new_card, set_mode, new_mode) = match &card_change {
         CardChange::Unchanged => (false, None, false, "pull"),
         CardChange::ClearToPull => (true, None, true, "pull"),
@@ -1075,12 +1096,17 @@ pub async fn delete(
         return Ok(axum::http::StatusCode::NO_CONTENT);
     }
 
+    // Requests to or from it that wait for an owner's approval can't be
+    // delivered any more: cancel them with it (owner consent §9).
+    let mut tx = state.db.begin().await?;
     sqlx::query!(
         r#"UPDATE agents SET tombstoned_at = now() WHERE id = $1"#,
         id,
     )
-    .execute(&state.db)
+    .execute(&mut *tx)
     .await?;
+    crate::consent::cascade::cancel_for_agent(&mut tx, id, "Agent deleted").await?;
+    tx.commit().await?;
 
     crate::events::record_audit(
         &state.db,

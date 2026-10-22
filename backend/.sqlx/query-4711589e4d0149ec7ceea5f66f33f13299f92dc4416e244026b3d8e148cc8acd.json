@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT c.id\n        FROM agent_capabilities c\n        WHERE c.id = ANY($1::uuid[])\n          AND c.agent_id = $2\n          AND EXISTS (\n              SELECT 1 FROM relay_invocations i\n              WHERE i.grantee_agent_id = $3\n                AND i.capability_id = c.id\n                -- A request held for the owner's approval doesn't count:\n                -- the owner never let it through (owner consent §4.6).\n                AND i.status NOT IN ('rejected', 'awaiting_consent')\n          )\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4711589e4d0149ec7ceea5f66f33f13299f92dc4416e244026b3d8e148cc8acd"
+}
