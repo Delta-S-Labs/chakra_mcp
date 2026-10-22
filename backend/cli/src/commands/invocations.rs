@@ -19,7 +19,7 @@ pub enum Cmd {
         #[arg(long)]
         agent: Option<String>,
         /// Filter by status.
-        #[arg(long, value_parser = ["pending", "in_progress", "rejected", "succeeded", "failed", "timeout"])]
+        #[arg(long, value_parser = ["pending", "in_progress", "rejected", "succeeded", "failed", "timeout", "awaiting_consent"])]
         status: Option<String>,
     },
     /// Show the current state of one invocation by id.

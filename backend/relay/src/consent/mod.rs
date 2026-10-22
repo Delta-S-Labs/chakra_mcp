@@ -12,18 +12,19 @@
 //! - [`visibility`]: hiding held input from the target.
 //! - [`deliver`] and [`token`]: tokens minted at delivery.
 //! - [`expiry`]: the worker that expires undecided requests.
+//! - [`notices`]: telling the target agent a request awaits approval.
 //! - [`cascade`]: cancelling requests when what they depend on is deleted.
 
-pub mod approvers;
 pub mod cascade;
 pub mod deliver;
 pub mod enqueue;
 pub mod expiry;
-pub mod metrics;
+pub mod notices;
 pub mod signer;
-pub mod terms;
 pub mod token;
 pub mod visibility;
+
+pub use chakramcp_shared::consent::{approvers, metrics, terms};
 
 #[cfg(test)]
 mod tests;

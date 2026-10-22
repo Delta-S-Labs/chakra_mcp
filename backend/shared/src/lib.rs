@@ -7,10 +7,13 @@
 //! * Scoped agent-grant resolution (the shared scope guard, so REST and
 //!   MCP enforce `agent_scope` identically)
 //! * Telling a person's web session from delegated tokens (`sessions`)
+//! * Owner consent decisions (`consent`), for the relay's API and the app's
+//!   built-in approval page
 //! * Telemetry: tracing init (text/JSON logs), Prometheus metrics, request IDs
 
 pub mod auto_friendship;
 pub mod config;
+pub mod consent;
 pub mod credits;
 pub mod db;
 pub mod error;

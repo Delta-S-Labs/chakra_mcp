@@ -265,7 +265,7 @@ fn signin(
             title: "Sign in".into(),
             host: origin.host(),
             lead: "to approve a device pairing".into(),
-            action: "/app/pair",
+            action: "/app/pair".into(),
             csrf: csrf.to_owned(),
             hidden: vec![Hidden {
                 name: "session",
