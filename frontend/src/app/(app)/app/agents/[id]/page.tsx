@@ -11,6 +11,7 @@ import {
   type ReviewListResponse,
 } from "@/lib/relay";
 import { StarRating } from "@/components/StarRating";
+import { listMembers } from "@/lib/api";
 import { redirectIfUnauthorized } from "@/lib/session-expired";
 import { EditAgentForm } from "./EditAgentForm";
 import { CapabilitiesPanel } from "./CapabilitiesPanel";
@@ -38,6 +39,18 @@ export default async function AgentDetailPage({
       notFound();
     }
     throw err;
+  }
+
+  // Who can approve requests to this agent's capabilities (owner consent):
+  // its account's members. Personal accounts have no member list; their
+  // owner decides.
+  let members: { user_id: string; display_name: string; role: "owner" | "admin" | "member" }[] = [];
+  if (agent.is_mine) {
+    try {
+      members = await listMembers(token, agent.account_slug);
+    } catch {
+      // non-fatal - approvers fall back to owners and admins
+    }
   }
 
   let capabilities: Awaited<ReturnType<typeof listCapabilities>> = [];
@@ -129,6 +142,8 @@ export default async function AgentDetailPage({
         agentId={agent.id}
         canEdit={agent.is_mine}
         initial={capabilities}
+        members={members}
+        pushMode={agent.mode === "push"}
       />
 
       <ReviewsPanel

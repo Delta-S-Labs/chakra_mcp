@@ -403,7 +403,17 @@ fn tools_list_result() -> Value {
                         "input_schema":  { "type": "object", "description": "JSON Schema for the input. Defaults to an open object." },
                         "output_schema": { "type": "object", "description": "JSON Schema for the output. Defaults to an open object." },
                         "visibility":    { "type": "string", "enum": ["private", "org", "network"], "description": "Defaults to 'network'. 'org' is visible to anyone sharing an organization with the owner; 'network' is public. public_invoke requires 'network'." },
-                        "semantics":     { "type": "string", "enum": ["autonomous", "human_in_loop"], "description": "Defaults to 'autonomous'." }
+                        "semantics":     { "type": "string", "enum": ["autonomous", "human_in_loop"], "description": "Defaults to 'autonomous'." },
+                        "consent": {
+                            "type": "object",
+                            "description": "Ask the agent's owner before requests reach the agent. Held requests wait for an approver's decision on the web; the agent gets a notice with the link (pull_notices). Pull-mode agents only.",
+                            "properties": {
+                                "required":     { "type": "boolean", "description": "Hold every request for approval. Default false." },
+                                "approvers":    { "type": "array", "items": { "type": "string" }, "description": "User ids or emails of members of the agent's account who may decide. Empty: the account's owners and admins." },
+                                "max_validity": { "type": "string", "enum": ["once", "1h", "1d", "7d", "30d"], "description": "The longest standing consent an approver may grant. Default 'once'." },
+                                "wait":         { "type": "string", "description": "How long a held request waits for a decision: <n>m, <n>h or <n>d, from 5m to 7d. Default 24h." }
+                            }
+                        }
                     }
                 })),
             tool("get_agent",
@@ -1542,16 +1552,21 @@ async fn publish_capability(db: &PgPool, user: &AuthUser, args: Value) -> Result
         output_schema: Option<Value>,
         visibility: Option<String>,
         semantics: Option<String>,
+        #[serde(default)]
+        consent: Option<crate::consent::settings::ConsentInput>,
     }
     let a: A = serde_json::from_value(args)
         .map_err(|e| ApiError::InvalidRequest(format!("bad publish_capability args: {e}")))?;
 
     // Ownership: the caller must be a member of the agent's account.
-    let agent_account =
-        sqlx::query_scalar!(r#"SELECT account_id FROM agents WHERE id = $1"#, a.agent_id)
-            .fetch_optional(db)
-            .await?
-            .ok_or(ApiError::NotFound)?;
+    let agent = sqlx::query!(
+        r#"SELECT account_id, mode FROM agents WHERE id = $1"#,
+        a.agent_id
+    )
+    .fetch_optional(db)
+    .await?
+    .ok_or(ApiError::NotFound)?;
+    let agent_account = agent.account_id;
     if !user_is_member(db, user.user_id, agent_account).await? {
         return Err(ApiError::Forbidden);
     }
@@ -1595,14 +1610,21 @@ async fn publish_capability(db: &PgPool, user: &AuthUser, args: Value) -> Result
     let output_schema = a
         .output_schema
         .unwrap_or_else(|| json!({ "type": "object" }));
+    // Same settings and checks as REST publish (owner consent §3).
+    let consent = crate::consent::settings::ConsentSettings::default()
+        .apply(db, agent_account, &a.consent.unwrap_or_default())
+        .await?;
+    crate::consent::settings::refuse_on_push(&consent, &agent.mode)?;
 
     let id = Uuid::now_v7();
     let inserted = sqlx::query!(
         r#"
         INSERT INTO agent_capabilities
             (id, agent_id, name, description, input_schema, output_schema,
-             visibility, semantics, created_by_user_id)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             visibility, semantics, created_by_user_id,
+             consent_required, consent_approvers, consent_max_validity_secs,
+             consent_wait_secs)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         ON CONFLICT (agent_id, name) DO NOTHING
         RETURNING id, agent_id, name, description, visibility, created_at
         "#,
@@ -1615,6 +1637,10 @@ async fn publish_capability(db: &PgPool, user: &AuthUser, args: Value) -> Result
         visibility,
         semantics,
         user.user_id,
+        consent.required,
+        &consent.approvers,
+        consent.max_validity_secs,
+        consent.wait_secs,
     )
     .fetch_optional(db)
     .await?
@@ -1641,6 +1667,8 @@ async fn publish_capability(db: &PgPool, user: &AuthUser, args: Value) -> Result
         "name": inserted.name,
         "description": inserted.description,
         "visibility": inserted.visibility,
+        "semantics": semantics,
+        "consent": consent.to_dto(true),
         "created_at": inserted.created_at,
     }))
 }

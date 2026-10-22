@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        INSERT INTO agent_capabilities\n            (id, agent_id, name, description, input_schema, output_schema,\n             visibility, semantics, created_by_user_id)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n        ON CONFLICT (agent_id, name) DO NOTHING\n        RETURNING id, agent_id, name, description, visibility, created_at\n        ",
+  "query": "\n        INSERT INTO agent_capabilities\n            (id, agent_id, name, description, input_schema, output_schema,\n             visibility, semantics, created_by_user_id,\n             consent_required, consent_approvers, consent_max_validity_secs,\n             consent_wait_secs)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)\n        ON CONFLICT (agent_id, name) DO NOTHING\n        RETURNING id, agent_id, name, description, visibility, created_at\n        ",
   "describe": {
     "columns": [
       {
@@ -80,7 +80,11 @@
         "Jsonb",
         "Text",
         "Text",
-        "Uuid"
+        "Uuid",
+        "Bool",
+        "UuidArray",
+        "Int4",
+        "Int4"
       ]
     },
     "nullable": [
@@ -92,5 +96,5 @@
       false
     ]
   },
-  "hash": "682ffbc34f69e35fb1fdac9395f868a2bd89b29c7f85408218996ebc6c0718f5"
+  "hash": "2ce680e3f611893e000877e871a3e2676602991ad92b7082eb044dd1aa617295"
 }

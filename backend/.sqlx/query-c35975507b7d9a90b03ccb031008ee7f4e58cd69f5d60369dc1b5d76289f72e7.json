@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, agent_id, name, description, input_schema, output_schema,\n               visibility, created_at, updated_at,\n               public_invoke, public_monthly_quota_per_agent\n        FROM agent_capabilities\n        WHERE agent_id = $1\n          AND (\n              $2::boolean\n              OR visibility = 'network'\n              OR ($3::boolean AND visibility = 'org')\n          )\n        ORDER BY name ASC\n        ",
+  "query": "\n        SELECT id, agent_id, name, description, input_schema, output_schema,\n               visibility, created_at, updated_at,\n               public_invoke, public_monthly_quota_per_agent, semantics,\n               consent_required, consent_approvers, consent_max_validity_secs,\n               consent_wait_secs\n        FROM agent_capabilities\n        WHERE agent_id = $1\n          AND (\n              $2::boolean\n              OR visibility = 'network'\n              OR ($3::boolean AND visibility = 'org')\n          )\n        ORDER BY name ASC\n        ",
   "describe": {
     "columns": [
       {
@@ -123,6 +123,61 @@
             "name": "public_monthly_quota_per_agent"
           }
         }
+      },
+      {
+        "ordinal": 11,
+        "name": "semantics",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "semantics"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "consent_required",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "consent_required"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "consent_approvers",
+        "type_info": "UuidArray",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "consent_approvers"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "consent_max_validity_secs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "consent_max_validity_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "consent_wait_secs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "consent_wait_secs"
+          }
+        }
       }
     ],
     "parameters": {
@@ -143,8 +198,13 @@
       false,
       false,
       false,
-      true
+      true,
+      false,
+      false,
+      false,
+      false,
+      false
     ]
   },
-  "hash": "6fc728c4f17ff4f2c4515bbb6b98c02737727900be2bcd7096799a2362c1b100"
+  "hash": "c35975507b7d9a90b03ccb031008ee7f4e58cd69f5d60369dc1b5d76289f72e7"
 }

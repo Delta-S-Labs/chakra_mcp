@@ -760,3 +760,56 @@
   border-color: color-mix(in oklab, var(--accent-butter) 75%, var(--line));
   color: var(--ink);
 }
+
+/* A checkbox with its sentence beside it (public-invoke, ask-first). */
+.toggle {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  font-family: var(--font-body);
+  font-size: 0.92rem;
+  line-height: 1.4;
+  color: var(--ink);
+  cursor: pointer;
+}
+.toggle input {
+  margin-top: 0.2rem;
+  flex: none;
+}
+.toggleHint {
+  display: block;
+  font-size: 0.84rem;
+  color: var(--ink-soft);
+}
+
+/* Owner consent: a capability's approval settings, edited in its row. */
+.consentEditor {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+  align-items: end;
+}
+.approverList {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.35rem;
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+.approverRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+.editorActions {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}

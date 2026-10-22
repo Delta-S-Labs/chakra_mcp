@@ -20,6 +20,9 @@ export interface Agent {
   description: string;
   visibility: Visibility;
   endpoint_url: string | null;
+  /** `pull` (polls its inbox) or `push` (takes calls at its own A2A
+   *  endpoint). Push agents can't ask their owner first. */
+  mode?: "pull" | "push";
   created_at: string;
   updated_at: string;
   is_mine: boolean;
@@ -53,6 +56,32 @@ export interface Capability {
   /** Per-invoker monthly cap (calendar month). Non-null only when
    *  `public_invoke` is true. */
   public_monthly_quota_per_agent: number | null;
+  /** `human_in_loop`: the agent's owner writes the replies. */
+  semantics?: "autonomous" | "human_in_loop";
+  /** Owner consent: whether requests wait for the owner's approval. */
+  consent?: CapabilityConsent;
+}
+
+/** The longest standing consent a publisher allows. */
+export type MaxValidity = "once" | "1h" | "1d" | "7d" | "30d";
+
+export interface CapabilityConsent {
+  required: boolean;
+  /** User ids who may decide; only for those who manage the agent.
+   *  Empty means the account's owners and admins. */
+  approvers?: string[];
+  max_validity: MaxValidity;
+  /** How long a held request waits for a decision: `<n>m`, `<n>h`, `<n>d`. */
+  wait: string;
+}
+
+/** `consent` on publish and update; absent fields keep their value. */
+export interface ConsentSettingsInput {
+  required?: boolean;
+  /** User ids or member emails. */
+  approvers?: string[];
+  max_validity?: MaxValidity;
+  wait?: string;
 }
 
 export interface CreateAgentRequest {
@@ -83,6 +112,7 @@ export interface CreateCapabilityRequest {
    *  `"network"` and a non-null monthly quota. */
   public_invoke?: boolean;
   public_monthly_quota_per_agent?: number;
+  consent?: ConsentSettingsInput;
 }
 
 export interface UpdateCapabilityRequest {
@@ -92,6 +122,7 @@ export interface UpdateCapabilityRequest {
   visibility?: Visibility;
   public_invoke?: boolean;
   public_monthly_quota_per_agent?: number;
+  consent?: ConsentSettingsInput;
 }
 
 export class RelayClientError extends Error {
@@ -448,7 +479,9 @@ export type InvocationStatus =
   | "succeeded"
   | "failed"
   | "rejected"
-  | "timeout";
+  | "timeout"
+  /** Held until the target agent's owner approves it (owner consent). */
+  | "awaiting_consent";
 
 export interface InvokeRequest {
   grant_id: string;
@@ -520,6 +553,18 @@ export interface Invocation {
    *  on public-invoke + pre-snapshot rows. */
   friendship_context?: FriendshipContext;
   grant_context?: GrantContext;
+  /** What the owner approved, and the consent token proving it; once a
+   *  held request is approved. */
+  consent?: InvocationConsent;
+}
+
+export interface InvocationConsent {
+  consent_request_id: string;
+  consent_id: string | null;
+  approved_at: string | null;
+  terms: ConsentTerms;
+  /** Null until the inbox delivers the invocation. */
+  token: string | null;
 }
 
 export interface ReportResultRequest {
@@ -810,3 +855,126 @@ export async function getFeaturedAgents(): Promise<FeaturedAgent[]> {
 }
 
 export const relayBaseUrl = BASE;
+
+// ─── Owner consent ───────────────────────────────────────
+
+/** What a requester proposes and an approver accepts or narrows. */
+export interface ConsentTerms {
+  purpose?: string;
+  /** `once`, `<n>h` or `<n>d`. */
+  valid_for?: string;
+  max_requests?: number;
+}
+
+export interface ConsentAgentRef {
+  id: string;
+  display_name: string | null;
+}
+
+export type ConsentRequestStatus = "pending" | "approved" | "denied" | "expired" | "cancelled";
+
+/** `GET /v1/approvals/{id}`: the approval page. */
+export interface ApprovalView {
+  id: string;
+  kind: "request" | "reply";
+  status: ConsentRequestStatus;
+  invocation_id: string;
+  requester: {
+    agent_id: string;
+    agent_display_name: string | null;
+    account_id: string;
+    account_slug: string | null;
+    account_display_name: string | null;
+    verified: boolean;
+  };
+  target: ConsentAgentRef;
+  capability: { id: string; name: string | null; description: string | null };
+  grant_purpose: string | null;
+  tier: "friend" | "public";
+  terms: ConsentTerms;
+  approved_terms: ConsentTerms | null;
+  max_validity: string;
+  expires_at: string;
+  created_at: string;
+  decided_at: string | null;
+  decision_note: string | null;
+  may_decide: boolean;
+  approvers: { user_id: string; display_name: string }[];
+  /** The held input; only for those who may decide. */
+  input?: unknown;
+}
+
+/** A row in the waiting and history lists. */
+export interface ApprovalSummary {
+  id: string;
+  kind: "request" | "reply";
+  status: ConsentRequestStatus;
+  invocation_id: string;
+  capability_name: string | null;
+  target: ConsentAgentRef;
+  requester_agent_id: string;
+  requester_display_name: string | null;
+  requester_account_display_name: string | null;
+  terms: ConsentTerms;
+  approved_terms: ConsentTerms | null;
+  expires_at: string;
+  created_at: string;
+  decided_at: string | null;
+  decision_note: string | null;
+  decided_by_display_name: string | null;
+  /** Approved by a standing consent rather than a person. */
+  covered: boolean;
+}
+
+/** A standing consent, in the active list. */
+export interface ConsentSummary {
+  id: string;
+  capability_id: string;
+  capability_name: string | null;
+  target: ConsentAgentRef;
+  requester_agent_id: string;
+  requester_display_name: string | null;
+  requester_account_display_name: string | null;
+  purpose: string | null;
+  valid_from: string;
+  valid_until: string;
+  max_requests: number | null;
+  used: number;
+}
+
+export function listApprovals(token: string, state: "waiting" | "history") {
+  return request<ApprovalSummary[]>(`/v1/approvals?state=${state}`, { token });
+}
+
+export function listActiveConsents(token: string) {
+  return request<ConsentSummary[]>("/v1/approvals?state=active", { token });
+}
+
+export function getApproval(token: string, id: string) {
+  return request<ApprovalView>(`/v1/approvals/${encodeURIComponent(id)}`, { token });
+}
+
+export function approveRequest(
+  token: string,
+  id: string,
+  body: { valid_for?: string; max_requests?: number } = {},
+) {
+  return request<{ id: string; status: "approved"; consent_id: string | null }>(
+    `/v1/approvals/${encodeURIComponent(id)}/approve`,
+    { method: "POST", token, body: JSON.stringify(body) },
+  );
+}
+
+export function denyRequest(token: string, id: string, note?: string) {
+  return request<{ id: string; status: "denied" }>(
+    `/v1/approvals/${encodeURIComponent(id)}/deny`,
+    { method: "POST", token, body: JSON.stringify(note ? { note } : {}) },
+  );
+}
+
+export function revokeConsent(token: string, id: string) {
+  return request<{ id: string; revoked: true }>(
+    `/v1/consents/${encodeURIComponent(id)}/revoke`,
+    { method: "POST", token },
+  );
+}

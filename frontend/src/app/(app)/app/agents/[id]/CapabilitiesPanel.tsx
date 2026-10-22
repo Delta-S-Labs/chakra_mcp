@@ -4,23 +4,55 @@ import { useState } from "react";
 import {
   createCapability,
   deleteCapability,
+  updateCapability,
   type Capability,
   type Visibility,
 } from "@/lib/relay";
+import {
+  ConsentFields,
+  consentInput,
+  DEFAULT_CONSENT,
+  type ConsentDraft,
+  type Member,
+} from "./ConsentFields";
 import styles from "../agents.module.css";
+
+/** A capability's stored consent settings as an editable draft. */
+function draftOf(cap: Capability): ConsentDraft {
+  const c = cap.consent;
+  if (!c) return DEFAULT_CONSENT;
+  return {
+    required: c.required,
+    approvers: c.approvers ?? [],
+    maxValidity: c.max_validity,
+    wait: c.wait,
+  };
+}
 
 export function CapabilitiesPanel({
   token,
   agentId,
   canEdit,
   initial,
+  members = [],
+  pushMode = false,
 }: {
   token: string;
   agentId: string;
   canEdit: boolean;
   initial: Capability[];
+  /** The agent's account members, to pick approvers from. */
+  members?: Member[];
+  /** Push-mode agents can't ask their owner first. */
+  pushMode?: boolean;
 }) {
   const [items, setItems] = useState<Capability[]>(initial);
+  // Owner consent: "Ask before delivering requests" on the add form, and
+  // the capability whose approval settings are open for editing.
+  const [consent, setConsent] = useState<ConsentDraft>(DEFAULT_CONSENT);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<ConsentDraft>(DEFAULT_CONSENT);
+  const [saving, setSaving] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [inputSchema, setInputSchema] = useState("{}");
@@ -86,6 +118,7 @@ export function CapabilitiesPanel({
               public_monthly_quota_per_agent: monthlyQuota as number,
             }
           : {}),
+        ...(consent.required ? { consent: consentInput(consent) } : {}),
       });
       setItems((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
       setName("");
@@ -95,10 +128,27 @@ export function CapabilitiesPanel({
       setVisibility("network");
       setPublicInvoke(false);
       setMonthlyQuota("");
+      setConsent(DEFAULT_CONSENT);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't add capability.");
     } finally {
       setPending(false);
+    }
+  }
+
+  async function handleSaveConsent(cap: Capability) {
+    setError(null);
+    setSaving(true);
+    try {
+      const updated = await updateCapability(token, agentId, cap.id, {
+        consent: consentInput(editDraft),
+      });
+      setItems((prev) => prev.map((c) => (c.id === cap.id ? updated : c)));
+      setEditing(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't save the approval settings.");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -173,19 +223,70 @@ export function CapabilitiesPanel({
                       public · {cap.public_monthly_quota_per_agent}/mo
                     </span>
                   )}
+                  {cap.consent?.required && (
+                    <span
+                      className={`${styles.badge} ${styles.badgeOn}`}
+                      title="Requests wait for the owner's approval before reaching the agent."
+                    >
+                      asks first
+                    </span>
+                  )}
                 </div>
                 {cap.description && (
                   <div className={styles.rowMeta}>{cap.description}</div>
                 )}
+                {editing === cap.id && (
+                  <div className={styles.consentEditor}>
+                    <ConsentFields
+                      value={editDraft}
+                      onChange={setEditDraft}
+                      members={members}
+                      pushMode={pushMode}
+                    />
+                    {!pushMode && (
+                      <div className={styles.editorActions}>
+                        <button
+                          type="button"
+                          className={styles.create}
+                          disabled={saving}
+                          onClick={() => handleSaveConsent(cap)}
+                        >
+                          {saving ? "Saving…" : "Save"}
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.dangerLink}
+                          onClick={() => setEditing(null)}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               {canEdit && (
-                <button
-                  type="button"
-                  className={styles.dangerLink}
-                  onClick={() => handleDelete(cap)}
-                >
-                  Remove
-                </button>
+                <div className={styles.editorActions} style={{ gridColumn: "auto" }}>
+                  {editing !== cap.id && (
+                    <button
+                      type="button"
+                      className={styles.dangerLink}
+                      onClick={() => {
+                        setEditDraft(draftOf(cap));
+                        setEditing(cap.id);
+                      }}
+                    >
+                      Approvals
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className={styles.dangerLink}
+                    onClick={() => handleDelete(cap)}
+                  >
+                    Remove
+                  </button>
+                </div>
               )}
             </li>
           ))}
@@ -239,10 +340,7 @@ export function CapabilitiesPanel({
                 network-visible capabilities so we never show users a
                 control whose state the relay would 400 on. */}
             {visibility === "network" && (
-              <label
-                className={`${styles.field} ${styles.fieldFull}`}
-                style={{ flexDirection: "row", alignItems: "center", gap: "0.55rem" }}
-              >
+              <label className={styles.toggle}>
                 <input
                   type="checkbox"
                   checked={publicInvoke}
@@ -251,9 +349,7 @@ export function CapabilitiesPanel({
                     if (!e.target.checked) setMonthlyQuota("");
                   }}
                 />
-                <span className={styles.fieldLabel} style={{ marginRight: "auto" }}>
-                  Publicly invokable — any agent can call it without a friendship
-                </span>
+                <span>Publicly invokable — any agent can call it without a friendship</span>
               </label>
             )}
             {visibility === "network" && publicInvoke && (
@@ -271,6 +367,13 @@ export function CapabilitiesPanel({
                 />
               </label>
             )}
+
+            <ConsentFields
+              value={consent}
+              onChange={setConsent}
+              members={members}
+              pushMode={pushMode}
+            />
 
             <label className={`${styles.field} ${styles.fieldFull}`}>
               <span className={styles.fieldLabel}>Description</span>

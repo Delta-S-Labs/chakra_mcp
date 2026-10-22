@@ -8,6 +8,8 @@ import { CommandPalette } from "./CommandPalette";
 import { UserMenu } from "./UserMenu";
 import { PostHogIdentify } from "@/components/analytics/PostHogIdentify";
 import { CreditAlertBanner } from "@/components/credits/CreditAlertBanner";
+import { ApprovalsBanner } from "@/components/approvals/ApprovalsBanner";
+import { ApprovalsCount } from "@/components/approvals/ApprovalsCount";
 import styles from "./shell.module.css";
 
 /**
@@ -51,7 +53,13 @@ export default async function AppShellLayout({ children }: { children: ReactNode
             <span className={styles.brandWord}>ChakraMCP</span>
           </Link>
 
-          <AppNav />
+          <AppNav
+            approvalsBadge={
+              <Suspense fallback={null}>
+                <ApprovalsCount />
+              </Suspense>
+            }
+          />
 
           <UserMenu
             name={name}
@@ -65,6 +73,10 @@ export default async function AppShellLayout({ children }: { children: ReactNode
             it never holds up the page. */}
         <Suspense fallback={null}>
           <CreditAlertBanner />
+        </Suspense>
+        {/* Requests waiting for the user's approval (owner consent). */}
+        <Suspense fallback={null}>
+          <ApprovalsBanner />
         </Suspense>
 
         <main className={styles.main}>{children}</main>

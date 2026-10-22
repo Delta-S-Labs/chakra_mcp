@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n            a.id, a.account_id, a.slug, a.display_name, a.description,\n            a.visibility, a.endpoint_url, a.created_at, a.updated_at,\n            acc.slug as account_slug, acc.display_name as account_display_name,\n            (SELECT COUNT(*)::bigint FROM agent_capabilities c WHERE c.agent_id = a.id) as \"capability_count!\",\n            (SELECT AVG(rating)::float8 FROM agent_reviews r\n                WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS avg_rating,\n            (SELECT COUNT(*)::bigint FROM agent_reviews r\n                WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS \"review_count!\",\n            EXISTS(\n                SELECT 1 FROM account_memberships m\n                WHERE m.account_id = a.account_id AND m.user_id = $1\n            ) as \"is_mine!\"\n        FROM agents a\n        JOIN accounts acc ON acc.id = a.account_id\n        WHERE a.id = $2\n          AND a.tombstoned_at IS NULL\n          AND acc.tombstoned_at IS NULL\n        ",
+  "query": "\n        INSERT INTO agents\n            (id, account_id, created_by_user_id, slug, display_name, description,\n             visibility, endpoint_url, mode, agent_card_url,\n             created_by_client_id, created_by_api_key_id)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)\n        ON CONFLICT (account_id, slug) WHERE tombstoned_at IS NULL DO NOTHING\n        RETURNING id, account_id, slug, display_name, description, visibility, endpoint_url, mode, created_at, updated_at\n        ",
   "describe": {
     "columns": [
       {
@@ -82,6 +82,17 @@
       },
       {
         "ordinal": 7,
+        "name": "mode",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "mode"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -92,7 +103,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "updated_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -101,57 +112,21 @@
             "name": "updated_at"
           }
         }
-      },
-      {
-        "ordinal": 9,
-        "name": "account_slug",
-        "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "accounts",
-            "name": "slug"
-          }
-        }
-      },
-      {
-        "ordinal": 10,
-        "name": "account_display_name",
-        "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "accounts",
-            "name": "display_name"
-          }
-        }
-      },
-      {
-        "ordinal": 11,
-        "name": "capability_count!",
-        "type_info": "Int8",
-        "origin": "Expression"
-      },
-      {
-        "ordinal": 12,
-        "name": "avg_rating",
-        "type_info": "Float8",
-        "origin": "Expression"
-      },
-      {
-        "ordinal": 13,
-        "name": "review_count!",
-        "type_info": "Int8",
-        "origin": "Expression"
-      },
-      {
-        "ordinal": 14,
-        "name": "is_mine!",
-        "type_info": "Bool",
-        "origin": "Expression"
       }
     ],
     "parameters": {
       "Left": [
         "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
         "Uuid"
       ]
     },
@@ -165,13 +140,8 @@
       true,
       false,
       false,
-      false,
-      false,
-      null,
-      null,
-      null,
-      null
+      false
     ]
   },
-  "hash": "7fac8e46181b8a493c0a2dcc2891c76e69537ecdb5e251e2852d8904110d40bb"
+  "hash": "090882d2ccb1b0bbc231ccac9464eb4d711a38f6d4fd3c9c73eb7ff6a9ed87c0"
 }

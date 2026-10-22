@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT c.id, c.capability_id, cap.name AS \"capability_name?\",\n               c.granter_agent_id, ga.display_name AS granter_display_name,\n               c.grantee_agent_id, ea.display_name AS \"grantee_display_name?\",\n               eacc.display_name AS \"grantee_account_display_name?\",\n               c.purpose, c.valid_from, c.valid_until, c.max_requests, c.used\n          FROM consents c\n          JOIN agents ga ON ga.id = c.granter_agent_id\n          JOIN account_memberships m ON m.account_id = ga.account_id AND m.user_id = $1\n          LEFT JOIN agents ea ON ea.id = c.grantee_agent_id\n          LEFT JOIN accounts eacc ON eacc.id = ea.account_id\n          LEFT JOIN agent_capabilities cap ON cap.id = c.capability_id\n         WHERE c.revoked_at IS NULL AND c.valid_until > now()\n         ORDER BY c.created_at DESC\n         LIMIT $2\n        ",
+  "query": "\n        SELECT c.id, c.capability_id, cap.name AS \"capability_name?\",\n               c.granter_agent_id, ga.display_name AS granter_display_name,\n               c.grantee_agent_id, ea.display_name AS \"grantee_display_name?\",\n               eacc.display_name AS \"grantee_account_display_name?\",\n               c.purpose, c.valid_from, c.valid_until, c.max_requests, c.used\n          FROM consents c\n          JOIN agents ga ON ga.id = c.granter_agent_id\n          JOIN account_memberships m ON m.account_id = ga.account_id AND m.user_id = $1\n          LEFT JOIN agents ea ON ea.id = c.grantee_agent_id\n          LEFT JOIN accounts eacc ON eacc.id = ea.account_id\n          LEFT JOIN agent_capabilities cap ON cap.id = c.capability_id\n         WHERE c.revoked_at IS NULL AND c.valid_until > now()\n           -- A consent whose requests are used up covers nothing more.\n           AND (c.max_requests IS NULL OR c.used < c.max_requests)\n         ORDER BY c.created_at DESC\n         LIMIT $2\n        ",
   "describe": {
     "columns": [
       {
@@ -169,5 +169,5 @@
       false
     ]
   },
-  "hash": "f2170497c7b9d8b2a0032bac64744f4bc35ee5837aa2238bb17f3f4d326e464d"
+  "hash": "5c434322581224bab6890b5047f9feaee832b618d21d86463e202a5b8e78ebd8"
 }

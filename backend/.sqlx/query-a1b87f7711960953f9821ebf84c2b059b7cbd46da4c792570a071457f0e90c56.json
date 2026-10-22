@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT u.id\n              FROM account_memberships m\n              JOIN users u ON u.id = m.user_id\n             WHERE m.account_id = $1\n               AND (u.id::text = $2 OR lower(u.email) = lower($2))\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "a1b87f7711960953f9821ebf84c2b059b7cbd46da4c792570a071457f0e90c56"
+}

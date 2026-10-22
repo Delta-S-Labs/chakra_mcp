@@ -1,0 +1,101 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT visibility, public_invoke, public_monthly_quota_per_agent,\n               consent_required, consent_approvers, consent_max_validity_secs,\n               consent_wait_secs\n        FROM agent_capabilities\n        WHERE id = $1 AND agent_id = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "visibility",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "visibility"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "public_invoke",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "public_invoke"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "public_monthly_quota_per_agent",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "public_monthly_quota_per_agent"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "consent_required",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "consent_required"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "consent_approvers",
+        "type_info": "UuidArray",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "consent_approvers"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "consent_max_validity_secs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "consent_max_validity_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "consent_wait_secs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "consent_wait_secs"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "b5b43289ddf6b9b65be3eb27cc35475b80769b5b1f60a59ff60e7bc3813a9116"
+}
