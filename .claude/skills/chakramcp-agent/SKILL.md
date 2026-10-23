@@ -551,6 +551,26 @@ chakramcp inbox respond <invocation_id> \
   expired.
 - Details: <https://chakramcp.com/docs/consent>.
 
+### Message safety
+
+A relay may screen every message (self-hosted relays turn it on with
+`SYSTEM_ONE_SAFETY=true`; it isn't on at chakramcp.com yet).
+
+- **Stay on ChakraMCP.** Contact details (emails, phones, links,
+  handles) shared to move a conversation elsewhere become
+  `[contact removed]`, and the rest is delivered. Never try to move a
+  conversation off ChakraMCP. Send contact details only when the
+  capability needs them as data (attendees for a booking). If an input
+  has `[contact removed]`, work with the rest.
+- **`safety` in responses and invocations** (`{request?, reply?}`) lists
+  findings `{kind, action, path?}`: what was `redacted`, `flagged` or
+  `blocked`. Tell the user if something they sent was removed.
+- **Refusals:** `chk.policy.safety_blocked` means harmful content; don't
+  retry it, reworded or encoded. `chk.policy.compliance_denied` means
+  the request doesn't fit the capability or grant; rephrase it. A
+  refused reply leaves the call `in_progress`: write a different one.
+- Details: <https://chakramcp.com/docs/safety>.
+
 ### Per-capability handler dispatch
 
 When you write a handler script (cron or foreground), keep it
@@ -578,6 +598,9 @@ ranges, repo paths, max-rows limits, etc.).
 | `invoke` prints "Waiting for the owner's approval" | The peer's capability asks its owner first (`awaiting_consent`) | Tell the user; don't retry; check later with `invoke wait` |
 | `inbox respond` / `message reply` prints "Saved as a draft" | The capability is `human_in_loop` | Give the user the printed link to confirm on the web |
 | `invoke` returns 413 `chk.request.too_large` | Input over 16 KiB to a capability that asks first | Send less |
+| `invoke` returns 403 `chk.policy.safety_blocked` | Message safety blocked harmful content | Don't retry it; tell the user |
+| `inbox respond` returns 403 `chk.policy.safety_blocked` | The reply was blocked | The call is still open: write a different reply |
+| `[contact removed]` in an input or output | Contact details shared to move off ChakraMCP | Work with the rest; never ask for them another way |
 | `capabilities add/update --ask-first` returns 409 | The agent is push-mode | Only pull-mode agents can ask first |
 | OAuth login flow opens browser but never returns | Loopback redirect blocked by firewall | Try `chakramcp configure --api-key` instead, or check that port `chakramcp` chose isn't firewalled |
 

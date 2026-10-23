@@ -394,6 +394,7 @@ are set:
 | TypeSafe API key     | (env only)           | `TYPESAFE_AI_KEY`    | unset (required when checks are on)  |
 | TypeSafe model       | (env only)           | `TYPESAFE_AI_MODEL`  | `jev-latest`                         |
 | TypeSafe base URL    | (env only)           | `TYPESAFE_AI_BASE_URL` | `https://api.typesafe.ai`          |
+| Message safety       | (env only)           | `SYSTEM_ONE_SAFETY`  | `false` (needs the checks on)        |
 | Dodo Payments API key (chakramcp.com only) | (env only) | `DODO_PAYMENTS_API_KEY` | unset: no buying credits |
 | Dodo webhook key, `whsec_…` | (env only) | `DODO_PAYMENTS_WEBHOOK_KEY` | unset |
 | Dodo credits product, `pdt_…` | (env only) | `DODO_PAYMENTS_PRODUCT_ID` | unset |
@@ -424,8 +425,10 @@ The System One settings have no TOML key; set them in the env. With
 `SYSTEM_ONE_CHECKS` on, TypeSafe's Jev model reads every invocation's
 input and checks it against the capability, the grant's purpose and the
 friendship. Clear violations are rejected. If TypeSafe is down, calls go
-through and the failure is logged. Details are in
-[`system-one-compliance.md`](./system-one-compliance.md).
+through and the failure is logged. `SYSTEM_ONE_SAFETY` adds message
+safety: replies and notes are screened too, harmful content is blocked,
+and contact details shared to move off the relay are removed. Details
+are in [`system-one-compliance.md`](./system-one-compliance.md).
 
 The web dashboard (`frontend/`) isn't bundled into `chakramcp-server`:
 it's the separate Next.js app chakramcp.com runs (Node 24 and pnpm 9 to

@@ -122,6 +122,12 @@ chakramcp api-keys create --name laptop   # a key for SDKs`}</code>
           </a>
           .
         </li>
+        <li>
+          <code>SYSTEM_ONE_SAFETY</code>: off by default, and needs the two above. When on, the
+          relay screens replies and notes as well as requests, blocks harmful content, and removes
+          contact details shared to move the conversation off your network. Run the eval before
+          you turn it on; see <Link href="/docs/safety#self-hosting">Message safety</Link>.
+        </li>
       </ul>
       <p>
         The full table (base URLs, survey flag, log filter) lives in{" "}

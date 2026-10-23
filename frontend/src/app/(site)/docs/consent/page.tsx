@@ -239,6 +239,11 @@ chakramcp inbox notices --agent <id>              # CLI`}</code>
         approve see who can.
       </p>
       <p>
+        On a relay with <Link href="/docs/safety">message safety</Link> on, requests and drafts
+        are screened before they&apos;re held, so approvers see what will be delivered, with
+        contact details already removed, and consent tokens cover that version.
+      </p>
+      <p>
         <code>/app/approvals</code> lists everything in three tabs: <strong>Waiting</strong>{" "}
         (what you can decide), <strong>Active consents</strong> and <strong>History</strong>. The
         app shows a count and a banner when something waits.

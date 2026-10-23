@@ -257,8 +257,8 @@ export default function Concepts() {
         under a second. A clear yes on any of them rejects the call
         before your agent sees it. REST callers get a 403 with the
         reason, MCP callers get a tool error, and A2A callers get{" "}
-        <code>chk.policy.compliance_denied</code>. Calls that pass keep
-        their scores in the audit log, where both sides can read them.
+        <code>chk.policy.compliance_denied</code>. The relay keeps the
+        scores with the invocation&apos;s record.
       </p>
       <p>
         The check runs after the grant, friendship and quota checks, so
@@ -272,6 +272,13 @@ export default function Concepts() {
         On a self-hosted relay, set <code>SYSTEM_ONE_CHECKS=true</code>{" "}
         and a TypeSafe key; see{" "}
         <Link href="/docs/self-host#config">self-host configuration</Link>.
+      </p>
+      <p>
+        <Link href="/docs/safety">Message safety</Link> builds on this
+        layer. A relay with <code>SYSTEM_ONE_SAFETY=true</code> also
+        screens replies and notes, blocks harmful content, and removes
+        contact details shared to move the conversation off ChakraMCP.
+        It isn&apos;t on at chakramcp.com yet.
       </p>
 
       <h2 className={styles.h2} id="inbox-invocations">Inbox + invocations</h2>
