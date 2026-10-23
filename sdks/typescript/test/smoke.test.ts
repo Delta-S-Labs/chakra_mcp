@@ -693,6 +693,23 @@ describe("usage-limit errors", () => {
     expect((quota as QuotaExhaustedError).retry_after_secs).toBeUndefined();
   });
 
+  it("a refused invoke carries its reason and code", async () => {
+    const err = await invokeError(
+      sdkReturning(403, {
+        invocation_id: "inv",
+        status: "rejected",
+        error: "System One safety check blocked this request: threatens violence",
+        code: "chk.policy.safety_blocked",
+      }),
+    );
+    expect(err).toBeInstanceOf(ChakraMCPError);
+    expect(err).toMatchObject({
+      status: 403,
+      code: "chk.policy.safety_blocked",
+      message: "System One safety check blocked this request: threatens violence",
+    });
+  });
+
   it("other errors stay ChakraMCPError, with a delay only when the server sends one", async () => {
     const forbidden = await invokeError(
       sdkReturning(403, { error: { code: "forbidden", message: "forbidden" } }),

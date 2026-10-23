@@ -358,6 +358,37 @@ async fn rate_limited_uses_retry_after_header() {
 }
 
 #[tokio::test]
+async fn refused_invoke_carries_reason_and_code() {
+    let err = invoke_error(
+        403,
+        None,
+        json!({
+            "invocation_id": "inv",
+            "status": "rejected",
+            "error": "System One safety check blocked this request: threatens violence",
+            "code": "chk.policy.safety_blocked",
+        }),
+    )
+    .await;
+    match err {
+        Error::Api {
+            status,
+            code,
+            message,
+            ..
+        } => {
+            assert_eq!(status, 403);
+            assert_eq!(code, "chk.policy.safety_blocked");
+            assert_eq!(
+                message,
+                "System One safety check blocked this request: threatens violence"
+            );
+        }
+        other => panic!("expected Api, got {other:?}"),
+    }
+}
+
+#[tokio::test]
 async fn credits_exhausted_with_credits_url() {
     let err = invoke_error(
         429,
