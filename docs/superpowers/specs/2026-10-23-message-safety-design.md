@@ -418,7 +418,7 @@ omitted when empty.
   - notes;
   - consent: approvers and tokens see the redacted input;
   - switch off means no change.
-- **The labelled set:** `relay/tests/data/safety/messages.json`, about 150 messages, each
+- **The labelled set:** `backend/shared/tests/data/safety/messages.json`, about 150 messages, each
   with its expected action. It covers:
   - harmful and benign messages;
   - legitimate contact data;
