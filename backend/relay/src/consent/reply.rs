@@ -13,6 +13,7 @@ use uuid::Uuid;
 use chakramcp_shared::consent::decide::Actor;
 use chakramcp_shared::consent::reply::{self, Draft, ReplyTarget};
 use chakramcp_shared::error::ApiError;
+use chakramcp_shared::safety::{Channel, Safety};
 use chakramcp_shared::sessions::is_delegated_token;
 
 use crate::auth::{user_is_member, AuthUser};
@@ -29,12 +30,18 @@ pub enum Preview {
 #[derive(Debug)]
 pub enum Submitted {
     /// The invocation finished with this status.
-    Finished { status: String, elapsed_ms: i32 },
+    Finished {
+        status: String,
+        elapsed_ms: i32,
+        /// What message safety removed or flagged in the reply.
+        safety: Option<Safety>,
+    },
     /// Stored as a draft for an approver to confirm.
     Drafted {
         consent_request_id: Uuid,
         approve_url: String,
         expires_at: DateTime<Utc>,
+        safety: Option<Safety>,
     },
 }
 
@@ -68,6 +75,9 @@ pub async fn submit_result(
                ga.account_id AS "granter_account_id?",
                ea.account_id AS "grantee_account_id?",
                c.semantics AS "capability_semantics?",
+               c.name AS "capability_name?",
+               c.description AS "capability_description?",
+               c.output_schema AS "capability_output_schema?",
                c.consent_approvers AS "approvers?",
                c.consent_wait_secs AS "wait_secs?"
           FROM relay_invocations i
@@ -93,6 +103,58 @@ pub async fn submit_result(
     let granter_account = row.granter_account_id.ok_or(ApiError::Forbidden)?;
     if !user_is_member(&state.db, user.user_id, granter_account).await? {
         return Err(ApiError::Forbidden);
+    }
+
+    // Message safety (when on): screen the reply before anything below
+    // stores or releases it, so drafts, confirmations and tokens all cover
+    // what the caller will see.
+    let (mut output, mut error) = (output, error);
+    let mut safety = None;
+    if let Some(checker) = state.compliance.as_deref().filter(|c| c.safety_enabled()) {
+        let mut sent = serde_json::json!({ "status": status });
+        if let Some(o) = &output {
+            sent["output"] = o.clone();
+        }
+        if let Some(e) = &error {
+            sent["error"] = serde_json::json!(e);
+        }
+        let subject = crate::compliance::Subject {
+            capability_name: row.capability_name.as_deref().unwrap_or("(deleted)"),
+            capability_description: row
+                .capability_description
+                .as_deref()
+                .filter(|d| !d.trim().is_empty()),
+            grant_purpose: None,
+            relationship: None,
+            input: &sent,
+        };
+        let screened = checker
+            .screen(
+                Channel::Reply,
+                &subject,
+                "",
+                row.capability_output_schema.as_ref(),
+                "/output",
+            )
+            .await
+            .map_err(|_| crate::handlers::invoke::too_large_to_screen())?;
+        store_reply_report(&state.db, id, &screened.report).await?;
+        if let Some(block) = screened.block {
+            return Err(ApiError::Policy {
+                code: block.code,
+                message: block.reason,
+            });
+        }
+        if output.is_some() {
+            output = screened.value.get("output").cloned();
+        }
+        if error.is_some() {
+            error = screened.value["error"].as_str().map(str::to_owned);
+        }
+        safety = (!screened.findings.is_empty()).then_some(Safety {
+            request: None,
+            reply: Some(screened.findings),
+        });
     }
 
     if row.capability_semantics.as_deref() == Some("human_in_loop") {
@@ -137,6 +199,7 @@ pub async fn submit_result(
             return Ok(Submitted::Finished {
                 status: draft.status,
                 elapsed_ms,
+                safety,
             });
         }
         let stored = reply::store_draft(&state.db, &target, &draft).await?;
@@ -144,6 +207,7 @@ pub async fn submit_result(
             consent_request_id: stored.consent_request_id,
             approve_url: super::notices::approve_url(state, stored.consent_request_id),
             expires_at: stored.expires_at,
+            safety,
         });
     }
 
@@ -184,7 +248,29 @@ pub async fn submit_result(
     Ok(Submitted::Finished {
         status: status.to_owned(),
         elapsed_ms,
+        safety,
     })
+}
+
+/// Keep a reply's screening report (message safety §5), drafts and blocked
+/// replies included: `trust_snapshot.system_one.reply_safety`.
+async fn store_reply_report(db: &sqlx::PgPool, id: Uuid, report: &Value) -> Result<(), ApiError> {
+    sqlx::query!(
+        r#"
+        UPDATE relay_invocations
+           SET trust_snapshot = COALESCE(trust_snapshot, '{}'::jsonb)
+               || jsonb_build_object(
+                    'system_one',
+                    COALESCE(trust_snapshot->'system_one', '{}'::jsonb)
+                        || jsonb_build_object('reply_safety', $2::jsonb))
+         WHERE id = $1
+        "#,
+        id,
+        report,
+    )
+    .execute(db)
+    .await?;
+    Ok(())
 }
 
 impl Submitted {
@@ -195,12 +281,19 @@ impl Submitted {
                 consent_request_id,
                 approve_url,
                 expires_at,
-            } => Some(serde_json::json!({
-                "status": "awaiting_confirmation",
-                "consent_request_id": consent_request_id,
-                "approve_url": approve_url,
-                "expires_at": expires_at,
-            })),
+                safety,
+            } => {
+                let mut body = serde_json::json!({
+                    "status": "awaiting_confirmation",
+                    "consent_request_id": consent_request_id,
+                    "approve_url": approve_url,
+                    "expires_at": expires_at,
+                });
+                if let Some(safety) = safety {
+                    body["safety"] = serde_json::json!(safety);
+                }
+                Some(body)
+            }
             Submitted::Finished { .. } => None,
         }
     }

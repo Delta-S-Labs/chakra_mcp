@@ -63,6 +63,156 @@ pub enum ForwardError {
     Audit(#[from] sqlx::Error),
 }
 
+/// Screening for a push agent's response (message safety S3): the checker
+/// and what the call was for.
+pub struct ReplyScreen<'a> {
+    pub checker: &'a crate::compliance::ComplianceChecker,
+    pub capability_name: &'a str,
+    pub capability_description: Option<&'a str>,
+}
+
+/// A screened response: what to send back and record.
+struct ScreenedReply {
+    http_status: u16,
+    body: Bytes,
+    status: &'static str,
+    error_message: Option<String>,
+    output_preview: Option<serde_json::Value>,
+    report: Option<serde_json::Value>,
+}
+
+/// Read at most `cap` bytes; `None` when the body is longer.
+async fn read_capped(
+    mut resp: reqwest::Response,
+    cap: usize,
+) -> Result<Option<Bytes>, reqwest::Error> {
+    let mut buf = Vec::new();
+    while let Some(chunk) = resp.chunk().await? {
+        buf.extend_from_slice(&chunk);
+        if buf.len() > cap {
+            return Ok(None);
+        }
+    }
+    Ok(Some(Bytes::from(buf)))
+}
+
+/// A JSON-RPC error body for a response the relay won't pass on.
+fn refusal(id: &serde_json::Value, code: i32, message: &str, data: serde_json::Value) -> Bytes {
+    Bytes::from(
+        serde_json::to_vec(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": { "code": code, "message": message, "data": data },
+        }))
+        .unwrap_or_default(),
+    )
+}
+
+/// Screen a push agent's response: blocked ones become `-32009` and are
+/// recorded `failed` with the marker; delivered ones lose their contact
+/// details and carry the findings in `result.metadata`.
+async fn screen_reply(rs: &ReplyScreen<'_>, http_status: u16, body: Bytes) -> ScreenedReply {
+    use chakramcp_shared::safety::Channel;
+    let ok = (200..300).contains(&http_status);
+    let parsed: Option<serde_json::Value> = serde_json::from_slice(&body).ok();
+    let text = serde_json::Value::String(String::from_utf8_lossy(&body).into_owned());
+    let (input, root) = match &parsed {
+        Some(v) => (v, ""),
+        None => (&text, "body"),
+    };
+    let subject = crate::compliance::Subject {
+        capability_name: rs.capability_name,
+        capability_description: rs.capability_description,
+        grant_purpose: None,
+        relationship: None,
+        input,
+    };
+    let rpc_id = parsed
+        .as_ref()
+        .and_then(|v| v.get("id").cloned())
+        .unwrap_or(serde_json::Value::Null);
+    let screened = match rs
+        .checker
+        .screen(Channel::Reply, &subject, root, None, "")
+        .await
+    {
+        Ok(s) => s,
+        Err(_) => return too_large_reply(&rpc_id),
+    };
+    if let Some(block) = screened.block {
+        return ScreenedReply {
+            http_status: 403,
+            body: refusal(
+                &rpc_id,
+                -32009,
+                "the agent's response was refused by message safety screening",
+                serde_json::json!({ "code": block.code, "detail": block.reason }),
+            ),
+            status: "failed",
+            error_message: Some(block.reason),
+            output_preview: Some(crate::handlers::invoke::blocked_marker()),
+            report: Some(screened.report),
+        };
+    }
+    let body = if screened.findings.is_empty() {
+        body
+    } else if parsed.is_some() {
+        let mut v = screened.value;
+        if let Some(result) = v.get_mut("result").and_then(|r| r.as_object_mut()) {
+            let metadata = result
+                .entry("metadata")
+                .or_insert_with(|| serde_json::json!({}));
+            if let Some(m) = metadata.as_object_mut() {
+                m.insert(
+                    crate::inbox_bridge::SAFETY_METADATA_KEY.into(),
+                    serde_json::json!({ "reply": screened.findings }),
+                );
+            }
+        }
+        Bytes::from(serde_json::to_vec(&v).unwrap_or_default())
+    } else {
+        Bytes::from(screened.value.as_str().unwrap_or_default().to_owned())
+    };
+    ScreenedReply {
+        http_status,
+        output_preview: preview_response(&body),
+        body,
+        status: if ok { "succeeded" } else { "failed" },
+        error_message: None,
+        report: Some(screened.report),
+    }
+}
+
+fn too_large_reply(rpc_id: &serde_json::Value) -> ScreenedReply {
+    let message = "the agent's response is too large to screen";
+    ScreenedReply {
+        http_status: 502,
+        body: refusal(
+            rpc_id,
+            -32603,
+            message,
+            serde_json::json!({ "code": "chk.safety.too_large" }),
+        ),
+        status: "failed",
+        error_message: Some(message.into()),
+        output_preview: None,
+        report: None,
+    }
+}
+
+/// `trust_snapshot` with the reply's report at `system_one.reply_safety`.
+fn with_reply_report(
+    snapshot: Option<serde_json::Value>,
+    report: Option<serde_json::Value>,
+) -> Option<serde_json::Value> {
+    let Some(report) = report else {
+        return snapshot;
+    };
+    let mut snap = snapshot.unwrap_or_else(|| serde_json::json!({}));
+    snap["system_one"]["reply_safety"] = report;
+    Some(snap)
+}
+
 /// Forward an authorized A2A call to a push-mode target.
 ///
 /// `request_body` is the raw bytes the caller POSTed to our relay's
@@ -79,6 +229,7 @@ pub async fn forward_push(
     request_body: Bytes,
     request_headers: &HeaderMap,
     trust_snapshot: Option<serde_json::Value>,
+    reply_screen: Option<ReplyScreen<'_>>,
 ) -> Result<ForwardOutcome, ForwardError> {
     debug_assert!(
         authz.target_is_push,
@@ -122,6 +273,56 @@ pub async fn forward_push(
                 .get(header::CONTENT_TYPE)
                 .and_then(|v| v.to_str().ok())
                 .map(|s| s.to_string());
+            // With message safety on, the response is read with a cap and
+            // screened before it's recorded or passed on.
+            if let Some(rs) = &reply_screen {
+                let read = read_capped(resp, chakramcp_shared::safety::MAX_WALK_BYTES).await;
+                let screened = match read {
+                    Ok(Some(body)) => screen_reply(rs, status, body).await,
+                    Ok(None) => too_large_reply(&serde_json::Value::Null),
+                    Err(e) => {
+                        persist_invocation(
+                            db,
+                            invocation_id,
+                            authz,
+                            capability_name,
+                            "failed",
+                            Some(status as i32),
+                            elapsed_ms,
+                            Some(format!("upstream body read error: {e}")),
+                            preview_request(&request_body),
+                            None,
+                            trust_snapshot,
+                        )
+                        .await?;
+                        return Err(ForwardError::Transport(e.to_string()));
+                    }
+                };
+                persist_invocation(
+                    db,
+                    invocation_id,
+                    authz,
+                    capability_name,
+                    screened.status,
+                    Some(status as i32),
+                    elapsed_ms,
+                    screened.error_message,
+                    preview_request(&request_body),
+                    screened.output_preview,
+                    with_reply_report(trust_snapshot, screened.report),
+                )
+                .await?;
+                let content_type = if screened.http_status == status {
+                    upstream_ct
+                } else {
+                    Some("application/json".into())
+                };
+                return Ok(ForwardOutcome {
+                    http_status: screened.http_status,
+                    body: screened.body,
+                    content_type,
+                });
+            }
             // The upstream took the call even if its body can't be read, so
             // it's recorded (and charged) either way.
             let body = match resp.bytes().await {
@@ -604,6 +805,7 @@ mod tests {
             body.clone(),
             &req_headers(),
             None,
+            None,
         )
         .await
         .unwrap();
@@ -680,6 +882,7 @@ mod tests {
             Bytes::from_static(b"{}"),
             &req_headers(),
             None,
+            None,
         )
         .await
         .unwrap();
@@ -732,6 +935,7 @@ mod tests {
             Bytes::from_static(b"{}"),
             &req_headers(),
             None,
+            None,
         )
         .await;
         assert!(matches!(r, Err(ForwardError::Transport(_))), "{r:?}");
@@ -769,6 +973,7 @@ mod tests {
             "do",
             Bytes::from_static(b"{}"),
             &req_headers(),
+            None,
             None,
         )
         .await;
@@ -808,6 +1013,7 @@ mod tests {
             "do",
             Bytes::from_static(b"{}"),
             &req_headers(),
+            None,
             None,
         )
         .await;

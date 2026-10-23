@@ -44,5 +44,6 @@ subtle = "2.6.1"
 reqwest = { workspace = true }
 
 [dev-dependencies]
+chakramcp-shared = { path = "../shared", features = ["test-support"] }
 tower = { workspace = true }
 http-body-util = "0.1"

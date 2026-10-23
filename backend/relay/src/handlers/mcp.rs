@@ -629,7 +629,7 @@ async fn call_tool(
         "consent_status" => consent_status(state, user, p.arguments).await,
         "list_invocations" => list_invocations(&state.db, user, p.arguments).await,
         "respond" => respond(state, user, p.arguments).await,
-        "propose_friendship" => propose_friendship(&state.db, user, p.arguments).await,
+        "propose_friendship" => propose_friendship(state, user, p.arguments).await,
         "create_agent" => create_agent(&state.db, user, p.arguments).await,
         "publish_capability" => publish_capability(&state.db, user, p.arguments).await,
         // ── REST-handler bridges (full parity with CLI/SDKs) ──
@@ -1119,7 +1119,7 @@ async fn poll_invocation(db: &PgPool, user: &AuthUser, args: Value) -> Result<Va
     let r = sqlx::query!(
         r#"
         SELECT i.id, i.status, i.elapsed_ms, i.error_message,
-               i.input_preview, i.output_preview,
+               i.input_preview, i.output_preview, i.trust_snapshot,
                i.created_at, i.claimed_at, i.capability_name,
                EXISTS(
                    SELECT 1 FROM account_memberships m
@@ -1149,7 +1149,7 @@ async fn poll_invocation(db: &PgPool, user: &AuthUser, args: Value) -> Result<Va
         return Err(ApiError::NotFound);
     }
 
-    Ok(json!({
+    let mut out = json!({
         "id": r.id,
         "status": r.status,
         "capability_name": r.capability_name,
@@ -1159,7 +1159,15 @@ async fn poll_invocation(db: &PgPool, user: &AuthUser, args: Value) -> Result<Va
         "output_preview": r.output_preview,
         "created_at": r.created_at,
         "claimed_at": r.claimed_at,
-    }))
+    });
+    if let Some(safety) = crate::handlers::invoke::safety_from_snapshot(
+        r.trust_snapshot.as_ref(),
+        r.i_served,
+        &r.status,
+    ) {
+        out["safety"] = json!(safety);
+    }
+    Ok(out)
 }
 
 async fn pull_inbox(state: &RelayState, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
@@ -1224,7 +1232,7 @@ async fn pull_inbox(state: &RelayState, user: &AuthUser, args: Value) -> Result<
 
     let rows = sqlx::query!(
         r#"
-        SELECT i.id, i.capability_name, i.input_preview,
+        SELECT i.id, i.capability_name, i.input_preview, i.status, i.trust_snapshot,
                i.created_at, i.claimed_at,
                i.grantee_agent_id, ea.display_name as "grantee_display_name?"
         FROM relay_invocations i
@@ -1251,6 +1259,13 @@ async fn pull_inbox(state: &RelayState, user: &AuthUser, args: Value) -> Result<
             });
             if let Some(consent) = consents.remove(&r.id) {
                 item["consent"] = json!(consent);
+            }
+            if let Some(safety) = crate::handlers::invoke::safety_from_snapshot(
+                r.trust_snapshot.as_ref(),
+                true,
+                &r.status,
+            ) {
+                item["safety"] = json!(safety);
             }
             item
         })
@@ -1308,13 +1323,28 @@ async fn respond(state: &RelayState, user: &AuthUser, args: Value) -> Result<Val
     if let Some(body) = submitted.draft_body() {
         return Ok(body);
     }
-    let crate::consent::reply::Submitted::Finished { status, elapsed_ms } = submitted else {
+    let crate::consent::reply::Submitted::Finished {
+        status,
+        elapsed_ms,
+        safety,
+    } = submitted
+    else {
         unreachable!("draft_body covers drafts");
     };
-    Ok(json!({ "invocation_id": a.invocation_id, "status": status, "elapsed_ms": elapsed_ms }))
+    let mut out =
+        json!({ "invocation_id": a.invocation_id, "status": status, "elapsed_ms": elapsed_ms });
+    if let Some(safety) = safety {
+        out["safety"] = json!(safety);
+    }
+    Ok(out)
 }
 
-async fn propose_friendship(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
+async fn propose_friendship(
+    state: &RelayState,
+    user: &AuthUser,
+    args: Value,
+) -> Result<Value, ApiError> {
+    let db = &state.db;
     #[derive(Deserialize)]
     struct A {
         proposer_agent_id: Uuid,
@@ -1356,6 +1386,16 @@ async fn propose_friendship(db: &PgPool, user: &AuthUser, args: Value) -> Result
     .await?
     .ok_or(ApiError::NotFound)?;
 
+    // Message safety (when on): the proposal is a note to the target.
+    let proposer_message = chakramcp_shared::system_one::note_or_refuse(
+        state.compliance.as_deref(),
+        a.proposer_message,
+        chakramcp_shared::system_one::NoteAbout {
+            kind: "friendship_message",
+            ..Default::default()
+        },
+    )
+    .await?;
     let id = Uuid::now_v7();
     sqlx::query!(
         r#"
@@ -1367,7 +1407,7 @@ async fn propose_friendship(db: &PgPool, user: &AuthUser, args: Value) -> Result
         id,
         a.proposer_agent_id,
         a.target_agent_id,
-        a.proposer_message,
+        proposer_message,
         user.user_id,
     )
     .execute(db)

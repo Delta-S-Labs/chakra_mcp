@@ -159,6 +159,13 @@ impl RelayState {
         self
     }
 
+    /// [`Self::with_compliance`] with a client shared with the app (the
+    /// combined server builds it once).
+    pub fn with_compliance_shared(mut self, checker: Option<Arc<ComplianceChecker>>) -> Self {
+        self.compliance = checker;
+        self
+    }
+
     pub fn jwt_secret(&self) -> &str {
         &self.config.jwt_secret
     }

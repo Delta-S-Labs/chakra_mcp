@@ -272,11 +272,16 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
 
     let purchase =
         chakramcp_app::purchases::config::from_env(cfg.hosting.is_managed(), credits.enabled);
+    // One System One client for both halves (the app screens deny notes on
+    // its built-in approval page; the relay everything else).
+    let system_one =
+        chakramcp_relay::compliance::ComplianceChecker::from_env().map(std::sync::Arc::new);
     let app_state = AppState::new(pool.clone(), cfg.shared.clone())
         .with_upsert_secret(std::env::var("UPSERT_SHARED_SECRET").ok())
         .with_credits_config(credits)
         .with_hosting(cfg.hosting)
-        .with_purchase(purchase);
+        .with_purchase(purchase)
+        .with_system_one(system_one.clone());
     if app_state.upsert_secret.is_none() {
         tracing::warn!("UPSERT_SHARED_SECRET is not set: Google/GitHub sign-in is disabled");
     }
@@ -297,7 +302,7 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
         .with_credit_cache(credit_cache)
         .with_featured_account(std::env::var("DISCOVERY_FEATURED_ACCOUNT").ok())
         .with_usage_retention_days(usage_retention)
-        .with_compliance(chakramcp_relay::compliance::ComplianceChecker::from_env());
+        .with_compliance_shared(system_one);
     relay_state
         .heartbeats
         .clone()

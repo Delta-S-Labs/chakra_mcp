@@ -12,7 +12,8 @@ use super::questions::{
     self, act_threshold, Shape, ACT, ACT_HARM_MINORS, ACT_NON_ENGLISH, BLOCKING_COMPLIANCE,
     BLOCKING_SAFETY, CONTACT_PREFIX, OFF_PLATFORM,
 };
-use super::{post, ComplianceChecker, Subject};
+use super::{post, ComplianceChecker, Relationship, Subject};
+use crate::error::ApiError;
 use crate::safety::{
     self, Action, Channel, Chunk, Context, Finding, FindingKind, Plan, Scan, TooLarge,
 };
@@ -107,6 +108,27 @@ impl ComplianceChecker {
         })
     }
 
+    /// Screen a note (spec §3): a friendship message, a grant purpose, an
+    /// approver's deny note. `about` is what the note concerns.
+    pub async fn screen_note(
+        &self,
+        text: &str,
+        about: NoteAbout<'_>,
+    ) -> Result<Screened, TooLarge> {
+        let input = Value::String(text.to_owned());
+        let subject = Subject {
+            capability_name: about.capability_name.unwrap_or("(none)"),
+            capability_description: about.capability_description,
+            grant_purpose: None,
+            relationship: about.proposal_message.map(|m| Relationship {
+                proposer_message: Some(m),
+                response_message: None,
+            }),
+            input: &input,
+        };
+        self.screen(Channel::Note, &subject, "note", None, "").await
+    }
+
     /// Send every chunk at once; the highest probability per question wins.
     async fn ask(&self, channel: Channel, subject: &Subject<'_>, plan: &Plan) -> Answered {
         let mut set = JoinSet::new();
@@ -176,6 +198,64 @@ impl ComplianceChecker {
         }
         a
     }
+}
+
+/// What a note is about, for judging it.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NoteAbout<'a> {
+    /// The note's kind, for logs: `friendship_message`, `grant_purpose`,
+    /// `deny_note`.
+    pub kind: &'a str,
+    pub capability_name: Option<&'a str>,
+    pub capability_description: Option<&'a str>,
+    /// For a friendship response: the proposal it answers.
+    pub proposal_message: Option<&'a str>,
+}
+
+/// Screen a note before it's stored (message safety §3). Unchanged when
+/// screening is off or there's no text; the redacted text otherwise; a
+/// refusal (403 `chk.policy.safety_blocked`, or 413 over the cap) when
+/// blocked. Notes have no row, so findings go to the log and metrics.
+pub async fn note_or_refuse(
+    checker: Option<&ComplianceChecker>,
+    text: Option<String>,
+    about: NoteAbout<'_>,
+) -> Result<Option<String>, ApiError> {
+    let Some(checker) = checker.filter(|c| c.safety_enabled()) else {
+        return Ok(text);
+    };
+    let Some(text) = text else {
+        return Ok(None);
+    };
+    if text.trim().is_empty() {
+        return Ok(Some(text));
+    }
+    let screened =
+        checker
+            .screen_note(&text, about)
+            .await
+            .map_err(|_| ApiError::PayloadTooLarge {
+                code: "chk.safety.too_large",
+                message: format!(
+                    "the {} is over {} bytes of text, the most safety screening reads",
+                    about.kind,
+                    safety::MAX_WALK_BYTES
+                ),
+            })?;
+    if !screened.findings.is_empty() {
+        tracing::info!(
+            kind = about.kind,
+            findings = %serde_json::to_string(&screened.findings).unwrap_or_default(),
+            "safety screening: note"
+        );
+    }
+    if let Some(block) = screened.block {
+        return Err(ApiError::Policy {
+            code: block.code,
+            message: block.reason,
+        });
+    }
+    Ok(screened.value.as_str().map(str::to_owned))
 }
 
 #[derive(Debug, Default)]
@@ -636,6 +716,63 @@ mod tests {
             );
         }
         assert!(s.findings.iter().any(|x| x.kind == FindingKind::Unjudged));
+    }
+
+    #[tokio::test]
+    async fn notes_are_redacted_refused_or_left_alone() {
+        let about = NoteAbout {
+            kind: "friendship_message",
+            ..NoteAbout::default()
+        };
+        let text = "Hi! Let's work together. Add me on t.me/acme_sales for faster replies.";
+        // Off: unchanged.
+        let url = serve(fake(&[("contact_0", 0.95)])).await;
+        let off = checker(&url);
+        assert_eq!(
+            note_or_refuse(Some(&off), Some(text.into()), about)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some(text)
+        );
+        assert_eq!(
+            note_or_refuse(None, Some(text.into()), about)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some(text)
+        );
+        // On: redacted.
+        let on = checker(&url).with_safety(true);
+        let got = note_or_refuse(Some(&on), Some(text.into()), about)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            got,
+            "Hi! Let's work together. Add me on [contact removed] for faster replies."
+        );
+        assert_eq!(note_or_refuse(Some(&on), None, about).await.unwrap(), None);
+        // Blocked.
+        let url = serve(fake(&[("harm_harassment", 0.95)])).await;
+        let on = checker(&url).with_safety(true);
+        let err = note_or_refuse(
+            Some(&on),
+            Some("You'll regret this, I know where you live.".into()),
+            about,
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            matches!(
+                err,
+                ApiError::Policy {
+                    code: "chk.policy.safety_blocked",
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
     }
 
     #[tokio::test]

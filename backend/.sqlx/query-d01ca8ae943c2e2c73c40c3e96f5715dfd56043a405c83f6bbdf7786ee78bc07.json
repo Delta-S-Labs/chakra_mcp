@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT i.id, i.capability_name, i.input_preview,\n               i.created_at, i.claimed_at,\n               i.grantee_agent_id, ea.display_name as \"grantee_display_name?\"\n        FROM relay_invocations i\n        LEFT JOIN agents ea ON ea.id = i.grantee_agent_id\n        WHERE i.id = ANY($1)\n        ORDER BY i.created_at ASC\n        ",
+  "query": "\n        SELECT i.id, i.capability_name, i.input_preview, i.status, i.trust_snapshot,\n               i.created_at, i.claimed_at,\n               i.grantee_agent_id, ea.display_name as \"grantee_display_name?\"\n        FROM relay_invocations i\n        LEFT JOIN agents ea ON ea.id = i.grantee_agent_id\n        WHERE i.id = ANY($1)\n        ORDER BY i.created_at ASC\n        ",
   "describe": {
     "columns": [
       {
@@ -38,6 +38,28 @@
       },
       {
         "ordinal": 3,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "trust_snapshot",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "trust_snapshot"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -48,7 +70,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 6,
         "name": "claimed_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -59,7 +81,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 7,
         "name": "grantee_agent_id",
         "type_info": "Uuid",
         "origin": {
@@ -70,7 +92,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 8,
         "name": "grantee_display_name?",
         "type_info": "Text",
         "origin": {
@@ -92,9 +114,11 @@
       true,
       false,
       true,
+      false,
+      true,
       true,
       false
     ]
   },
-  "hash": "d816b0705a2cbbb9f909192d11b6a24cbff6018c10926c685333e5954d456ec8"
+  "hash": "d01ca8ae943c2e2c73c40c3e96f5715dfd56043a405c83f6bbdf7786ee78bc07"
 }

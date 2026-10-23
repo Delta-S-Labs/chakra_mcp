@@ -347,7 +347,17 @@ pub async fn deny(
     body: Bytes,
 ) -> ApiResult<Json<Value>> {
     let req: DenyRequest = optional_body(&body)?;
-    let denied = decide::deny(&state.db, actor(&user), id, req.note.as_deref()).await?;
+    // Message safety (when on): the note goes to the requester.
+    let note = chakramcp_shared::system_one::note_or_refuse(
+        state.compliance.as_deref(),
+        req.note,
+        chakramcp_shared::system_one::NoteAbout {
+            kind: "deny_note",
+            ..Default::default()
+        },
+    )
+    .await?;
+    let denied = decide::deny(&state.db, actor(&user), id, note.as_deref()).await?;
     Ok(Json(json!({
         "id": denied.id,
         "status": "denied",

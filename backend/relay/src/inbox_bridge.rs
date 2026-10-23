@@ -96,14 +96,15 @@ pub struct A2aTask {
 /// The A2A metadata key message safety's findings travel under.
 pub const SAFETY_METADATA_KEY: &str = "chakramcp.safety";
 
-/// `{"chakramcp.safety": {"request": [...]}}` from a row's
-/// `trust_snapshot`, when screening found anything.
-pub fn safety_metadata(trust_snapshot: Option<&serde_json::Value>) -> Option<serde_json::Value> {
-    let findings = trust_snapshot?
-        .pointer("/system_one/safety/findings")?
-        .as_array()
-        .filter(|f| !f.is_empty())?;
-    Some(serde_json::json!({ SAFETY_METADATA_KEY: { "request": findings } }))
+/// `{"chakramcp.safety": {request?, reply?}}` for the caller from a row's
+/// `trust_snapshot`, when screening found anything (the reply's findings
+/// once it's released).
+pub fn safety_metadata(
+    trust_snapshot: Option<&serde_json::Value>,
+    status: &str,
+) -> Option<serde_json::Value> {
+    let safety = crate::handlers::invoke::safety_from_snapshot(trust_snapshot, false, status)?;
+    Some(serde_json::json!({ SAFETY_METADATA_KEY: safety }))
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -341,7 +342,7 @@ pub async fn get_task(
             message,
         },
         artifacts,
-        metadata: safety_metadata(row.trust_snapshot.as_ref()),
+        metadata: safety_metadata(row.trust_snapshot.as_ref(), &row.status),
     })
 }
 

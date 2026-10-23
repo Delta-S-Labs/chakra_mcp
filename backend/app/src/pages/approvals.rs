@@ -141,14 +141,37 @@ pub(crate) async fn submit(
             }
             Err(problem) => Err(DecideError::BadRequest(problem)),
         },
-        "deny" => decide::deny(&state.db, actor, id, Some(&input.note))
-            .await
-            .map(|_| {
-                (
-                    "Declined",
-                    "The requester is told, with your note if you left one.",
-                )
-            }),
+        "deny" => {
+            // Message safety (when on): the note goes to the requester.
+            let note = chakramcp_shared::system_one::note_or_refuse(
+                state.system_one.as_deref(),
+                Some(input.note.clone()),
+                chakramcp_shared::system_one::NoteAbout {
+                    kind: "deny_note",
+                    ..Default::default()
+                },
+            )
+            .await;
+            match note {
+                Err(refused) => {
+                    return message(
+                        &origin,
+                        StatusCode::FORBIDDEN,
+                        "Your note wasn't sent",
+                        &format!("{refused}. Change the note and try again."),
+                        None,
+                    )
+                }
+                Ok(note) => decide::deny(&state.db, actor, id, note.as_deref())
+                    .await
+                    .map(|_| {
+                        (
+                            "Declined",
+                            "The requester is told, with your note if you left one.",
+                        )
+                    }),
+            }
+        }
         _ => {
             return message(
                 &origin,

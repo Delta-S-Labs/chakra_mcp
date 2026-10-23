@@ -27,6 +27,10 @@ pub struct AppState {
     /// with credits on and Dodo configured. `None` turns the checkout and
     /// webhook routes into 404s.
     pub purchase: Option<Arc<PurchaseConfig>>,
+    /// The System One (TypeSafe) client, for screening deny notes on the
+    /// built-in approval page (message safety). `None` when the checks are
+    /// off; screening also needs `SYSTEM_ONE_SAFETY`.
+    pub system_one: Option<Arc<chakramcp_shared::system_one::ComplianceChecker>>,
 }
 
 impl AppState {
@@ -38,6 +42,7 @@ impl AppState {
             credits: CreditsConfig::default(),
             hosting: HostingSettings::default(),
             purchase: None,
+            system_one: None,
         }
     }
 
@@ -57,6 +62,14 @@ impl AppState {
 
     pub fn with_hosting(mut self, hosting: HostingSettings) -> Self {
         self.hosting = hosting;
+        self
+    }
+
+    pub fn with_system_one(
+        mut self,
+        checker: Option<Arc<chakramcp_shared::system_one::ComplianceChecker>>,
+    ) -> Self {
+        self.system_one = checker;
         self
     }
 
