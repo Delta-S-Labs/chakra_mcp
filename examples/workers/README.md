@@ -11,10 +11,18 @@ across issue [#69](https://github.com/Delta-S-Labs/chakra_mcp/issues/69)
 (PRs 1–4 in `main`):
 
 - DB column `agent_capabilities.semantics` (`autonomous` / `human_in_loop`) — PR #78
-- Relay enforces `confirmed_by_human: true` on HITL results, 409
-  `chk.policy.requires_human_confirmation` otherwise — PR #79
 - Python SDK v0.3.0 routes HITL invocations to `human_handler` — PR #82
 - TypeScript SDK v0.3.0 routes HITL invocations to `humanHandler` — PR #81
+
+The relay no longer trusts a `confirmed_by_human: true` flag on the
+result (the original gate, PR #79). Since owner consent (PR #436), a
+reply to a `human_in_loop` capability from any agent credential (an
+API key, an OAuth or device token, so the CLI and the SDKs too) is a
+**draft**: the relay answers `202 {status: "awaiting_confirmation",
+consent_request_id, approve_url, expires_at}`, and the caller sees
+the reply only after one of the agent's owners confirms it on the web
+at `approve_url`. See
+[Consent and verified human-in-the-loop](https://chakramcp.com/docs/consent).
 
 Plus the autonomous-orchestration sugar from cli-v0.1.2 (issue
 [#68](https://github.com/Delta-S-Labs/chakra_mcp/issues/68)) — the HITL
@@ -24,7 +32,7 @@ show the outbound side without hand-rolling HTTP.
 | File | Language | What it shows |
 |---|---|---|
 | [`pull_worker_autonomous.py`](pull_worker_autonomous.py) | Python | Single autonomous capability (`propose_slots`, `semantics: "autonomous"`). The SDK posts the handler's result back to the relay. |
-| [`pull_worker_with_hitl.py`](pull_worker_with_hitl.py) | Python | Same agent also publishes `message_owner` (HITL). `human_handler` drops each pending invocation to `./pending/<id>.json` for a human to answer via `chakramcp message reply`. Bonus: outbound `chakramcp invoke ensure --json` via `subprocess.run()`. |
+| [`pull_worker_with_hitl.py`](pull_worker_with_hitl.py) | Python | Same agent also publishes `message_owner` (HITL). `human_handler` drops each pending invocation to `./pending/<id>.json` for a human to answer via `chakramcp message reply` (saved as a draft, confirmed on the web). Bonus: outbound `chakramcp invoke ensure --json` via `subprocess.run()`. |
 | [`pull-worker-autonomous.ts`](pull-worker-autonomous.ts) | TypeScript | TypeScript twin of the autonomous worker, using `@chakramcp/sdk@^0.3.0`. |
 | [`pull-worker-with-hitl.ts`](pull-worker-with-hitl.ts) | TypeScript | TypeScript twin of the HITL worker. Outbound bonus via `node:child_process` `spawnSync`. |
 
@@ -44,14 +52,28 @@ chakramcp message reply 01HXXX... "yes, friday at 2pm works"
 ```
 
 `chakramcp message reply` builds the `message_owner`-shaped output JSON
-and POSTs it with `confirmed_by_human: true` set — the relay accepts
-the result, marks the row `succeeded`, and the original caller's
-`invokeAndWait` / `invoke_and_wait` returns the reply.
+and POSTs it. The relay saves it as a draft and the CLI prints:
+
+```
+Saved as a draft. One of the agent's owners confirms it before the caller sees it: https://chakramcp.com/app/approvals/…
+```
+
+An owner opens that link, signed in, and confirms (or rejects, with a
+note). Only then does the row become `succeeded` and the original
+caller's `invokeAndWait` / `invoke_and_wait` return the reply. A
+rejected or unconfirmed draft fails the call ("The owner declined to
+answer: …" or "Reply not confirmed in time"). An owner can also skip
+the CLI and answer in the web app's inbox; an approver's answer there
+needs no second step.
+
+From SDK 0.5.0, `humanHandler` / `human_handler` may also *return* a
+reply (say, one your model drafted). The SDK posts it, and it becomes
+the same kind of draft waiting for an owner's confirmation.
 
 This pattern is intentionally dumb. A real deployment likely replaces
 the directory with a Slack DM, a pager, or an email — anything whose
-human consumer eventually runs `chakramcp message reply`. The directory
-is the lowest-common-denominator so the reference runs anywhere.
+human consumer eventually replies and confirms. The directory is the
+lowest-common-denominator so the reference runs anywhere.
 
 > **Future extension (not implemented):** a `--emit stdout` toggle for
 > runtimes that prefer a stream over a directory (e.g. systemd journal,
@@ -83,7 +105,13 @@ is the lowest-common-denominator so the reference runs anywhere.
                                     └──────────────────────────┘
                                               │
                                               ▼
-                                     relay (confirmed_by_human:true)
+                                     relay: draft + approve_url
+                                              │
+                                              ▼
+                                     owner confirms on the web
+                                              │
+                                              ▼
+                                     caller gets the reply
 ```
 
 ## Run
@@ -157,6 +185,9 @@ skip the outbound demo cleanly — the inbox loop still runs.
   through the relay). Read this first if you're new to the project.
 - [`docs/agents`](https://chakramcp.com/docs/agents) — the canonical
   spec for capabilities, HITL semantics, and reserved templates.
+- [`docs/consent`](https://chakramcp.com/docs/consent) — owner
+  consent and verified human-in-the-loop: drafts, approvals, notices
+  and consent tokens.
 - Issue [#69](https://github.com/Delta-S-Labs/chakra_mcp/issues/69)
   — design spec for the HITL gate; this directory ships the PR-5
   reference closing it out.

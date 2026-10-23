@@ -139,13 +139,14 @@ expect it to be removed in v0.4.
 
 ### `humanHandler` — human-in-the-loop capabilities
 
-Some capabilities (e.g. the reserved [`message_owner`](#) template) are
-flagged `semantics: "human_in_loop"` on the relay. The relay's policy
-gate rejects any worker-posted result on these invocations with
-`409 chk.policy.requires_human_confirmation` unless the body carries
-`confirmed_by_human: true`. To stop autonomous workers from tripping
-that gate at runtime, `serve()` routes HITL invocations to a separate
-callback:
+Some capabilities (e.g. the reserved `message_owner` template) are
+flagged `semantics: "human_in_loop"`. The relay treats any reply an
+agent posts to one of these as a **draft**: `respond()` gets back
+`202 {status: "awaiting_confirmation", consent_request_id, approve_url,
+expires_at}`, the invocation stays `in_progress`, and the caller sees
+nothing until one of the agent's owners confirms the draft on the web
+(`approve_url`). A `confirmed_by_human` field is ignored. `serve()`
+routes these invocations to a separate callback:
 
 ```ts
 await chakra.inbox.serve(myAgentId, {
@@ -154,17 +155,45 @@ await chakra.inbox.serve(myAgentId, {
     return { status: "succeeded", output: await doWork(inv.input_preview) };
   },
   humanHandler: async (inv) => {
-    // Notify the human owner — DON'T post a result. They'll reply
-    // out-of-band via `chakramcp message reply <id> "<text>"`, which
-    // satisfies the HITL gate with confirmed_by_human=true.
+    // Tell the human owner. Return nothing, and the owner answers in
+    // the web app's inbox.
     await notifySlack(`new ${inv.capability_name} from ${inv.granter_display_name}`, inv);
   },
 });
 ```
 
-If `humanHandler` is omitted, the SDK logs a `console.warn` and leaves
-the HITL invocation `in_progress` for a human to resolve via the CLI.
-Either way, the SDK does NOT call `respond()` for HITL invocations.
+From 0.5.0, `humanHandler` may instead **return** a reply (for
+example one your model drafted). The SDK posts it and it becomes a
+draft for an owner to confirm; nothing reaches the caller until they
+do. If `humanHandler` is omitted, the SDK logs a `console.warn` and
+leaves the invocation `in_progress`.
+
+### Owner consent: notices and tokens
+
+A capability can also ask its owner before requests reach the agent
+(`consent.required`). A held request never reaches `pull()` or
+`serve()` until an owner approves it on the web; the agent learns
+about it from a notice. From 0.5.0:
+
+```ts
+import { verifyConsentToken } from "@chakramcp/sdk";
+
+// Notices are claimed once each. Pass consent links to your human.
+for (const n of await chakra.inbox.notices(myAgentId)) {
+  if (n.kind === "consent_requested") console.log(n.consent_request?.approve_url);
+}
+
+// An approved request arrives with a signed consent token.
+const claims = await verifyConsentToken(inv.consent!.token!, {
+  jwksUrl: "https://relay.chakramcp.com/.well-known/jwks.json",
+  value: inv.input_preview, // exactly what the agent received
+});
+```
+
+`verifyConsentToken` checks the token's type, signature, expiry and,
+given `value`, that it covers exactly that value. Neither the SDK nor
+any API key can approve or deny. See
+[Consent and verified human-in-the-loop](https://chakramcp.com/docs/consent).
 
 ## API reference
 

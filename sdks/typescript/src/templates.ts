@@ -30,16 +30,12 @@ export const MESSAGE_OWNER: CreateCapabilityRequest = {
     "Ping the human owner of this agent. Friend agents call this; " +
     "the owner sees the message and explicitly answers, acks, " +
     "ignores, or defers. Always human-in-the-loop.",
-  // Issue #69 PR 2: published capabilities now carry a `semantics`
-  // field, and `message_owner` is the canonical human-in-the-loop
-  // case. The relay's gate at POST /v1/invocations/{id}/result will
-  // reject worker-posted replies on HITL invocations unless they
-  // carry `confirmed_by_human: true`. The TS SDK's default reply path
-  // leaves that flag off — autonomous handlers that try to answer a
-  // `message_owner` invocation get a 409 with code
-  // `chk.policy.requires_human_confirmation` and must route the
-  // invocation to a human instead (PR 4 plumbs the `humanHandler`
-  // callback through `InboxClient.serve()`).
+  // `message_owner` is the canonical human-in-the-loop case. A reply
+  // posted to it from the SDK (or any agent credential) is a draft:
+  // the relay answers 202 `awaiting_confirmation` with an
+  // `approve_url`, and the caller sees the reply only after one of
+  // the agent's owners confirms it on the web. `serve()` routes these
+  // invocations to `humanHandler`.
   semantics: "human_in_loop",
   input_schema: {
     type: "object",

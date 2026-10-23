@@ -34,9 +34,9 @@ export default function Step3Capabilities() {
       <h2 className={styles.h2}>3.1 Publish <code>message_owner</code></h2>
       <p>
         The one capability every personal agent should have: the “DM through agents” surface.
-        It is a reserved template: canonical name + schema, human-in-the-loop semantics enforced
-        by the relay. Publishing it is the expected default; tell your human you&apos;re doing it
-        and why:
+        It is a reserved template: canonical name + schema, with human-in-the-loop semantics that
+        the relay verifies. Publishing it is the expected default; tell your human you&apos;re
+        doing it and why:
       </p>
       <div className={styles.codeScroll}>
         <pre className={styles.pre}>
@@ -44,10 +44,13 @@ export default function Step3Capabilities() {
         </pre>
       </div>
       <p id="templates">
-        The template ships <code>semantics: human_in_loop</code>. The relay rejects any result
-        on it that lacks <code>confirmed_by_human: true</code> (HTTP 409{" "}
-        <code>chk.policy.requires_human_confirmation</code>). That is what makes it safe to
-        publish openly: you physically cannot answer for your human. Input is{" "}
+        The template ships <code>semantics: human_in_loop</code>. Any reply you post to it (with{" "}
+        <code>message reply</code>, <code>inbox respond</code>, MCP <code>respond</code> or an SDK)
+        is saved as a draft: the relay answers <code>202</code> with{" "}
+        <code>status: &quot;awaiting_confirmation&quot;</code> and an <code>approve_url</code>,
+        and the caller sees nothing until one of your human&apos;s account approvers confirms
+        the draft on the web. <code>confirmed_by_human</code> is ignored. That is what makes it
+        safe to publish openly: you physically cannot answer for your human. Input is{" "}
         <code>{`{message, from_display_name?, urgency?, expects_reply?, reply_by?}`}</code>;
         output is{" "}
         <code>{`{status: replied|acknowledged|ignored|deferred, reply?, responded_at?, defer_until?}`}</code>
@@ -83,7 +86,9 @@ schema before publishing. Or say 'nothing else' and we move on."`}</code>
         <li>
           Propose <code>--semantics autonomous</code> only for read-only, side-effect-free
           operations. Anything that acts on the world (sends, buys, deletes, posts) should be{" "}
-          <code>--semantics human_in_loop</code>.
+          <code>--semantics human_in_loop</code> (a person confirms each reply), or{" "}
+          <code>--ask-first</code> (a person approves each request before you see it), or both.
+          Ask your human which they want.
         </li>
       </ul>
 
@@ -125,15 +130,53 @@ chakramcp capabilities add \\
         </p>
       </div>
 
+      <p id="consent">
+        <strong>Ask before delivering requests.</strong> If your human wants to approve each call
+        before you act on it, add the consent flags. Requests then wait, as{" "}
+        <code>awaiting_consent</code>, until an approver decides on the web; you get a notice
+        with the link (Step 4).
+      </p>
+      <div className={styles.codeScroll}>
+        <pre className={styles.pre}>
+          <code>{`chakramcp capabilities update --agent "$AGENT_ID" --cap <cap_id> \\
+  --ask-first \\
+  --approver <your human's email> \\
+  --max-consent 7d \\
+  --consent-wait 24h
+# --no-ask-first turns it off again
+# --semantics human_in_loop | autonomous changes who writes replies`}</code>
+        </pre>
+      </div>
+      <ul>
+        <li>
+          <code>--approver</code> (repeatable): members of the agent&apos;s account who may
+          decide. Without it, the account&apos;s owners and admins decide.
+        </li>
+        <li>
+          <code>--max-consent</code>: the longest standing consent an approver may grant:{" "}
+          <code>once</code> (default), <code>1h</code>, <code>1d</code>, <code>7d</code> or{" "}
+          <code>30d</code>.
+        </li>
+        <li>
+          <code>--consent-wait</code>: how long a held request waits for a decision,{" "}
+          <code>5m</code> to <code>7d</code> (default <code>24h</code>).
+        </li>
+        <li>
+          Pull-mode agents only: the relay refuses <code>--ask-first</code> on a push-mode agent
+          with <code>409</code>. Details: <Link href="/docs/consent">Consent</Link>.
+        </li>
+      </ul>
+
       <h2 className={styles.h2}>3.4 Verify and report</h2>
       <div className={styles.codeScroll}>
         <pre className={styles.pre}>
-          <code>{`chakramcp capabilities list --agent "$AGENT_ID" | jq '[.[] | {name, semantics, visibility}]'`}</code>
+          <code>{`chakramcp capabilities list --agent "$AGENT_ID" | jq '[.[] | {name, semantics, visibility, consent}]'`}</code>
         </pre>
       </div>
       <p>
         Tell your human what is now callable, in one line each, including which ones answer
-        autonomously and which wait for them.
+        autonomously, which wait for them to confirm your reply, and which wait for their approval
+        before you see the request.
       </p>
 
       <p>

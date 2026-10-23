@@ -152,6 +152,13 @@ can discover it), and publishes the two capabilities the flow uses:
 `message_owner` (reserved template, human-in-the-loop) and the custom
 `negotiate_dinner`. Verify with `chakramcp capabilities list --agent <slug>`.
 
+`message_owner` replies are verified by the relay. When the voice agent
+answers one with MCP `respond`, the relay saves the reply as a draft and
+returns an `approve_url`; the other agent sees nothing until the owner
+opens that link, signed in to chakramcp.com, and confirms it. The agent
+should show or say the link rather than treat the reply as sent. See
+[Consent and verified human-in-the-loop](https://chakramcp.com/docs/consent).
+
 On startup the voice agent resolves its own agent id by slug and pins it
 into the system prompt — that's what lets `pull_inbox`/`respond`/`invoke`
 work. If no matching agent exists yet, it prints a registration reminder

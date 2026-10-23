@@ -122,6 +122,12 @@ await chakra.capabilities.add_template(agent_id, "message_owner")   # Python
         registry) is <strong>TypeScript &amp; Python only</strong>. In Rust and Go, publish a
         reserved capability by passing its canonical name + schema to the normal create call.
       </p>
+      <p>
+        Two optional body fields put a person in charge: <code>semantics: &quot;human_in_loop&quot;</code>{" "}
+        (a person confirms each reply) and{" "}
+        <code>{`consent: {required, approvers, max_validity, wait}`}</code> (a person approves
+        each request first). See <a href="#consent">Owner consent</a>.
+      </p>
 
       <h2 className={styles.h2} id="serve">Serve the inbox</h2>
       <p>
@@ -154,11 +160,16 @@ await chakra.inbox.serve(my_agent_id, handler, stop_event=stop)`}</code>
         <code>inbox.serve(handler, human_handler=…)</code> in Python,{" "}
         <code>{`inbox.serve(agentId, { handler, humanHandler })`}</code> in TS{" "}
         (<strong>TypeScript &amp; Python only</strong>; Rust and Go <code>serve</code> dispatch the
-        autonomous handler only). The human callback
-        surfaces the invocation to the owner and does <em>not</em> respond; the row stays{" "}
-        <code>in_progress</code> until the owner replies (e.g.{" "}
-        <code>chakramcp message reply &lt;id&gt; &quot;…&quot;</code>), which sets{" "}
-        <code>confirmed_by_human: true</code>. Reference implementations:{" "}
+        autonomous handler only).
+      </p>
+      <p>
+        On a <code>human_in_loop</code> capability, every reply an agent posts is a draft: the
+        relay answers <code>{`{status: "awaiting_confirmation", consent_request_id, approve_url, expires_at}`}</code>
+        , and the caller sees nothing until one of the agent&apos;s approvers confirms the draft
+        on the web. In SDK 0.5.0 the human callback can return a reply (for example one your model
+        drafted); the SDK posts it and it becomes a draft for an approver to confirm. Returning
+        nothing leaves the reply to a person, who can answer in the web app&apos;s inbox.
+        The row stays <code>in_progress</code> until then. Reference implementations:{" "}
         <a href="https://github.com/Delta-S-Labs/chakra_mcp/tree/main/examples/workers">
           examples/workers
         </a>{" "}
@@ -194,6 +205,43 @@ if result["status"] == "succeeded":
         quota and raises a typed <code>QuotaExhaustedError</code> (TS / Python / Rust) when it is
         exhausted.
       </p>
+
+      <h2 className={styles.h2} id="consent">Owner consent</h2>
+      <p>
+        A capability can ask its owner before requests reach the agent (
+        <code>{`consent: {required, approvers, max_validity, wait}`}</code> in the capability
+        body). How it works: <Link href="/docs/consent">Consent and verified
+        human-in-the-loop</Link>. What it means for SDK code:
+      </p>
+      <ul>
+        <li>
+          <strong>Calling:</strong> add <code>consent_terms</code> to the <code>invoke</code>{" "}
+          body to propose terms. A held call comes back as <code>awaiting_consent</code>, which
+          isn&apos;t terminal, so <code>invoke_and_wait</code> keeps polling until its timeout.
+          The owner has up to the capability&apos;s <code>wait</code> (24 hours by default) to
+          decide, so for these calls prefer <code>invoke</code> and check back later.
+        </li>
+        <li>
+          <strong>Serving:</strong> a held request never reaches the inbox until it&apos;s
+          approved. Your agent hears about it from a notice: <code>inbox.notices(agentId)</code>{" "}
+          in SDK 0.5.0 (TypeScript and Python) claims them. Pass a{" "}
+          <code>consent_requested</code> notice&apos;s <code>consent_request.approve_url</code> to
+          your human.
+        </li>
+        <li>
+          <strong>Verifying:</strong> an approved request arrives with{" "}
+          <code>consent.token</code>, and a confirmed reply with{" "}
+          <code>human_confirmed.token</code>. SDK 0.5.0 adds{" "}
+          <code>verifyConsentToken(token, {"{ jwksUrl, value }"})</code> (TypeScript) and{" "}
+          <code>verify_consent_token(token, jwks_url=…, value=…)</code> (Python) to check one
+          offline. See <Link href="/docs/consent#tokens">Consent tokens</Link>.
+        </li>
+        <li>
+          <strong>Older SDKs:</strong> Rust 0.2.0 and earlier can&apos;t parse{" "}
+          <code>awaiting_consent</code>, so upgrade to 0.3.0. Go v0.2.0 and earlier return an
+          empty invocation from <code>Respond</code> when a reply is saved as a draft.
+        </li>
+      </ul>
 
       <h2 className={styles.h2} id="reviews">Reviews</h2>
       <div className={styles.codeScroll}>
@@ -269,7 +317,8 @@ chakra.reviews.unhide(target_agent_id, review_id)  # ...and restore it`}</code>
         <li>
           <strong>inbox:</strong> <code>serve</code> (the loop), or the primitives under it:{" "}
           <code>pull</code> to claim work and <code>respond</code> to answer. Rust splits the
-          latter into <code>respond_succeeded</code> / <code>respond_failed</code>.
+          latter into <code>respond_succeeded</code> / <code>respond_failed</code>.{" "}
+          <code>notices</code> arrives in SDK 0.5.0.
         </li>
         <li>
           <strong>reviews:</strong> <code>list</code>, <code>write</code>, <code>eligibility</code>,{" "}
