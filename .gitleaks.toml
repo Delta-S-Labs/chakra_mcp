@@ -36,6 +36,9 @@ paths = [
     # llms.txt is markdown for AI agents — same docs-style content
     # as the design-system files.
     '''frontend/public/llms\.txt$''',
+    # Message safety's labelled set: test messages that must look like
+    # secrets (JWTs, ciphertext) to check the screener tells them apart.
+    '''backend/shared/tests/data/safety/''',
 ]
 
 # Patterns common in our docs that gitleaks mis-detects as secrets:

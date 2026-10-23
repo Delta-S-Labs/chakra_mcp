@@ -172,8 +172,12 @@ yet, plus the labelled message set and unit tests.
    - **Short text:** under 20 characters is `english: true, reliable: false`, so the
      English thresholds apply.
    - **Detection:** `whatlang::detect`.
-     - English means `Lang::Eng` and `is_reliable()`.
-     - Anything else (including an unreliable result) means not English.
+     - Non-Latin scripts are not English.
+     - Latin-script text is English unless it's reliably another language.
+     - `whatlang` calls ordinary short English sentences unreliable (confidence 0.83 on
+       "Could you book a table for four people this Friday evening, please?"), so
+       requiring a reliable English result would have made most English messages
+       lenient. Changed while building.
    - **Hinglish:** Latin-script text with at least two distinct romanized-Hindi function
      words, making up at least 10% of the words, is `code: "hi-Latn"`, not English,
      whatever `whatlang` says.

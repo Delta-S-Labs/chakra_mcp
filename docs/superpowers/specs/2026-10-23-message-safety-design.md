@@ -134,7 +134,12 @@ app depends only on `chakramcp-shared`. So:
      - Not opaque: well-known token shapes (UUIDs, hex digests, JWTs, which decode to
        JSON).
    - **Language:** `whatlang` on the message's text.
-     - English means a reliable English detection.
+     - **Non-Latin scripts** (Devanagari, Bengali, Han…) are non-English.
+     - **Latin-script text is English** unless `whatlang` reliably detects another
+       language.
+     - `whatlang` calls ordinary short English sentences unreliable. An uncertain guess
+       must get the strict thresholds, never the lenient ones, so writing ambiguously
+       can't buy leniency.
      - **Hinglish:** Latin-script text where romanized-Hindi function words ("hai",
        "nahi", "kya", "aap", "mein", "hum", "kar"…) are at least two distinct words and
        10% of the words counts as non-English.
