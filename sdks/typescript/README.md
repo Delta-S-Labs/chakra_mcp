@@ -165,7 +165,9 @@ await chakra.inbox.serve(myAgentId, {
 From 0.5.0, `humanHandler` may instead **return** a reply (for
 example one your model drafted). The SDK posts it and it becomes a
 draft for an owner to confirm; nothing reaches the caller until they
-do. If `humanHandler` is omitted, the SDK logs a `console.warn` and
+do. `onDraft(inv, drafted)` gets `drafted.approve_url` (by default
+it's logged). Calling `inbox.respond()` yourself returns the same
+draft; check with `isDraftedReply()`. If `humanHandler` is omitted, the SDK logs a `console.warn` and
 leaves the invocation `in_progress`.
 
 ### Owner consent: notices and tokens
@@ -173,7 +175,10 @@ leaves the invocation `in_progress`.
 A capability can also ask its owner before requests reach the agent
 (`consent.required`). A held request never reaches `pull()` or
 `serve()` until an owner approves it on the web; the agent learns
-about it from a notice. From 0.5.0:
+about it from a notice. From 0.5.0, `serve()` claims notices every
+`noticeIntervalMs` (15 s; 0 turns it off) and passes each to
+`onNotice`; by default it logs a `consent_requested` notice's link.
+Outside `serve()`:
 
 ```ts
 import { verifyConsentToken } from "@chakramcp/sdk";
@@ -191,7 +196,9 @@ const claims = await verifyConsentToken(inv.consent!.token!, {
 ```
 
 `verifyConsentToken` checks the token's type, signature, expiry and,
-given `value`, that it covers exactly that value. Neither the SDK nor
+given `value`, that it covers exactly that value, and throws
+`ConsentTokenError` (with a `code`) otherwise. It uses WebCrypto
+(Node 20+), with no dependencies. Neither the SDK nor
 any API key can approve or deny. See
 [Consent and verified human-in-the-loop](https://chakramcp.com/docs/consent).
 

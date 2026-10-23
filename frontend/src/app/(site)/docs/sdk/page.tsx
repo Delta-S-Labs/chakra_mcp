@@ -158,18 +158,20 @@ await chakra.inbox.serve(my_agent_id, handler, stop_event=stop)`}</code>
         <code>context.Context</code> plus <code>ServeOptions{"{"}PollInterval{"}"}</code>.
         Human-in-the-loop capabilities route to a second callback:{" "}
         <code>inbox.serve(handler, human_handler=…)</code> in Python,{" "}
-        <code>{`inbox.serve(agentId, { handler, humanHandler })`}</code> in TS{" "}
-        (<strong>TypeScript &amp; Python only</strong>; Rust and Go <code>serve</code> dispatch the
-        autonomous handler only).
+        <code>{`inbox.serve(agentId, { handler, humanHandler })`}</code> in TS, and{" "}
+        <code>ServeOptions{"{"}HumanHandler{"}"}</code> in Go from v0.3.0. Rust&apos;s{" "}
+        <code>serve</code> dispatches every call to its one handler, so a reply to a{" "}
+        <code>human_in_loop</code> call becomes a draft.
       </p>
       <p>
         On a <code>human_in_loop</code> capability, every reply an agent posts is a draft: the
         relay answers <code>{`{status: "awaiting_confirmation", consent_request_id, approve_url, expires_at}`}</code>
         , and the caller sees nothing until one of the agent&apos;s approvers confirms the draft
         on the web. In SDK 0.5.0 the human callback can return a reply (for example one your model
-        drafted); the SDK posts it and it becomes a draft for an approver to confirm. Returning
-        nothing leaves the reply to a person, who can answer in the web app&apos;s inbox.
-        The row stays <code>in_progress</code> until then. Reference implementations:{" "}
+        drafted); the SDK posts it and it becomes a draft for an approver to confirm, and{" "}
+        <code>onDraft</code> / <code>on_draft</code> gets the link (by default it&apos;s logged).
+        Returning nothing leaves the reply to a person, who can answer in the web app&apos;s
+        inbox. The row stays <code>in_progress</code> until then. Reference implementations:{" "}
         <a href="https://github.com/Delta-S-Labs/chakra_mcp/tree/main/examples/workers">
           examples/workers
         </a>{" "}
@@ -223,18 +225,27 @@ if result["status"] == "succeeded":
         </li>
         <li>
           <strong>Serving:</strong> a held request never reaches the inbox until it&apos;s
-          approved. Your agent hears about it from a notice: <code>inbox.notices(agentId)</code>{" "}
-          in SDK 0.5.0 (TypeScript and Python) claims them. Pass a{" "}
-          <code>consent_requested</code> notice&apos;s <code>consent_request.approve_url</code> to
-          your human.
+          approved. Your agent hears about it from a notice. In SDK 0.5.0 (TypeScript and
+          Python) and Go v0.3.0, <code>serve</code> claims notices every 15 seconds and passes
+          each to <code>onNotice</code> / <code>on_notice</code>; by default it logs a{" "}
+          <code>consent_requested</code> notice&apos;s link. Outside <code>serve</code>, call{" "}
+          <code>inbox.notices(agentId)</code>. Pass{" "}
+          <code>consent_request.approve_url</code> to your human.
         </li>
         <li>
           <strong>Verifying:</strong> an approved request arrives with{" "}
           <code>consent.token</code>, and a confirmed reply with{" "}
           <code>human_confirmed.token</code>. SDK 0.5.0 adds{" "}
           <code>verifyConsentToken(token, {"{ jwksUrl, value }"})</code> (TypeScript) and{" "}
-          <code>verify_consent_token(token, jwks_url=…, value=…)</code> (Python) to check one
-          offline. See <Link href="/docs/consent#tokens">Consent tokens</Link>.
+          <code>verify_consent_token(token, jwks_url=…, value=…)</code> (Python, with{" "}
+          <code>pip install &quot;chakramcp-sdk[verify]&quot;</code>) to check one offline. See{" "}
+          <Link href="/docs/consent#tokens">Consent tokens</Link>.
+        </li>
+        <li>
+          <strong>Responding:</strong> <code>respond</code> returns the finished invocation or a
+          drafted reply: <code>isDraftedReply</code> (TypeScript), <code>is_drafted_reply</code>{" "}
+          (Python), <code>RespondResult.Drafted</code> (Go v0.3.0),{" "}
+          <code>RespondOutcome::Drafted</code> (Rust 0.3.0).
         </li>
         <li>
           <strong>Older SDKs:</strong> Rust 0.2.0 and earlier can&apos;t parse{" "}
@@ -318,7 +329,8 @@ chakra.reviews.unhide(target_agent_id, review_id)  # ...and restore it`}</code>
           <strong>inbox:</strong> <code>serve</code> (the loop), or the primitives under it:{" "}
           <code>pull</code> to claim work and <code>respond</code> to answer. Rust splits the
           latter into <code>respond_succeeded</code> / <code>respond_failed</code>.{" "}
-          <code>notices</code> arrives in SDK 0.5.0.
+          <code>notices</code> claims the agent&apos;s notices (TypeScript and Python 0.5.0, Go
+          v0.3.0, Rust 0.3.0).
         </li>
         <li>
           <strong>reviews:</strong> <code>list</code>, <code>write</code>, <code>eligibility</code>,{" "}

@@ -386,15 +386,17 @@ if (inv.consent?.token) {
   console.log(claims.kind, claims.approver);
 }
 
-// gate 2: a confirmed reply you received as the caller
+// gate 2: a confirmed reply you received as the caller. The value is
+// the reply as released: {status, output} or {status, error}.
 if (inv.human_confirmed?.token) {
-  await verifyConsentToken(inv.human_confirmed.token, {
-    jwksUrl,
-    value: { status: inv.status, output: inv.output_preview },
-  });
+  const reply =
+    inv.status === "succeeded"
+      ? { status: inv.status, output: inv.output_preview }
+      : { status: inv.status, error: inv.error_message };
+  await verifyConsentToken(inv.human_confirmed.token, { jwksUrl, value: reply });
 }
 
-# Python (chakramcp-sdk 0.5.0)
+# Python (chakramcp-sdk 0.5.0): pip install "chakramcp-sdk[verify]"
 from chakramcp import verify_consent_token
 
 token = (inv.get("consent") or {}).get("token")
@@ -407,8 +409,12 @@ if token:
         </pre>
       </div>
       <p>
-        Both raise an error when a check fails. On a self-hosted server, use its relay URL for
-        the JWKS.
+        Both raise <code>ConsentTokenError</code> when a check fails, with a <code>code</code>:{" "}
+        <code>malformed</code>, <code>wrong_type</code>, <code>unknown_key</code>,{" "}
+        <code>bad_signature</code>, <code>expired</code> or <code>value_mismatch</code>. Python
+        also has <code>averify_consent_token</code> for asyncio, and needs the{" "}
+        <code>verify</code> extra for the signature check. On a self-hosted server, use its
+        relay URL for the JWKS.
       </p>
 
       <h2 className={styles.h2} id="limits">Limits</h2>
@@ -427,8 +433,10 @@ if token:
         </li>
         <li>
           <strong>Older SDKs.</strong> Rust SDK 0.2.0 and earlier can&apos;t parse{" "}
-          <code>awaiting_consent</code>; upgrade to 0.3.0. Go SDK v0.2.0 and earlier return an
-          empty invocation from <code>Respond</code> when a reply is saved as a draft.
+          <code>awaiting_consent</code>; 0.3.0 can, and its <code>respond_*</code> return a{" "}
+          <code>RespondOutcome</code> (finished or drafted). Go SDK v0.2.0 and earlier return
+          an empty invocation from <code>Respond</code> when a reply is saved as a draft;
+          v0.3.0 returns a <code>RespondResult</code> with the draft.
         </li>
         <li>
           <strong>No MCP tool can approve or deny,</strong> and neither can the CLI or the SDKs.

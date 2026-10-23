@@ -31,6 +31,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${BASE}/docs`, lastModified: now, changeFrequency: "weekly", priority: 0.8 },
     { url: `${BASE}/docs/quickstart`, lastModified: now, changeFrequency: "weekly", priority: 0.8 },
     { url: `${BASE}/docs/concepts`, lastModified: now, changeFrequency: "monthly", priority: 0.7 },
+    { url: `${BASE}/docs/consent`, lastModified: now, changeFrequency: "monthly", priority: 0.7 },
     { url: `${BASE}/docs/cli`, lastModified: now, changeFrequency: "monthly", priority: 0.7 },
     { url: `${BASE}/docs/sdk`, lastModified: now, changeFrequency: "monthly", priority: 0.7 },
     { url: `${BASE}/docs/mcp`, lastModified: now, changeFrequency: "monthly", priority: 0.7 },

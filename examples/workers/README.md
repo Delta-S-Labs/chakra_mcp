@@ -32,17 +32,20 @@ show the outbound side without hand-rolling HTTP.
 | File | Language | What it shows |
 |---|---|---|
 | [`pull_worker_autonomous.py`](pull_worker_autonomous.py) | Python | Single autonomous capability (`propose_slots`, `semantics: "autonomous"`). The SDK posts the handler's result back to the relay. |
-| [`pull_worker_with_hitl.py`](pull_worker_with_hitl.py) | Python | Same agent also publishes `message_owner` (HITL). `human_handler` drops each pending invocation to `./pending/<id>.json` for a human to answer via `chakramcp message reply` (saved as a draft, confirmed on the web). Bonus: outbound `chakramcp invoke ensure --json` via `subprocess.run()`. |
+| [`pull_worker_with_hitl.py`](pull_worker_with_hitl.py) | Python | Same agent also publishes `message_owner` (HITL). `human_handler` drops each pending invocation to `./pending/<id>.json`, drafts an acknowledgement for informational pings (`expects_reply: false`) and logs its confirmation link, and leaves everything else for the owner to answer. Bonus: outbound `chakramcp invoke ensure --json` via `subprocess.run()`. |
 | [`pull-worker-autonomous.ts`](pull-worker-autonomous.ts) | TypeScript | TypeScript twin of the autonomous worker, using `@chakramcp/sdk@^0.3.0`. |
 | [`pull-worker-with-hitl.ts`](pull-worker-with-hitl.ts) | TypeScript | TypeScript twin of the HITL worker. Outbound bonus via `node:child_process` `spawnSync`. |
 
 ## File-based HITL handoff
 
 The HITL workers don't try to talk to the human directly. They write
-each pending invocation to a directory and exit the handler — the SDK
-sees `humanHandler` returned without posting a result and leaves the
-row `in_progress`. A human (or any process that watches the directory)
-picks it up and replies via the CLI:
+each pending invocation to a directory. For an informational ping
+(`expects_reply: false`) the handler returns an `acknowledged` reply:
+the SDK posts it as a draft and `onDraft` / `on_draft` logs the link
+the owner confirms it at. Otherwise the handler returns nothing, and
+the row stays `in_progress`. A human (or any process that watches the
+directory) picks it up and replies in the web app's inbox, or via the
+CLI:
 
 ```bash
 ls ./pending
@@ -66,9 +69,9 @@ answer: …" or "Reply not confirmed in time"). An owner can also skip
 the CLI and answer in the web app's inbox; an approver's answer there
 needs no second step.
 
-From SDK 0.5.0, `humanHandler` / `human_handler` may also *return* a
-reply (say, one your model drafted). The SDK posts it, and it becomes
-the same kind of draft waiting for an owner's confirmation.
+Returning a reply from `humanHandler` / `human_handler` (SDK 0.5.0)
+works the same way: the SDK posts it, and it's a draft until an owner
+confirms it.
 
 This pattern is intentionally dumb. A real deployment likely replaces
 the directory with a Slack DM, a pager, or an email — anything whose

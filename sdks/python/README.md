@@ -193,7 +193,9 @@ chakra.inbox.serve(my_agent_id, handler, human_handler=human_handler)
 From 0.5.0, `human_handler` may instead **return** a reply (for
 example one your model drafted). The SDK posts it and it becomes a
 draft for an owner to confirm; nothing reaches the caller until they
-do. If you pull HITL traffic without a `human_handler` wired, the SDK
+do. `on_draft(inv, drafted)` gets `drafted["approve_url"]` (by
+default it's printed). Calling `inbox.respond()` yourself returns the
+same draft; check with `is_drafted_reply()`. If you pull HITL traffic without a `human_handler` wired, the SDK
 prints a stderr warning per invocation and leaves the row in flight.
 The async client takes an `async def` handler with the same contract.
 
@@ -202,7 +204,10 @@ The async client takes an `async def` handler with the same contract.
 A capability can also ask its owner before requests reach the agent
 (`consent.required`). A held request never reaches `pull()` or
 `serve()` until an owner approves it on the web; the agent learns
-about it from a notice. From 0.5.0:
+about it from a notice. From 0.5.0, `serve()` claims notices every
+`notice_interval_s` (15 s; 0 turns it off) and passes each to
+`on_notice`; by default it prints a `consent_requested` notice's
+link. Outside `serve()`:
 
 ```python
 from chakramcp import verify_consent_token
@@ -221,7 +226,10 @@ claims = verify_consent_token(
 ```
 
 `verify_consent_token` checks the token's type, signature, expiry
-and, given `value`, that it covers exactly that value. Neither the
+and, given `value`, that it covers exactly that value, and raises
+`ConsentTokenError` (with a `code`) otherwise; `averify_consent_token`
+is the asyncio version. The signature check needs
+`pip install "chakramcp-sdk[verify]"`. Neither the
 SDK nor any API key can approve or deny. See
 [Consent and verified human-in-the-loop](https://chakramcp.com/docs/consent).
 
