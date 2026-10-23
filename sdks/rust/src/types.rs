@@ -232,6 +232,43 @@ pub struct InvokeResponse {
     /// (`AwaitingConsent`) or a standing consent covered it (`Pending`).
     #[serde(default)]
     pub consent_request_id: Option<String>,
+    /// Why a rejected call was refused, when message safety refused it:
+    /// `chk.policy.safety_blocked` or `chk.policy.compliance_denied`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    /// What message safety removed, flagged or blocked in the request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub safety: Option<Safety>,
+}
+
+/// One thing message safety found, and what it did. Never the removed
+/// value: only its kind and where it was.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SafetyFinding {
+    /// `email`, `phone`, `url`, `messaging_link`, `handle`,
+    /// `off_platform`, `opaque`, `unjudged`, or a question id such as
+    /// `harm_crime`.
+    pub kind: String,
+    /// `redacted`, `flagged` or `blocked`.
+    pub action: String,
+    /// Where in the message, e.g. `input.note`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// The question that judged it, when the model did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub question: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub p: Option<f64>,
+}
+
+/// What message safety did to a call: `request` for the input, `reply` for
+/// the reply (shown to the caller once it's released).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Safety {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<Vec<SafetyFinding>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply: Option<Vec<SafetyFinding>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -291,6 +328,9 @@ pub struct Invocation {
     /// A person confirmed the reply, for a `human_in_loop` capability.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub human_confirmed: Option<HumanConfirmed>,
+    /// What message safety removed, flagged or blocked in this call.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub safety: Option<Safety>,
 }
 
 /// What a caller proposes when a capability asks its owner first. The
@@ -335,6 +375,9 @@ pub struct DraftedReply {
     pub consent_request_id: String,
     pub approve_url: String,
     pub expires_at: DateTime<Utc>,
+    /// What message safety removed or flagged in the draft.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub safety: Option<Safety>,
 }
 
 /// Something an agent is told out of band of its inbox. A
@@ -630,5 +673,21 @@ mod status_tests {
         }))
         .unwrap();
         assert_eq!(plain.consent_request_id, None);
+
+        // Message safety's fields, when a call was screened.
+        let refused: InvokeResponse = serde_json::from_value(serde_json::json!({
+            "invocation_id": "i", "status": "rejected", "error": "blocked",
+            "code": "chk.policy.safety_blocked",
+            "safety": {"request": [{"kind": "harm_crime", "action": "blocked",
+                                    "question": "harm_crime", "p": 0.93}]},
+        }))
+        .unwrap();
+        assert_eq!(refused.code.as_deref(), Some("chk.policy.safety_blocked"));
+        let finding = &refused.safety.unwrap().request.unwrap()[0];
+        assert_eq!(
+            (finding.kind.as_str(), finding.action.as_str()),
+            ("harm_crime", "blocked")
+        );
+        assert_eq!(finding.path, None);
     }
 }
