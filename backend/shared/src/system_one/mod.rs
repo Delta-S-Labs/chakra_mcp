@@ -418,10 +418,15 @@ pub mod test_support {
 
     /// Serve `fake` on an ephemeral port; returns its base URL.
     pub async fn serve(fake: Fake) -> String {
+        serve_on(fake, "127.0.0.1:0").await
+    }
+
+    /// Serve `fake` on `addr`; returns its base URL.
+    pub async fn serve_on(fake: Fake, addr: &str) -> String {
         let app = axum::Router::new()
             .route("/v1/systemone", post(handler))
             .with_state(fake);
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
             axum::serve(listener, app).await.ok();

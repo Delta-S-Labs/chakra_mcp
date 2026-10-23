@@ -43,6 +43,10 @@ whatlang = "0.18"
 # tests.
 test-support = []
 
+[[example]]
+name = "fake_typesafe"
+required-features = ["test-support"]
+
 [dev-dependencies]
 metrics-util = { workspace = true }
 tower = { workspace = true }

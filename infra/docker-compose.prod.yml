@@ -128,6 +128,9 @@ services:
       SYSTEM_ONE_CHECKS: ${SYSTEM_ONE_CHECKS:-false}
       TYPESAFE_AI_KEY: ${TYPESAFE_AI_KEY:-}
       TYPESAFE_AI_MODEL: ${TYPESAFE_AI_MODEL:-jev-latest}
+      # Message safety screening (needs the checks above): harmful content
+      # blocked, off-platform contact details redacted. Off until set.
+      SYSTEM_ONE_SAFETY: ${SYSTEM_ONE_SAFETY:-false}
       JWT_SECRET: ${JWT_SECRET}
       APP_PORT: "8080"
       RELAY_PORT: "8090"
