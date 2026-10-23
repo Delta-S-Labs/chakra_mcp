@@ -115,11 +115,17 @@ export default async function ApprovalsPage({
             <li key={r.id}>
               <Link href={`/app/approvals/${r.id}`} className={`${styles.row} ${styles.rowMain}`}>
                 <span className={styles.rowTitle}>
-                  {r.requester_display_name ?? "An agent"} → {r.capability_name ?? "a deleted capability"}
+                  {r.kind === "reply"
+                    ? `Reply from ${r.target.display_name ?? "your agent"} → ${r.requester_display_name ?? "an agent"}`
+                    : `${r.requester_display_name ?? "An agent"} → ${r.capability_name ?? "a deleted capability"}`}
                 </span>
                 <span className={styles.rowMeta}>
                   {r.requester_account_display_name && <>{r.requester_account_display_name} · </>}
-                  on {r.target.display_name} · {describeTerms(r.approved_terms ?? r.terms)}
+                  {r.kind === "reply" ? (
+                    <>{r.capability_name ?? "a deleted capability"}</>
+                  ) : (
+                    <>on {r.target.display_name} · {describeTerms(r.approved_terms ?? r.terms)}</>
+                  )}
                   {tab === "waiting" ? <> · {timeLeft(r.expires_at)}</> : null}
                 </span>
                 {tab === "history" && (

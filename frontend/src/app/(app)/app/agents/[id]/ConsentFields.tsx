@@ -11,6 +11,8 @@ export interface Member {
 
 export interface ConsentDraft {
   required: boolean;
+  /** `human_in_loop`: a person confirms each reply. */
+  humanReply: boolean;
   approvers: string[];
   maxValidity: MaxValidity;
   wait: string;
@@ -18,6 +20,7 @@ export interface ConsentDraft {
 
 export const DEFAULT_CONSENT: ConsentDraft = {
   required: false,
+  humanReply: false,
   approvers: [],
   maxValidity: "once",
   wait: "1d",
@@ -38,6 +41,11 @@ const WAIT: { value: string; label: string }[] = [
   { value: "7d", label: "7 days" },
 ];
 
+/** The draft's `semantics`. */
+export function semanticsOf(d: ConsentDraft): "autonomous" | "human_in_loop" {
+  return d.humanReply ? "human_in_loop" : "autonomous";
+}
+
 /** The draft as the relay's `consent` input. */
 export function consentInput(d: ConsentDraft): ConsentSettingsInput {
   return {
@@ -49,9 +57,12 @@ export function consentInput(d: ConsentDraft): ConsentSettingsInput {
 }
 
 /**
- * "Ask before delivering requests" (owner consent): requests wait for an
- * approver's decision on the web; the agent gets a notice with the link.
- * Push-mode agents can't: the relay forwards their calls at once.
+ * The Approvals settings (owner consent): "Ask before delivering requests"
+ * (requests wait for an approver's decision on the web; the agent gets a
+ * notice with the link) and "A person writes the reply" (an agent's reply
+ * is a draft until an approver confirms it). Approvers and how long things
+ * wait apply to both. Push-mode agents can't: the relay forwards their
+ * calls at once.
  */
 export function ConsentFields({
   value,
@@ -91,23 +102,39 @@ export function ConsentFields({
           </span>
         </span>
       </label>
+      <label className={styles.toggle}>
+        <input
+          type="checkbox"
+          checked={value.humanReply}
+          onChange={(e) => onChange({ ...value, humanReply: e.target.checked })}
+        />
+        <span>
+          A person writes the reply
+          <span className={styles.toggleHint}>
+            Your agent&apos;s replies wait until you confirm them, so callers know a person
+            stood behind each answer.
+          </span>
+        </span>
+      </label>
       {value.required && (
+        <label className={styles.field}>
+          <span className={styles.fieldLabel}>Longest approval</span>
+          <select
+            value={value.maxValidity}
+            onChange={(e) => onChange({ ...value, maxValidity: e.target.value as MaxValidity })}
+          >
+            {MAX_VALIDITY.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {(value.required || value.humanReply) && (
         <>
           <label className={styles.field}>
-            <span className={styles.fieldLabel}>Longest approval</span>
-            <select
-              value={value.maxValidity}
-              onChange={(e) => onChange({ ...value, maxValidity: e.target.value as MaxValidity })}
-            >
-              {MAX_VALIDITY.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className={styles.field}>
-            <span className={styles.fieldLabel}>Requests wait for a decision</span>
+            <span className={styles.fieldLabel}>Wait for a decision</span>
             <select value={value.wait} onChange={(e) => onChange({ ...value, wait: e.target.value })}>
               {waitOptions.map((o) => (
                 <option key={o.value} value={o.value}>

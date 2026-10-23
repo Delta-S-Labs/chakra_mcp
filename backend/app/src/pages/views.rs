@@ -156,4 +156,10 @@ pub(crate) struct ApprovalPage {
     pub max_requests: String,
     pub note: String,
     pub error: Option<String>,
+    /// A reply's draft (gate 2): its fields, or why it failed, and the hash
+    /// the form sends back.
+    pub is_reply: bool,
+    pub draft: Vec<Field>,
+    pub draft_error: Option<String>,
+    pub draft_sha256: String,
 }

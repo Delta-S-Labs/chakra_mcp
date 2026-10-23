@@ -118,11 +118,11 @@ pub enum Cmd {
         /// `network` (default) or `private`. Overrides template default.
         #[arg(long)]
         visibility: Option<String>,
-        /// HITL gate (issue #69 PR 2). `autonomous` (default) accepts
-        /// any worker-posted result; `human_in_loop` makes the relay
-        /// reject results that don't carry `confirmed_by_human: true`.
-        /// The `message_owner` template defaults to `human_in_loop`;
-        /// passing this flag overrides the template's value.
+        /// `autonomous` (default): the agent's replies go out as they are.
+        /// `human_in_loop`: a reply is a draft until one of the agent's
+        /// owners confirms it on the web (or writes it there). The
+        /// `message_owner` template defaults to `human_in_loop`; passing
+        /// this flag overrides the template's value.
         #[arg(long, value_parser = ["autonomous", "human_in_loop"])]
         semantics: Option<String>,
         /// Make this capability publicly invokable: any registered
@@ -176,6 +176,11 @@ pub enum Cmd {
         /// public-invoke; otherwise updates the cap.
         #[arg(long)]
         monthly_quota: Option<i32>,
+        /// `human_in_loop`: a person confirms each reply on the web before
+        /// the caller sees it. `autonomous`: the agent's replies go out as
+        /// they are.
+        #[arg(long, value_parser = ["autonomous", "human_in_loop"])]
+        semantics: Option<String>,
         #[command(flatten)]
         consent: ConsentFlags,
     },
@@ -305,9 +310,13 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             public_invoke,
             no_public_invoke,
             monthly_quota,
+            semantics,
             consent,
         } => {
             let mut payload = serde_json::Map::new();
+            if let Some(s) = semantics {
+                payload.insert("semantics".into(), Value::String(s));
+            }
             if let Some(d) = description {
                 payload.insert("description".into(), Value::String(d));
             }
@@ -335,7 +344,7 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             }
             if payload.is_empty() {
                 return Err(anyhow!(
-                    "nothing to update — pass at least one of --description, --visibility, --input-schema, --output-schema, --public-invoke, --no-public-invoke, --monthly-quota, --ask-first, --no-ask-first, --approver, --max-consent, --consent-wait"
+                    "nothing to update — pass at least one of --description, --visibility, --input-schema, --output-schema, --public-invoke, --no-public-invoke, --monthly-quota, --semantics, --ask-first, --no-ask-first, --approver, --max-consent, --consent-wait"
                 ));
             }
             let body: Value = api

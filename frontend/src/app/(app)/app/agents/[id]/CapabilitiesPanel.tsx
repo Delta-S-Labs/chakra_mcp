@@ -12,6 +12,7 @@ import {
   ConsentFields,
   consentInput,
   DEFAULT_CONSENT,
+  semanticsOf,
   type ConsentDraft,
   type Member,
 } from "./ConsentFields";
@@ -20,9 +21,11 @@ import styles from "../agents.module.css";
 /** A capability's stored consent settings as an editable draft. */
 function draftOf(cap: Capability): ConsentDraft {
   const c = cap.consent;
-  if (!c) return DEFAULT_CONSENT;
+  const humanReply = cap.semantics === "human_in_loop";
+  if (!c) return { ...DEFAULT_CONSENT, humanReply };
   return {
     required: c.required,
+    humanReply,
     approvers: c.approvers ?? [],
     maxValidity: c.max_validity,
     wait: c.wait,
@@ -118,7 +121,8 @@ export function CapabilitiesPanel({
               public_monthly_quota_per_agent: monthlyQuota as number,
             }
           : {}),
-        ...(consent.required ? { consent: consentInput(consent) } : {}),
+        ...(consent.required || consent.humanReply ? { consent: consentInput(consent) } : {}),
+        semantics: semanticsOf(consent),
       });
       setItems((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
       setName("");
@@ -142,6 +146,7 @@ export function CapabilitiesPanel({
     try {
       const updated = await updateCapability(token, agentId, cap.id, {
         consent: consentInput(editDraft),
+        semantics: semanticsOf(editDraft),
       });
       setItems((prev) => prev.map((c) => (c.id === cap.id ? updated : c)));
       setEditing(null);
@@ -229,6 +234,14 @@ export function CapabilitiesPanel({
                       title="Requests wait for the owner's approval before reaching the agent."
                     >
                       asks first
+                    </span>
+                  )}
+                  {cap.semantics === "human_in_loop" && (
+                    <span
+                      className={`${styles.badge} ${styles.badgeOn}`}
+                      title="A person confirms each reply before the caller sees it."
+                    >
+                      person replies
                     </span>
                   )}
                 </div>

@@ -1,0 +1,136 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT i.status, i.created_at, i.capability_id,\n               i.granter_agent_id, i.grantee_agent_id,\n               ga.account_id AS \"granter_account_id?\",\n               ea.account_id AS \"grantee_account_id?\",\n               c.semantics AS \"capability_semantics?\",\n               c.consent_approvers AS \"approvers?\",\n               c.consent_wait_secs AS \"wait_secs?\"\n          FROM relay_invocations i\n          LEFT JOIN agents ga ON ga.id = i.granter_agent_id\n          LEFT JOIN agents ea ON ea.id = i.grantee_agent_id\n          LEFT JOIN agent_capabilities c ON c.id = i.capability_id\n         WHERE i.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "capability_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "capability_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "granter_agent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "granter_agent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "grantee_agent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "grantee_agent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "granter_account_id?",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "grantee_account_id?",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "capability_semantics?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "semantics"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "approvers?",
+        "type_info": "UuidArray",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "consent_approvers"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "wait_secs?",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "consent_wait_secs"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "f421e344455188db9a21e267d1779be74ab8828ab8b0e843ef4bea37734880ff"
+}

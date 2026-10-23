@@ -19,7 +19,6 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::PgPool;
@@ -623,7 +622,7 @@ async fn call_tool(
         "pull_notices" => pull_notices(state, user, p.arguments).await,
         "consent_status" => consent_status(state, user, p.arguments).await,
         "list_invocations" => list_invocations(&state.db, user, p.arguments).await,
-        "respond" => respond(&state.db, user, p.arguments).await,
+        "respond" => respond(state, user, p.arguments).await,
         "propose_friendship" => propose_friendship(&state.db, user, p.arguments).await,
         "create_agent" => create_agent(&state.db, user, p.arguments).await,
         "publish_capability" => publish_capability(&state.db, user, p.arguments).await,
@@ -1258,95 +1257,39 @@ async fn consent_status(
     Ok(json!(status))
 }
 
-async fn respond(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
+async fn respond(state: &RelayState, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
     #[derive(Deserialize)]
     struct A {
         invocation_id: Uuid,
         status: String,
         output: Option<Value>,
         error: Option<String>,
-        /// Required to complete a `human_in_loop` capability (e.g.
-        /// message_owner): the relay refuses the result unless a human
-        /// actually approved it. Mirrors POST /v1/invocations/{id}/result.
+        /// Ignored: a reply to a `human_in_loop` capability is a draft until
+        /// one of its approvers confirms it on the web (owner consent §5).
         #[serde(default)]
+        #[allow(dead_code)]
         confirmed_by_human: Option<bool>,
     }
     let a: A = serde_json::from_value(args)
         .map_err(|e| ApiError::InvalidRequest(format!("bad respond args: {e}")))?;
-    if !matches!(a.status.as_str(), "succeeded" | "failed") {
-        return Err(ApiError::InvalidRequest(
-            "status must be 'succeeded' or 'failed'".into(),
-        ));
-    }
-
-    let row = sqlx::query!(
-        r#"
-        SELECT i.status, i.created_at,
-               ga.account_id as "granter_account_id?",
-               c.semantics as "capability_semantics?"
-        FROM relay_invocations i
-        LEFT JOIN agents ga ON ga.id = i.granter_agent_id
-        LEFT JOIN agent_capabilities c ON c.id = i.capability_id
-        WHERE i.id = $1
-        "#,
+    // Same path as POST /v1/invocations/{id}/result.
+    let submitted = crate::consent::reply::submit_result(
+        state,
+        user,
         a.invocation_id,
-    )
-    .fetch_optional(db)
-    .await?
-    .ok_or(ApiError::NotFound)?;
-
-    if row.status != "in_progress" {
-        return Err(ApiError::Conflict(format!(
-            "invocation is {}; only in_progress can be completed",
-            row.status
-        )));
-    }
-    let granter_account = row.granter_account_id.ok_or(ApiError::Forbidden)?;
-    if !user_is_member(db, user.user_id, granter_account).await? {
-        return Err(ApiError::Forbidden);
-    }
-
-    // HITL gate (parity with POST /v1/invocations/{id}/result): a
-    // human_in_loop capability (e.g. message_owner) cannot be completed
-    // by the agent alone — refuse unless a human approved.
-    if row.capability_semantics.as_deref() == Some("human_in_loop")
-        && a.status == "succeeded"
-        && !a.confirmed_by_human.unwrap_or(false)
-    {
-        return Err(ApiError::InvalidRequest(
-            "this capability is human-in-the-loop: relay the message to your \
-             owner, get their answer, then respond with confirmed_by_human=true"
-                .into(),
-        ));
-    }
-
-    let elapsed_ms = (Utc::now() - row.created_at)
-        .num_milliseconds()
-        .clamp(0, i32::MAX as i64) as i32;
-
-    let finished = sqlx::query!(
-        r#"
-        UPDATE relay_invocations
-        SET status = $2, elapsed_ms = $3, error_message = $4, output_preview = $5
-        WHERE id = $1 AND status = 'in_progress'
-        "#,
-        a.invocation_id,
-        a.status,
-        elapsed_ms,
-        a.error.as_deref(),
-        a.output.unwrap_or(Value::Null),
-    )
-    .execute(db)
-    .await?
-    .rows_affected();
-    crate::telemetry::record_invocation_outcome(
-        crate::telemetry::Mode::Pull,
         &a.status,
-        i64::from(elapsed_ms),
-        finished,
-    );
-
-    Ok(json!({ "invocation_id": a.invocation_id, "status": a.status, "elapsed_ms": elapsed_ms }))
+        a.output,
+        a.error,
+        crate::consent::reply::Preview::Whole,
+    )
+    .await?;
+    if let Some(body) = submitted.draft_body() {
+        return Ok(body);
+    }
+    let crate::consent::reply::Submitted::Finished { status, elapsed_ms } = submitted else {
+        unreachable!("draft_body covers drafts");
+    };
+    Ok(json!({ "invocation_id": a.invocation_id, "status": status, "elapsed_ms": elapsed_ms }))
 }
 
 async fn propose_friendship(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
@@ -2449,10 +2392,11 @@ mod manage_agents_tests {
     }
 
     #[sqlx::test(migrations = "../migrations")]
-    async fn respond_enforces_human_in_loop(pool: PgPool) {
-        // A human_in_loop capability (message_owner) cannot be completed
-        // over MCP without confirmed_by_human=true — the agent must not
-        // auto-answer it.
+    async fn respond_by_the_approver_in_person_is_confirmed(pool: PgPool) {
+        // A human_in_loop capability (message_owner): this caller is the
+        // owner in their own session (a plain user JWT, not an agent's
+        // token), so their reply is confirmed at once (owner consent §5).
+        // Agents' replies become drafts; see consent::tests.
         let m = crate::telemetry::testing::Recorded::start();
         let (_uid, account_id, token) = seed_user_with_jwt(&pool).await;
         let mk = |slug: &str| json!({ "account_id": account_id, "slug": slug, "display_name": slug, "visibility": "network" });
@@ -2515,36 +2459,27 @@ mod manage_agents_tests {
             .to_string();
         call(&pool, &token, "pull_inbox", json!({ "agent_id": b })).await;
 
-        // Auto-respond WITHOUT human confirmation → rejected.
-        let bad = call(
-            &pool,
-            &token,
-            "respond",
-            json!({ "invocation_id": inv, "status": "succeeded", "output": { "reply": "yes" } }),
-        )
-        .await;
-        assert_eq!(
-            bad["isError"],
-            json!(true),
-            "HITL respond must be rejected: {bad}"
-        );
-
-        // After human approval → confirmed_by_human=true succeeds.
+        // The owner answers in person: confirmed and released at once.
         let good = call(&pool, &token, "respond",
-            json!({ "invocation_id": inv, "status": "succeeded", "output": { "reply": "yes 8pm" }, "confirmed_by_human": true })).await;
+            json!({ "invocation_id": inv, "status": "succeeded", "output": { "reply": "yes 8pm" } })).await;
         assert_eq!(
             good["isError"],
             json!(false),
-            "confirmed HITL respond should succeed: {good}"
+            "an approver's own reply should be confirmed: {good}"
         );
+        assert_eq!(ok(&good)["status"], "succeeded");
+        let confirmed: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM consent_requests
+                             WHERE invocation_id = $1::uuid AND kind = 'reply' AND status = 'approved')",
+        )
+        .bind(&inv)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(confirmed);
 
-        // Tool calls by result, and the one completed pull invocation.
         use chakramcp_shared::telemetry::names;
         let calls = names::MCP_TOOL_CALLS_TOTAL;
-        assert_eq!(
-            m.counter(calls, &[("tool", "respond"), ("result", "error")]),
-            1
-        );
         assert_eq!(
             m.counter(calls, &[("tool", "respond"), ("result", "ok")]),
             1

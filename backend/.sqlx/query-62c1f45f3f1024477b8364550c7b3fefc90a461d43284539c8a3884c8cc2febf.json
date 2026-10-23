@@ -1,0 +1,36 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO consent_requests\n            (id, kind, invocation_id, capability_id, granter_agent_id, grantee_agent_id,\n             grantee_account_id, status, terms, draft, draft_sha256, decided_by_user_id,\n             decided_at, expires_at)\n        VALUES ($1, 'reply', $2, $3, $4, $5, $6, 'approved', '{}'::jsonb, $7, $8, $9,\n                now(), now())\n        ON CONFLICT (invocation_id, kind) DO UPDATE\n           SET draft = EXCLUDED.draft,\n               draft_sha256 = EXCLUDED.draft_sha256,\n               status = 'approved',\n               decided_by_user_id = EXCLUDED.decided_by_user_id,\n               decided_at = now()\n         WHERE consent_requests.status = 'pending'\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Jsonb",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "62c1f45f3f1024477b8364550c7b3fefc90a461d43284539c8a3884c8cc2febf"
+}

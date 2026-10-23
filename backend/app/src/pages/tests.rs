@@ -1082,6 +1082,71 @@ async fn only_approvers_get_the_form(pool: PgPool) {
     );
 }
 
+#[sqlx::test(migrations = "../migrations")]
+async fn approval_page_confirms_a_reply_draft(pool: PgPool) {
+    use chakramcp_shared::consent::reply::Draft;
+    let ada = seed(&pool).await;
+    let (request, invocation) = held_request(&pool, ada, serde_json::json!({})).await;
+    // Make it a reply waiting for confirmation (gate 2).
+    let draft = Draft {
+        status: "succeeded".into(),
+        output: Some(serde_json::json!({"answer": "Tuesday 3pm"})),
+        error: None,
+    };
+    sqlx::query("UPDATE relay_invocations SET status = 'in_progress' WHERE id = $1")
+        .bind(invocation)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE consent_requests SET kind = 'reply', draft = $2, draft_sha256 = $3 WHERE id = $1",
+    )
+    .bind(request)
+    .bind(draft.to_value())
+    .bind(draft.sha256())
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let path = format!("/app/approvals/{request}");
+    let mut browser = Browser::new(state(&pool));
+    let signin = browser.get(&path).await;
+    browser
+        .submit(
+            &path,
+            &signin,
+            &[("email", "ada@example.test"), ("password", PASSWORD)],
+        )
+        .await;
+    let page = browser.get(&path).await;
+    assert!(page.body.contains("Confirm a reply?"), "{}", page.body);
+    assert!(page.body.contains("Tuesday 3pm"));
+    assert_eq!(page.field("draft_sha256"), draft.sha256());
+
+    // A hash for another draft is refused: the page shows it again.
+    let stale = browser
+        .submit(
+            &path,
+            &page,
+            &[("step", "approve"), ("draft_sha256", "0000")],
+        )
+        .await;
+    assert_eq!(stale.status, StatusCode::BAD_REQUEST, "{}", stale.body);
+    assert!(stale.body.contains("the draft changed"), "{}", stale.body);
+
+    let sent = browser.submit(&path, &page, &[("step", "approve")]).await;
+    assert_eq!(sent.status, StatusCode::OK, "{}", sent.body);
+    assert!(sent.body.contains("Sent"));
+    let (status, output): (String, Value) =
+        sqlx::query_as("SELECT status, output_preview FROM relay_invocations WHERE id = $1")
+            .bind(invocation)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(status, "succeeded");
+    assert_eq!(output["answer"], "Tuesday 3pm");
+}
+
 #[test]
 fn return_to_stays_on_this_server() {
     let state_less = super::security::AppOrigin::of_url_for_tests(ORIGIN);

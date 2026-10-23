@@ -1,6 +1,10 @@
-//! Agent notices (spec §4.2): what an agent is told out of band of its
-//! inbox. Today one kind, `consent_requested`: a request to the agent waits
-//! for its owner's approval, and the agent passes the link on to its human.
+//! Agent notices (spec §4.2, §5): what an agent is told out of band of its
+//! inbox.
+//!
+//! - `consent_requested`: a request to the agent waits for its owner's
+//!   approval; the agent passes the link on to its human.
+//! - `reply_confirmed`, `reply_rejected`, `reply_expired`: what became of a
+//!   reply it drafted for a `human_in_loop` capability.
 //!
 //! An agent claims its undelivered notices, oldest first, like its inbox
 //! (`GET /v1/inbox/notices`, MCP `pull_notices`); each is delivered once.
@@ -24,7 +28,8 @@ pub struct Notice {
     pub id: Uuid,
     pub kind: String,
     pub created_at: DateTime<Utc>,
-    /// For `consent_requested`: the request waiting for approval.
+    /// The consent request the notice is about: for `consent_requested`,
+    /// the one waiting for approval; for `reply_*`, the reply's.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub consent_request: Option<ConsentRequestNotice>,
 }
@@ -109,8 +114,7 @@ pub async fn claim(
                (eacc.verified_at IS NOT NULL) AS "requester_verified?"
           FROM claimed c
           LEFT JOIN consent_requests cr
-                 ON c.kind = 'consent_requested'
-                AND cr.id = (c.payload->>'consent_request_id')::uuid
+                 ON cr.id = (c.payload->>'consent_request_id')::uuid
           LEFT JOIN agent_capabilities cap ON cap.id = cr.capability_id
           LEFT JOIN agents ea ON ea.id = cr.grantee_agent_id
           LEFT JOIN accounts eacc ON eacc.id = cr.grantee_account_id

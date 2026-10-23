@@ -18,6 +18,7 @@ use uuid::Uuid;
 
 use super::approvers;
 use super::metrics;
+use super::reply::{self, Draft};
 use super::terms::{ConsentTerms, Validity};
 use crate::error::ApiError;
 
@@ -43,8 +44,9 @@ pub enum DecideError {
     AlreadyDecided(String),
     #[error("this request expired")]
     Expired,
-    #[error("replies can't be confirmed here yet")]
-    NotARequest,
+    /// A reply's draft was replaced after the approver loaded it.
+    #[error("the draft changed, review it again")]
+    DraftChanged,
     #[error("{0}")]
     BadRequest(String),
     #[error("the invocation is already {0}")]
@@ -128,9 +130,16 @@ pub struct ApprovalView {
     pub decision_note: Option<String>,
     pub may_decide: bool,
     pub approvers: Vec<Approver>,
-    /// The held input; only for those who may decide.
+    /// The held input (for a reply, the original request's input); only
+    /// for those who may decide.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub input: Option<Value>,
+    /// A reply's draft, `{status, output?, error?}`, and the hash to send
+    /// when confirming it; only for those who may decide.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub draft: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub draft_sha256: Option<String>,
 }
 
 /// Request `id` as `user_id` may see it: `NotFound` unless a member of the
@@ -141,7 +150,7 @@ pub async fn load_view(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<ApprovalV
         SELECT cr.id, cr.kind, cr.status, cr.invocation_id, cr.terms, cr.approved_terms,
                cr.expires_at, cr.created_at, cr.decided_at, cr.decision_note,
                cr.capability_id, cr.granter_agent_id, cr.grantee_agent_id,
-               cr.grantee_account_id,
+               cr.grantee_account_id, cr.draft, cr.draft_sha256,
                ga.account_id AS granter_account_id, ga.display_name AS granter_display_name,
                ea.display_name AS "grantee_display_name?",
                eacc.slug AS "grantee_account_slug?",
@@ -224,6 +233,8 @@ pub async fn load_view(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<ApprovalV
         may_decide,
         approvers,
         input: if may_decide { r.input_preview } else { None },
+        draft: if may_decide { r.draft } else { None },
+        draft_sha256: if may_decide { r.draft_sha256 } else { None },
     })
 }
 
@@ -231,6 +242,9 @@ pub async fn load_view(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<ApprovalV
 
 /// A pending request, locked for a decision, and the decider checked.
 struct Decidable {
+    kind: String,
+    draft: Option<Value>,
+    draft_sha256: Option<String>,
     invocation_id: Uuid,
     terms: Value,
     capability_id: Uuid,
@@ -254,7 +268,7 @@ async fn lock_for_decision(
         r#"
         SELECT cr.kind, cr.status, cr.invocation_id, cr.terms, cr.expires_at,
                cr.capability_id, cr.granter_agent_id, cr.grantee_agent_id,
-               cr.grantee_account_id,
+               cr.grantee_account_id, cr.draft, cr.draft_sha256,
                ga.account_id AS granter_account_id,
                cap.consent_approvers AS "approvers?",
                cap.consent_max_validity_secs AS "max_validity_secs?",
@@ -287,10 +301,10 @@ async fn lock_for_decision(
     if r.expires_at <= Utc::now() {
         return Err(DecideError::Expired);
     }
-    if r.kind != "request" {
-        return Err(DecideError::NotARequest);
-    }
     Ok(Decidable {
+        kind: r.kind,
+        draft: r.draft,
+        draft_sha256: r.draft_sha256,
         invocation_id: r.invocation_id,
         terms: r.terms,
         capability_id: r.capability_id,
@@ -384,11 +398,14 @@ async fn standing(tx: &mut PgConnection, d: &Decidable) -> Result<(Standing, Str
 }
 
 /// Settle request `id` as not delivered: the request takes `status`
-/// (`denied` or `cancelled`) with `note`, and its held invocation is
-/// rejected with `error`. No charge is queued. Returns the rejected count.
+/// (`denied` or `cancelled`) with `note`, and its invocation ends with
+/// `error`: rejected while held (`kind = request`, no charge queued), or
+/// failed while its reply waited (`kind = reply`). Returns how many
+/// invocations ended.
 #[allow(clippy::too_many_arguments)]
 async fn close_unapproved(
     tx: &mut PgConnection,
+    kind: &str,
     id: Uuid,
     invocation_id: Uuid,
     user_id: Uuid,
@@ -409,6 +426,22 @@ async fn close_unapproved(
     )
     .execute(&mut *tx)
     .await?;
+    if kind == "reply" {
+        return Ok(sqlx::query!(
+            r#"
+            UPDATE relay_invocations
+               SET status = 'failed', error_message = $2,
+                   elapsed_ms = LEAST(EXTRACT(EPOCH FROM (now() - created_at)) * 1000,
+                                      2147483647)::int
+             WHERE id = $1 AND status = 'in_progress'
+            "#,
+            invocation_id,
+            error,
+        )
+        .execute(&mut *tx)
+        .await?
+        .rows_affected());
+    }
     Ok(sqlx::query!(
         r#"
         UPDATE relay_invocations SET status = 'rejected', error_message = $2
@@ -423,10 +456,12 @@ async fn close_unapproved(
 }
 
 /// How an approver narrows the requested terms; `None` keeps the request's.
-#[derive(Debug, Clone, Copy, Default)]
+/// For a reply, `draft_sha256` is the hash of the draft they were shown.
+#[derive(Debug, Clone, Default)]
 pub struct Narrowing {
     pub valid_for: Option<Validity>,
     pub max_requests: Option<i32>,
+    pub draft_sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -446,6 +481,9 @@ pub async fn approve(
 ) -> Result<Approved, DecideError> {
     let mut tx = db.begin().await?;
     let d = lock_for_decision(&mut tx, db, id, actor.user_id).await?;
+    if d.kind == "reply" {
+        return approve_reply(db, tx, actor, id, &d, narrowing.draft_sha256.as_deref()).await;
+    }
 
     let requested: ConsentTerms = serde_json::from_value(d.terms.clone())
         .map_err(|e| anyhow::anyhow!("stored consent terms: {e}"))?;
@@ -465,6 +503,7 @@ pub async fn approve(
     if let Err(reason) = still_authorized(&standing, Utc::now()) {
         let rejected = close_unapproved(
             &mut tx,
+            "request",
             id,
             d.invocation_id,
             actor.user_id,
@@ -576,6 +615,64 @@ pub async fn approve(
     })
 }
 
+/// Confirm a reply's draft: it must be the one the approver was shown,
+/// then it's released as the invocation's result.
+async fn approve_reply(
+    db: &PgPool,
+    mut tx: sqlx::Transaction<'_, sqlx::Postgres>,
+    actor: Actor,
+    id: Uuid,
+    d: &Decidable,
+    shown_sha256: Option<&str>,
+) -> Result<Approved, DecideError> {
+    if shown_sha256.is_none() || shown_sha256 != d.draft_sha256.as_deref() {
+        return Err(DecideError::DraftChanged);
+    }
+    let draft: Draft = serde_json::from_value(d.draft.clone().unwrap_or(Value::Null))
+        .map_err(|e| anyhow::anyhow!("stored draft: {e}"))?;
+    sqlx::query!(
+        r#"
+        UPDATE consent_requests
+           SET status = 'approved', decided_by_user_id = $2, decided_at = now()
+         WHERE id = $1 AND status = 'pending'
+        "#,
+        id,
+        actor.user_id,
+    )
+    .execute(&mut *tx)
+    .await?;
+    let elapsed = reply::release(&mut tx, d.invocation_id, &draft)
+        .await?
+        .ok_or_else(|| DecideError::InvocationMoved("finished".into()))?;
+    reply::notify(
+        &mut tx,
+        d.granter_agent_id,
+        "reply_confirmed",
+        id,
+        d.invocation_id,
+    )
+    .await?;
+    tx.commit().await?;
+
+    metrics::record_kind("reply", "approved", 1);
+    metrics::record_finished(&draft.status, elapsed);
+    audit(
+        db,
+        actor,
+        d,
+        "consent.approve",
+        id,
+        json!({ "kind": "reply", "draft_sha256": d.draft_sha256 }),
+    )
+    .await;
+    Ok(Approved {
+        id,
+        invocation_id: d.invocation_id,
+        approved_terms: Value::Null,
+        consent_id: None,
+    })
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Denied {
     pub id: Uuid,
@@ -597,12 +694,19 @@ pub async fn deny(
     }
     let mut tx = db.begin().await?;
     let d = lock_for_decision(&mut tx, db, id, actor.user_id).await?;
-    let error = match note {
-        Some(n) => format!("The owner declined: {n}"),
-        None => "The owner declined".to_owned(),
+    let is_reply = d.kind == "reply";
+    let declined = if is_reply {
+        "The owner declined to answer"
+    } else {
+        "The owner declined"
     };
-    let rejected = close_unapproved(
+    let error = match note {
+        Some(n) => format!("{declined}: {n}"),
+        None => declined.to_owned(),
+    };
+    let ended = close_unapproved(
         &mut tx,
+        &d.kind,
         id,
         d.invocation_id,
         actor.user_id,
@@ -611,10 +715,25 @@ pub async fn deny(
         &error,
     )
     .await?;
+    if is_reply {
+        reply::notify(
+            &mut tx,
+            d.granter_agent_id,
+            "reply_rejected",
+            id,
+            d.invocation_id,
+        )
+        .await?;
+    }
     tx.commit().await?;
 
-    metrics::record_rejected(rejected);
-    metrics::record("denied", 1);
+    if is_reply {
+        metrics::record_ended("failed", ended);
+        metrics::record_kind("reply", "denied", 1);
+    } else {
+        metrics::record_rejected(ended);
+        metrics::record("denied", 1);
+    }
     audit(db, actor, &d, "consent.deny", id, json!({ "note": note })).await;
     Ok(Denied {
         id,

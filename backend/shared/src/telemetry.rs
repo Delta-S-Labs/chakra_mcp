@@ -62,8 +62,8 @@ pub const PURCHASE_STATUSES: [&str; 4] = ["paid", "failed", "unapplied", "unmatc
 /// `reason` values of `chakramcp_dodo_webhook_rejected_total`.
 pub const WEBHOOK_REJECTIONS: [&str; 4] = ["missing_header", "stale", "bad_signature", "bad_json"];
 /// `outcome` values of `chakramcp_consent_requests_total` (owner consent):
-/// a request held for approval or covered by a standing consent, then how
-/// each held one ended.
+/// a request held for approval (or a reply drafted) or covered by a standing
+/// consent, then how each held one ended. `kind` is `request` or `reply`.
 pub const CONSENT_OUTCOMES: [&str; 6] = [
     "held",
     "covered",
@@ -436,8 +436,10 @@ fn describe() {
         CONSENT_PENDING,
         "Consent requests waiting for an approver's decision."
     );
-    for outcome in CONSENT_OUTCOMES {
-        counter!(CONSENT_REQUESTS_TOTAL, "kind" => "request", "outcome" => outcome).increment(0);
+    for kind in ["request", "reply"] {
+        for outcome in CONSENT_OUTCOMES {
+            counter!(CONSENT_REQUESTS_TOTAL, "kind" => kind, "outcome" => outcome).increment(0);
+        }
     }
 }
 
@@ -620,11 +622,13 @@ mod tests {
         let handle = recorder.handle();
         metrics::with_local_recorder(&recorder, describe);
         let text = handle.render();
-        for outcome in CONSENT_OUTCOMES {
-            let line = format!(
-                "chakramcp_consent_requests_total{{kind=\"request\",outcome=\"{outcome}\"}} 0"
-            );
-            assert!(text.contains(&line), "missing {line}");
+        for kind in ["request", "reply"] {
+            for outcome in CONSENT_OUTCOMES {
+                let line = format!(
+                    "chakramcp_consent_requests_total{{kind=\"{kind}\",outcome=\"{outcome}\"}} 0"
+                );
+                assert!(text.contains(&line), "missing {line}");
+            }
         }
     }
 

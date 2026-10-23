@@ -91,6 +91,10 @@ pub struct UpdateRequest {
     /// Owner consent settings; absent fields keep their value.
     #[serde(default)]
     pub consent: Option<ConsentInput>,
+    /// `autonomous` or `human_in_loop` (a person confirms the replies,
+    /// owner consent §5).
+    #[serde(default)]
+    pub semantics: Option<String>,
 }
 
 /// Pre-validates the post-write public-invoke triple before letting
@@ -435,6 +439,13 @@ pub async fn update(
         effective_visibility,
         effective_quota,
     )?;
+    if let Some(s) = req.semantics.as_deref() {
+        if !matches!(s, "autonomous" | "human_in_loop") {
+            return Err(ApiError::InvalidRequest(
+                "semantics must be autonomous|human_in_loop".into(),
+            ));
+        }
+    }
     // Turning consent off leaves requests already held to be decided or
     // to expire.
     let consent = ConsentSettings {
@@ -459,7 +470,8 @@ pub async fn update(
             consent_required = $9,
             consent_approvers = $10,
             consent_max_validity_secs = $11,
-            consent_wait_secs = $12
+            consent_wait_secs = $12,
+            semantics = COALESCE($13, semantics)
         WHERE id = $1 AND agent_id = $2
         RETURNING id, agent_id, name, description, input_schema, output_schema,
                   visibility, created_at, updated_at,
@@ -477,6 +489,7 @@ pub async fn update(
         &consent.approvers,
         consent.max_validity_secs,
         consent.wait_secs,
+        req.semantics.as_deref(),
     )
     .fetch_optional(&state.db)
     .await?

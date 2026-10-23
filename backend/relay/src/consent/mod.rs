@@ -13,6 +13,7 @@
 //! - [`deliver`] and [`token`]: tokens minted at delivery.
 //! - [`expiry`]: the worker that expires undecided requests.
 //! - [`notices`]: telling the target agent a request awaits approval.
+//! - [`reply`]: posting results; `human_in_loop` replies become drafts.
 //! - [`settings`]: a capability's consent settings, on publish and update.
 //! - [`cascade`]: cancelling requests when what they depend on is deleted.
 
@@ -21,6 +22,7 @@ pub mod deliver;
 pub mod enqueue;
 pub mod expiry;
 pub mod notices;
+pub mod reply;
 pub mod settings;
 pub mod signer;
 pub mod token;

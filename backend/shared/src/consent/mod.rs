@@ -5,11 +5,15 @@
 //! - [`terms`]: what a requester proposes and what may be approved.
 //! - [`approvers`]: who may decide.
 //! - [`decide`]: viewing, approving, denying and revoking.
+//! - [`reply`]: verified human-in-the-loop replies, stored as drafts.
+//! - [`hash`]: the canonical-JSON hash consent tokens bind.
 //!
 //! Holding requests, tokens and delivery stay in the relay
 //! (`chakramcp_relay::consent`).
 
 pub mod approvers;
 pub mod decide;
+pub mod hash;
 pub mod metrics;
+pub mod reply;
 pub mod terms;

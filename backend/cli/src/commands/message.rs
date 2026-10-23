@@ -70,10 +70,10 @@ pub enum Sub {
 
     /// Reply to a `message_owner` invocation that's sitting in your
     /// inbox. Sugar over `inbox respond` that builds the
-    /// `message_owner`-shaped output JSON and posts the result with
-    /// `confirmed_by_human: true` set automatically — the CLI runs at
-    /// a human terminal, which is the canonical "a human is doing
-    /// this" boundary the HITL gate gates on (issue #69 PR 2).
+    /// `message_owner`-shaped output JSON and posts the result. The
+    /// capability is `human_in_loop`, so the reply is a draft until one
+    /// of the agent's owners confirms it on the web; the CLI prints the
+    /// link.
     ///
     /// For statuses other than `replied`, the reply text becomes
     /// optional and is dropped from the payload. For `deferred`, this
@@ -299,18 +299,17 @@ async fn reply_run(r: ReplyArgs, api: &ApiClient) -> Result<()> {
 
     let output = build_reply_output(&r.status, &r.reply, Utc::now().to_rfc3339());
 
-    // confirmed_by_human: true — the CLI runs at a human terminal, so
-    // by definition we're satisfying the HITL gate. This is the
-    // ergonomic counterpart to the relay-side check in
-    // `handlers::invoke::report_result`.
+    // `message_owner` is `human_in_loop`: the relay keeps this reply as a
+    // draft until one of the agent's owners confirms it on the web (owner
+    // consent §5).
     let body = json!({
         "status": "succeeded",
         "output": output,
-        "confirmed_by_human": true,
     });
     let resp: Value = api
         .post_relay(&format!("/v1/invocations/{}/result", r.invocation), &body)
         .await?;
+    super::inbox::note_if_draft(&resp);
     print(&resp)
 }
 

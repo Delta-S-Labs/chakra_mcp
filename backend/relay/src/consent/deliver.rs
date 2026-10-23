@@ -142,3 +142,84 @@ pub fn read_dto(
         _ => None,
     }
 }
+
+/// `human_confirmed` on an invocation: a person confirmed its reply (gate
+/// 2), and the token proving it.
+#[derive(Debug, Clone, Serialize)]
+pub struct HumanConfirmed {
+    pub consent_request_id: Uuid,
+    pub confirmed_at: Option<DateTime<Utc>>,
+    /// Bound to the released reply `{status, output?, error?}`.
+    pub token: Option<String>,
+}
+
+/// Mint and store tokens for confirmed replies that have none yet (the
+/// first read after release; release may happen in the app crate, which
+/// can't sign). Returns each request's token.
+pub async fn reply_tokens(
+    state: &RelayState,
+    request_ids: &[Uuid],
+) -> Result<HashMap<Uuid, String>, ApiError> {
+    if request_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let rows = sqlx::query!(
+        r#"
+        SELECT id, invocation_id, capability_id, granter_agent_id, grantee_agent_id,
+               decided_by_user_id, draft_sha256
+          FROM consent_requests
+         WHERE id = ANY($1) AND kind = 'reply' AND status = 'approved' AND token IS NULL
+        "#,
+        request_ids,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    if rows.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let key = state
+        .consent_signer
+        .key()
+        .await
+        .map_err(|e| ApiError::Internal(anyhow::anyhow!("consent signing key: {e}")))?;
+    let issuer = state.config.relay_base_url.trim_end_matches('/').to_owned();
+    let now = Utc::now();
+    let mut out = HashMap::with_capacity(rows.len());
+    for r in rows {
+        let (Some(approver), Some(sha256)) = (r.decided_by_user_id, r.draft_sha256) else {
+            continue;
+        };
+        let claims = ConsentClaims {
+            iss: issuer.clone(),
+            jti: r.id.to_string(),
+            kind: "reply".into(),
+            inv: r.invocation_id.to_string(),
+            cap: r.capability_id.to_string(),
+            granter: r.granter_agent_id.to_string(),
+            grantee: r.grantee_agent_id.to_string(),
+            approver: approver.to_string(),
+            consent: None,
+            sha256,
+            iat: now.timestamp(),
+            exp: now.timestamp() + token::REPLY_TOKEN_TTL_SECS,
+        };
+        let minted = token::mint(&claims, &key)
+            .map_err(|e| ApiError::Internal(anyhow::anyhow!("consent token: {e}")))?;
+        out.insert(r.id, minted);
+    }
+    let (ids, tokens): (Vec<Uuid>, Vec<String>) =
+        out.iter().map(|(id, t)| (*id, t.clone())).unzip();
+    sqlx::query!(
+        r#"
+        UPDATE consent_requests c
+           SET token = t.token
+          FROM unnest($1::uuid[], $2::text[]) AS t(id, token)
+         WHERE c.id = t.id AND c.token IS NULL
+        "#,
+        &ids,
+        &tokens,
+    )
+    .execute(&state.db)
+    .await?;
+    Ok(out)
+}

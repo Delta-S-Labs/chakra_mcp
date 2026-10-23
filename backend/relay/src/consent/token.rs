@@ -13,7 +13,6 @@ use chrono::{DateTime, Utc};
 use ed25519_dalek::{Signature, Signer as _, Verifier as _};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 
 use crate::agent_card::signer::{SigningKey, VerifyingKey, ALG_EDDSA};
 
@@ -22,6 +21,8 @@ pub const CONSENT_TYP: &str = "chakramcp-consent+jwt";
 
 /// A request token lasts 24 hours from delivery.
 pub const REQUEST_TOKEN_TTL_SECS: i64 = 24 * 60 * 60;
+/// A reply token lasts 30 days from its first read.
+pub const REPLY_TOKEN_TTL_SECS: i64 = 30 * 24 * 60 * 60;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ConsentClaims {
@@ -67,13 +68,7 @@ pub enum TokenError {
     ValueMismatch,
 }
 
-/// Hex SHA-256 of the canonical JSON (RFC 8785) of `value`.
-pub fn sha256_jcs(value: &Value) -> String {
-    // Serializing a `Value` can't fail: it has no non-string keys or
-    // non-finite numbers.
-    let canonical = serde_json_canonicalizer::to_vec(value).unwrap_or_default();
-    hex::encode(Sha256::digest(canonical))
-}
+pub use chakramcp_shared::consent::hash::sha256_jcs;
 
 /// Sign `claims` as a consent token.
 pub fn mint(claims: &ConsentClaims, key: &SigningKey) -> Result<String, serde_json::Error> {
@@ -184,7 +179,7 @@ mod tests {
         assert!(!cases.is_empty());
         for (input, canonical) in cases {
             let value: Value = serde_json::from_str(&input).unwrap();
-            let got = serde_json_canonicalizer::to_string(&value).unwrap();
+            let got = chakramcp_shared::consent::hash::canonical_json(&value);
             assert_eq!(got, canonical, "input {input}");
         }
     }

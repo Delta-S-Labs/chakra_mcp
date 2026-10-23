@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH due AS (\n            SELECT id FROM consent_requests\n             WHERE status = 'pending' AND expires_at <= now()\n             ORDER BY expires_at\n             LIMIT $1\n             FOR UPDATE SKIP LOCKED\n        ),\n        expired AS (\n            UPDATE consent_requests c\n               SET status = 'expired', decided_at = now()\n              FROM due\n             WHERE c.id = due.id\n            RETURNING c.invocation_id, c.kind\n        ),\n        rejected AS (\n            UPDATE relay_invocations i\n               SET status = 'rejected', error_message = 'Consent request expired'\n              FROM expired e\n             WHERE i.id = e.invocation_id\n               AND e.kind = 'request'\n               AND i.status = 'awaiting_consent'\n            RETURNING i.id\n        ),\n        failed AS (\n            UPDATE relay_invocations i\n               SET status = 'failed', error_message = 'Reply not confirmed in time',\n                   elapsed_ms = LEAST(EXTRACT(EPOCH FROM (now() - i.created_at)) * 1000,\n                                      2147483647)::int\n              FROM expired e\n             WHERE i.id = e.invocation_id\n               AND e.kind = 'reply'\n               AND i.status = 'in_progress'\n            RETURNING i.id, i.granter_agent_id\n        ),\n        told AS (\n            INSERT INTO agent_notices (id, agent_id, kind, payload)\n            SELECT gen_random_uuid(), f.granter_agent_id, 'reply_expired',\n                   jsonb_build_object('invocation_id', f.id,\n                                      'consent_request_id', c.id)\n              FROM failed f\n              JOIN consent_requests c ON c.invocation_id = f.id AND c.kind = 'reply'\n             WHERE f.granter_agent_id IS NOT NULL\n        )\n        SELECT (SELECT count(*) FROM expired) AS \"expired!\",\n               (SELECT count(*) FROM rejected) AS \"rejected!\",\n               (SELECT count(*) FROM failed) AS \"failed!\",\n               (SELECT count(*) FROM expired WHERE kind = 'reply') AS \"replies!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "expired!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "rejected!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "failed!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "replies!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "0c14a4034956a3b8bd02c049ae0dcb470508d0c00a8b81a0e1c76e703e639815"
+}

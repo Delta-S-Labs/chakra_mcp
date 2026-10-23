@@ -40,6 +40,9 @@ pub(crate) struct ApprovalInput {
     max_requests: String,
     #[serde(default)]
     note: String,
+    /// For a reply: the hash of the draft the approver was shown.
+    #[serde(default)]
+    draft_sha256: String,
 }
 
 fn back_here(id: Uuid) -> String {
@@ -124,17 +127,26 @@ pub(crate) async fn submit(
     };
     let outcome = match input.step.as_str() {
         "approve" => match narrowing(&input) {
-            Ok(narrowing) => decide::approve(&state.db, actor, id, narrowing)
-                .await
-                .map(|_| ("Approved", "Your agent receives the request now.")),
+            Ok(narrowing) => {
+                let is_reply = narrowing.draft_sha256.is_some();
+                decide::approve(&state.db, actor, id, narrowing)
+                    .await
+                    .map(|_| {
+                        if is_reply {
+                            ("Sent", "Your agent's reply is on its way to the requester.")
+                        } else {
+                            ("Approved", "Your agent receives the request now.")
+                        }
+                    })
+            }
             Err(problem) => Err(DecideError::BadRequest(problem)),
         },
         "deny" => decide::deny(&state.db, actor, id, Some(&input.note))
             .await
             .map(|_| {
                 (
-                    "Denied",
-                    "The request won't reach your agent. The requester is told.",
+                    "Declined",
+                    "The requester is told, with your note if you left one.",
                 )
             }),
         _ => {
@@ -205,6 +217,7 @@ fn narrowing(input: &ApprovalInput) -> Result<Narrowing, String> {
     Ok(Narrowing {
         valid_for,
         max_requests,
+        draft_sha256: Some(input.draft_sha256.clone()).filter(|h| !h.is_empty()),
     })
 }
 
@@ -285,6 +298,16 @@ fn outcome_text(view: &ApprovalView, expired: bool) -> String {
         .as_deref()
         .map(|n| format!(" Note: {n}"))
         .unwrap_or_default();
+    if view.kind == "reply" {
+        return match view.status.as_str() {
+            "approved" => format!("Confirmed and sent on {at}."),
+            "denied" => format!("Rejected on {at}.{note}"),
+            _ if expired || view.status == "expired" => {
+                "Nobody confirmed this reply in time, so the call failed.".into()
+            }
+            other => format!("This reply is {other}."),
+        };
+    }
     match view.status.as_str() {
         "approved" => match view
             .approved_terms
@@ -335,11 +358,21 @@ async fn approval_page(
         .collect();
     let expired = view.status == "pending" && view.expires_at <= Utc::now();
     let pending = view.status == "pending" && !expired;
-    let heading = if pending {
-        "Approve a request?"
-    } else {
-        "A request to your agent"
+    let is_reply = view.kind == "reply";
+    let heading = match (is_reply, pending) {
+        (true, true) => "Confirm a reply?",
+        (true, false) => "A reply from your agent",
+        (false, true) => "Approve a request?",
+        (false, false) => "A request to your agent",
     };
+    let draft: Option<chakramcp_shared::consent::reply::Draft> = view
+        .draft
+        .clone()
+        .and_then(|d| serde_json::from_value(d).ok());
+    let draft_error = draft
+        .as_ref()
+        .filter(|d| d.status == "failed")
+        .map(|d| d.error.clone().unwrap_or_else(|| "it failed".into()));
     let approvers = view
         .approvers
         .iter()
@@ -403,6 +436,14 @@ async fn approval_page(
             }),
             note: form.map(|f| f.note.clone()).unwrap_or_default(),
             error,
+            is_reply,
+            draft: draft
+                .as_ref()
+                .filter(|d| d.status != "failed")
+                .map(|d| input_fields(d.output.as_ref()))
+                .unwrap_or_default(),
+            draft_error,
+            draft_sha256: view.draft_sha256.clone().unwrap_or_default(),
         },
         &[],
     )

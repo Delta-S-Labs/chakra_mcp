@@ -1,24 +1,46 @@
 {% extends "pages/base.html" %}
 {% block content %}
 <h1>{{ heading }}</h1>
+{% if is_reply %}
+<p class="lead">Your agent <strong>{{ target }}</strong> drafted a reply to <strong>{{ requester }}</strong>{% if verified %} <span class="muted">(verified)</span>{% endif %} for <strong>{{ capability }}</strong>.{% if pending %} It goes out only once you confirm it.{% endif %}</p>
+{% else %}
 <p class="lead"><strong>{{ requester }}</strong>{% if verified %} <span class="muted">(verified)</span>{% endif %} asks to use <strong>{{ capability }}</strong> on your agent <strong>{{ target }}</strong>.</p>
+{% endif %}
 <dl class="facts">
   <dt>Who's asking</dt><dd>{{ requester }}{% if let Some(account) = requester_account %} <span class="muted">{{ account }}</span>{% endif %}</dd>
   <dt>What</dt><dd>{{ capability }}{% if let Some(description) = capability_description %}<br><span class="muted">{{ description }}</span>{% endif %}</dd>
   {% if let Some(purpose) = purpose %}<dt>Why</dt><dd>{{ purpose }}</dd>{% endif %}
   {% if let Some(grant_purpose) = grant_purpose %}<dt>Your grant says</dt><dd>{{ grant_purpose }}</dd>{% endif %}
-  <dt>For how long</dt><dd>{{ asked }}</dd>
+  {% if !is_reply %}<dt>For how long</dt><dd>{{ asked }}</dd>{% endif %}
   <dt>{% if pending %}Decide by{% else %}Asked on{% endif %}</dt><dd>{% if pending %}{{ expires_at }}{% else %}{{ created_at }}{% endif %}</dd>
 </dl>
 {% if !input.is_empty() %}
-<h2 class="aside">What they're sending</h2>
+<h2 class="aside">{% if is_reply %}What they asked{% else %}What they're sending{% endif %}</h2>
 <dl class="facts">
   {% for field in input %}<dt>{{ field.name }}</dt><dd><code>{{ field.value }}</code></dd>
   {% endfor %}
 </dl>
 {% endif %}
+{% if is_reply %}
+<h2 class="aside">Your agent's reply</h2>
+{% if let Some(failed) = draft_error %}<p>It couldn't: {{ failed }}</p>{% else %}
+<dl class="facts">
+  {% for field in draft %}<dt>{{ field.name }}</dt><dd><code>{{ field.value }}</code></dd>
+  {% endfor %}
+</dl>{% endif %}
+{% endif %}
 {% if let Some(error) = error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
-{% if pending && may_decide %}
+{% if pending && may_decide && is_reply %}
+<form method="post" action="{{ action }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="draft_sha256" value="{{ draft_sha256 }}">
+  <label>Note if you reject <span class="muted">the requester sees it</span><input name="note" maxlength="500" value="{{ note }}"></label>
+  <div class="actions">
+    <button type="submit" name="step" value="approve">Confirm and send</button>
+    <button type="submit" name="step" value="deny" class="secondary">Reject</button>
+  </div>
+</form>
+{% else if pending && may_decide %}
 <form method="post" action="{{ action }}">
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <fieldset>
