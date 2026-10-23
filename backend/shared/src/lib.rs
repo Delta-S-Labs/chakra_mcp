@@ -11,6 +11,8 @@
 //!   built-in approval page
 //! * Message safety's code pass (`safety`): walking, decoding, contact and
 //!   opaque-content detection, language, the Jev budget and redaction
+//! * The System One (TypeSafe Jev) client and its questions (`system_one`),
+//!   for the relay's compliance checks and safety screening
 //! * Telemetry: tracing init (text/JSON logs), Prometheus metrics, request IDs
 
 pub mod auto_friendship;
@@ -24,4 +26,5 @@ pub mod jwt;
 pub mod safety;
 pub mod scope;
 pub mod sessions;
+pub mod system_one;
 pub mod telemetry;

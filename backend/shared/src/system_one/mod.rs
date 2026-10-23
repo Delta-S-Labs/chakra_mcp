@@ -126,7 +126,7 @@ impl ComplianceChecker {
         base_url: Option<&str>,
         timeout_ms: Option<&str>,
     ) -> Option<Self> {
-        if !crate::limits::enforce_flag(enabled) {
+        if !flag(enabled) {
             return None;
         }
         let Some(key) = nonempty(key) else {
@@ -269,6 +269,14 @@ fn bounded_input(input: &Value) -> Value {
     })
 }
 
+/// `true`, `1`, `yes` or `on`, the relay's switch values.
+fn flag(v: Option<&str>) -> bool {
+    matches!(
+        v.map(|s| s.trim().to_lowercase()).as_deref(),
+        Some("true" | "1" | "yes" | "on")
+    )
+}
+
 fn nonempty(v: Option<&str>) -> Option<&str> {
     v.map(str::trim).filter(|s| !s.is_empty())
 }
@@ -280,8 +288,8 @@ pub fn attach_report(snapshot: &mut Value, report: Value) {
     }
 }
 
-#[cfg(test)]
-pub(crate) mod test_support {
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support {
     //! A local stand-in for the TypeSafe API: answers every question with
     //! a fixed per-id probability (default 0.01), or a fixed HTTP status.
 
