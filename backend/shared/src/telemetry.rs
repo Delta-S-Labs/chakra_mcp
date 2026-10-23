@@ -55,6 +55,8 @@ pub mod names {
     pub const PURCHASE_CONFIG_ERROR: &str = "chakramcp_purchase_config_error";
     pub const CONSENT_REQUESTS_TOTAL: &str = "chakramcp_consent_requests_total";
     pub const CONSENT_PENDING: &str = "chakramcp_consent_pending";
+    pub const SAFETY_FINDINGS_TOTAL: &str = "chakramcp_safety_findings_total";
+    pub const SAFETY_SCREEN_SECONDS: &str = "chakramcp_safety_screen_seconds";
 }
 
 /// `status` values of `chakramcp_credit_purchases_total`.
@@ -249,6 +251,11 @@ fn prometheus_builder() -> PrometheusBuilder {
             INVOCATION_BUCKETS,
         )
         .expect("static buckets are non-empty")
+        .set_buckets_for_metric(
+            Matcher::Full(names::SAFETY_SCREEN_SECONDS.into()),
+            HTTP_BUCKETS,
+        )
+        .expect("static buckets are non-empty")
 }
 
 /// Parse `METRICS_ADDR` (`host:port`). Unset or empty means no metrics
@@ -441,6 +448,7 @@ fn describe() {
             counter!(CONSENT_REQUESTS_TOTAL, "kind" => kind, "outcome" => outcome).increment(0);
         }
     }
+    crate::safety::metrics::register();
 }
 
 // ─── HTTP ────────────────────────────────────────────────

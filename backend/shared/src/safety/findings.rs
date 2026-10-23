@@ -99,6 +99,11 @@ impl FindingKind {
         FindingKind::DataExfiltration,
     ];
 
+    /// The kind for a Jev question id (`harm_crime`), if it has one.
+    pub fn from_question(id: &str) -> Option<FindingKind> {
+        FindingKind::ALL.into_iter().find(|k| k.as_str() == id)
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             FindingKind::Email => "email",
