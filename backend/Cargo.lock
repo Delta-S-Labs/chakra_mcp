@@ -551,6 +551,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "base64 0.23.1",
  "chrono",
  "dotenvy",
  "hex",
@@ -560,6 +561,8 @@ dependencies = [
  "metrics-exporter-prometheus",
  "metrics-process",
  "metrics-util",
+ "percent-encoding",
+ "regex",
  "serde",
  "serde_json",
  "serde_json_canonicalizer",
@@ -571,7 +574,9 @@ dependencies = [
  "tower-http 0.7.1",
  "tracing",
  "tracing-subscriber",
+ "unicode-normalization",
  "uuid",
+ "whatlang",
 ]
 
 [[package]]
@@ -1365,6 +1370,8 @@ version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1"
 dependencies = [
+ "allocator-api2",
+ "equivalent",
  "foldhash 0.1.5",
 ]
 
@@ -4037,6 +4044,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52f5ee44c96cf55f1b349600768e3ece3a8f26010c05265ab73f945bb1a2eb9d"
 dependencies = [
  "rustls-pki-types",
+]
+
+[[package]]
+name = "whatlang"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f5e8f38b596e2a359b755342473520a99421e43658548c79489ee221b728c107"
+dependencies = [
+ "hashbrown 0.15.5",
 ]
 
 [[package]]

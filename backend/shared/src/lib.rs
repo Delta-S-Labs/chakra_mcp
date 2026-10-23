@@ -9,6 +9,8 @@
 //! * Telling a person's web session from delegated tokens (`sessions`)
 //! * Owner consent decisions (`consent`), for the relay's API and the app's
 //!   built-in approval page
+//! * Message safety's code pass (`safety`): walking, decoding, contact and
+//!   opaque-content detection, language, the Jev budget and redaction
 //! * Telemetry: tracing init (text/JSON logs), Prometheus metrics, request IDs
 
 pub mod auto_friendship;
@@ -19,6 +21,7 @@ pub mod db;
 pub mod error;
 pub mod hosting;
 pub mod jwt;
+pub mod safety;
 pub mod scope;
 pub mod sessions;
 pub mod telemetry;
