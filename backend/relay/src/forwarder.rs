@@ -69,6 +69,7 @@ pub enum ForwardError {
 /// `/a2a/jsonrpc` endpoint — typically a JSON-RPC envelope; we don't
 /// parse or rewrite it. `request_headers` is consulted for content
 /// type only; we mint the bearer ourselves.
+#[allow(clippy::too_many_arguments)]
 pub async fn forward_push(
     db: &PgPool,
     keystore: &KeyStore,
