@@ -266,7 +266,7 @@ mod tests {
              VALUES ($1, $2, 'cache-test', 'individual', $3)",
         )
         .bind(account)
-        .bind(format!("cache-{}", &account.simple().to_string()[..12]))
+        .bind(format!("cache-{}", &account.simple().to_string()[20..]))
         .bind(owner)
         .execute(pool)
         .await

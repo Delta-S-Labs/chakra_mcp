@@ -313,8 +313,11 @@ pub fn verify_password(plain: &str, stored: &str) -> ApiResult<()> {
 }
 
 /// A slug for a personal account: the part of the email before `@`,
-/// lowercased, other characters replaced, plus 8 characters of a new id.
-/// A collision would surface as the unique constraint on `accounts.slug`.
+/// lowercased, other characters replaced, plus 8 random hex characters.
+/// They come from the end of a UUIDv7: its first 8 are the top of the
+/// millisecond timestamp, the same for everyone signing up within about
+/// a minute. A collision would surface as the unique constraint on
+/// `accounts.slug`.
 pub fn personal_slug(email: &str) -> String {
     let local = email.split('@').next().unwrap_or("user");
     let mut s: String = local
@@ -325,12 +328,21 @@ pub fn personal_slug(email: &str) -> String {
     if s.is_empty() {
         s.push_str("user");
     }
-    format!("{}-{}", s, &Uuid::now_v7().simple().to_string()[..8])
+    format!("{}-{}", s, &Uuid::now_v7().simple().to_string()[24..])
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn personal_slugs_for_the_same_name_differ_in_the_same_minute() {
+        let a = personal_slug("john@example.com");
+        let b = personal_slug("john@example.org");
+        assert!(a.starts_with("john-") && b.starts_with("john-"));
+        assert_eq!(a.len(), "john-".len() + 8);
+        assert_ne!(a, b);
+    }
 
     fn new_user<'a>(email: &'a str, password: &'a str, is_admin: bool) -> NewUser<'a> {
         NewUser {

@@ -56,7 +56,7 @@ pub(crate) async fn seed_user_with_personal(
     .unwrap();
 
     let account_id = Uuid::now_v7();
-    let slug = format!("{handle}-{}", &Uuid::now_v7().simple().to_string()[..8]);
+    let slug = format!("{handle}-{}", &Uuid::now_v7().simple().to_string()[24..]);
     sqlx::query!(
         r#"
         INSERT INTO accounts (id, slug, display_name, account_type, owner_user_id)
@@ -189,7 +189,7 @@ pub(crate) async fn seed_approved_device_flow(
 ) -> Uuid {
     let id = Uuid::now_v7();
     let device_code_hash = format!("hash-{}", Uuid::now_v7().simple());
-    let user_code = format!("USRC-{}", &Uuid::now_v7().simple().to_string()[..4]);
+    let user_code = format!("USRC-{}", &Uuid::now_v7().simple().to_string()[28..]);
     sqlx::query!(
         r#"
         INSERT INTO oauth_device_codes

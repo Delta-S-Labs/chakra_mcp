@@ -31,7 +31,7 @@ async fn seed_user(pool: &PgPool) -> Uuid {
 }
 
 fn account_slug(account_id: Uuid) -> String {
-    format!("credits-{}", &account_id.simple().to_string()[..12])
+    format!("credits-{}", &account_id.simple().to_string()[20..])
 }
 
 /// An account on the default plan. Valid before and after 0036.
