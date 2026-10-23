@@ -223,6 +223,13 @@ fn api_err_to_rpc(e: ApiError) -> RpcError {
                 data: Some(json!({ "code": code })),
             };
         }
+        Policy { code, message } => {
+            return RpcError {
+                code: ERR_INVALID_REQUEST,
+                message: message.clone(),
+                data: Some(json!({ "code": code })),
+            };
+        }
         Database(_) | Auth(_) | Internal(_) => (ERR_INTERNAL, e.to_string()),
     };
     RpcError {
@@ -1053,10 +1060,14 @@ async fn invoke(
             invocation_id,
             consent_request_id,
             signals,
+            safety,
         } => {
             let mut out = json!({ "invocation_id": invocation_id, "status": "pending" });
             if let Some(id) = consent_request_id {
                 out["consent_request_id"] = json!(id);
+            }
+            if let Some(safety) = safety {
+                out["safety"] = json!(safety);
             }
             Ok((out, signals))
         }
@@ -1066,15 +1077,27 @@ async fn invoke(
             invocation_id,
             consent_request_id,
             signals,
-        } => Ok((
-            json!({
+            safety,
+        } => {
+            let mut out = json!({
                 "invocation_id": invocation_id,
                 "status": "awaiting_consent",
                 "consent_request_id": consent_request_id,
-            }),
-            signals,
-        )),
+            });
+            if let Some(safety) = safety {
+                out["safety"] = json!(safety);
+            }
+            Ok((out, signals))
+        }
         // The rejection is already recorded; surface it as a tool error.
+        TrustedOutcome::Rejected {
+            code: Some(code),
+            error,
+            ..
+        } => Err(ApiError::Policy {
+            code,
+            message: error,
+        }),
         TrustedOutcome::Rejected { status, error, .. } => {
             Err(if status == StatusCode::BAD_REQUEST {
                 ApiError::InvalidRequest(error)
