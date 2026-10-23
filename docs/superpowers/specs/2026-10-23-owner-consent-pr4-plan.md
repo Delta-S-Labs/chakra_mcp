@@ -40,7 +40,7 @@ Both describe the behaviour already live since #436.
 2. **Python (`sdks/python`, 0.5.0):** the same as TypeScript, in the sync and async
    clients.
    - **Verifying tokens** needs `cryptography` (a new optional extra,
-     `chakramcp[verify]`), imported lazily with an install hint.
+     `chakramcp-sdk[verify]`), imported lazily with an install hint.
    - **JCS** is implemented in the SDK: keys sorted by UTF-16 code units, ES6 number
      formatting, and JSON escaping per RFC 8785.
    - **Tests:** the same vectors.

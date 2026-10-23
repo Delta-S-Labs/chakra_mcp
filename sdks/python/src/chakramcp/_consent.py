@@ -8,7 +8,7 @@ delivered: the input (``kind: "request"``) or the released reply
 ``{status, output?, error?}`` (``kind: "reply"``).
 
 Verifying the signature needs ``cryptography``:
-``pip install "chakramcp[verify]"``.
+``pip install "chakramcp-sdk[verify]"``.
 """
 
 from __future__ import annotations
@@ -154,7 +154,7 @@ def _check(
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
     except ImportError as err:  # pragma: no cover - depends on the environment
         raise RuntimeError(
-            'verifying consent tokens needs cryptography: pip install "chakramcp[verify]"'
+            'verifying consent tokens needs cryptography: pip install "chakramcp-sdk[verify]"'
         ) from err
     key = Ed25519PublicKey.from_public_bytes(_b64url(jwk["x"]))
     try:
