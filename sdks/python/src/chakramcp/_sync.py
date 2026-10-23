@@ -434,7 +434,7 @@ class InboxClient:
                         posted = self.respond(inv["id"], proposed)
                         if is_drafted_reply(posted):
                             (on_draft or _default_on_draft)(inv, posted)
-                    except BaseException as err:
+                    except Exception as err:
                         # Don't post `failed`: a person still has to
                         # answer, and closing the call would take that
                         # away from them.
@@ -461,14 +461,14 @@ class InboxClient:
     ) -> None:
         try:
             notices = self.notices(agent_id)
-        except BaseException as err:
+        except Exception as err:
             if on_error:
                 on_error(err, None)
             return
         for notice in notices:
             try:
                 (on_notice or _default_on_notice)(notice)
-            except BaseException as err:
+            except Exception as err:
                 if on_error:
                     on_error(err, None)
 

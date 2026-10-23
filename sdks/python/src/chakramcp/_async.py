@@ -430,9 +430,7 @@ class AsyncInboxClient:
                 posted = await self.respond(inv["id"], proposed)
                 if is_drafted_reply(posted):
                     (on_draft or _default_on_draft)(inv, posted)
-            except asyncio.CancelledError:
-                raise
-            except BaseException as err:
+            except Exception as err:
                 # Don't post `failed`: a person still has to answer.
                 if on_error:
                     on_error(err, inv)
@@ -457,16 +455,14 @@ class AsyncInboxClient:
     ) -> None:
         try:
             notices = await self.notices(agent_id)
-        except asyncio.CancelledError:
-            raise
-        except BaseException as err:
+        except Exception as err:
             if on_error:
                 on_error(err, None)
             return
         for notice in notices:
             try:
                 (on_notice or _default_on_notice)(notice)
-            except BaseException as err:
+            except Exception as err:
                 if on_error:
                     on_error(err, None)
 
