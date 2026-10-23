@@ -21,7 +21,9 @@ const NOTICE_PRUNE_BATCH: i64 = 1000;
 const NOTICE_RETENTION_DAYS: i32 = 30;
 
 /// Expire one batch of overdue requests. Returns how many requests expired
-/// and how many invocations that rejected.
+/// and how many invocations that ended: held requests rejected, and calls
+/// whose reply wasn't confirmed failed (with a `reply_expired` notice to
+/// the agent).
 pub async fn expire_once(db: &PgPool) -> sqlx::Result<(u64, u64)> {
     let row = sqlx::query!(
         r#"
@@ -47,23 +49,52 @@ pub async fn expire_once(db: &PgPool) -> sqlx::Result<(u64, u64)> {
                AND e.kind = 'request'
                AND i.status = 'awaiting_consent'
             RETURNING i.id
+        ),
+        failed AS (
+            UPDATE relay_invocations i
+               SET status = 'failed', error_message = 'Reply not confirmed in time',
+                   elapsed_ms = LEAST(EXTRACT(EPOCH FROM (now() - i.created_at)) * 1000,
+                                      2147483647)::int
+              FROM expired e
+             WHERE i.id = e.invocation_id
+               AND e.kind = 'reply'
+               AND i.status = 'in_progress'
+            RETURNING i.id, i.granter_agent_id
+        ),
+        told AS (
+            INSERT INTO agent_notices (id, agent_id, kind, payload)
+            SELECT gen_random_uuid(), f.granter_agent_id, 'reply_expired',
+                   jsonb_build_object('invocation_id', f.id,
+                                      'consent_request_id', c.id)
+              FROM failed f
+              JOIN consent_requests c ON c.invocation_id = f.id AND c.kind = 'reply'
+             WHERE f.granter_agent_id IS NOT NULL
         )
         SELECT (SELECT count(*) FROM expired) AS "expired!",
-               (SELECT count(*) FROM rejected) AS "rejected!"
+               (SELECT count(*) FROM rejected) AS "rejected!",
+               (SELECT count(*) FROM failed) AS "failed!",
+               (SELECT count(*) FROM expired WHERE kind = 'reply') AS "replies!"
         "#,
         EXPIRE_BATCH,
     )
     .fetch_one(db)
     .await?;
-    let (expired, rejected) = (row.expired as u64, row.rejected as u64);
-    super::metrics::record("expired", expired);
+    let (expired, rejected, failed, replies) = (
+        row.expired as u64,
+        row.rejected as u64,
+        row.failed as u64,
+        row.replies as u64,
+    );
+    super::metrics::record("expired", expired - replies);
+    super::metrics::record_kind("reply", "expired", replies);
     crate::telemetry::record_invocation_outcome(
         crate::telemetry::Mode::Pull,
         "rejected",
         0,
         rejected,
     );
-    Ok((expired, rejected))
+    super::metrics::record_ended("failed", failed);
+    Ok((expired, rejected + failed))
 }
 
 /// Delete one batch of notices older than the retention window.

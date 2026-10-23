@@ -7,10 +7,11 @@ import { getApproval, RelayClientError, type ApprovalView } from "@/lib/relay";
 import { redirectIfUnauthorized } from "@/lib/session-expired";
 import { LocalTime } from "../../audit/LocalTime";
 import { DecisionForm } from "./DecisionForm";
+import { ReplyForm } from "./ReplyForm";
 import styles from "../approvals.module.css";
 
 export const metadata: Metadata = {
-  title: "Approve a request · ChakraMCP",
+  title: "Approval · ChakraMCP",
 };
 
 /**
@@ -55,6 +56,14 @@ export default async function ApprovalPage({
   const requester = view.requester.agent_display_name ?? "An agent";
   const capability = view.capability.name ?? "a deleted capability";
   const fields = inputFields(view.input);
+  const isReply = view.kind === "reply";
+  const title = isReply
+    ? pending
+      ? "Confirm a reply?"
+      : "A reply from your agent"
+    : pending
+      ? "Approve a request?"
+      : "A request to your agent";
 
   return (
     <div className={styles.page}>
@@ -62,12 +71,22 @@ export default async function ApprovalPage({
         <div className="eyebrow">
           <Link href="/app/approvals">Approvals</Link>
         </div>
-        <h1 className={styles.title}>{pending ? "Approve a request?" : "A request to your agent"}</h1>
-        <p className={styles.lede}>
-          <strong>{requester}</strong>
-          {view.requester.verified && <span className={styles.verified}>Verified</span>} asks to
-          use <strong>{capability}</strong> on your agent <strong>{view.target.display_name}</strong>.
-        </p>
+        <h1 className={styles.title}>{title}</h1>
+        {isReply ? (
+          <p className={styles.lede}>
+            Your agent <strong>{view.target.display_name}</strong> drafted a reply to{" "}
+            <strong>{requester}</strong>
+            {view.requester.verified && <span className={styles.verified}>Verified</span>} for{" "}
+            <strong>{capability}</strong>.
+            {pending ? " It goes out only once you confirm it." : null}
+          </p>
+        ) : (
+          <p className={styles.lede}>
+            <strong>{requester}</strong>
+            {view.requester.verified && <span className={styles.verified}>Verified</span>} asks to
+            use <strong>{capability}</strong> on your agent <strong>{view.target.display_name}</strong>.
+          </p>
+        )}
       </header>
 
       <section className={styles.card} aria-label="The request">
@@ -101,8 +120,12 @@ export default async function ApprovalPage({
               <dd>{view.grant_purpose}</dd>
             </>
           )}
-          <dt>For how long</dt>
-          <dd>{describeTerms(view.terms)}</dd>
+          {!isReply && (
+            <>
+              <dt>For how long</dt>
+              <dd>{describeTerms(view.terms)}</dd>
+            </>
+          )}
           <dt>{pending ? "Decide by" : "Asked"}</dt>
           <dd>
             <LocalTime iso={pending ? view.expires_at : view.created_at} />
@@ -113,7 +136,9 @@ export default async function ApprovalPage({
 
       {fields.length > 0 && (
         <section className={styles.card} aria-label="What they're sending">
-          <h2 className={styles.cardTitle}>What they&apos;re sending</h2>
+          <h2 className={styles.cardTitle}>
+            {isReply ? "What they asked" : "What they\u2019re sending"}
+          </h2>
           <dl className={styles.facts}>
             {fields.map((f) => (
               <div key={f.name} style={{ display: "contents" }}>
@@ -127,7 +152,32 @@ export default async function ApprovalPage({
         </section>
       )}
 
-      {pending && view.may_decide && (
+      {isReply && view.draft && (
+        <section className={styles.card} aria-label="The draft reply">
+          <h2 className={styles.cardTitle}>
+            {view.draft.status === "failed" ? "Your agent's reply: it couldn't" : "Your agent's reply"}
+          </h2>
+          {view.draft.status === "failed" ? (
+            <p className={styles.outcome}>{view.draft.error ?? "Failed"}</p>
+          ) : (
+            <dl className={styles.facts}>
+              {inputFields(view.draft.output).map((f) => (
+                <div key={f.name} style={{ display: "contents" }}>
+                  <dt>{f.name}</dt>
+                  <dd>
+                    <code>{f.value}</code>
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </section>
+      )}
+
+      {pending && view.may_decide && isReply && view.draft_sha256 && (
+        <ReplyForm id={view.id} draftSha256={view.draft_sha256} />
+      )}
+      {pending && view.may_decide && !isReply && (
         <DecisionForm id={view.id} terms={view.terms} maxValidity={view.max_validity} />
       )}
       {pending && !view.may_decide && (
@@ -150,6 +200,9 @@ function outcome(view: ApprovalView, expired: boolean): React.ReactNode {
   const note = view.decision_note ? ` Note: ${view.decision_note}` : "";
   switch (view.status) {
     case "approved":
+      if (view.kind === "reply") {
+        return <>Confirmed and sent {at && <>on {at}</>}.</>;
+      }
       return (
         <>
           Approved {at && <>on {at}</>}: {describeTerms(view.approved_terms).toLowerCase()}.
@@ -158,7 +211,7 @@ function outcome(view: ApprovalView, expired: boolean): React.ReactNode {
     case "denied":
       return (
         <>
-          Denied {at && <>on {at}</>}.{note}
+          {view.kind === "reply" ? "Rejected" : "Denied"} {at && <>on {at}</>}.{note}
         </>
       );
     case "cancelled":
@@ -168,8 +221,11 @@ function outcome(view: ApprovalView, expired: boolean): React.ReactNode {
         </>
       );
     default:
-      return expired || view.status === "expired"
-        ? "This request expired before anyone decided."
-        : `This request is ${view.status}.`;
+      if (expired || view.status === "expired") {
+        return view.kind === "reply"
+          ? "Nobody confirmed this reply in time, so the call failed."
+          : "This request expired before anyone decided.";
+      }
+      return `This request is ${view.status}.`;
   }
 }

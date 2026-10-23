@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        UPDATE agent_capabilities\n        SET description = COALESCE($3, description),\n            input_schema = COALESCE($4, input_schema),\n            output_schema = COALESCE($5, output_schema),\n            visibility = COALESCE($6, visibility),\n            public_invoke = COALESCE($7, public_invoke),\n            public_monthly_quota_per_agent = $8,\n            consent_required = $9,\n            consent_approvers = $10,\n            consent_max_validity_secs = $11,\n            consent_wait_secs = $12\n        WHERE id = $1 AND agent_id = $2\n        RETURNING id, agent_id, name, description, input_schema, output_schema,\n                  visibility, created_at, updated_at,\n                  public_invoke, public_monthly_quota_per_agent, semantics\n        ",
+  "query": "\n        UPDATE agent_capabilities\n        SET description = COALESCE($3, description),\n            input_schema = COALESCE($4, input_schema),\n            output_schema = COALESCE($5, output_schema),\n            visibility = COALESCE($6, visibility),\n            public_invoke = COALESCE($7, public_invoke),\n            public_monthly_quota_per_agent = $8,\n            consent_required = $9,\n            consent_approvers = $10,\n            consent_max_validity_secs = $11,\n            consent_wait_secs = $12,\n            semantics = COALESCE($13, semantics)\n        WHERE id = $1 AND agent_id = $2\n        RETURNING id, agent_id, name, description, input_schema, output_schema,\n                  visibility, created_at, updated_at,\n                  public_invoke, public_monthly_quota_per_agent, semantics\n        ",
   "describe": {
     "columns": [
       {
@@ -149,7 +149,8 @@
         "Bool",
         "UuidArray",
         "Int4",
-        "Int4"
+        "Int4",
+        "Text"
       ]
     },
     "nullable": [
@@ -167,5 +168,5 @@
       false
     ]
   },
-  "hash": "40598fa09a7515a17a038b7fbe8b3fb1f4a1d155511c1dd097b190db51fbc1b5"
+  "hash": "d863927b2d174b52ce15f9c2b66191f5ccb36048898a228e86eef810f7562c19"
 }

@@ -39,6 +39,17 @@ pub enum Cmd {
     },
 }
 
+/// A reply to a `human_in_loop` capability is a draft until an approver
+/// confirms it: say so on stderr, with the link.
+pub fn note_if_draft(v: &Value) {
+    if v.get("status").and_then(Value::as_str) == Some("awaiting_confirmation") {
+        eprintln!(
+            "Saved as a draft. One of the agent's owners confirms it before the caller sees it: {}",
+            v.get("approve_url").and_then(Value::as_str).unwrap_or("?")
+        );
+    }
+}
+
 pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
     match cmd {
         Cmd::Pull { agent, limit } => {
@@ -53,16 +64,10 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             output,
             error,
         } => {
-            // `confirmed_by_human: true` — the CLI runs at a human
-            // terminal, so this satisfies the HITL gate on
-            // `human_in_loop` capabilities (issue #69 PR 2). For
-            // autonomous capabilities the relay ignores the flag, so
-            // sending it unconditionally is safe + keeps the wire
-            // shape uniform between autonomous and HITL flows.
-            let mut body = json!({
-                "status": status,
-                "confirmed_by_human": true,
-            });
+            // For a `human_in_loop` capability the relay keeps this as a
+            // draft until one of the agent's owners confirms it on the web
+            // (owner consent §5); `note_if_draft` says where.
+            let mut body = json!({ "status": status });
             if status == "succeeded" {
                 let out = output.ok_or_else(|| {
                     anyhow::anyhow!("--output is required when --status=succeeded")
@@ -75,6 +80,7 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             let v: Value = api
                 .post_relay(&format!("/v1/invocations/{invocation}/result"), &body)
                 .await?;
+            note_if_draft(&v);
             print(&v)
         }
         Cmd::Status { invocation } => {

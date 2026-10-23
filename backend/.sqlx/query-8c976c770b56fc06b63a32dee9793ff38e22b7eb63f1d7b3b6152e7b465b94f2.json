@@ -1,0 +1,100 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, invocation_id, capability_id, granter_agent_id, grantee_agent_id,\n               decided_by_user_id, draft_sha256\n          FROM consent_requests\n         WHERE id = ANY($1) AND kind = 'reply' AND status = 'approved' AND token IS NULL\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "invocation_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "invocation_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "capability_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "capability_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "granter_agent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "granter_agent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "grantee_agent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "grantee_agent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "decided_by_user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "decided_by_user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "draft_sha256",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "draft_sha256"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "8c976c770b56fc06b63a32dee9793ff38e22b7eb63f1d7b3b6152e7b465b94f2"
+}

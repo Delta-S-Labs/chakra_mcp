@@ -67,7 +67,7 @@ use chakramcp_shared::error::{ApiError, ApiResult};
 
 use crate::auth::{user_is_member, AuthUser};
 use crate::compliance;
-use crate::consent::deliver::{self as consent_deliver, ConsentDto};
+use crate::consent::deliver::{self as consent_deliver, ConsentDto, HumanConfirmed};
 use crate::consent::enqueue::{self as consent_enqueue, Enqueued, NewInvocation};
 use crate::consent::terms::ConsentTerms;
 use crate::consent::visibility::shown_input;
@@ -163,6 +163,10 @@ pub struct InvocationDto {
     /// request is approved; the token is minted when the inbox delivers it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub consent: Option<ConsentDto>,
+    /// For a `human_in_loop` capability: a person confirmed the reply, and
+    /// the consent token proving it (owner consent §5).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub human_confirmed: Option<HumanConfirmed>,
     /// Which trust path authorised this invocation, computed at read
     /// time from the row's `grant_id`:
     ///
@@ -238,19 +242,18 @@ pub struct ResultRequest {
     pub status: String,
     pub output: Option<Value>,
     pub error: Option<String>,
-    /// HITL gate (issue #69 PR 2): when the invocation's capability has
-    /// `semantics = 'human_in_loop'`, the relay refuses the result
-    /// unless this flag is `true`. The CLI's `inbox respond` + new
-    /// `message reply` sugar set it automatically (they assume a human
-    /// at the terminal); the Python/TS SDKs default to `false`, which
-    /// catches autonomous handlers that try to answer a HITL invocation.
+    /// Ignored since owner consent PR 3: a reply to a `human_in_loop`
+    /// capability is a draft until one of its approvers confirms it on the
+    /// web (or an approver writes it in the web app). Older clients still
+    /// send it; it's accepted and has no effect.
     #[serde(default)]
+    #[allow(dead_code)]
     pub confirmed_by_human: Option<bool>,
 }
 
 // ─── Helpers ─────────────────────────────────────────────
 
-fn truncate_for_audit(value: &Value) -> Value {
+pub(crate) fn truncate_for_audit(value: &Value) -> Value {
     let s = value.to_string();
     if s.len() <= PREVIEW_BYTE_LIMIT {
         value.clone()
@@ -1303,6 +1306,7 @@ pub async fn inbox(
                     friendship_context,
                     grant_context,
                     consent: consents.remove(&r.id),
+                    human_confirmed: None,
                 }
             })
             .collect(),
@@ -1325,112 +1329,31 @@ pub async fn inbox_notices(
 
 // ─── POST /v1/invocations/{id}/result ────────────────────
 //
-// Returns `Response` (rather than `ApiResult<Json<InvocationDto>>`) so
-// the HITL policy gate can emit a 409 with a custom error code —
-// `chk.policy.requires_human_confirmation` — that the shared
-// `ApiError::Conflict` envelope (code = `"conflict"`) can't express.
-// The success + happy-path errors still flow through `ApiError` and its
-// `IntoResponse`.
+// Returns `Response` (rather than `ApiResult<Json<InvocationDto>>`) so a
+// `human_in_loop` reply stored as a draft can answer `202` with its
+// confirmation link instead of the invocation.
 pub async fn report_result(
     State(state): State<RelayState>,
     user: AuthUser,
     Path(id): Path<Uuid>,
     Json(req): Json<ResultRequest>,
 ) -> Result<Response, ApiError> {
-    if !matches!(req.status.as_str(), "succeeded" | "failed") {
-        return Err(ApiError::InvalidRequest(
-            "status must be 'succeeded' or 'failed'".into(),
-        ));
-    }
-
-    // Join `agent_capabilities` to pick up the HITL `semantics` column
-    // alongside the invocation's status + granter account. The
-    // capability may be null on legacy rows that pre-date the
-    // capability_id column — in that case `semantics` comes back as
-    // None and the gate is a no-op (matches the migration's
-    // backwards-compatible default).
-    let row = sqlx::query!(
-        r#"
-        SELECT i.status, i.created_at, i.claimed_at,
-               ga.account_id as "granter_account_id?",
-               c.semantics   as "capability_semantics?"
-        FROM relay_invocations i
-        LEFT JOIN agents              ga ON ga.id = i.granter_agent_id
-        LEFT JOIN agent_capabilities  c  ON c.id  = i.capability_id
-        WHERE i.id = $1
-        "#,
+    // `human_in_loop` replies become drafts until an approver confirms them
+    // (owner consent §5); everything else finishes now. Shared with MCP.
+    let submitted = crate::consent::reply::submit_result(
+        &state,
+        &user,
         id,
-    )
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(ApiError::NotFound)?;
-
-    if row.status != "in_progress" {
-        return Err(ApiError::Conflict(format!(
-            "invocation is {}; only in_progress can be completed",
-            row.status
-        )));
-    }
-
-    // Auth: caller must be a member of the granter's account. The agent
-    // could be deleted in the meantime; if so, granter_account_id is
-    // null and no one can report a result — surface as forbidden.
-    let granter_account = row.granter_account_id.ok_or(ApiError::Forbidden)?;
-    if !user_is_member(&state.db, user.user_id, granter_account).await? {
-        return Err(ApiError::Forbidden);
-    }
-
-    // HITL gate (issue #69 PR 2): if the capability is `human_in_loop`,
-    // refuse the result unless `confirmed_by_human: true`. Returning a
-    // custom 409 body keeps SDK callers' error-classification logic in
-    // sync with the documented contract on the migration:
-    //
-    //   POST /v1/invocations/{id}/result
-    //   → 409 { error: { code: "chk.policy.requires_human_confirmation", … } }
-    if row.capability_semantics.as_deref() == Some("human_in_loop")
-        && !req.confirmed_by_human.unwrap_or(false)
-    {
-        let body = serde_json::json!({
-            "error": {
-                "code": "chk.policy.requires_human_confirmation",
-                "message": "this capability requires explicit human confirmation; set `confirmed_by_human: true` if a human approved the response",
-            }
-        });
-        return Ok((StatusCode::CONFLICT, Json(body)).into_response());
-    }
-
-    // Wall time from enqueue to result.
-    let elapsed_ms = (Utc::now() - row.created_at)
-        .num_milliseconds()
-        .clamp(0, i32::MAX as i64) as i32;
-    let output_preview = req.output.as_ref().map(truncate_for_audit);
-
-    let finished = sqlx::query!(
-        r#"
-        UPDATE relay_invocations
-        SET status = $2,
-            elapsed_ms = $3,
-            error_message = $4,
-            output_preview = $5
-        WHERE id = $1 AND status = 'in_progress'
-        "#,
-        id,
-        req.status,
-        elapsed_ms,
-        req.error.as_deref(),
-        output_preview.unwrap_or(Value::Null),
-    )
-    .execute(&state.db)
-    .await?
-    .rows_affected();
-    crate::telemetry::record_invocation_outcome(
-        crate::telemetry::Mode::Pull,
         &req.status,
-        i64::from(elapsed_ms),
-        finished,
-    );
-
-    let r = fetch_one(&state.db, user.user_id, id).await?;
+        req.output,
+        req.error,
+        crate::consent::reply::Preview::Truncate,
+    )
+    .await?;
+    if let Some(body) = submitted.draft_body() {
+        return Ok((StatusCode::ACCEPTED, Json(body)).into_response());
+    }
+    let r = fetch_one(&state, user.user_id, id).await?;
     Ok(Json(r).into_response())
 }
 
@@ -1485,6 +1408,9 @@ pub async fn list(
             cr.decided_at   as "cr_decided_at?",
             COALESCE(cr.approved_terms, cr.terms) as "cr_terms?",
             cr.token        as "cr_token?",
+            rr.id           as "rr_id?",
+            rr.decided_at   as "rr_decided_at?",
+            rr.token        as "rr_token?",
             EXISTS(
                 SELECT 1 FROM account_memberships m
                 WHERE m.user_id = $1 AND m.account_id = ga.account_id
@@ -1500,6 +1426,9 @@ pub async fn list(
         -- The gate-1 consent request, if the capability asked first: hides
         -- held input from the target side, and carries `consent`.
         LEFT JOIN consent_requests cr ON cr.invocation_id = i.id AND cr.kind = 'request'
+        -- A confirmed `human_in_loop` reply (gate 2).
+        LEFT JOIN consent_requests rr
+               ON rr.invocation_id = i.id AND rr.kind = 'reply' AND rr.status = 'approved'
         WHERE
             (
                 -- $2 = want_grantee_is_me (I sent this call OUT)
@@ -1530,62 +1459,88 @@ pub async fn list(
     let grant = crate::auth::resolve_grant(&state.db, &user).await?;
     let manageable = chakramcp_shared::scope::manageable_agent_ids(&state.db, &grant).await?;
 
-    Ok(Json(
-        rows.into_iter()
-            .filter(|r| {
-                // granter/grantee are nullable (agent may be deleted); a
-                // null side can't be manageable, so a nil uuid (never a
-                // real agent) correctly fails its match.
-                chakramcp_shared::scope::manages_either(
-                    &manageable,
-                    r.granter_agent_id.unwrap_or_default(),
-                    r.grantee_agent_id.unwrap_or_default(),
-                )
-            })
-            .map(|r| {
-                let (friendship_context, grant_context) =
-                    contexts_from_snapshot(r.trust_snapshot.as_ref());
-                let i_served = r.i_served.unwrap_or(false);
-                let consent = consent_deliver::read_dto(
-                    r.cr_id,
-                    r.cr_status.as_deref(),
-                    r.cr_consent_id,
-                    r.cr_decided_at,
-                    r.cr_terms.clone(),
-                    r.cr_token.clone(),
-                );
-                InvocationDto {
-                    id: r.id,
-                    grant_id: r.grant_id,
-                    granter_agent_id: r.granter_agent_id,
-                    granter_display_name: r.granter_display_name,
-                    grantee_agent_id: r.grantee_agent_id,
-                    grantee_display_name: r.grantee_display_name,
-                    grantee_account_id: None,
-                    capability_id: r.capability_id,
-                    capability_name: r.capability_name,
-                    semantics: r.capability_semantics,
-                    status: r.status,
-                    elapsed_ms: r.elapsed_ms,
-                    error_message: r.error_message,
-                    input_preview: shown_input(i_served, r.cr_status.as_deref(), r.input_preview),
-                    output_preview: r.output_preview,
-                    created_at: r.created_at,
-                    claimed_at: r.claimed_at,
-                    i_served,
-                    i_invoked: r.i_invoked.unwrap_or(false),
-                    tier: if r.grant_id.is_some() {
-                        "friend".into()
-                    } else {
-                        "public".into()
-                    },
-                    friendship_context,
-                    grant_context,
-                    consent,
-                }
-            })
-            .collect(),
-    ))
+    let mut dtos = rows
+        .into_iter()
+        .filter(|r| {
+            // granter/grantee are nullable (agent may be deleted); a
+            // null side can't be manageable, so a nil uuid (never a
+            // real agent) correctly fails its match.
+            chakramcp_shared::scope::manages_either(
+                &manageable,
+                r.granter_agent_id.unwrap_or_default(),
+                r.grantee_agent_id.unwrap_or_default(),
+            )
+        })
+        .map(|r| {
+            let (friendship_context, grant_context) =
+                contexts_from_snapshot(r.trust_snapshot.as_ref());
+            let i_served = r.i_served.unwrap_or(false);
+            let consent = consent_deliver::read_dto(
+                r.cr_id,
+                r.cr_status.as_deref(),
+                r.cr_consent_id,
+                r.cr_decided_at,
+                r.cr_terms.clone(),
+                r.cr_token.clone(),
+            );
+            InvocationDto {
+                id: r.id,
+                grant_id: r.grant_id,
+                granter_agent_id: r.granter_agent_id,
+                granter_display_name: r.granter_display_name,
+                grantee_agent_id: r.grantee_agent_id,
+                grantee_display_name: r.grantee_display_name,
+                grantee_account_id: None,
+                capability_id: r.capability_id,
+                capability_name: r.capability_name,
+                semantics: r.capability_semantics,
+                status: r.status,
+                elapsed_ms: r.elapsed_ms,
+                error_message: r.error_message,
+                input_preview: shown_input(i_served, r.cr_status.as_deref(), r.input_preview),
+                output_preview: r.output_preview,
+                created_at: r.created_at,
+                claimed_at: r.claimed_at,
+                i_served,
+                i_invoked: r.i_invoked.unwrap_or(false),
+                tier: if r.grant_id.is_some() {
+                    "friend".into()
+                } else {
+                    "public".into()
+                },
+                friendship_context,
+                grant_context,
+                consent,
+                human_confirmed: r.rr_id.map(|id| HumanConfirmed {
+                    consent_request_id: id,
+                    confirmed_at: r.rr_decided_at,
+                    token: r.rr_token.clone(),
+                }),
+            }
+        })
+        .collect::<Vec<_>>();
+    fill_reply_tokens(&state, &mut dtos).await?;
+    Ok(Json(dtos))
+}
+
+/// Mint the reply tokens confirmed replies don't have yet (gate 2).
+async fn fill_reply_tokens(state: &RelayState, dtos: &mut [InvocationDto]) -> ApiResult<()> {
+    let missing: Vec<Uuid> = dtos
+        .iter()
+        .filter_map(|d| d.human_confirmed.as_ref())
+        .filter(|h| h.token.is_none())
+        .map(|h| h.consent_request_id)
+        .collect();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    let minted = consent_deliver::reply_tokens(state, &missing).await?;
+    for h in dtos.iter_mut().filter_map(|d| d.human_confirmed.as_mut()) {
+        if h.token.is_none() {
+            h.token = minted.get(&h.consent_request_id).cloned();
+        }
+    }
+    Ok(())
 }
 
 // ─── GET /v1/invocations/{id} ────────────────────────────
@@ -1594,7 +1549,7 @@ pub async fn get_one(
     user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<InvocationDto>> {
-    let dto = fetch_one(&state.db, user.user_id, id).await?;
+    let dto = fetch_one(&state, user.user_id, id).await?;
     // Scope (migration 0027): hide an invocation the caller can't manage
     // either side of. fetch_one already enforced membership.
     let grant = crate::auth::resolve_grant(&state.db, &user).await?;
@@ -1609,7 +1564,8 @@ pub async fn get_one(
     Ok(Json(dto))
 }
 
-async fn fetch_one(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<InvocationDto, ApiError> {
+async fn fetch_one(state: &RelayState, user_id: Uuid, id: Uuid) -> Result<InvocationDto, ApiError> {
+    let db = &state.db;
     let r = sqlx::query!(
         r#"
         SELECT
@@ -1626,6 +1582,9 @@ async fn fetch_one(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<InvocationDto
             cr.decided_at   as "cr_decided_at?",
             COALESCE(cr.approved_terms, cr.terms) as "cr_terms?",
             cr.token        as "cr_token?",
+            rr.id           as "rr_id?",
+            rr.decided_at   as "rr_decided_at?",
+            rr.token        as "rr_token?",
             EXISTS(
                 SELECT 1 FROM account_memberships m
                 WHERE m.user_id = $1 AND m.account_id = ga.account_id
@@ -1641,6 +1600,9 @@ async fn fetch_one(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<InvocationDto
         -- The gate-1 consent request, if the capability asked first: hides
         -- held input from the target side, and carries `consent`.
         LEFT JOIN consent_requests cr ON cr.invocation_id = i.id AND cr.kind = 'request'
+        -- A confirmed `human_in_loop` reply (gate 2).
+        LEFT JOIN consent_requests rr
+               ON rr.invocation_id = i.id AND rr.kind = 'reply' AND rr.status = 'approved'
         WHERE i.id = $2
         "#,
         user_id,
@@ -1666,7 +1628,7 @@ async fn fetch_one(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<InvocationDto
         r.cr_token,
     );
 
-    Ok(InvocationDto {
+    InvocationDto {
         id: r.id,
         grant_id: r.grant_id,
         granter_agent_id: r.granter_agent_id,
@@ -1694,7 +1656,22 @@ async fn fetch_one(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<InvocationDto
         friendship_context,
         grant_context,
         consent,
-    })
+        human_confirmed: r.rr_id.map(|id| HumanConfirmed {
+            consent_request_id: id,
+            confirmed_at: r.rr_decided_at,
+            token: r.rr_token,
+        }),
+    }
+    .with_reply_token(state)
+    .await
+}
+
+impl InvocationDto {
+    /// Mint this invocation's reply token if a confirmed reply has none.
+    async fn with_reply_token(mut self, state: &RelayState) -> Result<Self, ApiError> {
+        fill_reply_tokens(state, std::slice::from_mut(&mut self)).await?;
+        Ok(self)
+    }
 }
 
 /// Deserialize the `trust_snapshot` JSONB blob (migration 0024) back
@@ -2459,16 +2436,15 @@ pub(crate) mod legacy_v01_contract_tests {
 // ─── HITL gate tests (issue #69 PR 2) ─────────────────────
 #[cfg(test)]
 mod hitl_gate_tests {
-    //! Coverage for the new `confirmed_by_human` gate in
-    //! `report_result`. Three cases:
+    //! Coverage for `human_in_loop` results in `report_result` (owner
+    //! consent §5, which replaced the `confirmed_by_human` gate):
     //!
-    //! 1. `human_in_loop` + flag true → 200, row goes `succeeded`.
-    //! 2. `human_in_loop` + flag missing → 409 with the documented
-    //!    `chk.policy.requires_human_confirmation` envelope; row stays
-    //!    `in_progress`.
-    //! 3. `autonomous` + no flag → 200, regression check that the
-    //!    gate is a strict no-op for non-HITL capabilities (the bulk
-    //!    of existing capabilities).
+    //! 1. An agent's reply → `202` draft; the approver confirms it and the
+    //!    row goes `succeeded`.
+    //! 2. The caller's `confirmed_by_human` is ignored; a new draft
+    //!    replaces the pending one.
+    //! 3. `autonomous` → 200, regression check that the gate is a strict
+    //!    no-op for non-HITL capabilities (the bulk of existing ones).
     //!
     //! All three reuse `seed_demo` from the legacy module and then
     //! drive the invocation through `/v1/invoke` → claim via inbox →
@@ -2606,14 +2582,34 @@ mod hitl_gate_tests {
         (status, v)
     }
 
+    /// A web-session token for `user_id` (the approval page's credential).
+    fn session(user_id: Uuid) -> String {
+        let claims = chakramcp_shared::jwt::UserClaims::new(user_id, "u@t.local".into(), false, 1);
+        chakramcp_shared::jwt::encode_jwt(&claims, &config().jwt_secret).unwrap()
+    }
+
+    async fn alice_user(pool: &PgPool, f: &DemoFixture) -> Uuid {
+        sqlx::query_scalar!(
+            "SELECT owner_user_id FROM accounts a JOIN agents g ON g.account_id=a.id WHERE g.id=$1",
+            f.granter_agent_id,
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap()
+        .unwrap()
+    }
+
+    /// Owner consent §5: an agent's reply to a `human_in_loop` capability
+    /// is a draft until an approver confirms it; then it's released, and
+    /// counted once.
     #[sqlx::test(migrations = "../migrations")]
-    async fn respond_with_confirmed_by_human_true_on_hitl_succeeds(pool: PgPool) {
+    async fn an_agents_hitl_reply_is_a_draft_until_confirmed(pool: PgPool) {
         let m = crate::telemetry::testing::Recorded::start();
         let f = seed_demo(&pool).await;
         let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
         let (invocation_id, alice_ck) = invoke_and_claim(&pool, &app, &f, true).await;
 
-        let (status, _body) = post_result(
+        let (status, body) = post_result(
             &app,
             invocation_id,
             &alice_ck,
@@ -2624,11 +2620,62 @@ mod hitl_gate_tests {
             }),
         )
         .await;
-        assert!(
-            status.is_success(),
-            "HITL + confirmed_by_human=true should succeed; got {status}"
-        );
+        assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+        assert_eq!(body["status"], "awaiting_confirmation");
+        let request: Uuid = body["consent_request_id"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(body["approve_url"]
+            .as_str()
+            .unwrap()
+            .ends_with(&format!("/app/approvals/{request}")));
+        let row_status: String = sqlx::query_scalar!(
+            "SELECT status FROM relay_invocations WHERE id = $1",
+            invocation_id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row_status, "in_progress");
 
+        // The approver confirms the draft they were shown.
+        let alice = alice_user(&pool, &f).await;
+        let view = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/v1/approvals/{request}"))
+                    .header(header::AUTHORIZATION, format!("Bearer {}", session(alice)))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let view: serde_json::Value =
+            serde_json::from_slice(&view.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        assert_eq!(view["kind"], "reply");
+        assert_eq!(view["draft"]["output"]["reply"], "ok");
+        let confirm = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/approvals/{request}/approve"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, format!("Bearer {}", session(alice)))
+                    .body(Body::from(
+                        serde_json::to_vec(
+                            &serde_json::json!({ "draft_sha256": view["draft_sha256"] }),
+                        )
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(confirm.status(), StatusCode::OK);
         let row_status: String = sqlx::query_scalar!(
             "SELECT status FROM relay_invocations WHERE id = $1",
             invocation_id
@@ -2642,7 +2689,7 @@ mod hitl_gate_tests {
         use chakramcp_shared::telemetry::names;
         let succeeded = [("mode", "pull"), ("status", "succeeded")];
         assert_eq!(m.counter(names::INVOCATIONS_TOTAL, &succeeded), 1);
-        let repeat = serde_json::json!({ "status": "succeeded", "confirmed_by_human": true });
+        let repeat = serde_json::json!({ "status": "succeeded" });
         let (again, _) = post_result(&app, invocation_id, &alice_ck, repeat).await;
         assert!(!again.is_success());
         assert_eq!(m.counter(names::INVOCATIONS_TOTAL, &succeeded), 1);
@@ -2653,32 +2700,44 @@ mod hitl_gate_tests {
         );
     }
 
+    /// The caller's `confirmed_by_human` no longer decides anything: with or
+    /// without it, an agent's reply is a draft, and a new one replaces it.
     #[sqlx::test(migrations = "../migrations")]
-    async fn respond_without_confirmed_by_human_on_hitl_returns_409(pool: PgPool) {
+    async fn the_confirmed_by_human_flag_is_ignored(pool: PgPool) {
         let f = seed_demo(&pool).await;
         let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
         let (invocation_id, alice_ck) = invoke_and_claim(&pool, &app, &f, true).await;
 
-        // No `confirmed_by_human` field at all — most common case for
-        // an SDK that hasn't opted in.
-        let (status, body) = post_result(
-            &app,
-            invocation_id,
-            &alice_ck,
-            serde_json::json!({
-                "status": "succeeded",
-                "output": { "reply": "ok" },
-            }),
+        let mut ids = Vec::new();
+        for flag in [
+            serde_json::Value::Null,
+            serde_json::json!(false),
+            serde_json::json!(true),
+        ] {
+            let (status, body) = post_result(
+                &app,
+                invocation_id,
+                &alice_ck,
+                serde_json::json!({
+                    "status": "succeeded",
+                    "output": { "reply": format!("draft {flag}") },
+                    "confirmed_by_human": flag,
+                }),
+            )
+            .await;
+            assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+            ids.push(body["consent_request_id"].clone());
+        }
+        // One reply request per invocation; the last draft is the one held.
+        assert!(ids.windows(2).all(|w| w[0] == w[1]));
+        let draft: serde_json::Value = sqlx::query_scalar!(
+            r#"SELECT draft AS "draft!" FROM consent_requests WHERE invocation_id = $1"#,
+            invocation_id
         )
-        .await;
-        assert_eq!(status, StatusCode::CONFLICT);
-        assert_eq!(
-            body["error"]["code"],
-            "chk.policy.requires_human_confirmation",
-        );
-
-        // The row must stay in_progress so a follow-up call with the
-        // flag set can still succeed.
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(draft["output"]["reply"], "draft true");
         let row_status: String = sqlx::query_scalar!(
             "SELECT status FROM relay_invocations WHERE id = $1",
             invocation_id
@@ -2687,24 +2746,6 @@ mod hitl_gate_tests {
         .await
         .unwrap();
         assert_eq!(row_status, "in_progress");
-
-        // Explicit false should behave identically to missing.
-        let (status2, body2) = post_result(
-            &app,
-            invocation_id,
-            &alice_ck,
-            serde_json::json!({
-                "status": "succeeded",
-                "output": { "reply": "ok" },
-                "confirmed_by_human": false,
-            }),
-        )
-        .await;
-        assert_eq!(status2, StatusCode::CONFLICT);
-        assert_eq!(
-            body2["error"]["code"],
-            "chk.policy.requires_human_confirmation",
-        );
     }
 
     #[sqlx::test(migrations = "../migrations")]

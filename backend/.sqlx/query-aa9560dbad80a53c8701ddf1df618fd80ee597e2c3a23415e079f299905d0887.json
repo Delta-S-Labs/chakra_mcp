@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT cr.kind, cr.status, cr.invocation_id, cr.terms, cr.expires_at,\n               cr.capability_id, cr.granter_agent_id, cr.grantee_agent_id,\n               cr.grantee_account_id,\n               ga.account_id AS granter_account_id,\n               cap.consent_approvers AS \"approvers?\",\n               cap.consent_max_validity_secs AS \"max_validity_secs?\",\n               EXISTS (\n                   SELECT 1 FROM account_memberships m\n                    WHERE m.user_id = $2 AND m.account_id = ga.account_id\n               ) AS \"member!\"\n          FROM consent_requests cr\n          JOIN agents ga ON ga.id = cr.granter_agent_id\n          LEFT JOIN agent_capabilities cap ON cap.id = cr.capability_id\n         WHERE cr.id = $1\n           FOR UPDATE OF cr\n        ",
+  "query": "\n        SELECT cr.kind, cr.status, cr.invocation_id, cr.terms, cr.expires_at,\n               cr.capability_id, cr.granter_agent_id, cr.grantee_agent_id,\n               cr.grantee_account_id, cr.draft, cr.draft_sha256,\n               ga.account_id AS granter_account_id,\n               cap.consent_approvers AS \"approvers?\",\n               cap.consent_max_validity_secs AS \"max_validity_secs?\",\n               EXISTS (\n                   SELECT 1 FROM account_memberships m\n                    WHERE m.user_id = $2 AND m.account_id = ga.account_id\n               ) AS \"member!\"\n          FROM consent_requests cr\n          JOIN agents ga ON ga.id = cr.granter_agent_id\n          LEFT JOIN agent_capabilities cap ON cap.id = cr.capability_id\n         WHERE cr.id = $1\n           FOR UPDATE OF cr\n        ",
   "describe": {
     "columns": [
       {
@@ -104,6 +104,28 @@
       },
       {
         "ordinal": 9,
+        "name": "draft",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "draft"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "draft_sha256",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "draft_sha256"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
         "name": "granter_account_id",
         "type_info": "Uuid",
         "origin": {
@@ -114,7 +136,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 12,
         "name": "approvers?",
         "type_info": "UuidArray",
         "origin": {
@@ -125,7 +147,7 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 13,
         "name": "max_validity_secs?",
         "type_info": "Int4",
         "origin": {
@@ -136,7 +158,7 @@
         }
       },
       {
-        "ordinal": 12,
+        "ordinal": 14,
         "name": "member!",
         "type_info": "Bool",
         "origin": "Expression"
@@ -158,11 +180,13 @@
       false,
       false,
       false,
+      true,
+      true,
       false,
       false,
       false,
       null
     ]
   },
-  "hash": "a7e391e4a2a95d691ef7ac4e38c6793ce7fdca49defbc5e69135f6e540196630"
+  "hash": "aa9560dbad80a53c8701ddf1df618fd80ee597e2c3a23415e079f299905d0887"
 }

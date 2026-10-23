@@ -12,7 +12,7 @@ function failure(err: unknown, what: string): DecisionResult {
     switch (err.status) {
       case 400:
       case 409:
-        return { ok: false, error: err.message };
+        return { ok: false, error: capitalize(err.message) };
       case 401:
         return { ok: false, error: "Your session ended. Sign in again to decide." };
       case 403:
@@ -22,6 +22,10 @@ function failure(err: unknown, what: string): DecisionResult {
     }
   }
   return { ok: false, error: `Couldn't ${what}. Try again.` };
+}
+
+function capitalize(s: string): string {
+  return s ? s[0].toUpperCase() + s.slice(1) + (/[.!?]$/.test(s) ? "" : ".") : s;
 }
 
 async function token(): Promise<string | null> {
@@ -53,7 +57,23 @@ export async function approveAction(
   return { ok: true };
 }
 
-/** Deny a held request; the requester sees the note. */
+/**
+ * Confirm a reply's draft: it must be the one the approver was shown
+ * (`draftSha256`), or the relay answers that it changed.
+ */
+export async function confirmReplyAction(id: string, draftSha256: string): Promise<DecisionResult> {
+  const t = await token();
+  if (!t) return { ok: false, error: "Your session ended. Sign in again to decide." };
+  try {
+    await approveRequest(t, id, { draft_sha256: draftSha256 });
+  } catch (err) {
+    return failure(err, "confirm it");
+  }
+  revalidatePath("/app/approvals");
+  return { ok: true };
+}
+
+/** Deny a held request (or reject a reply); the requester sees the note. */
 export async function denyAction(id: string, note: string): Promise<DecisionResult> {
   const t = await token();
   if (!t) return { ok: false, error: "Your session ended. Sign in again to decide." };

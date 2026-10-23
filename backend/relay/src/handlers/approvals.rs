@@ -300,6 +300,8 @@ fn actor(user: &AuthUser) -> decide::Actor {
 struct ApproveRequest {
     valid_for: Option<Validity>,
     max_requests: Option<i32>,
+    /// For a reply: the hash of the draft the approver was shown.
+    draft_sha256: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -323,6 +325,7 @@ pub async fn approve(
         decide::Narrowing {
             valid_for: req.valid_for,
             max_requests: req.max_requests,
+            draft_sha256: req.draft_sha256,
         },
     )
     .await?;

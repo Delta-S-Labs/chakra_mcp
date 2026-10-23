@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE relay_invocations\n           SET status = $2,\n               output_preview = $3,\n               error_message = $4,\n               elapsed_ms = LEAST(EXTRACT(EPOCH FROM (now() - created_at)) * 1000,\n                                  2147483647)::int\n         WHERE id = $1 AND status = 'in_progress'\n        RETURNING elapsed_ms\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "elapsed_ms",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "elapsed_ms"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Jsonb",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "86b6f4827f908e04c0d9f51e4a0808118350d5696deaaa2238edf4cdad4a23ed"
+}

@@ -1,0 +1,48 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO consent_requests\n            (id, kind, invocation_id, capability_id, granter_agent_id, grantee_agent_id,\n             grantee_account_id, status, terms, draft, draft_sha256, expires_at)\n        VALUES ($1, 'reply', $2, $3, $4, $5, $6, 'pending', '{}'::jsonb, $7, $8,\n                now() + $9::int * interval '1 second')\n        ON CONFLICT (invocation_id, kind) DO UPDATE\n           SET draft = EXCLUDED.draft,\n               draft_sha256 = EXCLUDED.draft_sha256,\n               expires_at = EXCLUDED.expires_at\n         WHERE consent_requests.status = 'pending'\n        RETURNING id, expires_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "expires_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Jsonb",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "4ceac508ef44a0b8c9317fa074a207bda8a2e359e826c399d6898749219b8e1c"
+}

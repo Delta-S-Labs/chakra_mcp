@@ -1171,3 +1171,218 @@ async fn mcp_publish_takes_consent(pool: PgPool) {
     .unwrap();
     assert!(required);
 }
+
+// ─── Gate 2: verified human-in-the-loop replies ──────────
+
+/// Make the capability `human_in_loop`, invoke it as Bob, and claim it from
+/// Alice's inbox: (invocation id, Alice's API key, Alice's user id).
+async fn hitl_in_progress(pool: &PgPool, f: &DemoFixture) -> (Uuid, String, Uuid) {
+    sqlx::query("UPDATE agent_capabilities SET semantics = 'human_in_loop' WHERE id = $1")
+        .bind(f.capability_id)
+        .execute(pool)
+        .await
+        .unwrap();
+    let (status, body) = invoke(pool, f, None).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+    let (alice_user, _) = alice(pool, f).await;
+    let key = api_key(pool, alice_user).await;
+    let inbox = format!("/v1/inbox?agent_id={}", f.granter_agent_id);
+    let (_, pulled) = send(pool, "GET", &inbox, &key, None).await;
+    assert_eq!(pulled.as_array().unwrap().len(), 1);
+    (uuid(&body["invocation_id"]), key, alice_user)
+}
+
+async fn post_reply(pool: &PgPool, id: Uuid, token: &str, reply: Value) -> (StatusCode, Value) {
+    send(
+        pool,
+        "POST",
+        &format!("/v1/invocations/{id}/result"),
+        token,
+        Some(json!({"status": "succeeded", "output": reply})),
+    )
+    .await
+}
+
+#[sqlx::test(migrations = "../migrations")]
+async fn a_confirmed_reply_is_released_with_a_token_bound_to_it(pool: PgPool) {
+    let f = seed_demo(&pool).await;
+    let (inv, key, alice_user) = hitl_in_progress(&pool, &f).await;
+    let (status, drafted) = post_reply(&pool, inv, &key, json!({"answer": "Tuesday 3pm"})).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{drafted}");
+    let req = uuid(&drafted["consent_request_id"]);
+
+    // A replaced draft makes the old hash stale.
+    let page = format!("/v1/approvals/{req}");
+    let (_, first) = send(&pool, "GET", &page, &session(alice_user), None).await;
+    post_reply(&pool, inv, &key, json!({"answer": "Wednesday 3pm"})).await;
+    let (status, _) = send(
+        &pool,
+        "POST",
+        &format!("{page}/approve"),
+        &session(alice_user),
+        Some(json!({"draft_sha256": first["draft_sha256"]})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    let (_, current) = send(&pool, "GET", &page, &session(alice_user), None).await;
+    assert_eq!(current["draft"]["output"]["answer"], "Wednesday 3pm");
+    let (status, _) = send(
+        &pool,
+        "POST",
+        &format!("{page}/approve"),
+        &session(alice_user),
+        Some(json!({"draft_sha256": current["draft_sha256"]})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // Bob reads the released reply, with a token bound to it.
+    let (_, read) = send(
+        &pool,
+        "GET",
+        &format!("/v1/invocations/{inv}"),
+        &f.caller_token,
+        None,
+    )
+    .await;
+    assert_eq!(read["status"], "succeeded");
+    assert_eq!(read["output_preview"]["answer"], "Wednesday 3pm");
+    let token = read["human_confirmed"]["token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let keys = crate::agent_card::keys::KeyStore::new(pool.clone())
+        .jwks_keys()
+        .await
+        .unwrap();
+    let released = json!({"status": "succeeded", "output": {"answer": "Wednesday 3pm"}});
+    let claims = crate::consent::token::verify(&token, &keys, Utc::now(), Some(&released)).unwrap();
+    assert_eq!(claims.kind, "reply");
+    assert_eq!(claims.approver, alice_user.to_string());
+    // The token is stored: the next read returns the same one.
+    let (_, again) = send(
+        &pool,
+        "GET",
+        &format!("/v1/invocations/{inv}"),
+        &f.caller_token,
+        None,
+    )
+    .await;
+    assert_eq!(again["human_confirmed"]["token"], json!(token));
+
+    // The agent hears it was confirmed.
+    let (_, notices) = send(
+        &pool,
+        "GET",
+        &format!("/v1/inbox/notices?agent_id={}", f.granter_agent_id),
+        &key,
+        None,
+    )
+    .await;
+    assert!(notices
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|n| n["kind"] == "reply_confirmed"));
+}
+
+#[sqlx::test(migrations = "../migrations")]
+async fn rejected_or_unconfirmed_replies_fail_the_call(pool: PgPool) {
+    let f = seed_demo(&pool).await;
+    let (inv, key, alice_user) = hitl_in_progress(&pool, &f).await;
+    let (_, drafted) = post_reply(&pool, inv, &key, json!({"answer": "no"})).await;
+    let req = uuid(&drafted["consent_request_id"]);
+    let (status, _) = send(
+        &pool,
+        "POST",
+        &format!("/v1/approvals/{req}/deny"),
+        &session(alice_user),
+        Some(json!({"note": "let me answer myself"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        invocation_status(&pool, inv).await,
+        (
+            "failed".into(),
+            Some("The owner declined to answer: let me answer myself".into())
+        )
+    );
+
+    // Another call whose draft nobody confirms in time.
+    let (inv, key, _) = hitl_in_progress(&pool, &f).await;
+    let (_, drafted) = post_reply(&pool, inv, &key, json!({"answer": "maybe"})).await;
+    sqlx::query(
+        "UPDATE consent_requests SET expires_at = now() - interval '1 second' WHERE id = $1",
+    )
+    .bind(uuid(&drafted["consent_request_id"]))
+    .execute(&pool)
+    .await
+    .unwrap();
+    crate::consent::expiry::expire_once(&pool).await.unwrap();
+    assert_eq!(
+        invocation_status(&pool, inv).await,
+        ("failed".into(), Some("Reply not confirmed in time".into()))
+    );
+    let (_, notices) = send(
+        &pool,
+        "GET",
+        &format!("/v1/inbox/notices?agent_id={}", f.granter_agent_id),
+        &key,
+        None,
+    )
+    .await;
+    let kinds: Vec<&str> = notices
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|n| n["kind"].as_str().unwrap())
+        .collect();
+    assert!(
+        kinds.contains(&"reply_rejected") && kinds.contains(&"reply_expired"),
+        "{kinds:?}"
+    );
+}
+
+#[sqlx::test(migrations = "../migrations")]
+async fn who_replies_decides_whether_it_is_verified(pool: PgPool) {
+    let f = seed_demo(&pool).await;
+    let (_, alice_account) = alice(&pool, &f).await;
+
+    // A member who isn't an approver, in their own web session: a draft.
+    let carol = member(&pool, alice_account, "member").await;
+    let (inv, _, alice_user) = hitl_in_progress(&pool, &f).await;
+    let (status, body) =
+        post_reply(&pool, inv, &session(carol), json!({"answer": "from Carol"})).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+    assert_eq!(body["status"], "awaiting_confirmation");
+
+    // The owner (an approver) in their own web session: confirmed at once,
+    // replacing the pending draft.
+    let (status, done) = post_reply(
+        &pool,
+        inv,
+        &session(alice_user),
+        json!({"answer": "from Alice"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{done}");
+    assert_eq!(done["status"], "succeeded");
+    assert_eq!(done["output_preview"]["answer"], "from Alice");
+    assert!(done["human_confirmed"]["token"].is_string());
+
+    // The owner's agent over MCP (an API key): a draft, too big ones refused.
+    let (inv, key, _) = hitl_in_progress(&pool, &f).await;
+    let drafted = mcp(
+        &pool,
+        &key,
+        "respond",
+        json!({"invocation_id": inv, "status": "succeeded", "output": {"a": 1}, "confirmed_by_human": true}),
+    )
+    .await;
+    assert_eq!(drafted["status"], "awaiting_confirmation");
+    let (status, body) = post_reply(&pool, inv, &key, json!({"blob": "x".repeat(17 * 1024)})).await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(body["error"]["code"], "chk.result.too_large");
+}

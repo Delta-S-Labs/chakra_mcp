@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO agent_notices (id, agent_id, kind, payload)\n        VALUES ($1, $2, $3, $4)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "299c9fcf92c08bcca28a9d4476e1ef2641d46550b1704f0e46458b2e230bb77f"
+}

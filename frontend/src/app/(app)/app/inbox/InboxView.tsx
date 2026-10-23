@@ -211,6 +211,8 @@ function Row({
   const [errorText, setErrorText] = useState("");
   const [pending, setPending] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // A reply to a `human_in_loop` capability that waits for an approver.
+  const [drafted, setDrafted] = useState<string | null>(null);
 
   // The respond form only applies INBOUND (work you serve). For outbound
   // calls you're the caller — you can't (and shouldn't) post a result;
@@ -242,7 +244,11 @@ function Row({
     setPending(true);
     try {
       const updated = await reportResult(token, item.id, body);
-      onResolved(updated);
+      if (updated.status === "awaiting_confirmation") {
+        setDrafted(updated.approve_url);
+      } else {
+        onResolved(updated);
+      }
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Couldn't post result.");
     } finally {
@@ -331,6 +337,12 @@ function Row({
             </button>
           </div>
           {submitError && <div className={styles.error}>{submitError}</div>}
+          {drafted && (
+            <p className={styles.body}>
+              Saved as a draft. One of this agent&apos;s approvers confirms it before the caller
+              sees it: <a href={drafted}>review it</a>.
+            </p>
+          )}
         </div>
       ) : (
         <>

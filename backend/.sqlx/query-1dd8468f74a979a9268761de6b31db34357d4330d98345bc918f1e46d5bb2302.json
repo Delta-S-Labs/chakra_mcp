@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT draft AS \"draft!\" FROM consent_requests WHERE invocation_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "draft!",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "draft"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "1dd8468f74a979a9268761de6b31db34357d4330d98345bc918f1e46d5bb2302"
+}

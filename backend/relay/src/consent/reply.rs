@@ -1,0 +1,207 @@
+//! Posting a result (spec §5): one function for REST
+//! `POST /v1/invocations/{id}/result` and MCP `respond`.
+//!
+//! For a `human_in_loop` capability, a reply is a draft until an approver
+//! confirms it on the web; `confirmed_by_human` from the caller is ignored.
+//! An approver answering from the web app (an interactive session) is
+//! confirmed at once. Other capabilities finish as they always have.
+
+use chrono::{DateTime, Utc};
+use serde_json::Value;
+use uuid::Uuid;
+
+use chakramcp_shared::consent::decide::Actor;
+use chakramcp_shared::consent::reply::{self, Draft, ReplyTarget};
+use chakramcp_shared::error::ApiError;
+use chakramcp_shared::sessions::is_delegated_token;
+
+use crate::auth::{user_is_member, AuthUser};
+use crate::state::RelayState;
+
+/// How a surface stores an autonomous result's output: REST keeps a
+/// 16 KiB preview, MCP the whole value (as each always has).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Preview {
+    Truncate,
+    Whole,
+}
+
+#[derive(Debug)]
+pub enum Submitted {
+    /// The invocation finished with this status.
+    Finished { status: String, elapsed_ms: i32 },
+    /// Stored as a draft for an approver to confirm.
+    Drafted {
+        consent_request_id: Uuid,
+        approve_url: String,
+        expires_at: DateTime<Utc>,
+    },
+}
+
+/// Whether `user` is a person in their own web session (not an API key,
+/// nor a token minted for an OAuth client or a device pairing).
+async fn interactive(state: &RelayState, user: &AuthUser) -> Result<bool, ApiError> {
+    match (user.api_key_id, user.minted_jti) {
+        (None, Some(jti)) => Ok(!is_delegated_token(&state.db, jti).await?),
+        _ => Ok(false),
+    }
+}
+
+pub async fn submit_result(
+    state: &RelayState,
+    user: &AuthUser,
+    id: Uuid,
+    status: &str,
+    output: Option<Value>,
+    error: Option<String>,
+    preview: Preview,
+) -> Result<Submitted, ApiError> {
+    if !matches!(status, "succeeded" | "failed") {
+        return Err(ApiError::InvalidRequest(
+            "status must be 'succeeded' or 'failed'".into(),
+        ));
+    }
+    let row = sqlx::query!(
+        r#"
+        SELECT i.status, i.created_at, i.capability_id,
+               i.granter_agent_id, i.grantee_agent_id,
+               ga.account_id AS "granter_account_id?",
+               ea.account_id AS "grantee_account_id?",
+               c.semantics AS "capability_semantics?",
+               c.consent_approvers AS "approvers?",
+               c.consent_wait_secs AS "wait_secs?"
+          FROM relay_invocations i
+          LEFT JOIN agents ga ON ga.id = i.granter_agent_id
+          LEFT JOIN agents ea ON ea.id = i.grantee_agent_id
+          LEFT JOIN agent_capabilities c ON c.id = i.capability_id
+         WHERE i.id = $1
+        "#,
+        id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(ApiError::NotFound)?;
+
+    if row.status != "in_progress" {
+        return Err(ApiError::Conflict(format!(
+            "invocation is {}; only in_progress can be completed",
+            row.status
+        )));
+    }
+    // Auth: caller must be a member of the granter's account. The agent
+    // could be deleted in the meantime; if so, no one can report a result.
+    let granter_account = row.granter_account_id.ok_or(ApiError::Forbidden)?;
+    if !user_is_member(&state.db, user.user_id, granter_account).await? {
+        return Err(ApiError::Forbidden);
+    }
+
+    if row.capability_semantics.as_deref() == Some("human_in_loop") {
+        let (Some(capability_id), Some(granter), Some(grantee), Some(grantee_account)) = (
+            row.capability_id,
+            row.granter_agent_id,
+            row.grantee_agent_id,
+            row.grantee_account_id,
+        ) else {
+            return Err(ApiError::Conflict(
+                "the invocation's agents or capability no longer exist".into(),
+            ));
+        };
+        let target = ReplyTarget {
+            invocation_id: id,
+            capability_id,
+            granter_agent_id: granter,
+            grantee_agent_id: grantee,
+            grantee_account_id: grantee_account,
+            wait_secs: row.wait_secs.unwrap_or(86_400),
+        };
+        let draft = Draft {
+            status: status.to_owned(),
+            output,
+            error,
+        };
+        let approvers = row.approvers.unwrap_or_default();
+        let may_decide = interactive(state, user).await?
+            && chakramcp_shared::consent::approvers::may_decide(
+                &state.db,
+                user.user_id,
+                granter_account,
+                &approvers,
+            )
+            .await?;
+        if may_decide {
+            let actor = Actor {
+                user_id: user.user_id,
+                minted_jti: user.minted_jti,
+            };
+            let elapsed_ms = reply::confirm_now(&state.db, actor, &target, &draft).await?;
+            return Ok(Submitted::Finished {
+                status: draft.status,
+                elapsed_ms,
+            });
+        }
+        let stored = reply::store_draft(&state.db, &target, &draft).await?;
+        return Ok(Submitted::Drafted {
+            consent_request_id: stored.consent_request_id,
+            approve_url: super::notices::approve_url(state, stored.consent_request_id),
+            expires_at: stored.expires_at,
+        });
+    }
+
+    // Wall time from enqueue to result.
+    let elapsed_ms = (Utc::now() - row.created_at)
+        .num_milliseconds()
+        .clamp(0, i32::MAX as i64) as i32;
+    let output = match preview {
+        Preview::Truncate => output
+            .as_ref()
+            .map(crate::handlers::invoke::truncate_for_audit),
+        Preview::Whole => output,
+    };
+    let finished = sqlx::query!(
+        r#"
+        UPDATE relay_invocations
+        SET status = $2,
+            elapsed_ms = $3,
+            error_message = $4,
+            output_preview = $5
+        WHERE id = $1 AND status = 'in_progress'
+        "#,
+        id,
+        status,
+        elapsed_ms,
+        error.as_deref(),
+        output.unwrap_or(Value::Null),
+    )
+    .execute(&state.db)
+    .await?
+    .rows_affected();
+    crate::telemetry::record_invocation_outcome(
+        crate::telemetry::Mode::Pull,
+        status,
+        i64::from(elapsed_ms),
+        finished,
+    );
+    Ok(Submitted::Finished {
+        status: status.to_owned(),
+        elapsed_ms,
+    })
+}
+
+impl Submitted {
+    /// The `202` body for a draft (REST and MCP alike).
+    pub fn draft_body(&self) -> Option<Value> {
+        match self {
+            Submitted::Drafted {
+                consent_request_id,
+                approve_url,
+                expires_at,
+            } => Some(serde_json::json!({
+                "status": "awaiting_confirmation",
+                "consent_request_id": consent_request_id,
+                "approve_url": approve_url,
+                "expires_at": expires_at,
+            })),
+            Submitted::Finished { .. } => None,
+        }
+    }
+}

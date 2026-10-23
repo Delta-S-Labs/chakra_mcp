@@ -113,6 +113,8 @@ export interface CreateCapabilityRequest {
   public_invoke?: boolean;
   public_monthly_quota_per_agent?: number;
   consent?: ConsentSettingsInput;
+  /** `human_in_loop`: a person confirms each reply before the caller sees it. */
+  semantics?: "autonomous" | "human_in_loop";
 }
 
 export interface UpdateCapabilityRequest {
@@ -123,6 +125,8 @@ export interface UpdateCapabilityRequest {
   public_invoke?: boolean;
   public_monthly_quota_per_agent?: number;
   consent?: ConsentSettingsInput;
+  /** `human_in_loop`: a person confirms each reply before the caller sees it. */
+  semantics?: "autonomous" | "human_in_loop";
 }
 
 export class RelayClientError extends Error {
@@ -556,6 +560,22 @@ export interface Invocation {
   /** What the owner approved, and the consent token proving it; once a
    *  held request is approved. */
   consent?: InvocationConsent;
+  /** For a `human_in_loop` capability: a person confirmed the reply, and
+   *  the consent token proving it. */
+  human_confirmed?: {
+    consent_request_id: string;
+    confirmed_at: string | null;
+    token: string | null;
+  };
+}
+
+/** A reply to a `human_in_loop` capability, kept as a draft until one of
+ *  the agent's approvers confirms it. */
+export interface DraftedReply {
+  status: "awaiting_confirmation";
+  consent_request_id: string;
+  approve_url: string;
+  expires_at: string;
 }
 
 export interface InvocationConsent {
@@ -599,7 +619,7 @@ export function reportResult(
   invocationId: string,
   body: ReportResultRequest,
 ) {
-  return request<Invocation>(
+  return request<Invocation | DraftedReply>(
     `/v1/invocations/${encodeURIComponent(invocationId)}/result`,
     { method: "POST", token, body: JSON.stringify(body) },
   );
@@ -900,8 +920,12 @@ export interface ApprovalView {
   decision_note: string | null;
   may_decide: boolean;
   approvers: { user_id: string; display_name: string }[];
-  /** The held input; only for those who may decide. */
+  /** The held input (for a reply, the original request's input); only
+   *  for those who may decide. */
   input?: unknown;
+  /** A reply's draft, and the hash to send when confirming it. */
+  draft?: { status: "succeeded" | "failed"; output?: unknown; error?: string };
+  draft_sha256?: string;
 }
 
 /** A row in the waiting and history lists. */
@@ -957,7 +981,7 @@ export function getApproval(token: string, id: string) {
 export function approveRequest(
   token: string,
   id: string,
-  body: { valid_for?: string; max_requests?: number } = {},
+  body: { valid_for?: string; max_requests?: number; draft_sha256?: string } = {},
 ) {
   return request<{ id: string; status: "approved"; consent_id: string | null }>(
     `/v1/approvals/${encodeURIComponent(id)}/approve`,
