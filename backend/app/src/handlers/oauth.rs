@@ -1619,7 +1619,7 @@ mod tests {
         )
         .bind(Uuid::now_v7())
         .bind(&device_hash)
-        .bind(format!("UC-{}", &Uuid::now_v7().simple().to_string()[..6]))
+        .bind(format!("UC-{}", &Uuid::now_v7().simple().to_string()[26..]))
         .bind(user.user_id)
         .bind(agent_id)
         .execute(&pool)

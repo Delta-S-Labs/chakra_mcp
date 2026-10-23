@@ -89,7 +89,7 @@ async fn delegated_session(pool: &PgPool, user_id: Uuid) -> String {
     )
     .bind(Uuid::now_v7())
     .bind(format!("hash-{}", claims.jti))
-    .bind(format!("U-{}", &claims.jti.simple().to_string()[..6]))
+    .bind(format!("U-{}", &claims.jti.simple().to_string()[26..]))
     .bind(claims.jti)
     .execute(pool)
     .await

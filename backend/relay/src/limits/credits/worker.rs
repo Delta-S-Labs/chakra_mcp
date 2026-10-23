@@ -553,7 +553,7 @@ mod tests {
              VALUES ($1, $2, 'worker-test', 'individual', $3)",
         )
         .bind(account)
-        .bind(format!("worker-{}", &account.simple().to_string()[..12]))
+        .bind(format!("worker-{}", &account.simple().to_string()[20..]))
         .bind(owner)
         .execute(pool)
         .await

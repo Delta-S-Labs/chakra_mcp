@@ -609,7 +609,7 @@ mod tests {
         // Any member of an org can buy for it, from the web app.
         let org = seed_org(
             &pool,
-            &format!("team-{}", &Uuid::now_v7().simple().to_string()[..8]),
+            &format!("team-{}", &Uuid::now_v7().simple().to_string()[24..]),
             user.user_id,
         )
         .await;
@@ -885,7 +885,7 @@ mod tests {
         let (user, token, _) = seed_user_with_personal(&pool, "founder").await;
         let org = seed_org(
             &pool,
-            &format!("gone-{}", &Uuid::now_v7().simple().to_string()[..8]),
+            &format!("gone-{}", &Uuid::now_v7().simple().to_string()[24..]),
             user.user_id,
         )
         .await;
