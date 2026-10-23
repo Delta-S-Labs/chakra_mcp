@@ -2714,7 +2714,7 @@ mod hitl_gate_tests {
     /// to `human_in_loop` before invoking — when `hitl` is true, the
     /// gate in `report_result` is in scope for any subsequent
     /// `/result` post.
-    async fn invoke_and_claim(
+    pub(super) async fn invoke_and_claim(
         pool: &PgPool,
         app: &axum::Router,
         f: &DemoFixture,
@@ -2833,12 +2833,12 @@ mod hitl_gate_tests {
     }
 
     /// A web-session token for `user_id` (the approval page's credential).
-    fn session(user_id: Uuid) -> String {
+    pub(super) fn session(user_id: Uuid) -> String {
         let claims = chakramcp_shared::jwt::UserClaims::new(user_id, "u@t.local".into(), false, 1);
         chakramcp_shared::jwt::encode_jwt(&claims, &config().jwt_secret).unwrap()
     }
 
-    async fn alice_user(pool: &PgPool, f: &DemoFixture) -> Uuid {
+    pub(super) async fn alice_user(pool: &PgPool, f: &DemoFixture) -> Uuid {
         sqlx::query_scalar!(
             "SELECT owner_user_id FROM accounts a JOIN agents g ON g.account_id=a.id WHERE g.id=$1",
             f.granter_agent_id,
@@ -4314,6 +4314,296 @@ mod safety_tests {
         assert_eq!(
             result["structuredContent"]["code"],
             "chk.policy.safety_blocked"
+        );
+    }
+}
+
+#[cfg(test)]
+mod safety_reply_tests {
+    //! Message safety on replies and notes (S3), with `SYSTEM_ONE_SAFETY`
+    //! on and a fake TypeSafe.
+    use std::collections::HashMap;
+
+    use super::hitl_gate_tests::{alice_user, invoke_and_claim, session};
+    use super::legacy_v01_contract_tests::{config, seed_demo};
+    use crate::compliance::test_support::{checker, serve, Fake};
+    use axum::body::Body;
+    use axum::http::{header, Request, StatusCode};
+    use http_body_util::BodyExt;
+    use serde_json::{json, Value};
+    use sqlx::PgPool;
+    use tower::ServiceExt;
+    use uuid::Uuid;
+
+    /// A fake answering `calls` in order (one map per TypeSafe call), then
+    /// `rest` for every later one.
+    async fn state_on(
+        pool: &PgPool,
+        calls: Vec<Vec<(&'static str, f64)>>,
+        rest: &[(&'static str, f64)],
+    ) -> crate::state::RelayState {
+        let fake = Fake {
+            nouls: rest.iter().copied().collect(),
+            ..Fake::default()
+        };
+        for c in calls {
+            fake.per_call
+                .lock()
+                .unwrap()
+                .push_back(c.into_iter().collect::<HashMap<_, _>>());
+        }
+        let url = serve(fake).await;
+        crate::state::RelayState::new(pool.clone(), config())
+            .with_compliance(Some(checker(&url).with_safety(true)))
+    }
+
+    async fn send(state: &crate::state::RelayState, req: Request<Body>) -> (StatusCode, Value) {
+        let res = crate::router(state.clone()).oneshot(req).await.unwrap();
+        let status = res.status();
+        let bytes = res.into_body().collect().await.unwrap().to_bytes();
+        (
+            status,
+            serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+        )
+    }
+
+    fn post(token: &str, uri: String, body: Value) -> Request<Body> {
+        Request::builder()
+            .method("POST")
+            .uri(uri)
+            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::AUTHORIZATION, format!("Bearer {token}"))
+            .body(Body::from(serde_json::to_vec(&body).unwrap()))
+            .unwrap()
+    }
+
+    fn get(token: &str, uri: String) -> Request<Body> {
+        Request::builder()
+            .uri(uri)
+            .header(header::AUTHORIZATION, format!("Bearer {token}"))
+            .body(Body::empty())
+            .unwrap()
+    }
+
+    const REPLY: &str = "Sure, done. Call me on +91 98450 12345 tonight if anything changes.";
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn a_reply_loses_its_contact_and_both_sides_see_why(pool: PgPool) {
+        let f = seed_demo(&pool).await;
+        let state = state_on(&pool, vec![], &[("contact_0", 0.95)]).await;
+        let (id, alice) = invoke_and_claim(&pool, &crate::router(state.clone()), &f, false).await;
+        let (status, body) = send(
+            &state,
+            post(
+                &alice,
+                format!("/v1/invocations/{id}/result"),
+                json!({ "status": "succeeded", "output": { "reply": REPLY } }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert!(body["output_preview"]["reply"]
+            .as_str()
+            .unwrap()
+            .contains("Call me on [contact removed] tonight"));
+        assert_eq!(body["safety"]["reply"][0]["action"], "redacted", "{body}");
+        assert_eq!(body["safety"]["reply"][0]["path"], "output.reply");
+
+        // The caller sees the reply's findings once it's released.
+        let (_, inv) = send(
+            &state,
+            get(&f.caller_token, format!("/v1/invocations/{id}")),
+        )
+        .await;
+        assert_eq!(inv["safety"]["reply"][0]["kind"], "phone", "{inv}");
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn a_hitl_draft_is_stored_redacted_and_hidden_from_the_caller(pool: PgPool) {
+        let f = seed_demo(&pool).await;
+        let state = state_on(&pool, vec![], &[("contact_0", 0.95)]).await;
+        let (id, alice) = invoke_and_claim(&pool, &crate::router(state.clone()), &f, true).await;
+        let (status, body) = send(
+            &state,
+            post(
+                &alice,
+                format!("/v1/invocations/{id}/result"),
+                json!({ "status": "succeeded", "output": { "reply": REPLY } }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+        assert_eq!(body["status"], "awaiting_confirmation");
+        assert_eq!(body["safety"]["reply"][0]["action"], "redacted");
+        let (draft,): (Value,) = sqlx::query_as(
+            "SELECT draft FROM consent_requests WHERE invocation_id = $1 AND kind = 'reply'",
+        )
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(
+            draft["output"]["reply"]
+                .as_str()
+                .unwrap()
+                .contains("[contact removed]"),
+            "{draft}"
+        );
+
+        // The caller doesn't see a pending draft's findings.
+        let (_, inv) = send(
+            &state,
+            get(&f.caller_token, format!("/v1/invocations/{id}")),
+        )
+        .await;
+        assert_eq!(inv["status"], "in_progress");
+        assert!(inv["safety"].get("reply").is_none(), "{inv}");
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn a_harmful_reply_is_refused_and_the_call_stays_open(pool: PgPool) {
+        let f = seed_demo(&pool).await;
+        // The request is clean; the reply isn't.
+        let state = state_on(&pool, vec![vec![]], &[("harm_violence", 0.95)]).await;
+        let (id, alice) = invoke_and_claim(&pool, &crate::router(state.clone()), &f, false).await;
+        let (status, body) = send(
+            &state,
+            post(
+                &alice,
+                format!("/v1/invocations/{id}/result"),
+                json!({ "status": "succeeded", "output": { "plan": "Here's how to hurt him." } }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+        assert_eq!(body["error"]["code"], "chk.policy.safety_blocked");
+        let (status, snap): (String, Value) =
+            sqlx::query_as("SELECT status, trust_snapshot FROM relay_invocations WHERE id = $1")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(status, "in_progress");
+        assert_eq!(snap["system_one"]["reply_safety"]["decision"], "deny");
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn notes_are_redacted_or_refused(pool: PgPool) {
+        let f = seed_demo(&pool).await;
+        let alice = session(alice_user(&pool, &f).await);
+        // A grant purpose with a contact: redacted.
+        sqlx::query("DELETE FROM grants WHERE id = $1")
+            .bind(f.grant_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let state = state_on(&pool, vec![], &[("contact_0", 0.95)]).await;
+        let grant = json!({
+            "granter_agent_id": f.granter_agent_id,
+            "grantee_agent_id": f.grantee_agent_id,
+            "capability_id": f.capability_id,
+            "purpose": "Weekly syncs. Questions? Mail me at bob@example.com",
+        });
+        let (status, body) = send(&state, post(&alice, "/v1/grants".into(), grant.clone())).await;
+        assert!(status.is_success(), "{status} {body}");
+        assert_eq!(
+            body["purpose"],
+            "Weekly syncs. Questions? Mail me at [contact removed]"
+        );
+
+        // A harassing proposal: refused, nothing written.
+        let bob_account: Uuid = sqlx::query_scalar("SELECT account_id FROM agents WHERE id = $1")
+            .bind(f.grantee_agent_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let bob_second = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO agents (id, account_id, slug, display_name, visibility)
+             VALUES ($1, $2, 'bob-second', 'Bob Second', 'network')",
+        )
+        .bind(bob_second)
+        .bind(bob_account)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let state = state_on(&pool, vec![], &[("harm_harassment", 0.95)]).await;
+        let (status, body) = send(
+            &state,
+            post(
+                &f.caller_token,
+                "/v1/friendships".into(),
+                json!({
+                    "proposer_agent_id": bob_second,
+                    "target_agent_id": f.granter_agent_id,
+                    "proposer_message": "Accept or you'll regret it.",
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+        assert_eq!(body["error"]["code"], "chk.policy.safety_blocked");
+        let n: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM friendships WHERE proposer_agent_id = $1")
+                .bind(bob_second)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(n, 0);
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn a_deny_note_loses_its_contact(pool: PgPool) {
+        let f = seed_demo(&pool).await;
+        sqlx::query(
+            "UPDATE agent_capabilities
+                SET consent_required = true, consent_max_validity_secs = 86400
+              WHERE id = $1",
+        )
+        .bind(f.capability_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let state = state_on(&pool, vec![], &[("contact_0", 0.95)]).await;
+        let (status, body) = send(
+            &state,
+            post(
+                &f.caller_token,
+                "/v1/invoke".into(),
+                json!({ "grant_id": f.grant_id, "grantee_agent_id": f.grantee_agent_id,
+                        "input": { "k": "v" } }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+        let cr = body["consent_request_id"].as_str().unwrap().to_owned();
+        let alice = session(alice_user(&pool, &f).await);
+        let (status, body) = send(
+            &state,
+            post(
+                &alice,
+                format!("/v1/approvals/{cr}/deny"),
+                json!({ "note": "Not this week. Ping me at alice@example.com instead." }),
+            ),
+        )
+        .await;
+        assert!(status.is_success(), "{status} {body}");
+        let id: Uuid =
+            sqlx::query_scalar("SELECT invocation_id FROM consent_requests WHERE id = $1::uuid")
+                .bind(&cr)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let (error,): (Option<String>,) =
+            sqlx::query_as("SELECT error_message FROM relay_invocations WHERE id = $1")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let error = error.unwrap();
+        assert!(
+            error.contains("Ping me at [contact removed] instead"),
+            "{error}"
         );
     }
 }

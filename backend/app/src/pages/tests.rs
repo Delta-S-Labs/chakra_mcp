@@ -1022,6 +1022,58 @@ async fn approval_page_approves_narrowed_and_denies(pool: PgPool) {
     assert_eq!(error.as_deref(), Some("The owner declined: not this week"));
 }
 
+/// Message safety (S3): with screening on, a deny note the screen blocks
+/// isn't sent, and the request stays undecided.
+#[sqlx::test(migrations = "../migrations")]
+async fn a_blocked_deny_note_isnt_sent(pool: PgPool) {
+    use chakramcp_shared::system_one::test_support::{checker, serve, Fake};
+    let ada = seed(&pool).await;
+    let (request, invocation) =
+        held_request(&pool, ada, serde_json::json!({"valid_for": "once"})).await;
+    let fake = Fake {
+        nouls: [("harm_harassment", 0.95)].into_iter().collect(),
+        ..Fake::default()
+    };
+    let url = serve(fake).await;
+    let screened =
+        state(&pool).with_system_one(Some(std::sync::Arc::new(checker(&url).with_safety(true))));
+    let path = format!("/app/approvals/{request}");
+    let mut browser = Browser::new(screened);
+    let signin = browser.get(&path).await;
+    let done = browser
+        .submit(
+            &path,
+            &signin,
+            &[("email", "ada@example.test"), ("password", PASSWORD)],
+        )
+        .await;
+    assert_eq!(done.status, StatusCode::SEE_OTHER, "{}", done.body);
+    let form = browser.get(&path).await;
+    let refused = browser
+        .submit(
+            &path,
+            &form,
+            &[
+                ("step", "deny"),
+                ("note", "I'll find you and make you pay."),
+            ],
+        )
+        .await;
+    assert_eq!(refused.status, StatusCode::FORBIDDEN, "{}", refused.body);
+    assert!(
+        refused.body.contains("Your note wasn&#39;t sent"),
+        "{}",
+        refused.body
+    );
+    assert!(refused.body.contains("harm_harassment"), "{}", refused.body);
+    let (status,): (String,) = sqlx::query_as("SELECT status FROM relay_invocations WHERE id = $1")
+        .bind(invocation)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "awaiting_consent");
+}
+
 #[sqlx::test(migrations = "../migrations")]
 async fn only_approvers_get_the_form(pool: PgPool) {
     let ada = seed(&pool).await;

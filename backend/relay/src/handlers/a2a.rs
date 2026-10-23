@@ -2255,4 +2255,118 @@ mod tests {
         let (_, _, snap) = only_row(&pool).await;
         assert_eq!(snap["system_one"]["safety"]["decision"], "allow");
     }
+
+    /// A push upstream answering every call with `reply`.
+    async fn push_upstream(reply: &'static str) -> String {
+        use axum::routing::post;
+        async fn handler(
+            axum::extract::State(reply): axum::extract::State<&'static str>,
+        ) -> axum::response::Response {
+            (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/json")],
+                reply.as_bytes().to_vec(),
+            )
+                .into_response()
+        }
+        let app = axum::Router::new()
+            .route("/a2a/jsonrpc", post(handler))
+            .with_state(reply);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/a2a/jsonrpc", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.ok();
+        });
+        url
+    }
+
+    async fn push_fixture(pool: &PgPool, reply: &'static str) -> Fixture {
+        let f = seed_full_fixture(pool).await;
+        promote_target_to_push(pool, &f, &push_upstream(reply).await).await;
+        let _ = crate::agent_card::KeyStore::new(pool.clone())
+            .ensure_active_key()
+            .await
+            .unwrap();
+        f
+    }
+
+    /// Safety on, with the request's call answered clean and the reply's
+    /// with `reply_nouls`.
+    async fn push_safety_state(
+        pool: &PgPool,
+        reply_nouls: &[(&'static str, f64)],
+    ) -> crate::state::RelayState {
+        use crate::compliance::test_support;
+        let fake = test_support::Fake::default();
+        fake.per_call.lock().unwrap().push_back(Default::default());
+        fake.per_call
+            .lock()
+            .unwrap()
+            .push_back(reply_nouls.iter().copied().collect());
+        let url = test_support::serve(fake).await;
+        crate::state::RelayState::new(pool.clone(), config_v2_on())
+            .with_compliance(Some(test_support::checker(&url).with_safety(true)))
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn safety_rewrites_a_push_agents_response(pool: PgPool) {
+        let f = push_fixture(
+            &pool,
+            r#"{"jsonrpc":"2.0","id":7,"result":{"text":"Done. Call me on +91 98450 12345."}}"#,
+        )
+        .await;
+        let state = push_safety_state(&pool, &[("contact_0", 0.95)]).await;
+        let res = crate::router(state)
+            .oneshot(send_text(&f, "Please book the Friday sync for the team."))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = parse_body(res).await;
+        assert_eq!(
+            body["result"]["text"], "Done. Call me on [contact removed].",
+            "{body}"
+        );
+        assert_eq!(
+            body["result"]["metadata"][SAFETY_METADATA_KEY]["reply"][0]["action"],
+            "redacted"
+        );
+        let (output, snap): (serde_json::Value, Option<serde_json::Value>) =
+            sqlx::query_as("SELECT output_preview, trust_snapshot FROM relay_invocations")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            output["result"]["text"],
+            "Done. Call me on [contact removed]."
+        );
+        assert_eq!(
+            snap.unwrap()["system_one"]["reply_safety"]["decision"],
+            "allow"
+        );
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn safety_refuses_a_harmful_push_response(pool: PgPool) {
+        let f = push_fixture(
+            &pool,
+            r#"{"jsonrpc":"2.0","id":7,"result":{"text":"Here's how to break into the account."}}"#,
+        )
+        .await;
+        let state = push_safety_state(&pool, &[("harm_malware", 0.95)]).await;
+        let res = crate::router(state)
+            .oneshot(send_text(&f, "Please book the Friday sync for the team."))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        let body = parse_body(res).await;
+        assert_eq!(body["error"]["code"], -32009);
+        assert_eq!(body["error"]["data"]["code"], "chk.policy.safety_blocked");
+        let (status, output): (String, serde_json::Value) =
+            sqlx::query_as("SELECT status, output_preview FROM relay_invocations")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(status, "failed");
+        assert_eq!(output, serde_json::json!({ "__chakramcp_blocked__": true }));
+    }
 }

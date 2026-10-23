@@ -387,12 +387,21 @@ pub mod test_support {
         pub statuses: Arc<Mutex<std::collections::VecDeque<u16>>>,
         /// Every request body, in order.
         pub bodies: Arc<Mutex<Vec<Value>>>,
+        /// Probabilities for the next calls, in order, before `nouls`
+        /// applies (e.g. a clean request, then a harmful reply).
+        pub per_call: Arc<Mutex<std::collections::VecDeque<HashMap<&'static str, f64>>>>,
     }
 
     async fn handler(State(f): State<Fake>, Json(body): Json<Value>) -> (StatusCode, Json<Value>) {
         *f.last_body.lock().unwrap() = Some(body.clone());
         f.bodies.lock().unwrap().push(body.clone());
         let next = f.statuses.lock().unwrap().pop_front();
+        let nouls = f
+            .per_call
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or(f.nouls.clone());
         if let Some(s) = next.or(f.status) {
             return (
                 StatusCode::from_u16(s).unwrap(),
@@ -404,7 +413,7 @@ pub mod test_support {
             .unwrap()
             .keys()
             .map(|k| {
-                let p = f.nouls.get(k.as_str()).copied().unwrap_or(0.01);
+                let p = nouls.get(k.as_str()).copied().unwrap_or(0.01);
                 (k.clone(), json!({"type": "noul", "noul": p}))
             })
             .collect();

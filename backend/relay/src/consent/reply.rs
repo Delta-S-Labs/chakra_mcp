@@ -151,7 +151,7 @@ pub async fn submit_result(
         if error.is_some() {
             error = screened.value["error"].as_str().map(str::to_owned);
         }
-        safety = (!screened.findings.is_empty()).then(|| Safety {
+        safety = (!screened.findings.is_empty()).then_some(Safety {
             request: None,
             reply: Some(screened.findings),
         });
