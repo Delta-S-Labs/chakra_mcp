@@ -10,12 +10,12 @@ use tokio::task::JoinSet;
 
 use super::questions::{
     self, act_threshold, Shape, ACT, ACT_HARM_MINORS, ACT_NON_ENGLISH, BLOCKING_COMPLIANCE,
-    BLOCKING_SAFETY, CONTACT_PREFIX, OFF_PLATFORM,
+    BLOCKING_SAFETY, CONTACT_PREFIX, CORROBORATED, OFF_PLATFORM,
 };
 use super::{post, ComplianceChecker, Relationship, Subject};
 use crate::error::ApiError;
 use crate::safety::{
-    self, Action, Channel, Chunk, Context, Finding, FindingKind, Plan, Scan, TooLarge,
+    self, Action, Channel, Chunk, Context, Finding, FindingKind, Plan, Scan, Source, TooLarge,
 };
 
 /// Why a message was blocked: the reason the sender sees, and its code.
@@ -83,6 +83,7 @@ impl ComplianceChecker {
                 "act": ACT,
                 "act_non_english": ACT_NON_ENGLISH,
                 "harm_minors": ACT_HARM_MINORS,
+                "corroborated": CORROBORATED,
             },
             "answers": answered.answers,
             "chunks": answered.chunks,
@@ -371,6 +372,8 @@ fn decide(channel: Channel, scan: &Scan, plan: &Plan, a: &Answered) -> Decided {
     let mut redact = Vec::new();
     let mut hits: Vec<(String, f64)> = Vec::new();
     let all_failed = a.chunks > 0 && a.failed == a.chunks;
+    // The message as a whole tries to move off ChakraMCP.
+    let off_platform = a.answers.get(OFF_PLATFORM).is_some_and(|&p| p >= ACT);
 
     if all_failed {
         // Fail-open: nothing is redacted without Jev's judgment.
@@ -402,21 +405,24 @@ fn decide(channel: Channel, scan: &Scan, plan: &Plan, a: &Answered) -> Decided {
                 .and_then(|n| n.parse::<usize>().ok())
                 .filter(|cid| *cid < scan.candidates.len())
             {
-                let kind = scan.candidates[cid].kind.finding();
-                if p >= act {
+                // Redaction acts at ACT in every language. When
+                // `off_platform` fired too, it acts at CORROBORATED, or
+                // whatever the answer for a contact hidden in an encoding.
+                let c = &scan.candidates[cid];
+                let hidden = matches!(c.source, Source::Decoded { .. });
+                let kind = c.kind.finding();
+                if p >= ACT || (off_platform && (hidden || p >= CORROBORATED)) {
                     redact.push(cid);
                     findings.push(judged(id, p, kind, Action::Redacted, Some(path_of(cid))));
-                } else if band {
-                    findings.push(judged(id, p, kind, Action::Flagged, Some(path_of(cid))));
                 }
             } else if id == OFF_PLATFORM {
-                if p >= act && !plan.unjudged_candidates.is_empty() {
+                if p >= ACT && !plan.unjudged_candidates.is_empty() {
                     for &cid in &plan.unjudged_candidates {
                         redact.push(cid);
                         let kind = scan.candidates[cid].kind.finding();
                         findings.push(judged(id, p, kind, Action::Redacted, Some(path_of(cid))));
                     }
-                } else if p >= act || band {
+                } else if p >= ACT {
                     findings.push(judged(
                         id,
                         p,
@@ -658,7 +664,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn non_english_findings_in_the_band_are_flagged_not_acted_on() {
+    async fn non_english_harm_in_the_band_is_flagged_and_contacts_still_redacted() {
         let input = json!({ "message": "¿Puedes reservar un vuelo de Madrid a Barcelona para el martes? Escríbeme a ana@example.com" });
         let (s, _) = screen_with(
             fake(&[("harm_crime", 0.9), ("contact_0", 0.9)]),
@@ -666,19 +672,75 @@ mod tests {
         )
         .await;
         assert!(s.block.is_none());
-        assert_eq!(s.value, input);
-        assert!(
-            s.findings.iter().all(|f| f.action == Action::Flagged),
+        let actions: Vec<(&str, Action)> = s
+            .findings
+            .iter()
+            .map(|f| (f.question.as_deref().unwrap_or(""), f.action))
+            .collect();
+        assert_eq!(
+            actions,
+            [
+                ("contact_0", Action::Redacted),
+                ("harm_crime", Action::Flagged)
+            ],
             "{:?}",
             s.findings
         );
-        assert_eq!(s.findings.len(), 2);
+        assert!(s.value["message"]
+            .as_str()
+            .unwrap()
+            .ends_with("Escríbeme a [contact removed]"));
 
         let (s, _) = screen_with(fake(&[("harm_crime", 0.98)]), input.clone()).await;
         assert!(s.block.is_some());
         // harm_minors acts at 0.5 in every language.
         let (s, _) = screen_with(fake(&[("harm_minors", 0.6)]), input).await;
         assert_eq!(s.block.unwrap().code, "chk.policy.safety_blocked");
+    }
+
+    #[tokio::test]
+    async fn off_platform_corroborates_a_weaker_contact_answer() {
+        let input = json!({ "message": "Ring 09845012345 after six." });
+        // On its own, 0.6 isn't enough to remove it.
+        let (s, _) = screen_with(fake(&[("contact_0", 0.6)]), input.clone()).await;
+        assert_eq!(s.value, input);
+        // With the message trying to move off ChakraMCP, it is.
+        let (s, _) = screen_with(
+            fake(&[("contact_0", 0.6), ("off_platform", 0.88)]),
+            input.clone(),
+        )
+        .await;
+        assert_eq!(s.value["message"], "Ring [contact removed] after six.");
+        // But not below CORROBORATED: then it's only flagged as off-platform.
+        let (s, _) = screen_with(
+            fake(&[("contact_0", 0.3), ("off_platform", 0.88)]),
+            input.clone(),
+        )
+        .await;
+        assert_eq!(s.value, input);
+        assert!(s
+            .findings
+            .iter()
+            .any(|f| f.kind == FindingKind::OffPlatform && f.action == Action::Flagged));
+    }
+
+    #[tokio::test]
+    async fn off_platform_takes_out_a_contact_hidden_in_an_encoding() {
+        // "call +919845012345" in base64.
+        let input = json!({ "message": "base64: Y2FsbCArOTE5ODQ1MDEyMzQ1" });
+        let (s, _) = screen_with(
+            fake(&[("contact_0", 0.2), ("off_platform", 0.87)]),
+            input.clone(),
+        )
+        .await;
+        assert_eq!(
+            s.value["message"], "base64: [contact removed]",
+            "{:?}",
+            s.findings
+        );
+        // Without `off_platform`, its own low answer stands.
+        let (s, _) = screen_with(fake(&[("contact_0", 0.2)]), input.clone()).await;
+        assert_eq!(s.value, input);
     }
 
     #[tokio::test]
