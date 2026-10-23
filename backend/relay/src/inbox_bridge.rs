@@ -87,6 +87,23 @@ pub struct A2aTask {
     pub status: A2aTaskStatus,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub artifacts: Vec<A2aArtifact>,
+    /// `{"chakramcp.safety": {request?, reply?}}` when message safety
+    /// removed or flagged something.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
+}
+
+/// The A2A metadata key message safety's findings travel under.
+pub const SAFETY_METADATA_KEY: &str = "chakramcp.safety";
+
+/// `{"chakramcp.safety": {"request": [...]}}` from a row's
+/// `trust_snapshot`, when screening found anything.
+pub fn safety_metadata(trust_snapshot: Option<&serde_json::Value>) -> Option<serde_json::Value> {
+    let findings = trust_snapshot?
+        .pointer("/system_one/safety/findings")?
+        .as_array()
+        .filter(|f| !f.is_empty())?;
+    Some(serde_json::json!({ SAFETY_METADATA_KEY: { "request": findings } }))
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -119,6 +136,7 @@ pub async fn park(
     capability_name: &str,
     request_body: Bytes,
     consent: Option<ParkConsent>,
+    trust_snapshot: Option<serde_json::Value>,
 ) -> Result<Parked, ParkError> {
     if request_body.len() > PREVIEW_BYTES {
         return Err(ParkError::BodyTooLarge(request_body.len()));
@@ -174,7 +192,7 @@ pub async fn park(
                 input_preview: &params,
                 api_key_id: authz.api_key_id,
                 minted_jti: authz.minted_jti,
-                trust_snapshot: None,
+                trust_snapshot: trust_snapshot.as_ref(),
                 charge_account_id: authz.caller_account_id,
             },
             &gate,
@@ -198,6 +216,7 @@ pub async fn park(
                 id: task_id.to_string(),
                 status,
                 artifacts: vec![],
+                metadata: None,
             },
         });
     }
@@ -223,8 +242,8 @@ pub async fn park(
         INSERT INTO relay_invocations
             (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
              capability_name, invoked_by_user_id, status, elapsed_ms,
-             input_preview, api_key_id, minted_jti)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', 0, $8, $9, $10)
+             input_preview, api_key_id, minted_jti, trust_snapshot)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', 0, $8, $9, $10, $12)
         "#,
         task_id,
         authz.grant_id,
@@ -237,6 +256,7 @@ pub async fn park(
         authz.api_key_id,
         authz.minted_jti,
         authz.caller_account_id,
+        trust_snapshot,
     )
     .execute(db)
     .await?;
@@ -251,6 +271,7 @@ pub async fn park(
                 message: None,
             },
             artifacts: vec![],
+            metadata: None,
         },
     })
 }
@@ -275,7 +296,7 @@ pub async fn get_task(
     caller_agent_id: Uuid,
 ) -> Result<A2aTask, GetTaskError> {
     let row = sqlx::query!(
-        r#"SELECT status, grantee_agent_id, output_preview, error_message
+        r#"SELECT status, grantee_agent_id, output_preview, error_message, trust_snapshot
              FROM relay_invocations WHERE id = $1"#,
         task_id,
     )
@@ -320,6 +341,7 @@ pub async fn get_task(
             message,
         },
         artifacts,
+        metadata: safety_metadata(row.trust_snapshot.as_ref()),
     })
 }
 
@@ -449,7 +471,7 @@ mod tests {
         let body = Bytes::from_static(
             br#"{"jsonrpc":"2.0","id":42,"method":"SendMessage","params":{"message":"hi"}}"#,
         );
-        let parked = park(&pool, &authz, "do", body, None).await.unwrap();
+        let parked = park(&pool, &authz, "do", body, None, None).await.unwrap();
 
         assert_eq!(parked.jsonrpc_id, serde_json::json!(42));
         assert_eq!(parked.task.status.state, "submitted");
@@ -483,7 +505,7 @@ mod tests {
         let (u, ca, cg, ta, tg, c, g) = seed_for_park(&pool).await;
         let authz = sample_authz_for(u, ca, cg, ta, tg, c, g);
         let body = Bytes::from_static(b"this is not json{{");
-        let parked = park(&pool, &authz, "do", body, None).await.unwrap();
+        let parked = park(&pool, &authz, "do", body, None, None).await.unwrap();
         let row = sqlx::query!(
             "SELECT status, input_preview FROM relay_invocations WHERE id = $1",
             parked.task_id,
@@ -503,7 +525,7 @@ mod tests {
         let authz = sample_authz_for(u, ca, cg, ta, tg, c, g);
         // 17 KB > 16 KB cap.
         let body = Bytes::from(vec![b'a'; 17 * 1024]);
-        let r = park(&pool, &authz, "do", body, None).await;
+        let r = park(&pool, &authz, "do", body, None, None).await;
         assert!(matches!(r, Err(ParkError::BodyTooLarge(_))));
     }
 
@@ -515,7 +537,7 @@ mod tests {
         let body = Bytes::from_static(
             br#"{"jsonrpc":"2.0","id":"req-abc","method":"SendMessage","params":{}}"#,
         );
-        let parked = park(&pool, &authz, "do", body, None).await.unwrap();
+        let parked = park(&pool, &authz, "do", body, None, None).await.unwrap();
         assert_eq!(parked.jsonrpc_id, serde_json::json!("req-abc"));
     }
 
@@ -524,7 +546,7 @@ mod tests {
         let (u, ca, cg, ta, tg, c, g) = seed_for_park(&pool).await;
         let authz = sample_authz_for(u, ca, cg, ta, tg, c, g);
         let body = Bytes::from_static(br#"{"jsonrpc":"2.0","method":"SendMessage","params":{}}"#);
-        let parked = park(&pool, &authz, "do", body, None).await.unwrap();
+        let parked = park(&pool, &authz, "do", body, None, None).await.unwrap();
         assert_eq!(parked.jsonrpc_id, serde_json::Value::Null);
     }
 
@@ -555,7 +577,7 @@ mod tests {
 
         let body =
             Bytes::from_static(br#"{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{}}"#);
-        let parked = park(&pool, &authz, "do", body, None).await.unwrap();
+        let parked = park(&pool, &authz, "do", body, None, None).await.unwrap();
 
         let row_key_id: Option<Uuid> = sqlx::query_scalar!(
             r#"SELECT api_key_id FROM relay_invocations WHERE id = $1"#,

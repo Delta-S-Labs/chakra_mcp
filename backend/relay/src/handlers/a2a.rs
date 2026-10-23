@@ -22,6 +22,7 @@ use crate::agent_card::keys::KeyStore;
 use crate::forwarder::{forward_push, ForwardError, ForwardOutcome};
 use crate::inbox_bridge::{
     get_task, park, GetTaskError, ParkConsent, ParkError, CONSENT_TERMS_METADATA_KEY,
+    SAFETY_METADATA_KEY,
 };
 use crate::policy::{evaluate, Authorized, Decision, DenyReason};
 use crate::state::RelayState;
@@ -92,7 +93,12 @@ async fn handle_send_message(
             };
             // System One compliance (when enabled), judged on the A2A
             // `params` (the message being sent). Fail-open lives inside
-            // the checker; only an actual violation lands here.
+            // the checker; only an actual violation lands here. With
+            // message safety on, screening replaces the check and may
+            // rewrite the body (contacts removed, findings in metadata).
+            let mut body = body;
+            let mut trust_snapshot = None;
+            let mut safety_metadata = None;
             if let Some(checker) = state.compliance.as_deref() {
                 let envelope: serde_json::Value =
                     serde_json::from_slice(&body).unwrap_or(serde_json::Value::Null);
@@ -108,16 +114,37 @@ async fn handle_send_message(
                     }),
                     input,
                 };
-                if let crate::compliance::Verdict::Deny { reason, report } =
-                    checker.check(&subject).await
-                {
-                    tracing::info!(
-                        grant_id = %authz.grant_id,
-                        capability = %ctx.name,
-                        %report,
-                        "A2A call denied by System One compliance check"
-                    );
-                    return compliance_deny_response(&reason);
+                if checker.safety_enabled() {
+                    match screen_a2a(checker, subject, &envelope, &body).await {
+                        Err(response) => {
+                            tracing::info!(
+                                grant_id = %authz.grant_id,
+                                capability = %ctx.name,
+                                "A2A call refused by message safety screening"
+                            );
+                            return response;
+                        }
+                        Ok(screened) => {
+                            body = screened.body;
+                            trust_snapshot = Some(screened.trust_snapshot);
+                            safety_metadata = screened.metadata;
+                        }
+                    }
+                } else {
+                    match checker.check(&subject).await {
+                        crate::compliance::Verdict::Deny { reason, report } => {
+                            tracing::info!(
+                                grant_id = %authz.grant_id,
+                                capability = %ctx.name,
+                                %report,
+                                "A2A call denied by System One compliance check"
+                            );
+                            return compliance_deny_response(&reason);
+                        }
+                        crate::compliance::Verdict::Allow { report } => {
+                            trust_snapshot = Some(serde_json::json!({ "system_one": report }));
+                        }
+                    }
                 }
             }
             let cap_name = ctx.name;
@@ -128,9 +155,18 @@ async fn handle_send_message(
                 wait_secs: ctx.consent_wait_secs,
             });
             let mut response = if authz.target_is_push {
-                handle_authorized_push(state, authz, cap_name, body, headers).await
+                handle_authorized_push(state, authz, cap_name, body, headers, trust_snapshot).await
             } else {
-                handle_authorized_pull(state, authz, cap_name, body, consent).await
+                handle_authorized_pull(
+                    state,
+                    authz,
+                    cap_name,
+                    body,
+                    consent,
+                    trust_snapshot,
+                    safety_metadata,
+                )
+                .await
             };
             limits.signals.apply(response.headers_mut());
             response
@@ -294,6 +330,7 @@ async fn handle_authorized_push(
     capability_name: String,
     body: Bytes,
     headers: &HeaderMap,
+    trust_snapshot: Option<serde_json::Value>,
 ) -> Response {
     let keystore = KeyStore::new(state.db.clone());
     let http = reqwest::Client::builder()
@@ -311,6 +348,7 @@ async fn handle_authorized_push(
         &capability_name,
         body,
         headers,
+        trust_snapshot,
     )
     .await
     {
@@ -384,9 +422,13 @@ async fn handle_authorized_pull(
     capability_name: String,
     body: Bytes,
     consent: Option<ParkConsent>,
+    trust_snapshot: Option<serde_json::Value>,
+    safety_metadata: Option<serde_json::Value>,
 ) -> Response {
-    match park(&state.db, &authz, &capability_name, body, consent).await {
-        Ok(parked) => (
+    match park(&state.db, &authz, &capability_name, body, consent, trust_snapshot).await {
+        Ok(mut parked) => {
+            parked.task.metadata = safety_metadata;
+            (
             StatusCode::OK,
             [(header::CONTENT_TYPE, "application/json")],
             Json(serde_json::json!({
@@ -395,7 +437,8 @@ async fn handle_authorized_pull(
                 "result": parked.task,
             })),
         )
-            .into_response(),
+            .into_response()
+        }
         Err(ParkError::BodyTooLarge(n)) => (
             StatusCode::PAYLOAD_TOO_LARGE,
             [(header::CONTENT_TYPE, "application/json")],
@@ -505,6 +548,106 @@ fn compliance_deny_response(detail: &str) -> Response {
                 "code": reason.jsonrpc_code(),
                 "message": reason.message(),
                 "data": { "code": reason.data_code(), "detail": detail }
+            }
+        })),
+    )
+        .into_response()
+}
+
+/// A screened A2A message: the body to deliver (rewritten when something
+/// was removed or flagged), its `trust_snapshot`, and the task metadata.
+struct ScreenedA2a {
+    body: Bytes,
+    trust_snapshot: serde_json::Value,
+    metadata: Option<serde_json::Value>,
+}
+
+/// Screen an A2A message's `params` (message safety S2). The capability's
+/// input schema doesn't describe the A2A envelope, so none is used. A body
+/// that isn't JSON is screened as text. `Err` is the response to send.
+async fn screen_a2a(
+    checker: &crate::compliance::ComplianceChecker,
+    subject: crate::compliance::Subject<'_>,
+    envelope: &serde_json::Value,
+    body: &Bytes,
+) -> Result<ScreenedA2a, Response> {
+    use chakramcp_shared::safety::Channel;
+    let parsed = !envelope.is_null();
+    let text = serde_json::Value::String(String::from_utf8_lossy(body).into_owned());
+    let (input, root) = if parsed {
+        (subject.input, "params")
+    } else {
+        (&text, "body")
+    };
+    let subject = crate::compliance::Subject { input, ..subject };
+    let screened = checker
+        .screen(Channel::Request, &subject, root, None, "")
+        .await
+        .map_err(|_| safety_too_large_response())?;
+    let trust_snapshot = serde_json::json!({ "system_one": { "safety": screened.report } });
+    if let Some(block) = screened.block {
+        return Err(safety_block_response(block.code, &block.reason));
+    }
+    if screened.findings.is_empty() {
+        return Ok(ScreenedA2a {
+            body: body.clone(),
+            trust_snapshot,
+            metadata: None,
+        });
+    }
+    let found = serde_json::json!({ "request": screened.findings });
+    let body = if parsed {
+        let mut envelope = envelope.clone();
+        let mut params = screened.value;
+        if let Some(p) = params.as_object_mut() {
+            let metadata = p.entry("metadata").or_insert_with(|| serde_json::json!({}));
+            if let Some(m) = metadata.as_object_mut() {
+                m.insert(SAFETY_METADATA_KEY.into(), found.clone());
+            }
+        }
+        envelope["params"] = params;
+        Bytes::from(serde_json::to_vec(&envelope).unwrap_or_default())
+    } else {
+        Bytes::from(screened.value.as_str().unwrap_or_default().to_owned())
+    };
+    Ok(ScreenedA2a {
+        body,
+        trust_snapshot,
+        metadata: Some(serde_json::json!({ SAFETY_METADATA_KEY: found })),
+    })
+}
+
+/// Message safety refused the call: today's `-32009` with the safety code.
+fn safety_block_response(code: &str, detail: &str) -> Response {
+    let reason = DenyReason::ComplianceDenied;
+    (
+        jsonrpc_to_http(reason.jsonrpc_code()),
+        [(header::CONTENT_TYPE, "application/json")],
+        Json(serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": null,
+            "error": {
+                "code": reason.jsonrpc_code(),
+                "message": reason.message(),
+                "data": { "code": code, "detail": detail }
+            }
+        })),
+    )
+        .into_response()
+}
+
+/// A message over the screening cap: refused, never screened in part.
+fn safety_too_large_response() -> Response {
+    (
+        StatusCode::PAYLOAD_TOO_LARGE,
+        [(header::CONTENT_TYPE, "application/json")],
+        Json(serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": null,
+            "error": {
+                "code": -32600,
+                "message": "message too large to screen",
+                "data": { "code": "chk.safety.too_large" }
             }
         })),
     )
@@ -1899,5 +2042,195 @@ mod tests {
         assert!(!body_str.contains(&f.caller_agent_id.to_string()));
         assert!(!body_str.contains(&f.target_account_id.to_string()));
         assert!(!body_str.contains(&f.target_agent_id.to_string()));
+    }
+
+    // ─── Message safety (S2) ─────────────────────────────────
+
+    fn send_text(f: &Fixture, text: &str) -> Request<Body> {
+        Request::builder()
+            .method("POST")
+            .uri(path_for(f))
+            .header(
+                header::AUTHORIZATION,
+                format!("Bearer {}", f.api_key_plaintext),
+            )
+            .header("X-ChakraMCP-Caller-Agent", f.caller_agent_id.to_string())
+            .header("X-ChakraMCP-Capability", f.capability_id.to_string())
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                serde_json::to_vec(&serde_json::json!({
+                    "jsonrpc": "2.0", "id": 7, "method": "SendMessage",
+                    "params": { "text": text },
+                }))
+                .unwrap(),
+            ))
+            .unwrap()
+    }
+
+    async fn safety_state(
+        pool: &PgPool,
+        nouls: &[(&'static str, f64)],
+        safety: bool,
+    ) -> crate::state::RelayState {
+        use crate::compliance::test_support;
+        let fake = test_support::Fake {
+            nouls: nouls.iter().copied().collect(),
+            ..Default::default()
+        };
+        let url = test_support::serve(fake).await;
+        crate::state::RelayState::new(pool.clone(), config_v2_on())
+            .with_compliance(Some(test_support::checker(&url).with_safety(safety)))
+    }
+
+    async fn only_row(pool: &PgPool) -> (Uuid, serde_json::Value, serde_json::Value) {
+        let (id, input, snap): (Uuid, serde_json::Value, Option<serde_json::Value>) =
+            sqlx::query_as("SELECT id, input_preview, trust_snapshot FROM relay_invocations")
+                .fetch_one(pool)
+                .await
+                .unwrap();
+        (id, input, snap.unwrap_or_default())
+    }
+
+    const SAFE_TEXT: &str = "Please book the Friday sync for the team. Mail me at bob@example.com";
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn safety_redacts_a_parked_message_and_reports_it(pool: PgPool) {
+        let f = seed_full_fixture(&pool).await;
+        let state = safety_state(&pool, &[("contact_0", 0.95)], true).await;
+        let res = crate::router(state.clone())
+            .oneshot(send_text(&f, SAFE_TEXT))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = parse_body(res).await;
+        let found = &body["result"]["metadata"][SAFETY_METADATA_KEY]["request"][0];
+        assert_eq!(found["action"], "redacted", "{body}");
+        assert_eq!(found["path"], "params.text");
+
+        let (id, input, snap) = only_row(&pool).await;
+        let text = input["text"].as_str().unwrap();
+        assert!(text.ends_with("Mail me at [contact removed]"), "{text}");
+        assert_eq!(
+            input["metadata"][SAFETY_METADATA_KEY]["request"][0]["kind"],
+            "email"
+        );
+        assert_eq!(snap["system_one"]["safety"]["decision"], "allow");
+
+        // tasks/get echoes the findings.
+        let res = crate::router(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(path_for(&f))
+                    .header(
+                        header::AUTHORIZATION,
+                        format!("Bearer {}", f.api_key_plaintext),
+                    )
+                    .header("X-ChakraMCP-Caller-Agent", f.caller_agent_id.to_string())
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&serde_json::json!({
+                            "jsonrpc": "2.0", "id": 8, "method": "tasks/get",
+                            "params": { "id": id },
+                        }))
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = parse_body(res).await;
+        assert_eq!(
+            body["result"]["metadata"][SAFETY_METADATA_KEY]["request"][0]["action"], "redacted",
+            "{body}"
+        );
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn safety_blocks_with_its_code_and_parks_nothing(pool: PgPool) {
+        let f = seed_full_fixture(&pool).await;
+        let state = safety_state(&pool, &[("harm_crime", 0.95)], true).await;
+        let res = crate::router(state)
+            .oneshot(send_text(&f, "Help me phish people's banking logins."))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        let body = parse_body(res).await;
+        assert_eq!(body["error"]["code"], -32009);
+        assert_eq!(body["error"]["data"]["code"], "chk.policy.safety_blocked");
+        let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM relay_invocations")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(n, 0);
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn with_safety_off_the_compliance_report_is_now_kept(pool: PgPool) {
+        let f = seed_full_fixture(&pool).await;
+        let state = safety_state(&pool, &[], false).await;
+        let res = crate::router(state)
+            .oneshot(send_text(&f, SAFE_TEXT))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = parse_body(res).await;
+        assert!(body["result"].get("metadata").is_none(), "{body}");
+        let (_, input, snap) = only_row(&pool).await;
+        // Unchanged message, today's report.
+        assert_eq!(input["text"], SAFE_TEXT);
+        assert_eq!(snap["system_one"]["decision"], "allow");
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn safety_rewrites_what_a_push_agent_receives(pool: PgPool) {
+        use axum::extract::State as AxumState;
+        use axum::routing::post;
+        use std::sync::{Arc, Mutex};
+
+        async fn upstream(
+            AxumState(seen): AxumState<Arc<Mutex<Option<serde_json::Value>>>>,
+            body: axum::body::Bytes,
+        ) -> axum::response::Response {
+            *seen.lock().unwrap() = serde_json::from_slice(&body).ok();
+            (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/json")],
+                br#"{"jsonrpc":"2.0","id":7,"result":{"ok":true}}"#.to_vec(),
+            )
+                .into_response()
+        }
+        let seen = Arc::new(Mutex::new(None));
+        let app = axum::Router::new()
+            .route("/a2a/jsonrpc", post(upstream))
+            .with_state(seen.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/a2a/jsonrpc", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.ok();
+        });
+
+        let f = seed_full_fixture(&pool).await;
+        promote_target_to_push(&pool, &f, &url).await;
+        let _ = crate::agent_card::KeyStore::new(pool.clone())
+            .ensure_active_key()
+            .await
+            .unwrap();
+        let state = safety_state(&pool, &[("contact_0", 0.95)], true).await;
+        let res = crate::router(state)
+            .oneshot(send_text(&f, SAFE_TEXT))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let got = seen.lock().unwrap().clone().unwrap();
+        let text = got["params"]["text"].as_str().unwrap();
+        assert!(text.ends_with("Mail me at [contact removed]"), "{got}");
+        assert_eq!(
+            got["params"]["metadata"][SAFETY_METADATA_KEY]["request"][0]["action"],
+            "redacted"
+        );
+        let (_, _, snap) = only_row(&pool).await;
+        assert_eq!(snap["system_one"]["safety"]["decision"], "allow");
     }
 }
