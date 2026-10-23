@@ -4416,6 +4416,29 @@ mod safety_reply_tests {
         )
         .await;
         assert_eq!(inv["safety"]["reply"][0]["kind"], "phone", "{inv}");
+
+        // And so does MCP's list_invocations.
+        let (_, body) = send(
+            &state,
+            post(
+                &f.caller_token,
+                "/mcp".into(),
+                json!({
+                    "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                    "params": { "name": "list_invocations", "arguments": { "direction": "outbound" } },
+                }),
+            ),
+        )
+        .await;
+        let listed: Value =
+            serde_json::from_str(body["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+        let item = listed
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|i| i["id"] == json!(id))
+            .expect("the invocation is listed");
+        assert_eq!(item["safety"]["reply"][0]["kind"], "phone", "{item}");
     }
 
     #[sqlx::test(migrations = "../migrations")]
