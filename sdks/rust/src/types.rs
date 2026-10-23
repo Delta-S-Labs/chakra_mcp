@@ -154,6 +154,27 @@ pub struct Capability {
     pub public_invoke: bool,
     /// Per-invoker monthly quota. Some(_) only when `public_invoke`.
     pub public_monthly_quota_per_agent: Option<i32>,
+    /// `"autonomous"` or `"human_in_loop"` (a reply is a draft until one
+    /// of the agent's owners confirms it on the web).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub semantics: Option<String>,
+    /// Owner consent: whether requests wait for the owner's approval.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub consent: Option<CapabilityConsent>,
+}
+
+/// A capability's owner consent settings.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilityConsent {
+    pub required: bool,
+    /// User ids who may decide; empty means the account's owners and
+    /// admins. Only shown to those who manage the agent.
+    #[serde(default)]
+    pub approvers: Vec<String>,
+    /// The longest standing consent: `"once"`, `"1h"`, `"1d"`, `"7d"` or `"30d"`.
+    pub max_validity: String,
+    /// How long a held request waits: `"<n>m"`, `"<n>h"` or `"<n>d"`.
+    pub wait: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -260,6 +281,97 @@ pub struct Invocation {
     pub friendship_context: Option<FriendshipContext>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub grant_context: Option<GrantContext>,
+    /// The capability's semantics: `"human_in_loop"` means a reply is a
+    /// draft until one of the agent's owners confirms it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub semantics: Option<String>,
+    /// What the owner approved, for a capability that asks first.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub consent: Option<InvocationConsent>,
+    /// A person confirmed the reply, for a `human_in_loop` capability.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub human_confirmed: Option<HumanConfirmed>,
+}
+
+/// What a caller proposes when a capability asks its owner first. The
+/// owner may approve it, narrow it or deny it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConsentTerms {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub purpose: Option<String>,
+    /// `"once"` (default), `"<n>h"` (1-720) or `"<n>d"` (1-30).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub valid_for: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_requests: Option<u32>,
+}
+
+/// What the owner approved, and the consent token proving it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InvocationConsent {
+    pub consent_request_id: String,
+    /// The standing consent that covered the request, if one did.
+    pub consent_id: Option<String>,
+    pub approved_at: Option<DateTime<Utc>>,
+    pub terms: ConsentTerms,
+    /// An EdDSA JWT (`typ: "chakramcp-consent+jwt"`) signed with the
+    /// relay's key, published at `{relay}/.well-known/jwks.json`; `None`
+    /// until delivered.
+    pub token: Option<String>,
+}
+
+/// A person confirmed the reply (`human_in_loop`), and the token proving it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HumanConfirmed {
+    pub consent_request_id: String,
+    pub confirmed_at: Option<DateTime<Utc>>,
+    pub token: Option<String>,
+}
+
+/// A reply to a `human_in_loop` capability, kept as a draft until one of
+/// the agent's owners confirms it at `approve_url`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DraftedReply {
+    pub consent_request_id: String,
+    pub approve_url: String,
+    pub expires_at: DateTime<Utc>,
+}
+
+/// Something an agent is told out of band of its inbox. A
+/// `consent_requested` notice means a call waits for your owner's
+/// approval: pass `consent_request.approve_url` to them. The other kinds
+/// are `reply_confirmed`, `reply_rejected` and `reply_expired`. Never
+/// includes the call's input.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Notice {
+    pub id: String,
+    pub kind: String,
+    pub created_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub consent_request: Option<NoticeConsentRequest>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NoticeConsentRequest {
+    pub id: String,
+    pub invocation_id: String,
+    pub status: String,
+    pub capability_id: String,
+    pub capability_name: Option<String>,
+    pub requester: Requester,
+    pub terms: ConsentTerms,
+    pub expires_at: DateTime<Utc>,
+    pub approve_url: String,
+}
+
+/// The agent asking, and whether its account is verified.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Requester {
+    pub agent_id: String,
+    pub agent_display_name: Option<String>,
+    pub account_id: String,
+    pub account_display_name: Option<String>,
+    pub verified: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -376,8 +488,9 @@ pub struct CreateGrantRequest {
 
 /// Two flavours — exactly one of `grant_id` (trusted) or
 /// `capability_id` (public-invoke, migration 0022) must be set. The
-/// relay returns 400 if you send both or neither.
-#[derive(Debug, Clone, Serialize)]
+/// relay returns 400 if you send both or neither. Fill the rest with
+/// `..Default::default()`.
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct InvokeRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub grant_id: Option<String>,
@@ -385,6 +498,9 @@ pub struct InvokeRequest {
     pub capability_id: Option<String>,
     pub grantee_agent_id: String,
     pub input: Value,
+    /// For a capability that asks its owner first.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consent_terms: Option<ConsentTerms>,
 }
 
 // ─── Reviews (migration 0023) ──────────────────────────────

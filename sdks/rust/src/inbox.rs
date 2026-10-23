@@ -8,12 +8,34 @@ use tokio_util::sync::CancellationToken;
 
 use crate::client::ChakraMCP;
 use crate::error::Result;
-use crate::types::Invocation;
+use crate::types::{DraftedReply, Invocation, Notice};
 
 #[derive(Debug, Clone)]
 pub enum HandlerResult {
     Succeeded(Value),
     Failed(String),
+}
+
+/// What `respond_*` returns.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub enum RespondOutcome {
+    /// The call finished with this reply.
+    Finished(Box<Invocation>),
+    /// A reply to a `human_in_loop` capability, kept as a draft until one
+    /// of the agent's owners confirms it at `approve_url`.
+    Drafted(DraftedReply),
+}
+
+impl RespondOutcome {
+    fn from_value(v: Value) -> Result<Self> {
+        let drafted = v.get("status").and_then(Value::as_str) == Some("awaiting_confirmation");
+        Ok(if drafted {
+            Self::Drafted(serde_json::from_value(v)?)
+        } else {
+            Self::Finished(Box::new(serde_json::from_value(v)?))
+        })
+    }
 }
 
 pub struct InboxClient<'a> {
@@ -36,26 +58,50 @@ impl<'a> InboxClient<'a> {
         self.parent.relay_get(&path).await
     }
 
+    /// Report success for an in_progress invocation you claimed. For a
+    /// `human_in_loop` capability the reply comes back
+    /// [`RespondOutcome::Drafted`].
     pub async fn respond_succeeded(
         &self,
         invocation_id: &str,
         output: Value,
-    ) -> Result<Invocation> {
-        self.parent
-            .relay_post(
-                &format!("/v1/invocations/{}/result", urlencode(invocation_id)),
-                &json!({ "status": "succeeded", "output": output }),
-            )
-            .await
+    ) -> Result<RespondOutcome> {
+        self.respond(
+            invocation_id,
+            &json!({ "status": "succeeded", "output": output }),
+        )
+        .await
     }
 
-    pub async fn respond_failed(&self, invocation_id: &str, error: &str) -> Result<Invocation> {
-        self.parent
+    /// Report failure; see [`Self::respond_succeeded`].
+    pub async fn respond_failed(&self, invocation_id: &str, error: &str) -> Result<RespondOutcome> {
+        self.respond(
+            invocation_id,
+            &json!({ "status": "failed", "error": error }),
+        )
+        .await
+    }
+
+    async fn respond(&self, invocation_id: &str, body: &Value) -> Result<RespondOutcome> {
+        let v: Value = self
+            .parent
             .relay_post(
                 &format!("/v1/invocations/{}/result", urlencode(invocation_id)),
-                &json!({ "status": "failed", "error": error }),
+                body,
             )
-            .await
+            .await?;
+        RespondOutcome::from_value(v)
+    }
+
+    /// Claim the agent's notices, oldest first; each is delivered once. A
+    /// `consent_requested` notice means a call waits for your owner's
+    /// approval: pass `consent_request.approve_url` on to them.
+    pub async fn notices(&self, agent_id: &str, limit: Option<u32>) -> Result<Vec<Notice>> {
+        let mut path = format!("/v1/inbox/notices?agent_id={}", urlencode(agent_id));
+        if let Some(n) = limit {
+            path.push_str(&format!("&limit={n}"));
+        }
+        self.parent.relay_get(&path).await
     }
 
     /// Long-running pull → handler → respond loop. Returns a builder so

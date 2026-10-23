@@ -354,7 +354,7 @@ fn tools_list_result() -> Value {
                     }
                 })),
             tool("respond",
-                "Post the result for an in_progress invocation you claimed via pull_inbox. For a human-in-the-loop capability (e.g. message_owner) you MUST relay the request to your owner and only respond after they answer, with confirmed_by_human=true.",
+                "Post the result for an in_progress invocation you claimed via pull_inbox. For a human-in-the-loop capability (e.g. message_owner) relay the request to your owner and respond with their answer: the reply is kept as a draft and you get back {status: 'awaiting_confirmation', approve_url}. Give your owner that link; the caller sees the reply only once they confirm it. pull_notices tells you when it was confirmed, rejected or expired.",
                 json!({
                     "type": "object",
                     "required": ["invocation_id", "status"],
@@ -362,8 +362,7 @@ fn tools_list_result() -> Value {
                         "invocation_id": { "type": "string", "format": "uuid" },
                         "status": { "type": "string", "enum": ["succeeded", "failed"] },
                         "output": { "type": "object", "description": "Required if status='succeeded'." },
-                        "error":  { "type": "string", "description": "Required if status='failed'." },
-                        "confirmed_by_human": { "type": "boolean", "description": "Set true ONLY after a human actually approved the response. Required for human_in_loop capabilities." }
+                        "error":  { "type": "string", "description": "Required if status='failed'." }
                     }
                 })),
             tool("propose_friendship",

@@ -240,14 +240,13 @@ describe("ChakraMCP", () => {
   });
 });
 
-// ─── HITL routing (issue #69 PR 4) ───────────────────────
+// ─── HITL routing ────────────────────────────────────────
 //
-// The relay flags some capabilities `semantics: "human_in_loop"` and
-// rejects autonomous worker replies on them with 409
-// `chk.policy.requires_human_confirmation`. `serve()` short-circuits
-// before that ever happens: HITL invocations go to `humanHandler` for a
-// notification side-effect and the SDK does NOT post a result — a
-// human resolves the invocation later via `chakramcp message reply`.
+// On a `human_in_loop` capability a person stands behind each reply: an
+// agent's reply is a draft until one of its owners confirms it on the web.
+// `serve()` sends these invocations to `humanHandler`, which either
+// returns a proposed reply (posted, so it becomes a draft) or nothing
+// (the owner answers in the web app's inbox).
 
 interface ServeRig {
   reported: Array<{ id: string; body: Record<string, unknown> }>;
@@ -259,6 +258,9 @@ function buildServeRig(invocations: Array<Partial<Record<string, unknown>>>): Se
   let pulled = 0;
   const fetchStub = mockFetch(async (req) => {
     const url = new URL(req.url);
+    if (url.pathname === "/v1/inbox/notices") {
+      return new Response(JSON.stringify([]), { status: 200 });
+    }
     if (url.pathname === "/v1/inbox") {
       pulled += 1;
       if (pulled > 1) {
@@ -289,7 +291,20 @@ function buildServeRig(invocations: Array<Partial<Record<string, unknown>>>): Se
     }
     if (req.method === "POST" && url.pathname.endsWith("/result")) {
       const body = JSON.parse(await req.text());
-      reported.push({ id: url.pathname.split("/")[3]!, body });
+      const id = url.pathname.split("/")[3]!;
+      reported.push({ id, body });
+      const hitl = invocations.some((i) => i.id === id && i.semantics === "human_in_loop");
+      if (hitl) {
+        return new Response(
+          JSON.stringify({
+            status: "awaiting_confirmation",
+            consent_request_id: "cr-1",
+            approve_url: "https://chakramcp.com/app/approvals/cr-1",
+            expires_at: "2026-01-02T00:00:00Z",
+          }),
+          { status: 202 },
+        );
+      }
       return new Response(JSON.stringify({}), { status: 200 });
     }
     return new Response("not found", { status: 404 });
@@ -309,6 +324,26 @@ async function runOneBatch(
 }
 
 describe("InboxClient.serve HITL routing", () => {
+  it("posts a reply humanHandler returns, which becomes a draft", async () => {
+    const { reported, fetchStub } = buildServeRig([
+      { id: "inv-hitl", capability_name: "message_owner", semantics: "human_in_loop" },
+    ]);
+    const sdk = new ChakraMCP({ apiKey: "ck_test", relayUrl: "http://relay", fetch: fetchStub });
+    const drafts: string[] = [];
+    await runOneBatch(sdk, {
+      handler: async () => ({ status: "succeeded", output: {} }),
+      humanHandler: async () => ({ status: "succeeded", output: { reply: "Friday works" } }),
+      onDraft: (inv, drafted) => {
+        drafts.push(`${inv.id} ${drafted.approve_url}`);
+      },
+      pollIntervalMs: 5,
+    });
+    expect(reported).toEqual([
+      { id: "inv-hitl", body: { status: "succeeded", output: { reply: "Friday works" } } },
+    ]);
+    expect(drafts).toEqual(["inv-hitl https://chakramcp.com/app/approvals/cr-1"]);
+  });
+
   it("routes human_in_loop to humanHandler and does NOT post a result", async () => {
     const { reported, fetchStub } = buildServeRig([
       {
@@ -371,7 +406,7 @@ describe("InboxClient.serve HITL routing", () => {
     const warnMsg = String(warnSpy.mock.calls[0]![0]);
     expect(warnMsg).toContain("inv-hitl-warn");
     expect(warnMsg).toContain("human_in_loop");
-    expect(warnMsg).toContain("chakramcp message reply");
+    expect(warnMsg).toContain("web app's inbox");
     warnSpy.mockRestore();
   });
 

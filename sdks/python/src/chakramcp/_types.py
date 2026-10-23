@@ -14,7 +14,14 @@ FriendshipStatus = Literal[
 ]
 GrantStatus = Literal["active", "revoked", "expired"]
 InvocationStatus = Literal[
-    "pending", "in_progress", "succeeded", "failed", "rejected", "timeout"
+    "pending",
+    "in_progress",
+    "succeeded",
+    "failed",
+    "rejected",
+    "timeout",
+    # Held until the target agent's owner approves it (owner consent).
+    "awaiting_consent",
 ]
 ResultStatus = Literal["succeeded", "failed"]
 
@@ -65,7 +72,25 @@ class Agent(TypedDict):
     review_count: int
 
 
-class Capability(TypedDict):
+class CapabilityConsent(TypedDict, total=False):
+    """Owner consent settings: whether requests wait for the owner's
+    approval. ``approvers`` only for those who manage the agent."""
+
+    required: bool
+    approvers: list[str]
+    #: ``"once"``, ``"1h"``, ``"1d"``, ``"7d"`` or ``"30d"``.
+    max_validity: str
+    #: How long a held request waits: ``"<n>m"``, ``"<n>h"``, ``"<n>d"``.
+    wait: str
+
+
+class _CapabilityExtras(TypedDict, total=False):
+    # `"autonomous"` or `"human_in_loop"`.
+    semantics: str
+    consent: CapabilityConsent
+
+
+class Capability(_CapabilityExtras):
     id: str
     agent_id: str
     name: str
@@ -82,6 +107,58 @@ class Capability(TypedDict):
     # Per-invoker monthly cap (calendar month). Present only when
     # `public_invoke=True`.
     public_monthly_quota_per_agent: int | None
+
+
+class ConsentTerms(TypedDict, total=False):
+    """What a caller proposes when a capability asks its owner first. The
+    owner may approve it, narrow it or deny it."""
+
+    purpose: str
+    #: ``"once"`` (default), ``"<n>h"`` (1-720) or ``"<n>d"`` (1-30).
+    valid_for: str
+    max_requests: int
+
+
+class InvocationConsent(TypedDict):
+    """What the owner approved, and the consent token proving it."""
+
+    consent_request_id: str
+    consent_id: str | None
+    approved_at: str | None
+    terms: ConsentTerms
+    #: Check with :func:`verify_consent_token`. None until delivered.
+    token: str | None
+
+
+class HumanConfirmed(TypedDict):
+    """A person confirmed the reply (``human_in_loop``)."""
+
+    consent_request_id: str
+    confirmed_at: str | None
+    token: str | None
+
+
+class DraftedReply(TypedDict):
+    """A reply to a ``human_in_loop`` capability, kept as a draft until one
+    of the agent's owners confirms it on the web (``approve_url``)."""
+
+    status: Literal["awaiting_confirmation"]
+    consent_request_id: str
+    approve_url: str
+    expires_at: str
+
+
+class Notice(TypedDict, total=False):
+    """Something an agent is told out of band of its inbox. A
+    ``consent_requested`` notice means a call waits for your owner's
+    approval: pass ``notice["consent_request"]["approve_url"]`` on. Others:
+    ``reply_confirmed``, ``reply_rejected``, ``reply_expired``. Never
+    includes the call's input."""
+
+    id: str
+    kind: str
+    created_at: str
+    consent_request: dict[str, Any]
 
 
 class AgentSummary(TypedDict):
@@ -126,10 +203,13 @@ class Grant(TypedDict):
     i_received: bool
 
 
-class InvokeResponse(TypedDict):
+class InvokeResponse(TypedDict, total=False):
     invocation_id: str
     status: InvocationStatus
     error: str | None
+    # Set when the capability asks its owner first: held
+    # (``awaiting_consent``) or covered by a standing consent (``pending``).
+    consent_request_id: str
 
 
 class FriendshipContext(TypedDict):
@@ -198,9 +278,9 @@ class Invocation(TypedDict, total=False):
     # the contexts directly — it removes the "null means public"
     # footgun for handlers. Absent on relays predating PR #145.
     tier: str
-    # Capability semantics — `"autonomous"` or `"human_in_loop"`. Absent
-    # on relays predating PR #80; absence is treated as autonomous by
-    # `inbox.serve` for forward compatibility.
+    # Capability semantics — `"autonomous"` or `"human_in_loop"` (a reply
+    # is a draft until one of the agent's owners confirms it on the web).
+    # Absence is treated as autonomous by `inbox.serve`.
     semantics: str | None
     # Set on inbox.pull responses (verified live by the relay) AND on
     # audit-log endpoints for rows queued on/after the trust-snapshot
@@ -211,6 +291,10 @@ class Invocation(TypedDict, total=False):
     # and on legacy pre-snapshot rows.
     friendship_context: FriendshipContext
     grant_context: GrantContext
+    # Owner consent: what the owner approved (a capability that asks
+    # first), and that a person confirmed the reply (``human_in_loop``).
+    consent: InvocationConsent
+    human_confirmed: HumanConfirmed
 
 
 # ─── Request bodies ──────────────────────────────────────
@@ -243,6 +327,10 @@ class CreateCapabilityRequest(TypedDict, total=False):
     # "network" and `public_monthly_quota_per_agent` is required.
     public_invoke: bool
     public_monthly_quota_per_agent: int
+    # `"human_in_loop"`: a reply is a draft until an owner confirms it.
+    semantics: str
+    # Owner consent: {required, approvers, max_validity, wait}.
+    consent: dict[str, Any]
 
 
 class UpdateCapabilityRequest(TypedDict, total=False):
@@ -252,6 +340,8 @@ class UpdateCapabilityRequest(TypedDict, total=False):
     visibility: Visibility
     public_invoke: bool
     public_monthly_quota_per_agent: int
+    semantics: str
+    consent: dict[str, Any]
 
 
 class ProposeFriendshipRequest(TypedDict, total=False):

@@ -43,6 +43,18 @@ const (
 	InvocationFailed     InvocationStatus = "failed"
 	InvocationRejected   InvocationStatus = "rejected"
 	InvocationTimeout    InvocationStatus = "timeout"
+	// InvocationAwaitingConsent: held until the target agent's owner
+	// approves it (owner consent).
+	InvocationAwaitingConsent InvocationStatus = "awaiting_consent"
+)
+
+// Capability semantics.
+const (
+	// SemanticsAutonomous: the agent's replies go out as they are.
+	SemanticsAutonomous = "autonomous"
+	// SemanticsHumanInLoop: a reply is a draft until one of the agent's
+	// owners confirms it on the web (or answers there themselves).
+	SemanticsHumanInLoop = "human_in_loop"
 )
 
 // IsTerminal reports whether the invocation has reached a final state.
@@ -92,19 +104,19 @@ type MeResponse struct {
 }
 
 type Agent struct {
-	ID                  string     `json:"id"`
-	AccountID           string     `json:"account_id"`
-	AccountSlug         string     `json:"account_slug"`
-	AccountDisplayName  string     `json:"account_display_name"`
-	Slug                string     `json:"slug"`
-	DisplayName         string     `json:"display_name"`
-	Description         string     `json:"description"`
-	Visibility          Visibility `json:"visibility"`
-	EndpointURL         *string    `json:"endpoint_url"`
-	CreatedAt           time.Time  `json:"created_at"`
-	UpdatedAt           time.Time  `json:"updated_at"`
-	IsMine              bool       `json:"is_mine"`
-	CapabilityCount     int64      `json:"capability_count"`
+	ID                 string     `json:"id"`
+	AccountID          string     `json:"account_id"`
+	AccountSlug        string     `json:"account_slug"`
+	AccountDisplayName string     `json:"account_display_name"`
+	Slug               string     `json:"slug"`
+	DisplayName        string     `json:"display_name"`
+	Description        string     `json:"description"`
+	Visibility         Visibility `json:"visibility"`
+	EndpointURL        *string    `json:"endpoint_url"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
+	IsMine             bool       `json:"is_mine"`
+	CapabilityCount    int64      `json:"capability_count"`
 	// AvgRating is the mean of un-hidden review ratings.
 	// Nil when ReviewCount == 0. Added in migration 0023.
 	AvgRating   *float64 `json:"avg_rating"`
@@ -112,15 +124,15 @@ type Agent struct {
 }
 
 type Capability struct {
-	ID            string                 `json:"id"`
-	AgentID       string                 `json:"agent_id"`
-	Name          string                 `json:"name"`
-	Description   string                 `json:"description"`
-	InputSchema   map[string]interface{} `json:"input_schema"`
-	OutputSchema  map[string]interface{} `json:"output_schema"`
-	Visibility    Visibility             `json:"visibility"`
-	CreatedAt     time.Time              `json:"created_at"`
-	UpdatedAt     time.Time              `json:"updated_at"`
+	ID           string                 `json:"id"`
+	AgentID      string                 `json:"agent_id"`
+	Name         string                 `json:"name"`
+	Description  string                 `json:"description"`
+	InputSchema  map[string]interface{} `json:"input_schema"`
+	OutputSchema map[string]interface{} `json:"output_schema"`
+	Visibility   Visibility             `json:"visibility"`
+	CreatedAt    time.Time              `json:"created_at"`
+	UpdatedAt    time.Time              `json:"updated_at"`
 	// PublicInvoke = true when the owner has opted this capability
 	// into being callable without a friendship/grant (migration 0022).
 	// When true, PublicMonthlyQuotaPerAgent carries the per-invoker
@@ -129,6 +141,111 @@ type Capability struct {
 	// PublicMonthlyQuotaPerAgent — per-invoker monthly quota (calendar
 	// month). Non-nil only when PublicInvoke is true.
 	PublicMonthlyQuotaPerAgent *int32 `json:"public_monthly_quota_per_agent"`
+	// Semantics is SemanticsAutonomous or SemanticsHumanInLoop.
+	Semantics string `json:"semantics,omitempty"`
+	// Consent: whether requests wait for the owner's approval.
+	Consent *CapabilityConsent `json:"consent,omitempty"`
+}
+
+// CapabilityConsent is a capability's owner consent settings.
+type CapabilityConsent struct {
+	Required bool `json:"required"`
+	// Approvers are user ids who may decide; empty means the account's
+	// owners and admins. Only shown to those who manage the agent.
+	Approvers []string `json:"approvers,omitempty"`
+	// MaxValidity is the longest standing consent: "once", "1h", "1d",
+	// "7d" or "30d".
+	MaxValidity string `json:"max_validity"`
+	// Wait is how long a held request waits: "<n>m", "<n>h" or "<n>d".
+	Wait string `json:"wait"`
+}
+
+// ConsentSettings is `consent` on create and update; nil fields keep
+// their value.
+type ConsentSettings struct {
+	Required *bool `json:"required,omitempty"`
+	// Approvers are user ids or emails of members of the agent's account.
+	Approvers   []string `json:"approvers,omitempty"`
+	MaxValidity string   `json:"max_validity,omitempty"`
+	// Wait is "<n>m", "<n>h" or "<n>d", from 5m to 7d (default 24h).
+	Wait string `json:"wait,omitempty"`
+}
+
+// ConsentTerms is what a caller proposes when a capability asks its
+// owner first. The owner may approve it, narrow it or deny it.
+type ConsentTerms struct {
+	Purpose string `json:"purpose,omitempty"`
+	// ValidFor is "once" (default), "<n>h" (1-720) or "<n>d" (1-30).
+	ValidFor    string `json:"valid_for,omitempty"`
+	MaxRequests int    `json:"max_requests,omitempty"`
+}
+
+// InvocationConsent is what the owner approved, and the consent token
+// proving it.
+type InvocationConsent struct {
+	ConsentRequestID string       `json:"consent_request_id"`
+	ConsentID        *string      `json:"consent_id"`
+	ApprovedAt       *time.Time   `json:"approved_at"`
+	Terms            ConsentTerms `json:"terms"`
+	// Token is an EdDSA JWT (typ "chakramcp-consent+jwt") signed with the
+	// relay's key; nil until delivered.
+	Token *string `json:"token"`
+}
+
+// HumanConfirmed says a person confirmed the reply (human_in_loop).
+type HumanConfirmed struct {
+	ConsentRequestID string     `json:"consent_request_id"`
+	ConfirmedAt      *time.Time `json:"confirmed_at"`
+	Token            *string    `json:"token"`
+}
+
+// DraftedReply is a reply to a human_in_loop capability, kept as a
+// draft until one of the agent's owners confirms it at ApproveURL.
+type DraftedReply struct {
+	Status           string    `json:"status"` // "awaiting_confirmation"
+	ConsentRequestID string    `json:"consent_request_id"`
+	ApproveURL       string    `json:"approve_url"`
+	ExpiresAt        time.Time `json:"expires_at"`
+}
+
+// Notice kinds.
+const (
+	NoticeConsentRequested = "consent_requested"
+	NoticeReplyConfirmed   = "reply_confirmed"
+	NoticeReplyRejected    = "reply_rejected"
+	NoticeReplyExpired     = "reply_expired"
+)
+
+// Notice is something an agent is told out of band of its inbox. A
+// NoticeConsentRequested notice means a call waits for your owner's
+// approval: pass ConsentRequest.ApproveURL to them. Never includes the
+// call's input.
+type Notice struct {
+	ID             string                `json:"id"`
+	Kind           string                `json:"kind"`
+	CreatedAt      time.Time             `json:"created_at"`
+	ConsentRequest *NoticeConsentRequest `json:"consent_request,omitempty"`
+}
+
+type NoticeConsentRequest struct {
+	ID             string       `json:"id"`
+	InvocationID   string       `json:"invocation_id"`
+	Status         string       `json:"status"`
+	CapabilityID   string       `json:"capability_id"`
+	CapabilityName *string      `json:"capability_name"`
+	Requester      Requester    `json:"requester"`
+	Terms          ConsentTerms `json:"terms"`
+	ExpiresAt      time.Time    `json:"expires_at"`
+	ApproveURL     string       `json:"approve_url"`
+}
+
+// Requester is the agent asking, and whether its account is verified.
+type Requester struct {
+	AgentID            string  `json:"agent_id"`
+	AgentDisplayName   *string `json:"agent_display_name"`
+	AccountID          string  `json:"account_id"`
+	AccountDisplayName *string `json:"account_display_name"`
+	Verified           bool    `json:"verified"`
 }
 
 type AgentSummary struct {
@@ -176,6 +293,10 @@ type InvokeResponse struct {
 	InvocationID string           `json:"invocation_id"`
 	Status       InvocationStatus `json:"status"`
 	Error        *string          `json:"error"`
+	// ConsentRequestID is set when the capability asks its owner first:
+	// the request is held (InvocationAwaitingConsent) or a standing
+	// consent covered it (InvocationPending).
+	ConsentRequestID *string `json:"consent_request_id,omitempty"`
 }
 
 type Invocation struct {
@@ -220,6 +341,15 @@ type Invocation struct {
 	// legacy pre-snapshot rows.
 	FriendshipContext *FriendshipContext `json:"friendship_context,omitempty"`
 	GrantContext      *GrantContext      `json:"grant_context,omitempty"`
+	// Semantics of the capability: SemanticsHumanInLoop routes the
+	// invocation to ServeOptions.HumanHandler.
+	Semantics string `json:"semantics,omitempty"`
+	// Consent is what the owner approved, for a capability that asks
+	// first.
+	Consent *InvocationConsent `json:"consent,omitempty"`
+	// HumanConfirmed says a person confirmed the reply, for a
+	// human_in_loop capability.
+	HumanConfirmed *HumanConfirmed `json:"human_confirmed,omitempty"`
 }
 
 type FriendshipContext struct {
@@ -276,6 +406,12 @@ type CreateCapabilityRequest struct {
 	// doesn't accidentally set it false on every PATCH.
 	PublicInvoke               *bool  `json:"public_invoke,omitempty"`
 	PublicMonthlyQuotaPerAgent *int32 `json:"public_monthly_quota_per_agent,omitempty"`
+	// Semantics: SemanticsHumanInLoop makes a reply a draft until an
+	// owner confirms it. Empty means autonomous.
+	Semantics string `json:"semantics,omitempty"`
+	// Consent: ask the owner before requests reach the agent (pull-mode
+	// agents only).
+	Consent *ConsentSettings `json:"consent,omitempty"`
 }
 
 type UpdateCapabilityRequest struct {
@@ -285,6 +421,8 @@ type UpdateCapabilityRequest struct {
 	Visibility                 Visibility             `json:"visibility,omitempty"`
 	PublicInvoke               *bool                  `json:"public_invoke,omitempty"`
 	PublicMonthlyQuotaPerAgent *int32                 `json:"public_monthly_quota_per_agent,omitempty"`
+	Semantics                  string                 `json:"semantics,omitempty"`
+	Consent                    *ConsentSettings       `json:"consent,omitempty"`
 }
 
 type ProposeFriendshipRequest struct {
@@ -312,6 +450,8 @@ type InvokeRequest struct {
 	CapabilityID   string          `json:"capability_id,omitempty"`
 	GranteeAgentID string          `json:"grantee_agent_id"`
 	Input          json.RawMessage `json:"input"`
+	// ConsentTerms, for a capability that asks its owner first.
+	ConsentTerms *ConsentTerms `json:"consent_terms,omitempty"`
 }
 
 // HandlerResult is what an inbox.serve handler returns.
@@ -400,16 +540,16 @@ type ReviewListQuery struct {
 }
 
 type WriteReviewRequest struct {
-	ReviewerAgentID    string   `json:"reviewer_agent_id"`
-	Rating             int16    `json:"rating"`
-	Comment            *string  `json:"comment,omitempty"`
+	ReviewerAgentID     string   `json:"reviewer_agent_id"`
+	Rating              int16    `json:"rating"`
+	Comment             *string  `json:"comment,omitempty"`
 	TaggedCapabilityIDs []string `json:"tagged_capability_ids"`
 }
 
 type EligibleReviewer struct {
-	ReviewerAgentID        string   `json:"reviewer_agent_id"`
-	ReviewerDisplayName    string   `json:"reviewer_display_name"`
-	TagableCapabilityIDs   []string `json:"tagable_capability_ids"`
+	ReviewerAgentID      string   `json:"reviewer_agent_id"`
+	ReviewerDisplayName  string   `json:"reviewer_display_name"`
+	TagableCapabilityIDs []string `json:"tagable_capability_ids"`
 }
 
 type EligibilityResponse struct {

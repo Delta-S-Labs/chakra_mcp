@@ -11,6 +11,12 @@ from typing import Any
 import httpx
 
 from ._errors import raise_for_response
+from ._sync import (
+    _default_on_draft,
+    _default_on_notice,
+    _warn_no_human_handler,
+    is_drafted_reply,
+)
 from ._types import (
     TERMINAL_STATUSES,
     Agent,
@@ -18,6 +24,7 @@ from ._types import (
     CreateAgentRequest,
     CreateCapabilityRequest,
     CreateGrantRequest,
+    DraftedReply,
     EligibilityResponse,
     Friendship,
     FriendshipStatus,
@@ -28,6 +35,7 @@ from ._types import (
     InvocationStatus,
     InvokeResponse,
     MeResponse,
+    Notice,
     ProposeFriendshipRequest,
     Review,
     ReviewListResponse,
@@ -329,17 +337,30 @@ class AsyncInboxClient:
 
     async def respond(
         self, invocation_id: str, result: HandlerResult | dict[str, Any]
-    ) -> Invocation:
+    ) -> Invocation | DraftedReply:
+        """See :meth:`chakramcp.ChakraMCP.inbox.respond`: a ``human_in_loop``
+        reply comes back as a :class:`DraftedReply`."""
         return await self._c._relay(
             "POST", f"/v1/invocations/{invocation_id}/result", dict(result)
         )
+
+    async def notices(self, agent_id: str, *, limit: int | None = None) -> list[Notice]:
+        """Claim the agent's notices, oldest first; each is delivered once."""
+        suffix = f"&limit={limit}" if limit else ""
+        return await self._c._relay("GET", f"/v1/inbox/notices?agent_id={agent_id}{suffix}")
 
     async def serve(
         self,
         agent_id: str,
         handler: Callable[[Invocation], Awaitable[HandlerResult | dict[str, Any]]],
         *,
-        human_handler: Callable[[Invocation], Awaitable[None]] | None = None,
+        human_handler: Callable[
+            [Invocation], Awaitable[HandlerResult | dict[str, Any] | None]
+        ]
+        | None = None,
+        on_draft: Callable[[Invocation, DraftedReply], None] | None = None,
+        on_notice: Callable[[Notice], None] | None = None,
+        notice_interval_s: float = 15.0,
         poll_interval_s: float = 2.0,
         batch_size: int = 25,
         on_error: Callable[[BaseException, Invocation | None], None] | None = None,
@@ -348,24 +369,13 @@ class AsyncInboxClient:
         """Long-running pull → dispatch → respond loop.
 
         ``handler`` is the autonomous path; ``human_handler`` is the
-        human-in-the-loop path. When an invocation arrives with
-        ``semantics == "human_in_loop"``, the SDK awaits
-        ``human_handler(inv)`` and then **moves on without posting a
-        result** — the invocation row stays ``in_progress`` until a
-        human resolves it out-of-band via
-        ``chakramcp message reply <id> "<text>"``. That terminal path
-        sets ``confirmed_by_human: true`` on the relay's result
-        endpoint, which satisfies the HITL gate.
-
-        ``human_handler`` MUST NOT call ``respond()`` itself. If you
-        forget to wire ``human_handler`` while pulling HITL traffic,
-        the SDK emits a stderr warning per invocation and leaves the
-        row in flight (still resolvable via the CLI reply path).
-
-        Capabilities without ``semantics`` set (or with
-        ``"autonomous"``) take the existing path. The field is absent
-        on relays older than PR #80 — that's treated as autonomous so
-        old workers keep working against new relays and vice versa.
+        human-in-the-loop path (``semantics == "human_in_loop"``), as in
+        :meth:`chakramcp.ChakraMCP.inbox.serve`: return a result to
+        propose a reply, which the relay keeps as a draft until one of
+        the agent's owners confirms it (``on_draft`` gets the link), or
+        ``None`` to leave the reply to a person in the web app's inbox.
+        Notices are claimed every ``notice_interval_s`` and passed to
+        ``on_notice``.
 
         Pass ``stop_event`` (an :class:`asyncio.Event`) to stop the
         loop cleanly between batches. Handler exceptions are caught
@@ -375,7 +385,12 @@ class AsyncInboxClient:
         async def _stopped() -> bool:
             return bool(stop_event and stop_event.is_set())
 
+        loop = asyncio.get_running_loop()
+        last_notices = 0.0
         while not await _stopped():
+            if notice_interval_s > 0 and loop.time() - last_notices >= notice_interval_s:
+                last_notices = loop.time()
+                await self._dispatch_notices(agent_id, on_notice, on_error)
             try:
                 batch = await self.pull(agent_id, limit=batch_size)
             except BaseException as err:
@@ -388,7 +403,7 @@ class AsyncInboxClient:
                 continue
             await asyncio.gather(
                 *(
-                    self._handle_one(inv, handler, human_handler, on_error)
+                    self._handle_one(inv, handler, human_handler, on_draft, on_error)
                     for inv in batch
                 )
             )
@@ -397,33 +412,28 @@ class AsyncInboxClient:
         self,
         inv: Invocation,
         handler: Callable[[Invocation], Awaitable[HandlerResult | dict[str, Any]]],
-        human_handler: Callable[[Invocation], Awaitable[None]] | None,
+        human_handler: Callable[
+            [Invocation], Awaitable[HandlerResult | dict[str, Any] | None]
+        ]
+        | None,
+        on_draft: Callable[[Invocation, DraftedReply], None] | None,
         on_error: Callable[[BaseException, Invocation | None], None] | None,
     ) -> None:
-        # HITL routing — defer to human_handler and skip respond().
-        # The row stays in_progress; a human resolves it later via
-        # the CLI reply path which sets `confirmed_by_human: true`
-        # on the result.
         if inv.get("semantics") == "human_in_loop":
-            if human_handler is not None:
-                try:
-                    await human_handler(inv)
-                except BaseException as err:
-                    if on_error:
-                        on_error(err, inv)
-            else:
-                import sys
-
-                print(
-                    f"[chakramcp] warning: pulled human_in_loop "
-                    f"invocation {inv['id']} "
-                    f"({inv.get('capability_name', '?')}) but no "
-                    f"human_handler is set. Leaving the row "
-                    f"in_progress; the human can reply via "
-                    f"`chakramcp message reply {inv['id']} "
-                    f'"<text>"`.',
-                    file=sys.stderr,
-                )
+            if human_handler is None:
+                _warn_no_human_handler(inv)
+                return
+            try:
+                proposed = await human_handler(inv)
+                if proposed is None:
+                    return
+                posted = await self.respond(inv["id"], proposed)
+                if is_drafted_reply(posted):
+                    (on_draft or _default_on_draft)(inv, posted)
+            except Exception as err:
+                # Don't post `failed`: a person still has to answer.
+                if on_error:
+                    on_error(err, inv)
             return
         try:
             result = await handler(inv)
@@ -436,6 +446,25 @@ class AsyncInboxClient:
             except BaseException as inner:
                 if on_error:
                     on_error(inner, inv)
+
+    async def _dispatch_notices(
+        self,
+        agent_id: str,
+        on_notice: Callable[[Notice], None] | None,
+        on_error: Callable[[BaseException, Invocation | None], None] | None,
+    ) -> None:
+        try:
+            notices = await self.notices(agent_id)
+        except Exception as err:
+            if on_error:
+                on_error(err, None)
+            return
+        for notice in notices:
+            try:
+                (on_notice or _default_on_notice)(notice)
+            except Exception as err:
+                if on_error:
+                    on_error(err, None)
 
 
 class AsyncReviewsClient:

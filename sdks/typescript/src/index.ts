@@ -27,6 +27,7 @@
 
 export * from "./types.js";
 export * from "./templates.js";
+export * from "./consent.js";
 import { getTemplate } from "./templates.js";
 import {
   Agent,
@@ -39,6 +40,7 @@ import {
   CreateAgentRequest,
   CreateCapabilityRequest,
   CreateGrantRequest,
+  DraftedReply,
   EligibilityResponse,
   FriendshipCounterRequest,
   FriendshipResponseRequest,
@@ -51,6 +53,7 @@ import {
   Invocation,
   InvocationStatus,
   MeResponse,
+  Notice,
   ProposeFriendshipRequest,
   Review,
   ReviewListQuery,
@@ -424,23 +427,31 @@ export interface ServeOptions {
    */
   handler: (inv: Invocation) => Promise<HandlerResult>;
   /**
-   * Optional handler for human-in-the-loop capabilities (issue #69).
+   * Handler for human-in-the-loop capabilities (`inv.semantics ===
+   * "human_in_loop"`): a person stands behind each reply.
    *
-   * Called when `inv.semantics === "human_in_loop"`. The worker should
-   * use it to notify the human owner (e.g. push a Slack DM, ring a
-   * pager, write to a queue) — it MUST NOT post a result. The human
-   * replies out-of-band via `chakramcp message reply <id> "<text>"`,
-   * which posts the wire result with `confirmed_by_human: true` and
-   * satisfies the relay's HITL gate.
+   * - Return a `HandlerResult` to propose a reply (for example, one your
+   *   model drafted). The relay keeps it as a draft until one of the
+   *   agent's owners confirms it on the web; `onDraft` gets the link.
+   * - Return nothing to leave the reply to a person, who answers in the
+   *   web app's inbox (confirmed at once). Use this to notify them.
    *
-   * If absent, the SDK emits a `console.warn` and leaves the invocation
-   * in `in_progress` for a human to handle. Either way the SDK does NOT
-   * call `respond()` for HITL invocations — calling it from an
-   * autonomous worker without `confirmed_by_human` would be rejected
-   * with 409 `chk.policy.requires_human_confirmation`, and setting that
-   * flag from a non-human path defeats the gate.
+   * If absent, the SDK warns and leaves the invocation `in_progress`.
    */
-  humanHandler?: (inv: Invocation) => Promise<void>;
+  humanHandler?: (inv: Invocation) => Promise<HandlerResult | void>;
+  /**
+   * Called when a reply returned by `humanHandler` was stored as a draft.
+   * Default: log the confirmation link.
+   */
+  onDraft?: (inv: Invocation, drafted: DraftedReply) => void | Promise<void>;
+  /**
+   * Called for each notice: `consent_requested` (a call waits for your
+   * owner's approval; pass on `consent_request.approve_url`), and what
+   * became of drafted replies. Default: log consent links.
+   */
+  onNotice?: (notice: Notice) => void | Promise<void>;
+  /** How often to pull notices. Default 15000ms; 0 turns it off. */
+  noticeIntervalMs?: number;
   /** How often to poll when the inbox is empty. Default 2000ms. */
   pollIntervalMs?: number;
   /** Max rows to claim per poll. Default 25. */
@@ -449,6 +460,28 @@ export interface ServeOptions {
   signal?: AbortSignal;
   /** Hook for observability. */
   onError?: (err: unknown, invocation?: Invocation) => void;
+}
+
+function defaultOnNotice(notice: Notice): void {
+  if (notice.kind === "consent_requested" && notice.consent_request) {
+    const r = notice.consent_request;
+    console.log(
+      `[@chakramcp/sdk] ${r.requester.agent_display_name ?? "An agent"} asks to use ` +
+        `${r.capability_name ?? "a capability"}; it waits for your owner's approval: ${r.approve_url}`,
+    );
+  }
+}
+
+function defaultOnDraft(inv: Invocation, drafted: DraftedReply): void {
+  console.log(
+    `[@chakramcp/sdk] reply to ${inv.id} saved as a draft; ` +
+      `your owner confirms it before the caller sees it: ${drafted.approve_url}`,
+  );
+}
+
+/** True when `respond()` stored a draft rather than finishing the call. */
+export function isDraftedReply(r: Invocation | DraftedReply): r is DraftedReply {
+  return r.status === "awaiting_confirmation";
 }
 
 export class InboxClient {
@@ -461,18 +494,34 @@ export class InboxClient {
     return this.chakra.relayRequest("GET", `/v1/inbox?${qs.toString()}`);
   }
 
-  /** Report the result for an in_progress invocation you previously claimed. */
+  /**
+   * Report the result for an in_progress invocation you previously
+   * claimed. For a `human_in_loop` capability the relay keeps it as a
+   * draft until one of the agent's owners confirms it: you get a
+   * `DraftedReply` (check with `isDraftedReply`) with the link.
+   */
   async respond(
     invocationId: string,
     body:
       | { status: "succeeded"; output: unknown }
       | { status: "failed"; error?: string },
-  ): Promise<Invocation> {
+  ): Promise<Invocation | DraftedReply> {
     return this.chakra.relayRequest(
       "POST",
       `/v1/invocations/${encodeURIComponent(invocationId)}/result`,
       body,
     );
+  }
+
+  /**
+   * Claim the agent's notices, oldest first; each is delivered once. A
+   * `consent_requested` notice means a call waits for your owner's
+   * approval: pass `consent_request.approve_url` on to them.
+   */
+  async notices(agentId: string, opts: { limit?: number } = {}): Promise<Notice[]> {
+    const qs = new URLSearchParams({ agent_id: agentId });
+    if (opts.limit) qs.set("limit", String(opts.limit));
+    return this.chakra.relayRequest("GET", `/v1/inbox/notices?${qs.toString()}`);
   }
 
   /**
@@ -516,7 +565,13 @@ export class InboxClient {
 
     const interval = opts.pollIntervalMs ?? 2000;
     const limit = opts.batchSize ?? 25;
+    const noticeInterval = opts.noticeIntervalMs ?? 15_000;
+    let lastNotices = 0;
     while (!opts.signal?.aborted) {
+      if (noticeInterval > 0 && Date.now() - lastNotices >= noticeInterval) {
+        lastNotices = Date.now();
+        await this.dispatchNotices(agentId, opts);
+      }
       let batch: Invocation[];
       try {
         batch = await this.pull(agentId, { limit });
@@ -534,26 +589,43 @@ export class InboxClient {
     }
   }
 
+  private async dispatchNotices(agentId: string, opts: ServeOptions): Promise<void> {
+    let notices: Notice[];
+    try {
+      notices = await this.notices(agentId);
+    } catch (err) {
+      opts.onError?.(err);
+      return;
+    }
+    for (const notice of notices) {
+      try {
+        await (opts.onNotice ?? defaultOnNotice)(notice);
+      } catch (err) {
+        opts.onError?.(err);
+      }
+    }
+  }
+
   private async dispatch(inv: Invocation, opts: ServeOptions): Promise<void> {
     if (inv.semantics === "human_in_loop") {
-      if (opts.humanHandler) {
-        try {
-          await opts.humanHandler(inv);
-        } catch (err) {
-          // Surface the notification failure but DON'T post a wire
-          // result — a human still has to resolve the invocation,
-          // and reporting `failed` here would close it out from
-          // under them.
-          opts.onError?.(err, inv);
-        }
-      } else {
+      if (!opts.humanHandler) {
         console.warn(
           `[@chakramcp/sdk] invocation ${inv.id} on capability ` +
             `"${inv.capability_name}" is human_in_loop, but no ` +
             `humanHandler was provided to serve(). Leaving it ` +
-            `in_progress for a human to resolve via ` +
-            `\`chakramcp message reply ${inv.id} "<text>"\`.`,
+            `in_progress for your owner to answer in the web app's inbox.`,
         );
+        return;
+      }
+      try {
+        const proposed = await opts.humanHandler(inv);
+        if (!proposed) return;
+        const posted = await this.respond(inv.id, proposed);
+        if (isDraftedReply(posted)) await (opts.onDraft ?? defaultOnDraft)(inv, posted);
+      } catch (err) {
+        // Don't post `failed`: a person still has to answer, and
+        // closing the call here would take that away from them.
+        opts.onError?.(err, inv);
       }
       return;
     }

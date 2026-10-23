@@ -7,7 +7,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use chakramcp::{ChakraMCP, Error, HandlerResult, InvocationStatus, InvokeRequest, PollOpts};
+use chakramcp::{
+    ChakraMCP, Error, HandlerResult, InvocationStatus, InvokeRequest, PollOpts, RespondOutcome,
+};
 use httpmock::prelude::*;
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
@@ -131,6 +133,7 @@ async fn invoke_and_wait_polls_until_terminal() {
                 capability_id: None,
                 grantee_agent_id: "a2".into(),
                 input: json!({"hello": "world"}),
+                ..Default::default()
             },
             PollOpts {
                 interval: Some(Duration::from_millis(5)),
@@ -144,6 +147,84 @@ async fn invoke_and_wait_polls_until_terminal() {
         final_inv.output_preview.as_ref().unwrap(),
         &json!({"echoed": "world"})
     );
+}
+
+#[tokio::test]
+async fn respond_tells_a_draft_from_a_finished_call_and_notices_decode() {
+    let server = MockServer::start_async().await;
+    server
+        .mock_async(|when, then| {
+            when.method(POST).path("/v1/invocations/hitl/result");
+            then.status(202).json_body(json!({
+                "status": "awaiting_confirmation",
+                "consent_request_id": "cr-1",
+                "approve_url": "https://chakramcp.com/app/approvals/cr-1",
+                "expires_at": "2026-10-24T00:00:00Z",
+            }));
+        })
+        .await;
+    server
+        .mock_async(|when, then| {
+            when.method(POST).path("/v1/invocations/auto/result");
+            then.status(200).json_body(json!({
+                "id": "auto", "grant_id": null, "granter_agent_id": null,
+                "granter_display_name": null, "grantee_agent_id": null,
+                "grantee_display_name": null, "capability_id": null,
+                "capability_name": "echo", "status": "succeeded", "elapsed_ms": 4,
+                "error_message": null, "input_preview": {}, "output_preview": {"ok": true},
+                "created_at": "2026-01-01T00:00:00Z", "claimed_at": null,
+                "i_served": true, "i_invoked": false,
+            }));
+        })
+        .await;
+    server
+        .mock_async(|when, then| {
+            when.method(GET)
+                .path("/v1/inbox/notices")
+                .query_param("agent_id", "a1")
+                .query_param("limit", "5");
+            then.status(200).json_body(json!([{
+                "id": "n1",
+                "kind": "consent_requested",
+                "created_at": "2026-10-23T00:00:00Z",
+                "consent_request": {
+                    "id": "cr-9", "invocation_id": "inv9", "status": "pending",
+                    "capability_id": "cap", "capability_name": "book_meeting",
+                    "requester": {
+                        "agent_id": "a2", "agent_display_name": "Scheduler",
+                        "account_id": "acc", "account_display_name": null, "verified": true,
+                    },
+                    "terms": {"valid_for": "once"},
+                    "expires_at": "2026-10-24T00:00:00Z",
+                    "approve_url": "https://chakramcp.com/app/approvals/cr-9",
+                },
+            }]));
+        })
+        .await;
+
+    let chakra = _common::build(&server);
+    let inbox = chakra.inbox();
+    match inbox
+        .respond_succeeded("hitl", json!({"reply": "hi"}))
+        .await
+        .unwrap()
+    {
+        RespondOutcome::Drafted(d) => assert_eq!(d.consent_request_id, "cr-1"),
+        other => panic!("expected a draft, got {other:?}"),
+    }
+    match inbox
+        .respond_succeeded("auto", json!({"ok": true}))
+        .await
+        .unwrap()
+    {
+        RespondOutcome::Finished(inv) => assert_eq!(inv.status, InvocationStatus::Succeeded),
+        other => panic!("expected a finished call, got {other:?}"),
+    }
+    let notices = inbox.notices("a1", Some(5)).await.unwrap();
+    let req = notices[0].consent_request.as_ref().unwrap();
+    assert_eq!(notices[0].kind, "consent_requested");
+    assert_eq!(req.capability_name.as_deref(), Some("book_meeting"));
+    assert_eq!(req.terms.valid_for.as_deref(), Some("once"));
 }
 
 #[tokio::test]
@@ -239,6 +320,7 @@ async fn invoke_error(status: u16, retry_after: Option<&str>, body: serde_json::
             capability_id: Some("cap".into()),
             grantee_agent_id: "agent".into(),
             input: json!({}),
+            ..Default::default()
         })
         .await
         .expect_err("invoke fails")

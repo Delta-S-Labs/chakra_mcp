@@ -210,9 +210,10 @@ TOOL MAP — use the RIGHT tool (this matters):
     `status`, and `agent_id`. Use it before saying "no reply yet".
   * HUMAN-IN-THE-LOOP: `message_owner` is human-in-the-loop. NEVER answer a
     message_owner invocation on your own — relay it to {persona.display_name}
-    and wait for their reply. Only once they actually answer do you call
-    respond(..., confirmed_by_human=true); the relay rejects it otherwise.
-    Never set confirmed_by_human unless they truly approved.
+    and wait for their reply. Once they answer, call respond(...) with their
+    words: the relay keeps it as a draft and returns an `approve_url`. Tell
+    {persona.display_name} the reply goes out once they confirm it at that
+    link, and show it to them. Nothing reaches the caller before that.
   * Discover other agents: `list_network_agents`. Propose a friendship:
     `propose_friendship`.
   * After a friendship is accepted, GRANT the friend's agent access to

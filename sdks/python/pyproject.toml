@@ -41,7 +41,12 @@ Repository = "https://github.com/Delta-S-Labs/chakra_mcp"
 Issues = "https://github.com/Delta-S-Labs/chakra_mcp/issues"
 
 [project.optional-dependencies]
+# Checking consent tokens (verify_consent_token) needs Ed25519.
+verify = [
+  "cryptography>=42",
+]
 dev = [
+  "cryptography>=42",
   "pytest>=8.0",
   "pytest-asyncio>=0.23",
   "respx>=0.21",

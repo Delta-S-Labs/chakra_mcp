@@ -95,9 +95,10 @@ use serde_json::json;
 let result = chakra
     .invoke_and_wait(
         &InvokeRequest {
-            grant_id: "…".into(),
+            grant_id: Some("…".into()),
             grantee_agent_id: my_agent_id,
             input: json!({"url": "https://…"}),
+            ..Default::default()
         },
         PollOpts {
             interval: Some(Duration::from_millis(1500)),

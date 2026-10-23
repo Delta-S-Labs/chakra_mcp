@@ -7,19 +7,18 @@
  *
  *   * `propose_slots`   — autonomous. `handler()` returns a result
  *                         envelope; the SDK posts it back.
- *   * `message_owner`   — human-in-the-loop. `humanHandler()` runs for
- *                         side-effects only — the SDK does NOT post a
- *                         result. The row stays `in_progress` until a
- *                         human resolves it out-of-band via:
- *                            chakramcp message reply <id> "<reply_text>"
- *                         which posts the wire result with
- *                         `confirmed_by_human: true` and satisfies the
- *                         relay's HITL gate (issue #69 PR 2).
+ *   * `message_owner`   — human-in-the-loop: a person stands behind
+ *                         every reply. `humanHandler()` either drafts
+ *                         a reply, which the relay holds until the
+ *                         owner confirms it on the web (`onDraft` logs
+ *                         the link), or returns nothing and leaves the
+ *                         reply to the owner, who answers in the web
+ *                         app's inbox.
  *
  * `humanHandler()` writes each pending invocation to
  * `./pending/<invocationId>.json` and prints a one-line summary to
- * stderr. A human operator (or a higher-level UI watching the
- * directory) reads the files and replies via the CLI.
+ * stderr. An informational ping (`expects_reply: false`) gets a drafted
+ * acknowledgement; everything else waits for the owner.
  *
  * Bonus: at startup the worker can fire one outbound `message_owner`
  * via cli-v0.1.2's `chakramcp invoke ensure` (issue #68) — the
@@ -119,9 +118,9 @@ async function handle(invocation: Invocation): Promise<HandlerResult> {
   return { status: "failed", error: `unsupported capability: ${capability}` };
 }
 
-async function humanHandler(invocation: Invocation): Promise<void> {
-  // HITL path. Side-effects only — MUST NOT post a result. The row
-  // stays `in_progress` until a human runs `chakramcp message reply`.
+async function humanHandler(invocation: Invocation): Promise<HandlerResult | void> {
+  // HITL path. Whatever we return is only a draft: the caller sees it
+  // after the owner confirms it on the web.
   const invId = invocation.id;
   const payload = (invocation.input_preview ?? {}) as Record<string, unknown>;
   const message = String(payload.message ?? "");
@@ -139,6 +138,15 @@ async function humanHandler(invocation: Invocation): Promise<void> {
     `[HITL] ${invId}  from=${JSON.stringify(fromName)}  urgency=${urgency}  ` +
       `msg=${JSON.stringify(message.slice(0, 80))}  → ${outPath}\n`,
   );
+
+  // An informational ping only needs an acknowledgement: draft one.
+  if (payload.expects_reply === false) {
+    return {
+      status: "succeeded",
+      output: { status: "acknowledged", responded_at: new Date().toISOString() },
+    };
+  }
+  // Anything else: the owner answers in the web app's inbox.
 }
 
 async function ensureCapabilities(chakra: ChakraMCP, agentId: string): Promise<void> {
@@ -172,8 +180,8 @@ function pingPeerViaCli(peer: string, text: string, fromSlug: string): void {
   // so we can parse the structured response.
   //
   // `message_owner` is HITL on the peer's side, so we explicitly do
-  // NOT pass `--wait` — the row will stay `in_progress` until their
-  // human replies. A real worker picks the reply up later via its
+  // NOT pass `--wait` — the row stays `in_progress` until their owner
+  // replies or confirms a drafted reply. A real worker picks the reply up later via its
   // own inbox.
   const args = [
     "invoke",
@@ -278,6 +286,8 @@ async function main(): Promise<number> {
     await chakra.inbox.serve(agentId, {
       handler: handle,
       humanHandler,
+      onDraft: (inv, drafted) =>
+        console.log(`  ⧗ ${inv.id}: draft waits for your confirmation: ${drafted.approve_url}`),
       pollIntervalMs: 2000,
       signal: ac.signal,
       onError: (err, inv) =>
