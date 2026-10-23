@@ -64,6 +64,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use chakramcp_shared::error::{ApiError, ApiResult};
+use chakramcp_shared::safety::{self, Safety};
 
 use crate::auth::{user_is_member, AuthUser};
 use crate::compliance;
@@ -104,7 +105,7 @@ pub struct InvokeRequest {
     pub consent_terms: Option<ConsentTerms>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Default, Serialize)]
 pub struct InvokeResponse {
     pub invocation_id: Uuid,
     pub status: String,
@@ -113,6 +114,13 @@ pub struct InvokeResponse {
     /// (`awaiting_consent`) or a standing consent covered it (`pending`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub consent_request_id: Option<Uuid>,
+    /// Why a rejected call was refused, when a safety-era check refused
+    /// it: `chk.policy.compliance_denied` or `chk.policy.safety_blocked`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<&'static str>,
+    /// What message safety found and did (removed contacts, flags).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub safety: Option<Safety>,
 }
 
 #[derive(Debug, Serialize)]
@@ -252,6 +260,59 @@ pub struct ResultRequest {
 }
 
 // ─── Helpers ─────────────────────────────────────────────
+
+/// What a blocked message's row stores instead of its content (message
+/// safety §4.3): neither side can read blocked content back.
+pub(crate) fn blocked_marker() -> Value {
+    serde_json::json!({ "__chakramcp_blocked__": true })
+}
+
+/// `safety.request` for these findings, or nothing when there are none.
+pub(crate) fn request_safety(findings: &[safety::Finding]) -> Option<Safety> {
+    (!findings.is_empty()).then(|| Safety {
+        request: Some(findings.to_vec()),
+        reply: None,
+    })
+}
+
+/// Screen a request when `SYSTEM_ONE_SAFETY` is on (`None` when it's off,
+/// and today's compliance check applies instead). The screened message is
+/// `{input, consent_terms?: {purpose}}`, so a contact in the purpose is
+/// redacted like any other.
+pub(crate) async fn screen_request(
+    state: &RelayState,
+    subject: compliance::Subject<'_>,
+    purpose: Option<&str>,
+    schema: Option<&Value>,
+) -> Result<Option<compliance::Screened>, ApiError> {
+    let Some(checker) = state.compliance.as_deref().filter(|c| c.safety_enabled()) else {
+        return Ok(None);
+    };
+    let mut message = serde_json::json!({ "input": subject.input });
+    if let Some(p) = purpose {
+        message["consent_terms"] = serde_json::json!({ "purpose": p });
+    }
+    let subject = compliance::Subject {
+        input: &message,
+        ..subject
+    };
+    checker
+        .screen(safety::Channel::Request, &subject, "", schema, "/input")
+        .await
+        .map(Some)
+        .map_err(|_| too_large_to_screen())
+}
+
+/// A message over the screening cap: refused, never screened in part.
+pub(crate) fn too_large_to_screen() -> ApiError {
+    ApiError::PayloadTooLarge {
+        code: "chk.safety.too_large",
+        message: format!(
+            "the message is over {} bytes of text, the most safety screening reads",
+            safety::MAX_WALK_BYTES
+        ),
+    }
+}
 
 pub(crate) fn truncate_for_audit(value: &Value) -> Value {
     let s = value.to_string();
@@ -425,6 +486,7 @@ async fn invoke_trusted(
             invocation_id,
             consent_request_id,
             signals,
+            safety,
         } => {
             let mut response = (
                 StatusCode::ACCEPTED,
@@ -433,6 +495,8 @@ async fn invoke_trusted(
                     status: "pending".into(),
                     error: None,
                     consent_request_id,
+                    code: None,
+                    safety,
                 }),
             )
                 .into_response();
@@ -443,6 +507,7 @@ async fn invoke_trusted(
             invocation_id,
             consent_request_id,
             signals,
+            safety,
         } => {
             let mut response = (
                 StatusCode::ACCEPTED,
@@ -451,6 +516,8 @@ async fn invoke_trusted(
                     status: "awaiting_consent".into(),
                     error: None,
                     consent_request_id: Some(consent_request_id),
+                    code: None,
+                    safety,
                 }),
             )
                 .into_response();
@@ -461,6 +528,8 @@ async fn invoke_trusted(
             invocation_id,
             status,
             error,
+            code,
+            safety,
         } => (
             status,
             Json(InvokeResponse {
@@ -468,6 +537,8 @@ async fn invoke_trusted(
                 status: "rejected".into(),
                 error: Some(error),
                 consent_request_id: None,
+                code,
+                safety,
             }),
         )
             .into_response(),
@@ -493,6 +564,7 @@ pub(crate) enum TrustedOutcome {
         invocation_id: Uuid,
         consent_request_id: Option<Uuid>,
         signals: crate::limits::LimitSignals,
+        safety: Option<Safety>,
     },
     /// Held as `awaiting_consent` until the owner's approver decides (the
     /// capability asks first; owner consent §4).
@@ -500,6 +572,7 @@ pub(crate) enum TrustedOutcome {
         invocation_id: Uuid,
         consent_request_id: Uuid,
         signals: crate::limits::LimitSignals,
+        safety: Option<Safety>,
     },
     /// Recorded as `rejected`. `status` is the HTTP status the REST
     /// surface returns; other surfaces map it onto their own errors.
@@ -507,6 +580,9 @@ pub(crate) enum TrustedOutcome {
         invocation_id: Uuid,
         status: StatusCode,
         error: String,
+        /// Set when message safety's screening refused it.
+        code: Option<&'static str>,
+        safety: Option<Safety>,
     },
 }
 
@@ -555,6 +631,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
             cap.name as capability_name,
             cap.visibility as capability_visibility,
             cap.description as capability_description,
+            cap.input_schema as capability_input_schema,
             cap.consent_required, cap.consent_max_validity_secs, cap.consent_wait_secs,
             -- Accepted friendship between the two agents, in either
             -- direction. LEFT JOIN so a missing one surfaces as a
@@ -612,6 +689,8 @@ pub(crate) async fn authorize_and_enqueue_trusted(
                 invocation_id,
                 status,
                 error,
+                code: None,
+                safety: None,
             })
         }
     };
@@ -662,13 +741,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
     }
 
     // A capability that asks first must receive its input whole.
-    let gate = consent_enqueue::gate_for(
-        row.consent_required,
-        consent_terms,
-        row.consent_max_validity_secs,
-        row.consent_wait_secs,
-    );
-    if gate.is_some() {
+    if row.consent_required {
         consent_enqueue::check_input_size(input)?;
     }
 
@@ -726,13 +799,43 @@ pub(crate) async fn authorize_and_enqueue_trusted(
         }),
         input,
     };
-    match system_one_check(state, &subject).await {
-        Ok(None) => {}
-        Ok(Some(report)) => compliance::attach_report(&mut trust_snapshot, report),
-        Err((reason, report)) => {
-            let outcome = reject(StatusCode::FORBIDDEN, reason).await?;
-            if let TrustedOutcome::Rejected { invocation_id, .. } = &outcome {
-                compliance::attach_report(&mut trust_snapshot, report);
+    // With message safety on, screening replaces the check: the same
+    // questions plus harm and contact ones, on what the inbox delivers.
+    let mut delivered = input_preview.clone();
+    let mut consent_terms = consent_terms.cloned();
+    let mut safety = None;
+    let purpose = consent_terms.as_ref().and_then(|t| t.purpose.clone());
+    let screened = screen_request(
+        state,
+        compliance::Subject {
+            input: &input_preview,
+            ..subject
+        },
+        purpose.as_deref(),
+        Some(&row.capability_input_schema),
+    )
+    .await?;
+    match screened {
+        Some(screened) => {
+            trust_snapshot["system_one"] = serde_json::json!({ "safety": screened.report });
+            let found = request_safety(&screened.findings);
+            if let Some(block) = screened.block {
+                let invocation_id = record_terminal(
+                    &state.db,
+                    Some(row.grant_id),
+                    Some(row.granter_agent_id),
+                    Some(row.grantee_agent_id),
+                    Some(row.capability_id),
+                    &row.capability_name,
+                    user.user_id,
+                    "rejected",
+                    0,
+                    Some(&block.reason),
+                    Some(&blocked_marker()),
+                    user.api_key_id,
+                    user.minted_jti,
+                )
+                .await?;
                 sqlx::query!(
                     "UPDATE relay_invocations SET trust_snapshot = $2 WHERE id = $1",
                     invocation_id,
@@ -740,10 +843,48 @@ pub(crate) async fn authorize_and_enqueue_trusted(
                 )
                 .execute(&state.db)
                 .await?;
+                return Ok(TrustedOutcome::Rejected {
+                    invocation_id,
+                    status: StatusCode::FORBIDDEN,
+                    error: block.reason,
+                    code: Some(block.code),
+                    safety: found,
+                });
             }
-            return Ok(outcome);
+            delivered = screened.value["input"].clone();
+            if let (Some(t), Some(p)) = (
+                consent_terms.as_mut(),
+                screened.value["consent_terms"]["purpose"].as_str(),
+            ) {
+                t.purpose = Some(p.to_owned());
+            }
+            safety = found;
         }
+        None => match system_one_check(state, &subject).await {
+            Ok(None) => {}
+            Ok(Some(report)) => compliance::attach_report(&mut trust_snapshot, report),
+            Err((reason, report)) => {
+                let outcome = reject(StatusCode::FORBIDDEN, reason).await?;
+                if let TrustedOutcome::Rejected { invocation_id, .. } = &outcome {
+                    compliance::attach_report(&mut trust_snapshot, report);
+                    sqlx::query!(
+                        "UPDATE relay_invocations SET trust_snapshot = $2 WHERE id = $1",
+                        invocation_id,
+                        trust_snapshot,
+                    )
+                    .execute(&state.db)
+                    .await?;
+                }
+                return Ok(outcome);
+            }
+        },
     }
+    let gate = consent_enqueue::gate_for(
+        row.consent_required,
+        consent_terms.as_ref(),
+        row.consent_max_validity_secs,
+        row.consent_wait_secs,
+    );
 
     // Enqueue the invocation. Granter side will pull it from /v1/inbox.
     //
@@ -771,7 +912,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
                 capability_id: row.capability_id,
                 capability_name: &row.capability_name,
                 invoked_by_user_id: user.user_id,
-                input_preview: &input_preview,
+                input_preview: &delivered,
                 api_key_id: user.api_key_id,
                 minted_jti: user.minted_jti,
                 trust_snapshot: Some(&trust_snapshot),
@@ -785,11 +926,13 @@ pub(crate) async fn authorize_and_enqueue_trusted(
                 invocation_id: id,
                 consent_request_id: Some(consent_request_id),
                 signals,
+                safety,
             },
             Enqueued::Held { consent_request_id } => TrustedOutcome::Held {
                 invocation_id: id,
                 consent_request_id,
                 signals,
+                safety,
             },
         });
     }
@@ -812,7 +955,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
         row.capability_id,
         row.capability_name,
         user.user_id,
-        input_preview,
+        delivered,
         user.api_key_id,
         user.minted_jti,
         trust_snapshot,
@@ -825,6 +968,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
         invocation_id: id,
         consent_request_id: None,
         signals,
+        safety,
     })
 }
 
@@ -850,7 +994,7 @@ async fn invoke_public(
     // endpoint can't be used to probe private state.
     let cap = sqlx::query!(
         r#"
-        SELECT cap.id, cap.name, cap.description, cap.agent_id AS granter_agent_id,
+        SELECT cap.id, cap.name, cap.description, cap.input_schema, cap.agent_id AS granter_agent_id,
                cap.public_invoke, cap.public_monthly_quota_per_agent,
                cap.consent_required, cap.consent_max_validity_secs, cap.consent_wait_secs,
                ga.visibility AS granter_visibility, ga.mode AS granter_mode
@@ -904,13 +1048,7 @@ async fn invoke_public(
     }
 
     // A capability that asks first must receive its input whole.
-    let gate = consent_enqueue::gate_for(
-        cap.consent_required,
-        consent_terms,
-        cap.consent_max_validity_secs,
-        cap.consent_wait_secs,
-    );
-    if gate.is_some() {
+    if cap.consent_required {
         consent_enqueue::check_input_size(input)?;
     }
 
@@ -977,9 +1115,26 @@ async fn invoke_public(
         relationship: None,
         input,
     };
-    let trust_snapshot = match system_one_check(state, &subject).await {
-        Ok(report) => report.map(|r| serde_json::json!({ "system_one": r })),
-        Err((reason, report)) => {
+    // With message safety on, screening replaces the check (see the
+    // trusted path).
+    let mut input_preview = input_preview;
+    let mut consent_terms = consent_terms.cloned();
+    let purpose = consent_terms.as_ref().and_then(|t| t.purpose.clone());
+    let screened = screen_request(
+        state,
+        compliance::Subject {
+            input: &input_preview,
+            ..subject
+        },
+        purpose.as_deref(),
+        Some(&cap.input_schema),
+    )
+    .await?;
+    let mut safety = None;
+    let trust_snapshot = if let Some(screened) = screened {
+        let snapshot = serde_json::json!({ "system_one": { "safety": screened.report } });
+        let found = request_safety(&screened.findings);
+        if let Some(block) = screened.block {
             let id = record_terminal(
                 &state.db,
                 None,
@@ -990,25 +1145,81 @@ async fn invoke_public(
                 user.user_id,
                 "rejected",
                 0,
-                Some(&reason),
-                Some(&input_preview),
+                Some(&block.reason),
+                Some(&blocked_marker()),
                 user.api_key_id,
                 user.minted_jti,
             )
             .await?;
-            store_rejection_report(&state.db, id, report).await?;
+            sqlx::query!(
+                "UPDATE relay_invocations SET trust_snapshot = $2 WHERE id = $1",
+                id,
+                snapshot,
+            )
+            .execute(&state.db)
+            .await?;
             return Ok((
                 StatusCode::FORBIDDEN,
                 Json(InvokeResponse {
                     invocation_id: id,
                     status: "rejected".into(),
-                    error: Some(reason),
-                    consent_request_id: None,
+                    error: Some(block.reason),
+                    code: Some(block.code),
+                    safety: found,
+                    ..Default::default()
                 }),
             )
                 .into_response());
         }
+        input_preview = screened.value["input"].clone();
+        if let (Some(t), Some(p)) = (
+            consent_terms.as_mut(),
+            screened.value["consent_terms"]["purpose"].as_str(),
+        ) {
+            t.purpose = Some(p.to_owned());
+        }
+        safety = found;
+        Some(snapshot)
+    } else {
+        match system_one_check(state, &subject).await {
+            Ok(report) => report.map(|r| serde_json::json!({ "system_one": r })),
+            Err((reason, report)) => {
+                let id = record_terminal(
+                    &state.db,
+                    None,
+                    Some(cap.granter_agent_id),
+                    Some(grantee_agent_id),
+                    Some(capability_id),
+                    &cap.name,
+                    user.user_id,
+                    "rejected",
+                    0,
+                    Some(&reason),
+                    Some(&input_preview),
+                    user.api_key_id,
+                    user.minted_jti,
+                )
+                .await?;
+                store_rejection_report(&state.db, id, report).await?;
+                return Ok((
+                    StatusCode::FORBIDDEN,
+                    Json(InvokeResponse {
+                        invocation_id: id,
+                        status: "rejected".into(),
+                        error: Some(reason),
+                        ..Default::default()
+                    }),
+                )
+                    .into_response());
+            }
+        }
     };
+    let gate = consent_enqueue::gate_for(
+        cap.consent_required,
+        consent_terms.as_ref(),
+        cap.consent_max_validity_secs,
+        cap.consent_wait_secs,
+    );
 
     // Enqueue with grant_id = NULL. Same audit columns as the trusted
     // path; the friendship/grant context bundled into the eventual
@@ -1045,8 +1256,9 @@ async fn invoke_public(
             Json(InvokeResponse {
                 invocation_id: id,
                 status: status.into(),
-                error: None,
                 consent_request_id: Some(enqueued.consent_request_id()),
+                safety,
+                ..Default::default()
             }),
         )
             .into_response();
@@ -1085,8 +1297,8 @@ async fn invoke_public(
         Json(InvokeResponse {
             invocation_id: id,
             status: "pending".into(),
-            error: None,
-            consent_request_id: None,
+            safety,
+            ..Default::default()
         }),
     )
         .into_response();
@@ -3817,6 +4029,253 @@ mod system_one_tests {
         assert_eq!(
             snap["system_one"]["violations"],
             json!(["prompt_injection"])
+        );
+    }
+}
+
+#[cfg(test)]
+mod safety_tests {
+    //! Message safety on the request paths (S2): with `SYSTEM_ONE_SAFETY`
+    //! on, screening replaces the compliance check, redacts contacts in
+    //! what the inbox delivers, and blocks without storing the content.
+    use super::legacy_v01_contract_tests::{config, seed_demo, DemoFixture};
+    use super::public_invoke_tests::{invoke_req, seed_public};
+    use crate::compliance::test_support::{checker, serve, Fake};
+    use axum::body::Body;
+    use axum::http::{header, Request, StatusCode};
+    use http_body_util::BodyExt;
+    use serde_json::{json, Value};
+    use sqlx::PgPool;
+    use tower::ServiceExt;
+    use uuid::Uuid;
+
+    fn fake(nouls: &[(&'static str, f64)]) -> Fake {
+        Fake {
+            nouls: nouls.iter().copied().collect(),
+            ..Fake::default()
+        }
+    }
+
+    async fn state_on(pool: &PgPool, fake: Fake) -> crate::state::RelayState {
+        let url = serve(fake).await;
+        crate::state::RelayState::new(pool.clone(), config())
+            .with_compliance(Some(checker(&url).with_safety(true)))
+    }
+
+    async fn send(state: crate::state::RelayState, req: Request<Body>) -> (StatusCode, Value) {
+        let res = crate::router(state).oneshot(req).await.unwrap();
+        let status = res.status();
+        let body =
+            serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        (status, body)
+    }
+
+    fn trusted(f: &DemoFixture, input: Value, extra: Value) -> Request<Body> {
+        let mut body = json!({
+            "grant_id": f.grant_id,
+            "grantee_agent_id": f.grantee_agent_id,
+            "input": input,
+        });
+        if let (Some(b), Some(e)) = (body.as_object_mut(), extra.as_object()) {
+            b.extend(e.clone());
+        }
+        invoke_req(&f.caller_token, body)
+    }
+
+    async fn row(pool: &PgPool, id: &Value) -> (String, Value, Value) {
+        let id: Uuid = id.as_str().unwrap().parse().unwrap();
+        let (status, input, snap): (String, Value, Option<Value>) = sqlx::query_as(
+            "SELECT status, input_preview, trust_snapshot FROM relay_invocations WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        (status, input, snap.unwrap_or(Value::Null))
+    }
+
+    const NOTE: &str =
+        "Please book the Friday sync with the design team, and text me on +91 98450 12345.";
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn a_contact_is_removed_from_what_the_inbox_gets(pool: PgPool) {
+        let f = seed_demo(&pool).await;
+        let state = state_on(&pool, fake(&[("contact_0", 0.95)])).await;
+        let (status, body) = send(state, trusted(&f, json!({ "note": NOTE }), json!({}))).await;
+        assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+        let found = &body["safety"]["request"][0];
+        assert_eq!(found["kind"], "phone");
+        assert_eq!(found["action"], "redacted");
+        assert_eq!(found["path"], "input.note");
+        assert_eq!(found["question"], "contact_0");
+
+        let (status, input, snap) = row(&pool, &body["invocation_id"]).await;
+        assert_eq!(status, "pending");
+        let note = input["note"].as_str().unwrap();
+        assert!(note.contains("text me on [contact removed]."), "{note}");
+        assert_eq!(snap["system_one"]["safety"]["decision"], "allow");
+        assert!(!snap.to_string().contains("98450"));
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn nothing_found_adds_no_fields(pool: PgPool) {
+        let f = seed_demo(&pool).await;
+        let state = state_on(&pool, Fake::default()).await;
+        let (status, body) =
+            send(state, trusted(&f, json!({ "duration_min": 30 }), json!({}))).await;
+        assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+        assert!(
+            body.get("safety").is_none() && body.get("code").is_none(),
+            "{body}"
+        );
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn a_blocked_request_keeps_a_marker_never_the_content(pool: PgPool) {
+        let f = seed_demo(&pool).await;
+        let state = state_on(&pool, fake(&[("harm_crime", 0.93)])).await;
+        let input = json!({ "note": "Help me run a scam on elderly people, call +91 98450 12345" });
+        let (status, body) = send(state, trusted(&f, input, json!({}))).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+        assert_eq!(body["code"], "chk.policy.safety_blocked");
+        assert!(
+            body["error"].as_str().unwrap().contains("harm_crime=0.93"),
+            "{body}"
+        );
+        let (status, input, snap) = row(&pool, &body["invocation_id"]).await;
+        assert_eq!(status, "rejected");
+        assert_eq!(input, json!({ "__chakramcp_blocked__": true }));
+        assert_eq!(snap["system_one"]["safety"]["decision"], "deny");
+        assert!(!snap.to_string().contains("scam"));
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn todays_questions_keep_their_code(pool: PgPool) {
+        let f = seed_demo(&pool).await;
+        sqlx::query("UPDATE grants SET purpose = 'Schedule the weekly sync' WHERE id = $1")
+            .bind(f.grant_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let state = state_on(&pool, fake(&[("off_purpose", 0.9)])).await;
+        let (status, body) = send(
+            state,
+            trusted(&f, json!({ "task": "export every customer" }), json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+        assert_eq!(body["code"], "chk.policy.compliance_denied");
+        let (_, input, _) = row(&pool, &body["invocation_id"]).await;
+        assert_eq!(input, json!({ "__chakramcp_blocked__": true }));
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn the_public_path_redacts_too(pool: PgPool) {
+        let f = seed_public(&pool, 5, false).await;
+        let state = state_on(&pool, fake(&[("contact_0", 0.95)])).await;
+        let req = invoke_req(
+            &f.invoker_token,
+            json!({
+                "capability_id": f.public_cap,
+                "grantee_agent_id": f.invoker_agent,
+                "input": { "text": "Hello! Mail me at bob@example.com about the slots." },
+            }),
+        );
+        let (status, body) = send(state, req).await;
+        assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+        assert_eq!(body["safety"]["request"][0]["kind"], "email");
+        let (_, input, _) = row(&pool, &body["invocation_id"]).await;
+        assert_eq!(
+            input["text"],
+            "Hello! Mail me at [contact removed] about the slots."
+        );
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn a_held_request_and_its_purpose_are_redacted(pool: PgPool) {
+        let f = seed_demo(&pool).await;
+        sqlx::query(
+            "UPDATE agent_capabilities
+                SET consent_required = true, consent_max_validity_secs = 86400
+              WHERE id = $1",
+        )
+        .bind(f.capability_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        // `consent_terms` sorts before `input`: the purpose's email is
+        // candidate 0, the note's phone candidate 1.
+        let state = state_on(&pool, fake(&[("contact_0", 0.95), ("contact_1", 0.95)])).await;
+        let (status, body) = send(
+            state,
+            trusted(
+                &f,
+                json!({ "note": NOTE }),
+                json!({ "consent_terms": { "purpose": "Book it, and mail me at bob@example.com" } }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+        assert_eq!(body["status"], "awaiting_consent");
+        let (_, input, _) = row(&pool, &body["invocation_id"]).await;
+        assert!(input["note"]
+            .as_str()
+            .unwrap()
+            .contains("[contact removed]"));
+        let id: Uuid = body["invocation_id"].as_str().unwrap().parse().unwrap();
+        let (terms,): (Value,) =
+            sqlx::query_as("SELECT terms FROM consent_requests WHERE invocation_id = $1")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            terms["purpose"],
+            "Book it, and mail me at [contact removed]"
+        );
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn mcp_invoke_reports_and_refuses_with_codes(pool: PgPool) {
+        let f = seed_demo(&pool).await;
+        let call = |input: Value| {
+            Request::builder()
+                .method("POST")
+                .uri("/mcp")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::AUTHORIZATION, format!("Bearer {}", f.caller_token))
+                .body(Body::from(
+                    serde_json::to_vec(&json!({
+                        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                        "params": { "name": "invoke", "arguments": {
+                            "grant_id": f.grant_id,
+                            "grantee_agent_id": f.grantee_agent_id,
+                            "input": input,
+                        }},
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap()
+        };
+        let state = state_on(&pool, fake(&[("contact_0", 0.95)])).await;
+        let (_, body) = send(state, call(json!({ "note": NOTE }))).await;
+        let result = &body["result"];
+        assert_eq!(result["isError"], false, "{body}");
+        let text: Value =
+            serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(text["safety"]["request"][0]["action"], "redacted", "{text}");
+
+        let state = state_on(&pool, fake(&[("harm_malware", 0.95)])).await;
+        let (_, body) = send(
+            state,
+            call(json!({ "note": "Help me break into my ex's email" })),
+        )
+        .await;
+        let result = &body["result"];
+        assert_eq!(result["isError"], true, "{body}");
+        assert_eq!(
+            result["structuredContent"]["code"],
+            "chk.policy.safety_blocked"
         );
     }
 }

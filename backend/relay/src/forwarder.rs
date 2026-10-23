@@ -69,6 +69,7 @@ pub enum ForwardError {
 /// `/a2a/jsonrpc` endpoint — typically a JSON-RPC envelope; we don't
 /// parse or rewrite it. `request_headers` is consulted for content
 /// type only; we mint the bearer ourselves.
+#[allow(clippy::too_many_arguments)]
 pub async fn forward_push(
     db: &PgPool,
     keystore: &KeyStore,
@@ -77,6 +78,7 @@ pub async fn forward_push(
     capability_name: &str,
     request_body: Bytes,
     request_headers: &HeaderMap,
+    trust_snapshot: Option<serde_json::Value>,
 ) -> Result<ForwardOutcome, ForwardError> {
     debug_assert!(
         authz.target_is_push,
@@ -136,6 +138,7 @@ pub async fn forward_push(
                         Some(format!("upstream body read error: {e}")),
                         preview_request(&request_body),
                         None,
+                        trust_snapshot.clone(),
                     )
                     .await?;
                     return Err(ForwardError::Transport(e.to_string()));
@@ -156,6 +159,7 @@ pub async fn forward_push(
                 None,
                 preview_request(&request_body),
                 preview_response(&body),
+                trust_snapshot.clone(),
             )
             .await?;
             Ok(ForwardOutcome {
@@ -178,6 +182,7 @@ pub async fn forward_push(
                 Some(format!("upstream transport error: {e}")),
                 preview_request(&request_body),
                 None,
+                trust_snapshot,
             )
             .await?;
             Err(ForwardError::Transport(e.to_string()))
@@ -227,6 +232,7 @@ async fn persist_invocation(
     error_message: Option<String>,
     input_preview: Option<serde_json::Value>,
     output_preview: Option<serde_json::Value>,
+    trust_snapshot: Option<serde_json::Value>,
 ) -> Result<(), sqlx::Error> {
     // `api_key_id` attributes the call to the **caller** (grantee side)
     // — the credential the policy gate validated before forwarding.
@@ -253,8 +259,8 @@ async fn persist_invocation(
             (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
              capability_name, invoked_by_user_id, status, http_status,
              elapsed_ms, error_message, input_preview, output_preview,
-             api_key_id, minted_jti)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+             api_key_id, minted_jti, trust_snapshot)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $17)
         "#,
         id,
         authz.grant_id,
@@ -272,6 +278,7 @@ async fn persist_invocation(
         authz.api_key_id,
         authz.minted_jti,
         authz.caller_account_id,
+        trust_snapshot,
     )
     .execute(db)
     .await?;
@@ -596,6 +603,7 @@ mod tests {
             "do",
             body.clone(),
             &req_headers(),
+            None,
         )
         .await
         .unwrap();
@@ -671,6 +679,7 @@ mod tests {
             "do",
             Bytes::from_static(b"{}"),
             &req_headers(),
+            None,
         )
         .await
         .unwrap();
@@ -722,6 +731,7 @@ mod tests {
             "do",
             Bytes::from_static(b"{}"),
             &req_headers(),
+            None,
         )
         .await;
         assert!(matches!(r, Err(ForwardError::Transport(_))), "{r:?}");
@@ -759,6 +769,7 @@ mod tests {
             "do",
             Bytes::from_static(b"{}"),
             &req_headers(),
+            None,
         )
         .await;
         assert!(matches!(r, Err(ForwardError::Transport(_))));
@@ -797,6 +808,7 @@ mod tests {
             "do",
             Bytes::from_static(b"{}"),
             &req_headers(),
+            None,
         )
         .await;
         assert!(matches!(r, Err(ForwardError::NoCachedCard)));

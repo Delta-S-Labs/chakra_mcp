@@ -12,6 +12,7 @@ pub mod contacts;
 pub mod decode;
 pub mod findings;
 pub mod language;
+pub mod metrics;
 pub mod normalize;
 pub mod opaque;
 pub mod redact;

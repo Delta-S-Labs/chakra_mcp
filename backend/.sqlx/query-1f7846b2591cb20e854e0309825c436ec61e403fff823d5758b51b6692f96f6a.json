@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH charge AS (\n            INSERT INTO credit_charge_queue (invocation_id, account_id)\n            VALUES ($1, $16)\n        )\n        INSERT INTO relay_invocations\n            (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,\n             capability_name, invoked_by_user_id, status, http_status,\n             elapsed_ms, error_message, input_preview, output_preview,\n             api_key_id, minted_jti, trust_snapshot)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $17)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Uuid",
+        "Text",
+        "Int4",
+        "Int4",
+        "Text",
+        "Jsonb",
+        "Jsonb",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1f7846b2591cb20e854e0309825c436ec61e403fff823d5758b51b6692f96f6a"
+}

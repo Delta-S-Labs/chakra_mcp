@@ -563,6 +563,7 @@ dependencies = [
  "metrics-util",
  "percent-encoding",
  "regex",
+ "reqwest",
  "serde",
  "serde_json",
  "serde_json_canonicalizer",

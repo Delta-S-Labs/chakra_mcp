@@ -69,6 +69,11 @@ pub enum ApiError {
     /// capability that asks its owner first (`chk.request.too_large`).
     #[error("{message}")]
     PayloadTooLarge { code: &'static str, message: String },
+
+    /// A policy check refused the message: message safety's
+    /// `chk.policy.safety_blocked`, or `chk.policy.compliance_denied`.
+    #[error("{message}")]
+    Policy { code: &'static str, message: String },
 }
 
 #[derive(Serialize)]
@@ -125,6 +130,7 @@ impl IntoResponse for ApiError {
             }
             ApiError::PaymentProvider => (StatusCode::BAD_GATEWAY, "payment_provider_error", true),
             ApiError::PayloadTooLarge { code, .. } => (StatusCode::PAYLOAD_TOO_LARGE, *code, false),
+            ApiError::Policy { code, .. } => (StatusCode::FORBIDDEN, *code, false),
         };
         let retry_after = match &self {
             ApiError::SigninRateLimited { retry_after_secs }

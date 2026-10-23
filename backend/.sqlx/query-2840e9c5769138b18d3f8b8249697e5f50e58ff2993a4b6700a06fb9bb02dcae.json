@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT cap.id, cap.name, cap.description, cap.agent_id AS granter_agent_id,\n               cap.public_invoke, cap.public_monthly_quota_per_agent,\n               cap.consent_required, cap.consent_max_validity_secs, cap.consent_wait_secs,\n               ga.visibility AS granter_visibility, ga.mode AS granter_mode\n        FROM agent_capabilities cap\n        JOIN agents ga ON ga.id = cap.agent_id\n        WHERE cap.id = $1\n        ",
+  "query": "\n        SELECT cap.id, cap.name, cap.description, cap.input_schema, cap.agent_id AS granter_agent_id,\n               cap.public_invoke, cap.public_monthly_quota_per_agent,\n               cap.consent_required, cap.consent_max_validity_secs, cap.consent_wait_secs,\n               ga.visibility AS granter_visibility, ga.mode AS granter_mode\n        FROM agent_capabilities cap\n        JOIN agents ga ON ga.id = cap.agent_id\n        WHERE cap.id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -38,6 +38,17 @@
       },
       {
         "ordinal": 3,
+        "name": "input_schema",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "input_schema"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
         "name": "granter_agent_id",
         "type_info": "Uuid",
         "origin": {
@@ -48,7 +59,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "public_invoke",
         "type_info": "Bool",
         "origin": {
@@ -59,7 +70,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "public_monthly_quota_per_agent",
         "type_info": "Int4",
         "origin": {
@@ -70,7 +81,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "consent_required",
         "type_info": "Bool",
         "origin": {
@@ -81,7 +92,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "consent_max_validity_secs",
         "type_info": "Int4",
         "origin": {
@@ -92,7 +103,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "consent_wait_secs",
         "type_info": "Int4",
         "origin": {
@@ -103,7 +114,7 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "granter_visibility",
         "type_info": "Text",
         "origin": {
@@ -114,7 +125,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "granter_mode",
         "type_info": "Text",
         "origin": {
@@ -136,6 +147,7 @@
       false,
       false,
       false,
+      false,
       true,
       false,
       false,
@@ -144,5 +156,5 @@
       false
     ]
   },
-  "hash": "a1f868e7fc4bf05eed784a7c1c145e7d11c4222253d36b08cc41a2013075a861"
+  "hash": "2840e9c5769138b18d3f8b8249697e5f50e58ff2993a4b6700a06fb9bb02dcae"
 }
