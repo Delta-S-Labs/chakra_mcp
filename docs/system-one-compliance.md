@@ -245,7 +245,7 @@ refused with 413 `chk.safety.too_large`.
 | `contact_<i>` | ≥ 0.85 | ≥ 0.97 | redact that candidate |
 | `off_platform` | ≥ 0.85 | ≥ 0.97 | redact the candidates past the 16th; with none, flag |
 | any of these from 0.85 up to its threshold, in a non-English message | | | flag |
-| an opaque span, `unjudged` text | | | flag |
+| an opaque span, `unjudged` text, a candidate past the 16th that wasn't redacted | | | flag |
 
 Redaction edits the original text: a candidate becomes
 `[contact removed]`; a candidate found in decoded text replaces the
@@ -262,10 +262,11 @@ Blocking:
   `chk.policy.safety_blocked` when a `harm_*` question fired (it wins),
   otherwise `chk.policy.compliance_denied`. REST and MCP rows store
   `input_preview = {"__chakramcp_blocked__": true}`, never the content.
-- **Replies.** 403 `chk.policy.safety_blocked`
-  (`chk.policy.compliance_denied` for `prompt_injection`). Only the
-  report is stored, and the invocation stays `in_progress` for another
-  reply.
+  The SDKs raise their usual error with that `code` and the reason as
+  its message.
+- **Replies.** 403 `chk.policy.safety_blocked`, for harm and for
+  `prompt_injection` alike. Only the report is stored, and the
+  invocation stays `in_progress` for another reply.
 - **Push responses.** Replaced by HTTP 403 with `-32009` and `data.code`;
   the call is recorded `failed` with the marker as `output_preview`. A
   body over 1 MiB becomes HTTP 502 with `-32603` and
@@ -280,10 +281,14 @@ empty, and a finding is `{kind, action, path?, question?, p?}`. It's on:
 - invoke responses (REST, MCP);
 - `/result` and MCP `respond` responses, the `202` draft body included;
 - invocations: `GET /v1/invocations`, `GET /v1/invocations/{id}`, inbox
-  pulls, MCP `poll_invocation` and `pull_inbox`. The caller sees `reply`
-  only once the reply is released;
+  pulls, MCP `poll_invocation`, `list_invocations` and `pull_inbox`. The
+  caller sees `reply` only once the reply is released;
 - A2A tasks, as `metadata["chakramcp.safety"]`, and also forwarded push
   requests' `params.metadata` and push responses' `result.metadata`.
+
+The SDKs type it (TypeScript and Python 0.5.0, Go v0.3.0, Rust 0.3.0).
+The web app's inbox and audit log show it as a Safety line in words,
+and a blocked call's content as "Blocked by safety screening".
 
 The full reports are kept in `trust_snapshot`: `system_one.safety` for
 the request and `system_one.reply_safety` for the latest reply, drafts
@@ -357,4 +362,5 @@ language to get the 0.97 threshold (`harm_minors` stays at 0.5, and
 band findings are recorded). Opaque content is only flagged. Images and
 files aren't read. An outage lets messages through unjudged. Past
 64 KiB, harm isn't judged, and only the first 16 contact candidates are
-judged one by one.
+judged one by one; the rest are flagged, or redacted when `off_platform`
+fires.

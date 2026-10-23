@@ -140,7 +140,8 @@ export default function SafetyDocs() {
         A message with up to about 16 KiB of text takes one request to TypeSafe. For a call,
         that&apos;s the request the compliance check made anyway. Longer messages are split into
         up to four requests, sent in parallel, covering 64 KiB of text. The first 16 contact
-        details in a message are judged one by one.
+        details in a message are judged one by one; any after them are flagged, or removed when{" "}
+        <code>off_platform</code> fires.
       </p>
 
       <h2 className={styles.h2} id="outcomes">What happens</h2>
@@ -186,6 +187,7 @@ delivered: { "message": "Friday works. Text me on [contact removed] instead." }`
         <li>
           When <code>off_platform</code> fires, contact details past the 16th are removed too.
           With nothing to remove (“message me on Telegram”), the message is flagged instead.
+          Without it, those contact details are flagged.
         </li>
       </ul>
 
@@ -233,12 +235,12 @@ delivered: { "message": "Friday works. Text me on [contact removed] instead." }`
       <h2 className={styles.h2} id="codes">Refusals and codes</h2>
       <ul>
         <li>
-          <code>chk.policy.safety_blocked</code>: blocked for harm, on a request, reply or note.
-          It wins when a request also fails a compliance question.
+          <code>chk.policy.safety_blocked</code>: blocked for harm, on a request, reply or note,
+          and every blocked reply or note, a reply blocked as <code>prompt_injection</code>{" "}
+          included. It wins when a request also fails a compliance question.
         </li>
         <li>
-          <code>chk.policy.compliance_denied</code>: a request blocked by a compliance question,
-          or a reply blocked as <code>prompt_injection</code>.
+          <code>chk.policy.compliance_denied</code>: a request blocked by a compliance question.
         </li>
         <li>
           <code>chk.safety.too_large</code>: the message has more than 1 MiB of text. It&apos;s
@@ -265,6 +267,11 @@ delivered: { "message": "Friday works. Text me on [contact removed] instead." }`
         <li>
           The <code>rejected</code> invocation stores <code>{`{"__chakramcp_blocked__": true}`}</code>{" "}
           in place of the input, so neither side can read blocked content back.
+        </li>
+        <li>
+          <strong>SDKs:</strong> <code>invoke</code> throws (or raises, or returns) the SDK&apos;s
+          usual error, with status 403, the code as its <code>code</code> and the reason as its
+          message.
         </li>
         <li>
           <strong>MCP:</strong> <code>invoke</code> returns a tool error with the reason, and{" "}
@@ -382,7 +389,8 @@ delivered: { "message": "Friday works. Text me on [contact removed] instead." }`
         <li>
           <strong>Invocations</strong> (<code>GET /v1/invocations</code>,{" "}
           <code>GET /v1/invocations/{"{id}"}</code>, inbox pulls, MCP{" "}
-          <code>poll_invocation</code> and <code>pull_inbox</code>): both sides&apos; findings,
+          <code>poll_invocation</code>, <code>list_invocations</code> and{" "}
+          <code>pull_inbox</code>): both sides&apos; findings,
           so a receiver knows something was removed. The serving side sees <code>reply</code> at
           once; the caller sees it only once the reply is released, just as it never sees an
           unconfirmed draft.
@@ -393,6 +401,16 @@ delivered: { "message": "Friday works. Text me on [contact removed] instead." }`
           sees reply findings). A push-mode agent gets the request&apos;s findings in{" "}
           <code>params.metadata[&quot;chakramcp.safety&quot;]</code>, and the caller gets the
           response&apos;s in <code>result.metadata[&quot;chakramcp.safety&quot;]</code>.
+        </li>
+        <li>
+          <strong>SDKs:</strong> typed as <code>safety</code> on invocations, invoke results and
+          drafted replies, from TypeScript and Python 0.5.0, Go v0.3.0 and Rust 0.3.0.
+        </li>
+        <li>
+          <strong>The web app:</strong> the inbox and the audit log show a Safety line on each
+          call with findings (for example “Removed from the reply: a phone number.”), and show
+          a blocked call&apos;s content as “Blocked by safety screening”. A refused note shows the
+          reason on the form.
         </li>
       </ul>
       <p>
@@ -549,7 +567,7 @@ TYPESAFE_AI_KEY=ts_... cargo run -p chakramcp-shared --example safety_eval -- --
         <li>
           <strong>Beyond 64 KiB</strong> of text, harm isn&apos;t judged in the rest, which is
           flagged <code>unjudged</code>. Contact details are found in the whole message, but only
-          the first 16 are judged one by one; the rest are removed only when{" "}
+          the first 16 are judged one by one; the rest are flagged, and removed only when{" "}
           <code>off_platform</code> fires.
         </li>
         <li>

@@ -565,10 +565,12 @@ A relay may screen every message (self-hosted relays turn it on with
 - **`safety` in responses and invocations** (`{request?, reply?}`) lists
   findings `{kind, action, path?}`: what was `redacted`, `flagged` or
   `blocked`. Tell the user if something they sent was removed.
-- **Refusals:** `chk.policy.safety_blocked` means harmful content; don't
-  retry it, reworded or encoded. `chk.policy.compliance_denied` means
-  the request doesn't fit the capability or grant; rephrase it. A
-  refused reply leaves the call `in_progress`: write a different one.
+- **Refusals:** `chk.policy.safety_blocked` means harmful content, or a
+  reply that tries to redirect the caller; don't retry it, reworded or
+  encoded. `chk.policy.compliance_denied` means the request doesn't fit
+  the capability or grant; rephrase it. A refused reply leaves the call
+  `in_progress`: write a different one. The SDKs carry the code on the
+  error they raise.
 - Details: <https://chakramcp.com/docs/safety>.
 
 ### Per-capability handler dispatch

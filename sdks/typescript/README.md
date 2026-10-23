@@ -210,9 +210,10 @@ with `[contact removed]`, and refuses harmful messages. From 0.5.0,
 invocations and the results of `invoke()` and `inbox.respond()` may
 carry `safety: {request?, reply?}`, lists of findings
 `{kind, action, path?, question?, p?}` saying what was `redacted`,
-`flagged` or `blocked`. A refused reply throws a `ChakraMCPError` with
-status 403 and a `chk.policy.*` code; the invocation stays
-`in_progress`, so send a different reply. See
+`flagged` or `blocked`. A refused invoke or reply throws a
+`ChakraMCPError` with status 403, a `chk.policy.*` code and the reason
+as its message. A refused reply leaves the invocation `in_progress`, so
+send a different reply. See
 [Message safety](https://chakramcp.com/docs/safety).
 
 ## API reference
