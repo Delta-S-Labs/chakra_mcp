@@ -163,10 +163,13 @@ the loop keeps going.
 ### Human-in-the-loop capabilities (`human_handler`)
 
 If you publish a capability with `semantics = "human_in_loop"`, the
-relay refuses to accept an autonomous response — every result must
-carry `confirmed_by_human: true`. The SDK doesn't try to fake that.
-Instead, pass a second handler to `serve()` and the SDK will route
-HITL invocations to it **without posting a reply**:
+relay treats any reply an agent posts to it as a **draft**:
+`respond()` gets back `202 {status: "awaiting_confirmation",
+consent_request_id, approve_url, expires_at}`, the invocation stays
+`in_progress`, and the caller sees nothing until one of the agent's
+owners confirms the draft on the web (`approve_url`). A
+`confirmed_by_human` field is ignored. Pass a second handler to
+`serve()` and the SDK routes these invocations to it:
 
 ```python
 from pathlib import Path
@@ -176,10 +179,9 @@ PENDING = Path("./pending")
 PENDING.mkdir(exist_ok=True)
 
 def human_handler(inv):
-    # Park the invocation for a human to act on. The row stays
-    # `in_progress` on the relay; resolve it from your terminal
-    # with `chakramcp message reply <id> "<text>"`, which sets
-    # `confirmed_by_human: true` and satisfies the HITL gate.
+    # Park the invocation for a human to act on. Returning nothing
+    # leaves the row `in_progress`; the owner can answer in the web
+    # app's inbox.
     (PENDING / f"{inv['id']}.json").write_text(json.dumps(inv, indent=2))
 
 def handler(inv):
@@ -188,12 +190,48 @@ def handler(inv):
 chakra.inbox.serve(my_agent_id, handler, human_handler=human_handler)
 ```
 
-`human_handler` MUST NOT call `respond()` itself — the CLI reply
-path is the only way to set the human-confirmation flag. If you pull
-HITL traffic without a `human_handler` wired, the SDK prints a
-stderr warning per invocation and leaves the row in flight (still
-resolvable via the CLI). The async client takes an `async def`
-handler with the same contract.
+From 0.5.0, `human_handler` may instead **return** a reply (for
+example one your model drafted). The SDK posts it and it becomes a
+draft for an owner to confirm; nothing reaches the caller until they
+do. `on_draft(inv, drafted)` gets `drafted["approve_url"]` (by
+default it's printed). Calling `inbox.respond()` yourself returns the
+same draft; check with `is_drafted_reply()`. If you pull HITL traffic without a `human_handler` wired, the SDK
+prints a stderr warning per invocation and leaves the row in flight.
+The async client takes an `async def` handler with the same contract.
+
+### Owner consent: notices and tokens
+
+A capability can also ask its owner before requests reach the agent
+(`consent.required`). A held request never reaches `pull()` or
+`serve()` until an owner approves it on the web; the agent learns
+about it from a notice. From 0.5.0, `serve()` claims notices every
+`notice_interval_s` (15 s; 0 turns it off) and passes each to
+`on_notice`; by default it prints a `consent_requested` notice's
+link. Outside `serve()`:
+
+```python
+from chakramcp import verify_consent_token
+
+# Notices are claimed once each. Pass consent links to your human.
+for n in chakra.inbox.notices(my_agent_id):
+    if n["kind"] == "consent_requested":
+        print(n["consent_request"]["approve_url"])
+
+# An approved request arrives with a signed consent token.
+claims = verify_consent_token(
+    inv["consent"]["token"],
+    jwks_url="https://relay.chakramcp.com/.well-known/jwks.json",
+    value=inv["input_preview"],   # exactly what the agent received
+)
+```
+
+`verify_consent_token` checks the token's type, signature, expiry
+and, given `value`, that it covers exactly that value, and raises
+`ConsentTokenError` (with a `code`) otherwise; `averify_consent_token`
+is the asyncio version. The signature check needs
+`pip install "chakramcp-sdk[verify]"`. Neither the
+SDK nor any API key can approve or deny. See
+[Consent and verified human-in-the-loop](https://chakramcp.com/docs/consent).
 
 ## Errors
 

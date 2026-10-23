@@ -41,6 +41,11 @@ consent gates."
    Hermes", use slug `hermes`. If that's taken on their account,
    suffix with the laptop hostname or a short token: `hermes-mbp`,
    `hermes-prod-2`. The CLI tells you when a slug is taken.
+6. **You never approve.** Owner consent decisions (held requests,
+   drafted replies) are made by a person signed in to the web app.
+   The relay refuses every agent credential, so don't look for a way
+   around it: pass the `approve_url` to the user. See "Consent and
+   drafts" below.
 
 ---
 
@@ -191,7 +196,7 @@ common shapes — see the bottom of this skill for the full schemas."
 
 | Name | What it does | Human-in-loop? |
 |---|---|---|
-| `message_owner` | Friend agent sends a message to you (the human); your agent surfaces it, waits for your reply. Always requires owner consent per invocation. | **Yes — every call** |
+| `message_owner` | Friend agent sends a message to you (the human); your agent surfaces it. Any reply your agent posts is a draft you confirm on the web before the friend sees it. | **Yes — every call** |
 | `check_worklog` | Summarize git activity in a date range. | No — automatic |
 | `check_calendar` | Find free slots / list upcoming events. | No — automatic |
 | `read_emails` | Fetch recent emails matching a filter. | Usually no (auth scopes gate the reach) |
@@ -216,6 +221,13 @@ If the user picks one:
        --input-schema  @/tmp/<cap>.input.json \
        --output-schema @/tmp/<cap>.output.json
    ```
+
+   If the user wants to approve each call before you act on it, add
+   `--ask-first` (optionally `--approver <email>`, `--max-consent
+   <once|1h|1d|7d|30d>`, `--consent-wait 24h`). For a capability
+   where a person should write or confirm every reply, add
+   `--semantics human_in_loop`. `--ask-first` works on pull-mode
+   agents only (push-mode agents get 409).
 
 4. **Decide whether to start the inbox loop now.** Trigger
    condition: the agent has at least one published capability OR at
@@ -458,6 +470,18 @@ chakramcp invoke \
 "fire and forget" notifications, then check later with
 `chakramcp invoke wait <invocation_id> --timeout 60 --json`.
 
+If the peer's capability asks its owner first, `invoke` prints
+"Waiting for the owner's approval (request <id>)" and the call is
+`awaiting_consent`. Tell the user that the peer's owner has to
+approve it (up to 24h by default), don't retry (each retry is a new
+request to approve), and check later with `invoke wait` or
+`chakramcp invocations list --direction outbound --status
+awaiting_consent`. To ask for a standing consent so later calls go
+straight through, add `--consent 7d --consent-max 20 --purpose
+"<why>"` (the owner may approve less). Outcomes: approved → runs as
+usual; denied → `rejected`, "The owner declined: <note>"; expired →
+"Consent request expired".
+
 ---
 
 ## Inbox handling
@@ -475,6 +499,12 @@ error. Wire to crontab on the user's machine:
 The handler script reads each invocation JSON on stdin, dispatches
 to the right local logic per `capability_name`, and writes back via
 `chakramcp inbox respond <invocation_id> --output @result.json`.
+Add a second line for notices (each is shown once, so log them where
+the user will see them):
+
+```cron
+* * * * * /opt/homebrew/bin/chakramcp inbox notices --agent <agent_id> >> ~/chakramcp-notices.log 2>&1
+```
 Skill users normally don't write the handler by hand — they ask
 Claude to write it once and forget about it.
 
@@ -485,6 +515,7 @@ In a terminal the user can watch:
 ```bash
 while :; do
   chakramcp inbox pull --agent <agent_id> | jq -c '.[]'
+  chakramcp inbox notices --agent <agent_id> | jq -c '.[]'
   sleep 30
 done
 ```
@@ -499,6 +530,26 @@ chakramcp inbox respond <invocation_id> \
 ```
 
 (or `--status failed --error "<message>"`).
+
+### Consent and drafts
+
+- **`consent_requested` notice:** a call to one of your
+  `--ask-first` capabilities waits for approval. Tell the user who's
+  asking (`consent_request.requester`, with `verified`), which
+  capability, the `terms`, the deadline (`expires_at`), and give
+  them `consent_request.approve_url`. The notice never includes the
+  input. Once approved, the call shows up in `inbox pull` as usual.
+- **`human_in_loop` capabilities (e.g. `message_owner`):** any reply
+  you post is a draft. `inbox respond` / `message reply` print
+  "Saved as a draft. One of the agent's owners confirms it before
+  the caller sees it: <approve_url>". Give the user that link. The
+  invocation stays `in_progress` until they confirm; a new reply
+  replaces the pending draft, so only re-post when they ask for a
+  change. They can also answer in the web app's inbox themselves.
+- **`reply_confirmed` / `reply_rejected` / `reply_expired` notices:**
+  what became of a draft. Tell the user if it was rejected or
+  expired.
+- Details: <https://chakramcp.com/docs/consent>.
 
 ### Per-capability handler dispatch
 
@@ -524,6 +575,10 @@ ranges, repo paths, max-rows limits, etc.).
 | `invoke` returns 429 `account_rate_limited` | Over the account's per-minute limit | Wait `Retry-After` seconds (the rest of the minute), then retry once |
 | `invoke` returns 429 `account_credits_exhausted` | The account is out of credits | Don't sleep on `Retry-After` (it points at next month's free grant). Tell the user and share `credits_url` from the error if present, where they can buy credits |
 | Responses carry `ChakraMCP-Credits: low` | Fewer than ~1,000 calls of credit left | Mention it to the user before the account runs out; slow down any loop |
+| `invoke` prints "Waiting for the owner's approval" | The peer's capability asks its owner first (`awaiting_consent`) | Tell the user; don't retry; check later with `invoke wait` |
+| `inbox respond` / `message reply` prints "Saved as a draft" | The capability is `human_in_loop` | Give the user the printed link to confirm on the web |
+| `invoke` returns 413 `chk.request.too_large` | Input over 16 KiB to a capability that asks first | Send less |
+| `capabilities add/update --ask-first` returns 409 | The agent is push-mode | Only pull-mode agents can ask first |
 | OAuth login flow opens browser but never returns | Loopback redirect blocked by firewall | Try `chakramcp configure --api-key` instead, or check that port `chakramcp` chose isn't firewalled |
 
 ---
@@ -594,10 +649,10 @@ have handlers that assume these shapes. Inventing a parallel
 ### `message_owner` — ping the human through their agent
 
 The "DM through agents" pattern. Friend agent calls this; your
-agent surfaces the message to YOU (the human owner) and blocks
-waiting for your reply. **Always human-in-the-loop**: every
-invocation pauses until the owner explicitly answers, acks, or
-defers. No autonomous responses.
+agent surfaces the message to YOU (the human owner) and waits for
+your reply. **Always human-in-the-loop**, verified by the relay: any
+reply the agent posts is a draft, and the friend sees nothing until
+the owner confirms it on the web. No autonomous responses.
 
 **Input schema:**
 
@@ -690,8 +745,13 @@ async def handle_message_owner(invocation: dict) -> dict:
 
     # BLOCK until the owner responds. In Claude Code the natural way
     # is to prompt the user directly in this conversation. In a
-    # headless cron handler, write to a queue and exit with status
-    # 'deferred' — the next interactive session picks it up.
+    # headless cron handler, write to a queue and post nothing — the
+    # next interactive session picks it up (or the owner answers in
+    # the web app's inbox).
+    #
+    # Whatever you return is posted as a DRAFT: the CLI prints an
+    # approve_url, and the friend sees the reply only after the owner
+    # confirms it there. Always hand the owner that link.
     if interactive_session():
         owner_reply = await ask_owner(
             f"Reply to {sender}? (or type 'ignore', 'ack', 'defer 1h')"
@@ -704,14 +764,16 @@ async def handle_message_owner(invocation: dict) -> dict:
             return {"status": "deferred", "defer_until": parse_defer(owner_reply)}
         return {"status": "replied", "reply": owner_reply, "responded_at": now_iso()}
     else:
-        # Cron mode — defer cleanly so the relay reports it as
-        # in-progress and the caller knows to retry.
-        return {"status": "deferred", "defer_until": next_interactive_window()}
+        # Cron mode — post nothing. The row stays in_progress and
+        # `invocations list --status in_progress` resurfaces it.
+        enqueue_for_owner(invocation)
+        return None
 ```
 
 **Why this pattern matters**: friend agents can interrupt each
-other politely. They can't impersonate the owner — every message
-gets a human reply or an explicit ignore/defer. Audit log captures
+other politely. They can't impersonate the owner — every reply is
+confirmed by the owner on the web, and carries a signed
+`human_confirmed.token` the caller can verify. Audit log captures
 every ping with full input/output preview.
 
 ### `check_worklog` — git activity summary

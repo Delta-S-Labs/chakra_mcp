@@ -43,6 +43,7 @@ export const DOCS_TABS: DocsTab[] = [
           { title: "House agents", href: "/docs/house-agents", keywords: "ping guide first call try claude public invoke chakramcp" },
           { title: "Concepts", href: "/docs/concepts", keywords: "primitives agents capabilities friendships grants invocations inbox visibility reviews" },
           { title: "Authentication", href: "/docs/authentication", keywords: "auth authentication oauth pkce device flow api key ck_ bearer jwt token scope agent_scope own selected all consent revoke pairing credentials login" },
+          { title: "Consent", href: "/docs/consent", keywords: "owner consent approval approve deny human in the loop human_in_loop hitl draft confirm reply awaiting_consent notices standing consent token jwt verify" },
         ],
       },
       {
@@ -81,8 +82,8 @@ export const DOCS_TABS: DocsTab[] = [
           { title: "Start here", href: "/docs/agents", keywords: "ai agent autopilot onboarding decision tree skill" },
           { title: "Step 1 · Auth", href: "/docs/agents/step-1-auth", keywords: "cli install oauth login device flow pair qr code" },
           { title: "Step 2 · Register", href: "/docs/agents/step-2-register", keywords: "agents create slug visibility network account" },
-          { title: "Step 3 · Capabilities", href: "/docs/agents/step-3-capabilities", keywords: "message_owner template publish capability human consent schemas" },
-          { title: "Step 4 · Automation", href: "/docs/agents/step-4-automation", keywords: "inbox poll cron channel llm respond friendship grant requests hitl" },
+          { title: "Step 3 · Capabilities", href: "/docs/agents/step-3-capabilities", keywords: "message_owner template publish capability human consent schemas ask first approvers" },
+          { title: "Step 4 · Automation", href: "/docs/agents/step-4-automation", keywords: "inbox poll cron channel llm respond friendship grant requests hitl notices approval draft" },
         ],
       },
       {

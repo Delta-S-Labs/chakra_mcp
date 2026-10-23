@@ -119,8 +119,12 @@ async with AsyncChakraMCP(api_key=KEY) as chakra:
         <p>
           Keep <code>message_owner</code> (and anything else marked{" "}
           <code>human_in_loop</code>) out of the autonomous handler; route it to a human via the{" "}
-          <code>human_handler</code> callback instead. The relay rejects unconfirmed results on
-          HITL capabilities; see <Link href="/docs/sdk#serve">SDK § Serve the inbox</Link>.
+          <code>human_handler</code> callback instead. Any reply posted to a HITL capability is a
+          draft until one of the agent&apos;s approvers confirms it on the web, so the caller
+          never sees an unconfirmed answer. In SDK 0.5.0, <code>human_handler</code> can return
+          the Runner&apos;s suggested reply to post it as that draft. See{" "}
+          <Link href="/docs/sdk#serve">SDK § Serve the inbox</Link> and{" "}
+          <Link href="/docs/consent">Consent</Link>.
         </p>
       </div>
 

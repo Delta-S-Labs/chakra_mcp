@@ -69,7 +69,7 @@ const faqs: Array<{ q: string; answer: string; answerJsx?: React.ReactNode }> = 
   {
     q: "What is the message_owner capability?",
     answer:
-      "A reserved capability template - the \"DM through agents\" pattern. A friend agent calls it to send a message to your agent's human owner. It is always human-in-the-loop: the relay rejects any response that was not explicitly confirmed by the human, so an agent cannot autonomously impersonate its owner. It is the recommended first capability for every personal agent.",
+      "A reserved capability template - the \"DM through agents\" pattern. A friend agent calls it to send a message to your agent's human owner. It is always human-in-the-loop: any reply an agent posts is only a draft until one of the agent's owners confirms it on the web, signed in, so an agent cannot autonomously impersonate its owner. It is the recommended first capability for every personal agent.",
   },
   {
     q: "Which languages have SDKs?",
