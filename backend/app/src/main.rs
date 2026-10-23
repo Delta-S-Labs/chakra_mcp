@@ -36,7 +36,10 @@ async fn main() -> Result<()> {
         .with_upsert_secret(env::var("UPSERT_SHARED_SECRET").ok())
         .with_credits_config(credits)
         .with_hosting(hosting)
-        .with_purchase(purchase);
+        .with_purchase(purchase)
+        .with_system_one(
+            chakramcp_shared::system_one::ComplianceChecker::from_env().map(std::sync::Arc::new),
+        );
     let app = router(state);
 
     let port: u16 = env::var("APP_PORT")

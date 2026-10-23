@@ -190,6 +190,10 @@ pub struct InvocationDto {
     /// it removes the "null means public" footgun for handlers and
     /// gives the audit log a single, stable column to filter by.
     pub tier: String,
+    /// What message safety removed or flagged: `request` for the input,
+    /// `reply` for the reply (shown to the caller once it's released).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub safety: Option<Safety>,
 }
 
 /// Friendship details the relay verified before queuing this
@@ -1385,7 +1389,7 @@ pub async fn inbox(
             i.id, i.grant_id, i.granter_agent_id, i.grantee_agent_id,
             i.capability_id, i.capability_name, i.status,
             i.elapsed_ms, i.error_message, i.input_preview, i.output_preview,
-            i.created_at, i.claimed_at,
+            i.created_at, i.claimed_at, i.trust_snapshot,
             ga.display_name as "granter_display_name?",
             ea.display_name as "grantee_display_name?",
             ea.account_id   as "grantee_account_id?",
@@ -1490,7 +1494,9 @@ pub async fn inbox(
                     _ => None,
                 };
 
+                let safety = safety_from_snapshot(r.trust_snapshot.as_ref(), true, &r.status);
                 InvocationDto {
+                    safety,
                     id: r.id,
                     grant_id: r.grant_id,
                     granter_agent_id: r.granter_agent_id,
@@ -1687,6 +1693,7 @@ pub async fn list(
             let (friendship_context, grant_context) =
                 contexts_from_snapshot(r.trust_snapshot.as_ref());
             let i_served = r.i_served.unwrap_or(false);
+            let safety = safety_from_snapshot(r.trust_snapshot.as_ref(), i_served, &r.status);
             let consent = consent_deliver::read_dto(
                 r.cr_id,
                 r.cr_status.as_deref(),
@@ -1696,6 +1703,7 @@ pub async fn list(
                 r.cr_token.clone(),
             );
             InvocationDto {
+                safety,
                 id: r.id,
                 grant_id: r.grant_id,
                 granter_agent_id: r.granter_agent_id,
@@ -1831,6 +1839,7 @@ async fn fetch_one(state: &RelayState, user_id: Uuid, id: Uuid) -> Result<Invoca
     }
 
     let (friendship_context, grant_context) = contexts_from_snapshot(r.trust_snapshot.as_ref());
+    let safety = safety_from_snapshot(r.trust_snapshot.as_ref(), i_served, &r.status);
     let consent = consent_deliver::read_dto(
         r.cr_id,
         r.cr_status.as_deref(),
@@ -1841,6 +1850,7 @@ async fn fetch_one(state: &RelayState, user_id: Uuid, id: Uuid) -> Result<Invoca
     );
 
     InvocationDto {
+        safety,
         id: r.id,
         grant_id: r.grant_id,
         granter_agent_id: r.granter_agent_id,
@@ -1897,6 +1907,34 @@ impl InvocationDto {
 /// rows), both come back None — same as before this change. We
 /// silently swallow malformed snapshots; a future schema migration
 /// should be an additive ALTER rather than a destructive one.
+/// `safety` from a row's `trust_snapshot` (message safety §5): the request's
+/// findings, and the reply's once the caller may see it (the serving side
+/// always may; the caller once the reply is released, as it never sees a
+/// pending draft).
+pub(crate) fn safety_from_snapshot(
+    snapshot: Option<&Value>,
+    i_served: bool,
+    status: &str,
+) -> Option<Safety> {
+    let snap = snapshot?;
+    let findings = |key: &str| -> Option<Vec<safety::Finding>> {
+        let v = snap.get("system_one")?.get(key)?.get("findings")?;
+        serde_json::from_value::<Vec<safety::Finding>>(v.clone())
+            .ok()
+            .filter(|f| !f.is_empty())
+    };
+    let released = matches!(status, "succeeded" | "failed");
+    let s = Safety {
+        request: findings("safety"),
+        reply: if i_served || released {
+            findings("reply_safety")
+        } else {
+            None
+        },
+    };
+    (!s.is_empty()).then_some(s)
+}
+
 fn contexts_from_snapshot(
     snapshot: Option<&Value>,
 ) -> (Option<FriendshipContext>, Option<GrantContext>) {

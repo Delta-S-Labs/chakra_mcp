@@ -352,6 +352,19 @@ pub async fn propose(
     // active proposals via a 23505 SQLSTATE.
     let _target_account = agent_account(&state.db, req.target_agent_id).await?;
 
+    // Message safety (when on): the proposal is a note to the target.
+    let req = ProposeRequest {
+        proposer_message: chakramcp_shared::system_one::note_or_refuse(
+            state.compliance.as_deref(),
+            req.proposer_message,
+            chakramcp_shared::system_one::NoteAbout {
+                kind: "friendship_message",
+                ..Default::default()
+            },
+        )
+        .await?,
+        ..req
+    };
     let id = Uuid::now_v7();
     let inserted = sqlx::query!(
         r#"
@@ -492,6 +505,18 @@ pub async fn accept(
         return Err(ApiError::Forbidden);
     }
 
+    // Message safety (when on): the reply is a note to the proposer.
+    let req = ResponseRequest {
+        response_message: chakramcp_shared::system_one::note_or_refuse(
+            state.compliance.as_deref(),
+            req.response_message,
+            chakramcp_shared::system_one::NoteAbout {
+                kind: "friendship_message",
+                ..Default::default()
+            },
+        )
+        .await?,
+    };
     sqlx::query!(
         r#"
         UPDATE friendships
@@ -558,6 +583,18 @@ pub async fn reject(
         return Err(ApiError::Forbidden);
     }
 
+    // Message safety (when on): the reply is a note to the proposer.
+    let req = ResponseRequest {
+        response_message: chakramcp_shared::system_one::note_or_refuse(
+            state.compliance.as_deref(),
+            req.response_message,
+            chakramcp_shared::system_one::NoteAbout {
+                kind: "friendship_message",
+                ..Default::default()
+            },
+        )
+        .await?,
+    };
     sqlx::query!(
         r#"
         UPDATE friendships
@@ -628,6 +665,27 @@ pub async fn counter(
         return Err(ApiError::Forbidden);
     }
 
+    // Message safety (when on): both messages are notes to the other side.
+    let req = CounterRequest {
+        proposer_message: chakramcp_shared::system_one::note_or_refuse(
+            state.compliance.as_deref(),
+            req.proposer_message,
+            chakramcp_shared::system_one::NoteAbout {
+                kind: "friendship_message",
+                ..Default::default()
+            },
+        )
+        .await?,
+        response_message: chakramcp_shared::system_one::note_or_refuse(
+            state.compliance.as_deref(),
+            req.response_message,
+            chakramcp_shared::system_one::NoteAbout {
+                kind: "friendship_message",
+                ..Default::default()
+            },
+        )
+        .await?,
+    };
     let new_id = Uuid::now_v7();
     let mut tx = state.db.begin().await?;
 

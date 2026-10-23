@@ -32,7 +32,7 @@
 pub mod questions;
 mod screen;
 
-pub use screen::{Block, Screened};
+pub use screen::{note_or_refuse, Block, NoteAbout, Screened};
 
 use std::time::{Duration, Instant};
 

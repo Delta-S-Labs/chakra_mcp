@@ -155,7 +155,16 @@ async fn handle_send_message(
                 wait_secs: ctx.consent_wait_secs,
             });
             let mut response = if authz.target_is_push {
-                handle_authorized_push(state, authz, cap_name, body, headers, trust_snapshot).await
+                handle_authorized_push(
+                    state,
+                    authz,
+                    cap_name,
+                    Some(ctx.description).filter(|d| !d.trim().is_empty()),
+                    body,
+                    headers,
+                    trust_snapshot,
+                )
+                .await
             } else {
                 handle_authorized_pull(
                     state,
@@ -324,14 +333,26 @@ pub async fn stream_stub(
 }
 
 /// Forward an authorized push call upstream and return the response.
+#[allow(clippy::too_many_arguments)]
 async fn handle_authorized_push(
     state: &RelayState,
     authz: Authorized,
     capability_name: String,
+    capability_description: Option<String>,
     body: Bytes,
     headers: &HeaderMap,
     trust_snapshot: Option<serde_json::Value>,
 ) -> Response {
+    // Message safety (when on) screens the agent's response too.
+    let reply_screen = state
+        .compliance
+        .as_deref()
+        .filter(|c| c.safety_enabled())
+        .map(|checker| crate::forwarder::ReplyScreen {
+            checker,
+            capability_name: &capability_name,
+            capability_description: capability_description.as_deref(),
+        });
     let keystore = KeyStore::new(state.db.clone());
     let http = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(
@@ -349,6 +370,7 @@ async fn handle_authorized_push(
         body,
         headers,
         trust_snapshot,
+        reply_screen,
     )
     .await
     {

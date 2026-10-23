@@ -322,7 +322,7 @@ pub async fn create(
     // Capability must belong to granter agent.
     let cap = sqlx::query!(
         r#"
-        SELECT c.id, c.agent_id, ga.account_id as granter_account_id
+        SELECT c.id, c.agent_id, c.name, c.description, ga.account_id as granter_account_id
         FROM agent_capabilities c
         JOIN agents ga ON ga.id = c.agent_id
         WHERE c.id = $1
@@ -369,6 +369,18 @@ pub async fn create(
         ));
     }
 
+    // Message safety (when on): the purpose is a note to the grantee.
+    let purpose = chakramcp_shared::system_one::note_or_refuse(
+        state.compliance.as_deref(),
+        purpose,
+        chakramcp_shared::system_one::NoteAbout {
+            kind: "grant_purpose",
+            capability_name: Some(&cap.name),
+            capability_description: Some(cap.description.as_str()).filter(|d| !d.trim().is_empty()),
+            ..Default::default()
+        },
+    )
+    .await?;
     let id = Uuid::now_v7();
     let inserted = sqlx::query!(
         r#"

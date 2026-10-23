@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT c.id, c.agent_id, ga.account_id as granter_account_id\n        FROM agent_capabilities c\n        JOIN agents ga ON ga.id = c.agent_id\n        WHERE c.id = $1\n        ",
+  "query": "\n        SELECT c.id, c.agent_id, c.name, c.description, ga.account_id as granter_account_id\n        FROM agent_capabilities c\n        JOIN agents ga ON ga.id = c.agent_id\n        WHERE c.id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -27,6 +27,28 @@
       },
       {
         "ordinal": 2,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
         "name": "granter_account_id",
         "type_info": "Uuid",
         "origin": {
@@ -45,8 +67,10 @@
     "nullable": [
       false,
       false,
+      false,
+      false,
       false
     ]
   },
-  "hash": "fc41f85ea722ec02a3fb9b4f266b786e1779d937d39365da338433e4618b7811"
+  "hash": "e3f21987e5d80101134565373ab7e85891eb6af164d4f71d22644140efa9f4a2"
 }
