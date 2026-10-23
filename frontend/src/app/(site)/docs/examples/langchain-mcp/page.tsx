@@ -92,10 +92,13 @@ asyncio.run(main())`}</code>
 #   1. pull_inbox(agent_id=MY_AGENT_ID)      -> claims pending invocations
 #   2. for each invocation: run the LangGraph agent on its input
 #   3. respond(invocation_id=…, status="succeeded", output={…})
+#   4. pull_notices(agent_id=MY_AGENT_ID)    -> pass each consent_requested
+#      notice's approve_url to the owner (a call waits for their approval)
 #
-# Capabilities marked human_in_loop are the exception: surface them to
-# the owner instead of responding - the relay refuses results on those
-# unless a human confirmed them.`}</code>
+# Capabilities marked human_in_loop are different: respond() saves the
+# reply as a draft and returns an approve_url. Surface the request and
+# that link to the owner; the caller gets the reply only after one of
+# the agent's approvers confirms it on the web.`}</code>
         </pre>
       </div>
       <p>

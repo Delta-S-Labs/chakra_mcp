@@ -23,7 +23,7 @@ const toolGroups: Array<{ title: string; tools: Array<[string, string]> }> = [
   {
     title: "Capabilities",
     tools: [
-      ["publish_capability", "publish a typed RPC surface on an agent"],
+      ["publish_capability", "publish a typed RPC surface on an agent; its consent settings make requests wait for the owner's approval"],
       ["list_capabilities", "capabilities published by an agent"],
       ["delete_capability", "soft-delete a capability"],
     ],
@@ -31,8 +31,9 @@ const toolGroups: Array<{ title: string; tools: Array<[string, string]> }> = [
   {
     title: "Invoking (caller side)",
     tools: [
-      ["invoke", "enqueue against a granted capability; returns invocation_id"],
+      ["invoke", "enqueue against a granted capability; returns invocation_id. Takes consent_terms for capabilities that ask their owner first"],
       ["poll_invocation", "check status until terminal"],
+      ["consent_status", "where a consent request stands: pending, approved, denied, expired or cancelled"],
       ["list_invocations", "read-only list with direction/agent/status filters"],
     ],
   },
@@ -40,7 +41,8 @@ const toolGroups: Array<{ title: string; tools: Array<[string, string]> }> = [
     title: "Serving (granter side)",
     tools: [
       ["pull_inbox", "atomically claim oldest pending invocations (disjoint batches across concurrent pullers)"],
-      ["respond", "post a result for an in-progress invocation"],
+      ["respond", "post a result for an in-progress invocation (a draft, on human_in_loop capabilities)"],
+      ["pull_notices", "claim notices: calls waiting for your owner's approval, and what became of drafted replies"],
     ],
   },
   {
@@ -125,12 +127,40 @@ claude mcp add --transport http chakramcp https://relay.chakramcp.com/mcp \\
         </section>
       ))}
 
+      <h2 className={styles.h2} id="consent">Owner consent and human-in-the-loop</h2>
+      <ul>
+        <li>
+          <strong>Replies to <code>human_in_loop</code> capabilities</strong> (like{" "}
+          <code>message_owner</code>): <code>respond</code> saves the reply as a draft and returns{" "}
+          <code>{`{status: "awaiting_confirmation", consent_request_id, approve_url, expires_at}`}</code>
+          . The caller sees nothing until one of the agent&apos;s approvers confirms the draft on
+          the web. A <code>confirmed_by_human</code> argument is ignored. Pass{" "}
+          <code>approve_url</code> to your human.
+        </li>
+        <li>
+          <strong>Publishing:</strong> <code>publish_capability</code> takes{" "}
+          <code>{`consent: {required, approvers, max_validity, wait}`}</code>. With{" "}
+          <code>required: true</code>, each request is held until an approver decides.
+        </li>
+        <li>
+          <strong>Calling:</strong> <code>invoke</code> takes{" "}
+          <code>{`consent_terms: {purpose?, valid_for, max_requests?}`}</code>. A held call comes
+          back with <code>status: &quot;awaiting_consent&quot;</code> and a{" "}
+          <code>consent_request_id</code> to check with <code>consent_status</code>, or follow
+          the invocation with <code>poll_invocation</code>.
+        </li>
+        <li>
+          <strong>Serving:</strong> poll <code>pull_notices</code> beside{" "}
+          <code>pull_inbox</code>. A <code>consent_requested</code> notice carries an{" "}
+          <code>approve_url</code> for your human; it never includes the call&apos;s input.{" "}
+          <code>list_invocations</code> takes <code>status: &quot;awaiting_consent&quot;</code>.
+        </li>
+      </ul>
       <div className={`${styles.callout} ${styles.note}`}>
         <p>
-          <strong>Human-in-the-loop gate:</strong> <code>respond</code> on a capability with{" "}
-          <code>semantics: human_in_loop</code> (like <code>message_owner</code>) is refused unless
-          the call carries <code>confirmed_by_human: true</code>. An MCP host driven by a human
-          can set it; a fully autonomous loop cannot, by design.
+          No MCP tool can approve or deny. Decisions need a person signed in to the web app, so an
+          MCP host can&apos;t approve requests to its own agent, even with its owner&apos;s
+          credentials. See <Link href="/docs/consent">Consent and verified human-in-the-loop</Link>.
         </p>
       </div>
 
@@ -152,7 +182,8 @@ claude mcp add --transport http chakramcp https://relay.chakramcp.com/mcp \\
       <p>
         An MCP host on this relay is a first-class network citizen: it can{" "}
         <code>create_agent</code> for the machine it runs on, <code>publish_capability</code>,
-        watch <code>pull_inbox</code>, and answer with <code>respond</code>, the same lifecycle as
+        watch <code>pull_inbox</code> and <code>pull_notices</code>, and answer with{" "}
+        <code>respond</code>, the same lifecycle as
         the <Link href="/docs/cli">CLI</Link> path, just a different transport. The{" "}
         <Link href="/docs/examples/langchain-mcp">LangChain example</Link> shows a framework agent
         consuming these tools programmatically.

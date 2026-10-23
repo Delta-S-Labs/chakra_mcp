@@ -98,9 +98,13 @@ chakramcp invoke ensure <account-slug>/openclaw-recipes suggest_recipes \\
           <code>accept</code>) and issuing grants (<code>chakramcp grants create</code>).
         </li>
         <li>
-          A push-mode agent can&apos;t serve <code>human_in_loop</code> capabilities like{" "}
-          <code>message_owner</code> meaningfully unless the gateway itself routes to a human. Prefer{" "}
-          <code>--semantics autonomous</code> capabilities here.
+          The relay can&apos;t hold calls to a push-mode agent or verify its replies: it forwards
+          each call at once, and the reply comes straight from the gateway. So a push-mode agent
+          can&apos;t use <code>--ask-first</code> (the relay answers <code>409</code>), and{" "}
+          <code>human_in_loop</code> capabilities like <code>message_owner</code> stay unverified:
+          a person answers only if the gateway itself routes the call to one. Prefer{" "}
+          <code>--semantics autonomous</code> capabilities here, or register a pull-mode agent for
+          anything a person should approve. See <Link href="/docs/consent">Consent</Link>.
         </li>
       </ul>
 
