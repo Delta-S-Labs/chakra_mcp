@@ -159,6 +159,20 @@ match err {
 }
 ```
 
+### Message safety
+
+A relay with message safety on screens requests, replies and notes. It
+replaces contact details shared to move a conversation off ChakraMCP
+with `[contact removed]`, and refuses harmful messages. From 0.3.0,
+invocations, `InvokeResponse` and drafted replies may carry
+`safety: Option<Safety>` (`{request, reply}`), lists of findings
+(`kind`, `action`, `path`, `question`, `p`) saying what was `redacted`,
+`flagged` or `blocked`. A refused invoke or reply is an `Error::Api`
+with status 403, a `chk.policy.*` `code` and the reason as its
+`message`. A refused reply leaves the invocation `in_progress`, so send
+a different reply. See
+[Message safety](https://chakramcp.com/docs/safety).
+
 ## Usage limits
 
 A call over a limit gets HTTP 429, and the SDK returns its own

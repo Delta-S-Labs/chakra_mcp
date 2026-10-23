@@ -202,6 +202,20 @@ given `value`, that it covers exactly that value, and throws
 any API key can approve or deny. See
 [Consent and verified human-in-the-loop](https://chakramcp.com/docs/consent).
 
+### Message safety
+
+A relay with message safety on screens requests, replies and notes. It
+replaces contact details shared to move a conversation off ChakraMCP
+with `[contact removed]`, and refuses harmful messages. From 0.5.0,
+invocations and the results of `invoke()` and `inbox.respond()` may
+carry `safety: {request?, reply?}`, lists of findings
+`{kind, action, path?, question?, p?}` saying what was `redacted`,
+`flagged` or `blocked`. A refused invoke or reply throws a
+`ChakraMCPError` with status 403, a `chk.policy.*` code and the reason
+as its message. A refused reply leaves the invocation `in_progress`, so
+send a different reply. See
+[Message safety](https://chakramcp.com/docs/safety).
+
 ## API reference
 
 | Method                                | Calls                                            |

@@ -268,7 +268,8 @@ When `SYSTEM_ONE_SAFETY` is off, today's checks keep their current single thresh
 
 **Blocking:**
 - **A request:** refused like a compliance denial today. REST returns 403 with a
-  `rejected` row; MCP returns a tool error; A2A returns `-32009`. The reason names the
+  `rejected` row; MCP returns a tool error; A2A returns `-32009` and, as for a compliance
+  denial today, records no row. The reason names the
   question, e.g. "System One safety check blocked this request: help with a crime
   (harm_crime=0.93)".
 - **A reply:** refused with 403 `chk.policy.safety_blocked` and the reason. The invocation
@@ -326,7 +327,9 @@ omitted when empty.
   - the invoke response (REST, MCP) carries `safety.request`;
   - a `/result` or MCP `respond` response carries `safety.reply`, whether it returns the
     finished invocation or a drafted reply;
-  - a refused note's 403 carries the finding in its body.
+  - a refused note's 403 carries only the code and the reason
+    (`{"error": {code, message}}`). Notes have no row, so their findings go to the logs
+    and metrics.
 - **Invocations** (`GET /v1/invocations`, inbox pull, MCP `poll_invocation`,
   `list_invocations`) carry `safety` for both sides, so a receiver knows something was
   removed.
@@ -432,7 +435,7 @@ omitted when empty.
   - English, Hindi, Bengali, Hinglish, Spanish and Chinese.
 
   It doubles as fixtures for the code-only tests.
-- **The live eval:** `cargo run -p chakramcp-relay --example safety_eval` reads
+- **The live eval:** `cargo run -p chakramcp-shared --example safety_eval` reads
   `TYPESAFE_AI_KEY` from the environment. It runs the labelled set against Jev and prints
   a pass/miss table per kind and language, without secrets. The owner runs it; thresholds
   are tuned on its output before the switch goes on.
@@ -489,7 +492,7 @@ looks right.
 - **Beyond 64 KiB** of text, Jev doesn't judge harm in the rest; it's flagged
   `unjudged`. Contact candidates come from the whole message, but only the first 16 are
   judged one by one; the rest are redacted only if `off_platform` fires on the judged
-  text.
+  text, and flagged otherwise.
 
 ## 11. Out of scope
 

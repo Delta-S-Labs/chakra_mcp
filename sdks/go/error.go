@@ -195,6 +195,25 @@ func errorFromResponse(resp *http.Response) error {
 		}
 		return apiErr
 	}
+	// A refused invoke answers {invocation_id, status, error, code}:
+	// error is the reason, code says which check refused it.
+	var refusal struct {
+		Error string `json:"error"`
+		Code  string `json:"code"`
+	}
+	if err := json.Unmarshal(body, &refusal); err == nil && refusal.Error != "" {
+		code := refusal.Code
+		if code == "" {
+			code = "unknown"
+		}
+		return &Error{
+			Status:         resp.StatusCode,
+			Code:           code,
+			Message:        refusal.Error,
+			RetryAfterSecs: retryAfterSecs(resp.Header, nil),
+			Raw:            body,
+		}
+	}
 	return &Error{
 		Status:         resp.StatusCode,
 		Code:           "unknown",

@@ -166,6 +166,20 @@ if err != nil {
 Use `errors.As` rather than a type assertion: the typed errors below
 wrap `*chakramcp.Error`, and `errors.As` sees through them.
 
+### Message safety
+
+A relay with message safety on screens requests, replies and notes. It
+replaces contact details shared to move a conversation off ChakraMCP
+with `[contact removed]`, and refuses harmful messages. From v0.3.0,
+invocations, `InvokeResponse` and drafted replies may carry
+`Safety` (`{Request, Reply}`), lists of findings
+(`Kind`, `Action`, `Path`, `Question`, `P`) saying what was `redacted`,
+`flagged` or `blocked`. A refused invoke or reply returns a
+`*chakramcp.Error` with status 403, a `chk.policy.*` `Code` and the
+reason as its `Message`. A refused reply leaves the invocation
+`in_progress`, so send a different reply. See
+[Message safety](https://chakramcp.com/docs/safety).
+
 ## Usage limits
 
 A call over a limit gets HTTP 429, and the SDK returns a typed error

@@ -874,7 +874,7 @@ async fn list_invocations(db: &PgPool, user: &AuthUser, args: Value) -> Result<V
         SELECT i.id, i.status, i.capability_name,
                i.granter_agent_id, ga.display_name as "granter_display_name?",
                i.grantee_agent_id, ea.display_name as "grantee_display_name?",
-               i.input_preview, i.output_preview, i.error_message,
+               i.input_preview, i.output_preview, i.error_message, i.trust_snapshot,
                i.elapsed_ms, i.created_at, i.claimed_at,
                EXISTS(
                    SELECT 1 FROM account_memberships m
@@ -910,21 +910,31 @@ async fn list_invocations(db: &PgPool, user: &AuthUser, args: Value) -> Result<V
 
     Ok(json!(rows
         .into_iter()
-        .map(|r| json!({
-            "id": r.id,
-            "status": r.status,
-            "capability_name": r.capability_name,
-            "granter_agent_id": r.granter_agent_id,
-            "granter_display_name": r.granter_display_name,
-            "grantee_agent_id": r.grantee_agent_id,
-            "grantee_display_name": r.grantee_display_name,
-            "input_preview": shown_input(r.i_served, r.consent_status.as_deref(), r.input_preview),
-            "output_preview": r.output_preview,
-            "error_message": r.error_message,
-            "elapsed_ms": r.elapsed_ms,
-            "created_at": r.created_at,
-            "claimed_at": r.claimed_at,
-        }))
+        .map(|r| {
+            let mut item = json!({
+                "id": r.id,
+                "status": r.status,
+                "capability_name": r.capability_name,
+                "granter_agent_id": r.granter_agent_id,
+                "granter_display_name": r.granter_display_name,
+                "grantee_agent_id": r.grantee_agent_id,
+                "grantee_display_name": r.grantee_display_name,
+                "input_preview": shown_input(r.i_served, r.consent_status.as_deref(), r.input_preview),
+                "output_preview": r.output_preview,
+                "error_message": r.error_message,
+                "elapsed_ms": r.elapsed_ms,
+                "created_at": r.created_at,
+                "claimed_at": r.claimed_at,
+            });
+            if let Some(safety) = crate::handlers::invoke::safety_from_snapshot(
+                r.trust_snapshot.as_ref(),
+                r.i_served,
+                &r.status,
+            ) {
+                item["safety"] = json!(safety);
+            }
+            item
+        })
         .collect::<Vec<_>>()))
 }
 

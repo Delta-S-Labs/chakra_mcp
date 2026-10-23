@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Agent } from "@/lib/relay";
 import { proposeFriendship } from "@/lib/relay";
+import { refusalMessage } from "@/lib/safety";
 import styles from "./friendships.module.css";
 
 export function ProposeForm({
@@ -57,7 +58,9 @@ export function ProposeForm({
       setMessage("");
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't send proposal.");
+      setError(
+        refusalMessage(err) ?? (err instanceof Error ? err.message : "Couldn't send proposal."),
+      );
     } finally {
       setPending(false);
     }

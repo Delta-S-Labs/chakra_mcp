@@ -567,6 +567,24 @@ export interface Invocation {
     confirmed_at: string | null;
     token: string | null;
   };
+  /** What message safety removed, flagged or blocked: the request's, and
+   *  the reply's once it's released. Absent when there's nothing. */
+  safety?: Safety;
+}
+
+/** One thing message safety found, and what it did. Never the removed
+ *  value: only its kind and where it was. */
+export interface SafetyFinding {
+  kind: string;
+  action: "redacted" | "flagged" | "blocked";
+  path?: string;
+  question?: string;
+  p?: number;
+}
+
+export interface Safety {
+  request?: SafetyFinding[];
+  reply?: SafetyFinding[];
 }
 
 /** A reply to a `human_in_loop` capability, kept as a draft until one of
@@ -576,6 +594,8 @@ export interface DraftedReply {
   consent_request_id: string;
   approve_url: string;
   expires_at: string;
+  /** What message safety removed or flagged in the draft. */
+  safety?: Safety;
 }
 
 export interface InvocationConsent {

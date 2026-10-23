@@ -138,7 +138,34 @@ class HumanConfirmed(TypedDict):
     token: str | None
 
 
-class DraftedReply(TypedDict):
+class SafetyFinding(TypedDict, total=False):
+    """One thing message safety found, and what it did. Never the removed
+    value: only its kind (``email``, ``phone``, ``harm_crime``…) and where
+    it was (``path``, e.g. ``input.note``)."""
+
+    kind: str
+    #: ``redacted``, ``flagged`` or ``blocked``.
+    action: str
+    path: str
+    #: The question that judged it, when the model did.
+    question: str
+    p: float
+
+
+class Safety(TypedDict, total=False):
+    """What message safety did to a call: ``request`` for the input,
+    ``reply`` for the reply (shown to the caller once it's released)."""
+
+    request: list[SafetyFinding]
+    reply: list[SafetyFinding]
+
+
+class _DraftedReplyExtras(TypedDict, total=False):
+    # What message safety removed or flagged in the draft.
+    safety: Safety
+
+
+class DraftedReply(_DraftedReplyExtras):
     """A reply to a ``human_in_loop`` capability, kept as a draft until one
     of the agent's owners confirms it on the web (``approve_url``)."""
 
@@ -210,6 +237,11 @@ class InvokeResponse(TypedDict, total=False):
     # Set when the capability asks its owner first: held
     # (``awaiting_consent``) or covered by a standing consent (``pending``).
     consent_request_id: str
+    # Why a rejected call was refused, when message safety refused it:
+    # ``chk.policy.safety_blocked`` or ``chk.policy.compliance_denied``.
+    code: str
+    # What message safety removed, flagged or blocked in the request.
+    safety: Safety
 
 
 class FriendshipContext(TypedDict):
@@ -295,6 +327,8 @@ class Invocation(TypedDict, total=False):
     # first), and that a person confirmed the reply (``human_in_loop``).
     consent: InvocationConsent
     human_confirmed: HumanConfirmed
+    # What message safety removed, flagged or blocked in this call.
+    safety: Safety
 
 
 # ─── Request bodies ──────────────────────────────────────

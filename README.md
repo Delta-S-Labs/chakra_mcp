@@ -207,6 +207,9 @@ invocation's input against the capability, the grant's `purpose` and
 the friendship before the relay queues it, and rejects off-purpose
 requests, prompt injection and attempts to pull out secrets. If
 TypeSafe is unreachable, calls go through and the failure is logged.
+Add `SYSTEM_ONE_SAFETY=true` for [message safety](https://chakramcp.com/docs/safety):
+replies and notes are screened too, harmful content is blocked, and
+contact details shared to move off ChakraMCP are removed.
 See [`docs/system-one-compliance.md`](docs/system-one-compliance.md).
 
 ## Repo layout

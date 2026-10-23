@@ -206,6 +206,8 @@ type DraftedReply struct {
 	ConsentRequestID string    `json:"consent_request_id"`
 	ApproveURL       string    `json:"approve_url"`
 	ExpiresAt        time.Time `json:"expires_at"`
+	// Safety is what message safety removed or flagged in the draft.
+	Safety *Safety `json:"safety,omitempty"`
 }
 
 // Notice kinds.
@@ -297,6 +299,35 @@ type InvokeResponse struct {
 	// the request is held (InvocationAwaitingConsent) or a standing
 	// consent covered it (InvocationPending).
 	ConsentRequestID *string `json:"consent_request_id,omitempty"`
+	// Code says why a rejected call was refused, when message safety
+	// refused it: "chk.policy.safety_blocked" or
+	// "chk.policy.compliance_denied".
+	Code string `json:"code,omitempty"`
+	// Safety is what message safety removed, flagged or blocked.
+	Safety *Safety `json:"safety,omitempty"`
+}
+
+// SafetyFinding is one thing message safety found, and what it did. It
+// never holds the removed value: only its kind and where it was.
+type SafetyFinding struct {
+	// Kind is "email", "phone", "url", "messaging_link", "handle",
+	// "off_platform", "opaque", "unjudged", or a question id such as
+	// "harm_crime".
+	Kind string `json:"kind"`
+	// Action is "redacted", "flagged" or "blocked".
+	Action string `json:"action"`
+	// Path is where in the message, e.g. "input.note".
+	Path string `json:"path,omitempty"`
+	// Question and P are set when the model judged it.
+	Question string   `json:"question,omitempty"`
+	P        *float64 `json:"p,omitempty"`
+}
+
+// Safety is what message safety did to a call: Request for the input,
+// Reply for the reply (shown to the caller once it's released).
+type Safety struct {
+	Request []SafetyFinding `json:"request,omitempty"`
+	Reply   []SafetyFinding `json:"reply,omitempty"`
 }
 
 type Invocation struct {
@@ -350,6 +381,8 @@ type Invocation struct {
 	// HumanConfirmed says a person confirmed the reply, for a
 	// human_in_loop capability.
 	HumanConfirmed *HumanConfirmed `json:"human_confirmed,omitempty"`
+	// Safety is what message safety removed, flagged or blocked.
+	Safety *Safety `json:"safety,omitempty"`
 }
 
 type FriendshipContext struct {

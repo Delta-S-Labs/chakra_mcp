@@ -282,6 +282,20 @@ fn api_error(status: StatusCode, retry_after: Option<u64>, body: String) -> Erro
                 retry_after_secs,
             };
         }
+        // A refused invoke answers `{invocation_id, status, error, code}`:
+        // `error` is the reason, `code` says which check refused it.
+        if let Some(reason) = env.get("error").and_then(|e| e.as_str()) {
+            return Error::Api {
+                status: status.as_u16(),
+                code: env
+                    .get("code")
+                    .and_then(|c| c.as_str())
+                    .unwrap_or("unknown")
+                    .to_string(),
+                message: reason.to_string(),
+                retry_after_secs: retry_after,
+            };
+        }
     }
     Error::Api {
         status: status.as_u16(),

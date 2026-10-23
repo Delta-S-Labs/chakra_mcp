@@ -131,6 +131,15 @@ def raise_for_response(response: httpx.Response) -> None:
                     _str_or_none(err.get("credits_url")),
                 )
         raise ChakraMCPError(response.status_code, code, message, retry_after)
+    # A refused invoke answers `{invocation_id, status, error, code}`:
+    # `error` is the reason, `code` says which check refused it.
+    if isinstance(body, dict) and isinstance(body.get("error"), str):
+        raise ChakraMCPError(
+            response.status_code,
+            _str_or_none(body.get("code")) or "unknown",
+            body["error"],
+            _retry_after_secs(response, {}),
+        )
     raise ChakraMCPError(
         response.status_code,
         "unknown",

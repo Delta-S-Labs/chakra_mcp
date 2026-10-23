@@ -77,6 +77,23 @@ func TestErrorEnvelopeDecoded(t *testing.T) {
 	}
 }
 
+func TestRefusedInvokeCarriesReasonAndCode(t *testing.T) {
+	_, c := newServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"invocation_id":"inv","status":"rejected","error":"System One safety check blocked this request: threatens violence","code":"chk.policy.safety_blocked"}`))
+	})
+	_, err := c.Invoke(context.Background(), &InvokeRequest{GranteeAgentID: "a2", Input: json.RawMessage(`{}`)})
+	apiErr, ok := err.(*Error)
+	if !ok {
+		t.Fatalf("expected *Error, got %T: %v", err, err)
+	}
+	if apiErr.Status != 403 || apiErr.Code != "chk.policy.safety_blocked" ||
+		apiErr.Message != "System One safety check blocked this request: threatens violence" {
+		t.Errorf("got %+v", apiErr)
+	}
+}
+
 func TestInvokeAndWaitPollsUntilTerminal(t *testing.T) {
 	var pollCount atomic.Int32
 	_, c := newServer(t, func(w http.ResponseWriter, r *http.Request) {

@@ -115,7 +115,7 @@ environment variables:
 | Key | |
 |---|---|
 | `JWT_SECRET` | Required: `openssl rand -hex 32` |
-| `TYPESAFE_AI_KEY` | Optional: System One compliance checks, with `SYSTEM_ONE_CHECKS=true` in `extraEnv` |
+| `TYPESAFE_AI_KEY` | Optional: System One compliance checks, with `SYSTEM_ONE_CHECKS=true` in `extraEnv` (and `SYSTEM_ONE_SAFETY=true` for message safety) |
 
 ```sh
 kubectl -n chakramcp create secret generic chakramcp \

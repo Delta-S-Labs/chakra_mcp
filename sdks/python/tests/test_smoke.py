@@ -253,6 +253,24 @@ def test_rate_limited_uses_retry_after_header(app_url: str, relay_url: str) -> N
 
 
 @respx.mock
+def test_refused_invoke_carries_reason_and_code(app_url: str, relay_url: str) -> None:
+    err = _invoke_error(
+        app_url,
+        relay_url,
+        403,
+        {
+            "invocation_id": "inv",
+            "status": "rejected",
+            "error": "System One safety check blocked this request: threatens violence",
+            "code": "chk.policy.safety_blocked",
+        },
+    )
+    assert err.status == 403
+    assert err.code == "chk.policy.safety_blocked"
+    assert err.message == "System One safety check blocked this request: threatens violence"
+
+
+@respx.mock
 def test_credits_exhausted_with_credits_url(app_url: str, relay_url: str) -> None:
     err = _invoke_error(
         app_url,

@@ -239,10 +239,13 @@ export class ChakraMCP {
           );
         }
       }
+      // A refused invoke answers `{invocation_id, status, error, code}`:
+      // `error` is the reason, `code` says which check refused it.
+      const refusal = parsed as { error?: unknown; code?: unknown } | null;
       throw new ChakraMCPError(
         res.status,
-        env?.error?.code ?? "unknown",
-        env?.error?.message ?? res.statusText,
+        env?.error?.code ?? stringOrUndefined(refusal?.code) ?? "unknown",
+        env?.error?.message ?? stringOrUndefined(refusal?.error) ?? res.statusText,
         retryAfter,
       );
     }

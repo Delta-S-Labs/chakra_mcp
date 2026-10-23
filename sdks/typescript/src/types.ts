@@ -184,6 +184,59 @@ export interface InvokeResponse {
    * (`awaiting_consent`) or a standing consent covered it (`pending`).
    */
   consent_request_id?: string;
+  /**
+   * Why a rejected call was refused, when message safety refused it:
+   * `chk.policy.safety_blocked` or `chk.policy.compliance_denied`.
+   */
+  code?: string;
+  /** What message safety removed, flagged or blocked in the request. */
+  safety?: Safety;
+}
+
+/** The kinds a message safety finding can have. */
+export type SafetyKind =
+  | "email"
+  | "phone"
+  | "url"
+  | "messaging_link"
+  | "handle"
+  | "off_platform"
+  | "opaque"
+  | "unjudged"
+  | "harm_violence"
+  | "harm_crime"
+  | "harm_harassment"
+  | "harm_minors"
+  | "harm_self"
+  | "harm_malware"
+  | "prompt_injection"
+  | "off_capability"
+  | "off_purpose"
+  | "off_relationship"
+  | "data_exfiltration";
+
+/**
+ * One thing message safety found, and what it did. Never the removed
+ * value: only its kind and where it was.
+ */
+export interface SafetyFinding {
+  kind: SafetyKind | (string & {});
+  action: "redacted" | "flagged" | "blocked";
+  /** Where in the message, e.g. `input.note` (absent for whole-message findings). */
+  path?: string;
+  /** The question that judged it, when the model did. */
+  question?: string;
+  /** The model's probability, when it judged it. */
+  p?: number;
+}
+
+/**
+ * What message safety did to a call: `request` for the input, `reply` for
+ * the reply (shown to the caller once it's released).
+ */
+export interface Safety {
+  request?: SafetyFinding[];
+  reply?: SafetyFinding[];
 }
 
 /** What the owner approved, and the consent token proving it. */
@@ -213,6 +266,8 @@ export interface DraftedReply {
   consent_request_id: string;
   approve_url: string;
   expires_at: string;
+  /** What message safety removed or flagged in the draft. */
+  safety?: Safety;
 }
 
 export type NoticeKind =
@@ -307,6 +362,8 @@ export interface Invocation {
   consent?: InvocationConsent;
   /** For a `human_in_loop` capability: a person confirmed the reply. */
   human_confirmed?: HumanConfirmed;
+  /** What message safety removed, flagged or blocked in this call. */
+  safety?: Safety;
 }
 
 export interface FriendshipContext {
