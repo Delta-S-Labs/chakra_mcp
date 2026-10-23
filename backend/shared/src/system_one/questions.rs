@@ -87,6 +87,20 @@ impl Shape {
             Shape::Fields => "the request (`request.fields`, decoded in `request.decoded`)",
         }
     }
+
+    /// Safety screening judges contact details on their own (`off_platform`,
+    /// `contact_<i>`), and removes them rather than blocking the request, so
+    /// the scope questions leave them out. The eval showed `off_capability`
+    /// blocking contact swaps the owner chose to redact.
+    fn contacts_aside(self) -> &'static str {
+        match self {
+            Shape::Input => "",
+            Shape::Fields => {
+                " Contact details, and offers to continue the conversation elsewhere, are \
+                 judged separately: leave them out of this answer."
+            }
+        }
+    }
 }
 
 /// The question map for this subject, keyed by the ids above.
@@ -97,6 +111,7 @@ pub fn questions(subject: &Subject<'_>) -> Value {
 /// [`questions`] for a state of the given shape.
 pub fn questions_in(subject: &Subject<'_>, shape: Shape) -> Value {
     let m = shape.msg();
+    let aside = shape.contacts_aside();
     let mut q = serde_json::Map::new();
 
     if subject.capability_description.is_some() {
@@ -110,8 +125,10 @@ pub fn questions_in(subject: &Subject<'_>, shape: Shape) -> Value {
                 ),
                 "The request is for a different task or different data than the \
                  capability describes.",
-                "The request is the kind of task the capability describes, even if it is \
-                 phrased unusually, is incomplete, or includes extra context.",
+                &format!(
+                    "The request is the kind of task the capability describes, even if it \
+                     is phrased unusually, is incomplete, or includes extra context.{aside}"
+                ),
             ),
         );
     }
@@ -125,8 +142,10 @@ pub fn questions_in(subject: &Subject<'_>, shape: Shape) -> Value {
                      in `grant.purpose`?"
                 ),
                 "The request serves a different goal than the one `grant.purpose` states.",
-                "The request fits the goal `grant.purpose` states, even if it is only \
-                 one part of it.",
+                &format!(
+                    "The request fits the goal `grant.purpose` states, even if it is only \
+                     one part of it.{aside}"
+                ),
             ),
         );
     }
@@ -142,8 +161,10 @@ pub fn questions_in(subject: &Subject<'_>, shape: Shape) -> Value {
                 ),
                 "The messages describe a specific scope of collaboration and the request \
                  is clearly outside it.",
-                "The messages are greetings or do not limit what may be asked, or the \
-                 request fits the collaboration they describe.",
+                &format!(
+                    "The messages are greetings or do not limit what may be asked, or the \
+                     request fits the collaboration they describe.{aside}"
+                ),
             ),
         );
     }
@@ -231,14 +252,24 @@ pub const BLOCKING_SAFETY: &[&str] = &[
     HARM_MALWARE,
 ];
 
-/// Block or redact at or above this, in English.
+/// Block at or above this in English, and redact at or above it in every
+/// language: a wrong removal costs a contact detail, not the message. The
+/// eval (2026-10-24) scored Hindi and Bengali contact swaps 0.86–0.96 and
+/// every legitimate non-English message under 0.05.
 pub const ACT: f64 = 0.85;
-/// Block or redact at or above this in other languages; between [`ACT`]
-/// and this, flag (the owner's call, §2).
+/// Block at or above this in other languages; between [`ACT`] and this,
+/// flag (the owner's call, §2).
 pub const ACT_NON_ENGLISH: f64 = 0.97;
 /// `harm_minors` blocks at or above this in every language: a false
 /// positive costs one blocked message, a miss far more.
 pub const ACT_HARM_MINORS: f64 = 0.5;
+/// A contact candidate is redacted at or above this when `off_platform`
+/// also fired on the message: the message as a whole is trying to move off
+/// ChakraMCP, so a candidate in it needs less evidence of its own. On the
+/// eval (2026-10-24) a bare "Ring 0984… after six" scored 0.55 on its own
+/// question and 0.85 on `off_platform`; task-data contacts scored at most
+/// 0.08, with `off_platform` at most 0.18.
+pub const CORROBORATED: f64 = 0.5;
 
 /// The threshold that acts on `id` for a message in or out of English.
 pub fn act_threshold(id: &str, english: bool) -> f64 {

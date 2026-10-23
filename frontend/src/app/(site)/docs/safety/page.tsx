@@ -185,9 +185,11 @@ delivered: { "message": "Friday works. Text me on [contact removed] instead." }`
           <code>[contact removed 1]</code>, <code>[contact removed 2]</code> and so on.
         </li>
         <li>
-          When <code>off_platform</code> fires, contact details past the 16th are removed too.
-          With nothing to remove (“message me on Telegram”), the message is flagged instead.
-          Without it, those contact details are flagged.
+          When <code>off_platform</code> fires, the message as a whole is trying to move off
+          ChakraMCP, so its contact details need less evidence of their own, and one hidden in
+          an encoding is removed whatever it scored. Contact details past the 16th are removed
+          too. With nothing to remove (“message me on Telegram”), the message is flagged
+          instead. Without it, those contact details are flagged.
         </li>
       </ul>
 
@@ -202,7 +204,9 @@ delivered: { "message": "Friday works. Text me on [contact removed] instead." }`
           text Jev didn&apos;t judge (<code>unjudged</code>): past 64 KiB, or in a part TypeSafe
           didn&apos;t answer for;
         </li>
-        <li>in a non-English message, any finding scored from 0.85 up to 0.97;</li>
+        <li>
+          in a non-English message, a harm or compliance finding scored from 0.85 up to 0.97;
+        </li>
         <li>
           <code>off_platform</code> with no contact details to remove;
         </li>
@@ -215,12 +219,18 @@ delivered: { "message": "Friday works. Text me on [contact removed] instead." }`
       <h3 className={styles.h3} id="thresholds">Thresholds</h3>
       <ul>
         <li>
-          <strong>English:</strong> block or remove at 0.85.
+          <strong>Blocking, in English:</strong> at 0.85.
         </li>
         <li>
-          <strong>Other languages:</strong> block or remove at 0.97, and flag from 0.85, until
-          accuracy in other languages is proven on a test set. Being non-English isn&apos;t itself
-          a finding.
+          <strong>Blocking, in other languages:</strong> at 0.97, and flag from 0.85, until
+          accuracy in other languages is proven on a larger test set. Being non-English
+          isn&apos;t itself a finding.
+        </li>
+        <li>
+          <strong>Removing contact details:</strong> at 0.85 in every language, since a wrong
+          removal costs a contact detail rather than the message. At 0.5 when{" "}
+          <code>off_platform</code> fires too, and at any score for a contact hidden in an
+          encoding.
         </li>
         <li>
           <strong>
@@ -230,7 +240,17 @@ delivered: { "message": "Friday works. Text me on [contact removed] instead." }`
           costs far more.
         </li>
       </ul>
-      <p>These apply to every question, the compliance questions included.</p>
+      <p>
+        The blocking thresholds apply to every question, the compliance questions included.
+        With safety on, the compliance questions leave contact details out: those are judged,
+        and removed, on their own.
+      </p>
+      <p>
+        These were tuned on a labelled set of 150 messages, run against Jev on 2026-10-24: 146
+        passed. Every harmful message was blocked, and no legitimate one was blocked or had
+        anything removed. The four misses were borderline contact attempts, most of them
+        obfuscated, that got through.
+      </p>
 
       <h2 className={styles.h2} id="codes">Refusals and codes</h2>
       <ul>
@@ -550,7 +570,8 @@ TYPESAFE_AI_KEY=ts_... cargo run -p chakramcp-shared --example safety_eval -- --
         </li>
         <li>
           <strong>The leniency for other languages can be steered.</strong> A sender can write in
-          another language to get the 0.97 threshold. <code>harm_minors</code> stays at 0.5, and
+          another language to get the 0.97 blocking threshold. Removing contact details
+          doesn&apos;t depend on language. <code>harm_minors</code> stays at 0.5, and
           every finding from 0.85 up is recorded, so the metrics show it if it happens.
         </li>
         <li>

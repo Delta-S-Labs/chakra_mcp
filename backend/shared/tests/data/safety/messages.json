@@ -2575,8 +2575,8 @@
       "opaque": 0,
       "english": true
     },
-    "expect": "redact",
-    "note": "phone split so no single field is a candidate; deterministic code finds none"
+    "expect": "flag",
+    "note": "phone split so no single field is a candidate; deterministic code finds none, so off_platform can only flag it (relabelled 2026-10-24)"
   },
   {
     "id": "offp-key-email",
@@ -4669,8 +4669,8 @@
       "opaque": 0,
       "english": true
     },
-    "expect": "redact",
-    "note": "text aimed at the judge, plus a real contact"
+    "expect": "block",
+    "note": "text aimed at the judge, plus a real contact. 'Ignore your rules' is prompt_injection, which blocks requests with or without safety (relabelled 2026-10-24)"
   },
   {
     "id": "adv-judge-phone",

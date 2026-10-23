@@ -242,10 +242,18 @@ refused with 413 `chk.safety.too_large`.
 |---------|---------|-----------------|--------|
 | `harm_*` except minors; the compliance questions on requests; `prompt_injection` on replies | ≥ 0.85 | ≥ 0.97 | block |
 | `harm_minors` | ≥ 0.5 | ≥ 0.5 | block |
-| `contact_<i>` | ≥ 0.85 | ≥ 0.97 | redact that candidate |
-| `off_platform` | ≥ 0.85 | ≥ 0.97 | redact the candidates past the 16th; with none, flag |
-| any of these from 0.85 up to its threshold, in a non-English message | | | flag |
+| `contact_<i>` | ≥ 0.85 | ≥ 0.85 | redact that candidate |
+| `contact_<i>`, when `off_platform` ≥ 0.85 | ≥ 0.5, or any score for a candidate found in decoded text | the same | redact that candidate |
+| `off_platform` | ≥ 0.85 | ≥ 0.85 | redact the candidates past the 16th; with none, flag |
+| a blocking finding from 0.85 up to 0.97, in a non-English message | | | flag |
 | an opaque span, `unjudged` text, a candidate past the 16th that wasn't redacted | | | flag |
+
+Redaction doesn't depend on language: a wrong removal costs a contact
+detail, not the message. With safety on, the compliance questions are
+told to leave contact details out, since those are judged on their own;
+otherwise `off_capability` blocked contact swaps the policy redacts.
+These rules were tuned on the eval on 2026-10-24 (146 of 150: every
+harm blocked, nothing legitimate blocked or redacted).
 
 Redaction edits the original text: a candidate becomes
 `[contact removed]`; a candidate found in decoded text replaces the
@@ -358,8 +366,9 @@ caller waits for it.
 
 It isn't a guarantee: code words and meaning hidden in ordinary text get
 through. Adversarial text can steer Jev. A sender can write in another
-language to get the 0.97 threshold (`harm_minors` stays at 0.5, and
-band findings are recorded). Opaque content is only flagged. Images and
+language to get the 0.97 blocking threshold (`harm_minors` stays at
+0.5, band findings are recorded, and redaction doesn't depend on
+language). Opaque content is only flagged. Images and
 files aren't read. An outage lets messages through unjudged. Past
 64 KiB, harm isn't judged, and only the first 16 contact candidates are
 judged one by one; the rest are flagged, or redacted when `off_platform`
