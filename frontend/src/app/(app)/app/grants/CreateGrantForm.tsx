@@ -9,6 +9,7 @@ import {
   type Capability,
   type Friendship,
 } from "@/lib/relay";
+import { refusalMessage } from "@/lib/safety";
 import styles from "./grants.module.css";
 
 const PURPOSE_MAX = 500;
@@ -140,7 +141,9 @@ export function CreateGrantForm({
       setPurpose("");
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't create grant.");
+      setError(
+        refusalMessage(err) ?? (err instanceof Error ? err.message : "Couldn't create grant."),
+      );
     } finally {
       setPending(false);
     }

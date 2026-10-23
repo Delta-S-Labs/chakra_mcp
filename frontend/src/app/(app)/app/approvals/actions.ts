@@ -3,11 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { approveRequest, denyRequest, RelayClientError, revokeConsent } from "@/lib/relay";
+import { refusalMessage } from "@/lib/safety";
 
 export type DecisionResult = { ok: true } | { ok: false; error: string };
 
 /** What a failed decision says to the approver. */
 function failure(err: unknown, what: string): DecisionResult {
+  // Message safety refused the note: say why, not "only approvers".
+  const refused = refusalMessage(err);
+  if (refused) return { ok: false, error: refused };
   if (err instanceof RelayClientError) {
     switch (err.status) {
       case 400:

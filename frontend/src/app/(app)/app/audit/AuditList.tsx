@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import type { Agent, Invocation, InvocationStatus } from "@/lib/relay";
 import { formatElapsed } from "@/lib/format";
+import { isBlocked } from "@/lib/safety";
+import SafetyNote from "@/components/safety/SafetyNote";
 import styles from "./audit.module.css";
 
 const STATUSES: InvocationStatus[] = [
@@ -198,6 +200,7 @@ function Row({
       {expanded && (
         <div className={styles.detail}>
           <TrustContext item={item} />
+          <SafetyNote safety={item.safety} />
           <Section title="Input">
             <Pre value={item.input_preview} />
           </Section>
@@ -334,6 +337,9 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function Pre({ value }: { value: unknown }) {
+  if (isBlocked(value)) {
+    return <p className={styles.muted}>Blocked by safety screening. The content isn&apos;t kept.</p>;
+  }
   if (value == null) {
     return <p className={styles.empty}>-</p>;
   }

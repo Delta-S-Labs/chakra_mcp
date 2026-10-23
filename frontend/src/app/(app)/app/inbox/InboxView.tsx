@@ -9,6 +9,9 @@ import {
   type Invocation,
 } from "@/lib/relay";
 import { isHeldInput } from "@/lib/consent";
+import { isBlocked, refusalMessage } from "@/lib/safety";
+import type { Safety } from "@/lib/relay";
+import SafetyNote from "@/components/safety/SafetyNote";
 import styles from "./inbox.module.css";
 
 export function InboxView({
@@ -212,7 +215,7 @@ function Row({
   const [pending, setPending] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   // A reply to a `human_in_loop` capability that waits for an approver.
-  const [drafted, setDrafted] = useState<string | null>(null);
+  const [drafted, setDrafted] = useState<{ url: string; safety?: Safety } | null>(null);
 
   // The respond form only applies INBOUND (work you serve). For outbound
   // calls you're the caller — you can't (and shouldn't) post a result;
@@ -245,12 +248,14 @@ function Row({
     try {
       const updated = await reportResult(token, item.id, body);
       if (updated.status === "awaiting_confirmation") {
-        setDrafted(updated.approve_url);
+        setDrafted({ url: updated.approve_url, safety: updated.safety });
       } else {
         onResolved(updated);
       }
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : "Couldn't post result.");
+      setSubmitError(
+        refusalMessage(err) ?? (err instanceof Error ? err.message : "Couldn't post result."),
+      );
     } finally {
       setPending(false);
     }
@@ -291,10 +296,14 @@ function Row({
           <p className={styles.body}>
             Held for the owner&apos;s approval. The input shows once it&apos;s approved.
           </p>
+        ) : isBlocked(item.input_preview) ? (
+          <p className={styles.body}>Blocked by safety screening. The content isn&apos;t kept.</p>
         ) : (
           <pre className={styles.pre}>{JSON.stringify(item.input_preview, null, 2)}</pre>
         )}
       </div>
+
+      <SafetyNote safety={item.safety} />
 
       {isOpen ? (
         <div className={styles.respond}>
@@ -338,10 +347,13 @@ function Row({
           </div>
           {submitError && <div className={styles.error}>{submitError}</div>}
           {drafted && (
-            <p className={styles.body}>
-              Saved as a draft. One of this agent&apos;s approvers confirms it before the caller
-              sees it: <a href={drafted}>review it</a>.
-            </p>
+            <>
+              <p className={styles.body}>
+                Saved as a draft. One of this agent&apos;s approvers confirms it before the caller
+                sees it: <a href={drafted.url}>review it</a>.
+              </p>
+              <SafetyNote safety={drafted.safety} />
+            </>
           )}
         </div>
       ) : (

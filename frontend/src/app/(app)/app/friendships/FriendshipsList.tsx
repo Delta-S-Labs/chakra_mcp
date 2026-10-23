@@ -9,6 +9,7 @@ import {
   counterFriendship,
   rejectFriendship,
 } from "@/lib/relay";
+import { refusalMessage } from "@/lib/safety";
 import styles from "./friendships.module.css";
 
 export function FriendshipsList({
@@ -63,7 +64,7 @@ function FriendshipRow({ token, friendship }: { token: string | null; friendship
       await fn();
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Action failed.");
+      setError(refusalMessage(err) ?? (err instanceof Error ? err.message : "Action failed."));
     } finally {
       setPending(false);
     }
