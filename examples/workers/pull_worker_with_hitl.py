@@ -5,20 +5,16 @@ This worker handles two capabilities in one ``inbox.serve()`` loop:
 
 * ``propose_slots`` — autonomous. The SDK runs ``handle()`` and posts
   the returned result back to the relay.
-* ``message_owner`` — human-in-the-loop. The SDK routes the invocation
-  to ``human_handler()`` for **side-effects only**; it does NOT post a
-  result. The row stays ``in_progress`` until a human resolves it
-  out-of-band via::
+* ``message_owner`` — human-in-the-loop: a person stands behind every
+  reply. ``human_handler()`` either drafts a reply, which the relay
+  holds until the owner confirms it on the web (``on_draft`` prints the
+  link), or returns ``None`` and leaves the reply to the owner, who
+  answers in the web app's inbox.
 
-      chakramcp message reply <invocation_id> "<reply_text>"
-
-  which posts the wire result with ``confirmed_by_human: true`` and
-  satisfies the relay's HITL gate (PR 2 of issue #69).
-
-Our ``human_handler()`` implementation writes each pending invocation
-to ``./pending/<invocation_id>.json`` and prints a one-line summary to
-stderr. A human operator (or a higher-level UI watching the directory)
-reads those files and replies via the CLI.
+Our ``human_handler()`` writes each pending invocation to
+``./pending/<invocation_id>.json`` and prints a one-line summary to
+stderr. An informational ping (``expects_reply: false``) gets a
+drafted acknowledgement; everything else waits for the owner.
 
 Bonus: this worker also demonstrates the **outbound** side. After
 starting up it can fire a single ``message_owner`` ping to a peer
@@ -124,16 +120,14 @@ async def handle(invocation: dict) -> dict:
     return {"status": "failed", "error": f"unsupported capability: {capability}"}
 
 
-async def human_handler(invocation: dict) -> None:
-    """HITL path. Side-effects only — MUST NOT post a result.
+async def human_handler(invocation: dict) -> dict | None:
+    """HITL path. Whatever we return is only a draft: the caller sees it
+    after the owner confirms it on the web.
 
     Writes the pending invocation to ``./pending/<id>.json`` and emits
-    a one-line summary to stderr. The human operator reads the file,
-    decides on a reply, and runs::
-
-        chakramcp message reply <id> "<reply_text>"
-
-    which sets ``confirmed_by_human: true`` and clears the row.
+    a one-line summary to stderr. An informational ping gets a drafted
+    acknowledgement; anything else is left to the owner, who answers in
+    the web app's inbox.
     """
     inv_id = invocation["id"]
     payload = invocation.get("input_preview") or {}
@@ -153,6 +147,18 @@ async def human_handler(invocation: dict) -> None:
         file=sys.stderr,
         flush=True,
     )
+
+    # An informational ping only needs an acknowledgement: draft one.
+    if payload.get("expects_reply") is False:
+        return {
+            "status": "succeeded",
+            "output": {
+                "status": "acknowledged",
+                "responded_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+            },
+        }
+    # Anything else: the owner answers in the web app's inbox.
+    return None
 
 
 async def ensure_capabilities(chakra: AsyncChakraMCP, agent_id: str) -> None:
@@ -298,6 +304,9 @@ async def main() -> int:
             agent_id,
             handle,
             human_handler=human_handler,
+            on_draft=lambda inv, drafted: print(
+                f"  ⧗ {inv['id']}: draft waits for your confirmation: {drafted['approve_url']}"
+            ),
             poll_interval_s=2.0,
             stop_event=stop,
             on_error=lambda err, inv: print(

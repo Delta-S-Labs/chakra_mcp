@@ -12,3 +12,6 @@ same bytes for these inputs.
 
 They were taken from the `serde_json_canonicalizer` 0.4.1 crate, which ships
 both.
+
+The TypeScript and Python SDKs keep copies in `sdks/typescript/test/fixtures/` and
+`sdks/python/tests/fixtures/` (`jcs-vectors.json`). Change all three together.

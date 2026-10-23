@@ -168,6 +168,88 @@ func TestInboxServeDispatchesAndCancels(t *testing.T) {
 	}
 }
 
+func TestServeDraftsHumanRepliesAndPassesNotices(t *testing.T) {
+	var pulls atomic.Int32
+	var posted atomic.Value
+	_, c := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v1/inbox/notices":
+			_, _ = w.Write([]byte(`[{"id":"n1","kind":"consent_requested","created_at":"2026-10-23T00:00:00Z","consent_request":{"id":"cr-9","invocation_id":"inv9","status":"pending","capability_id":"cap","capability_name":"book_meeting","requester":{"agent_id":"a","agent_display_name":"Scheduler","account_id":"acc","account_display_name":null,"verified":true},"terms":{"valid_for":"once"},"expires_at":"2026-10-24T00:00:00Z","approve_url":"https://chakramcp.com/app/approvals/cr-9"}}]`))
+		case r.URL.Path == "/v1/inbox":
+			if pulls.Add(1) > 1 {
+				_, _ = w.Write([]byte(`[]`))
+				return
+			}
+			_, _ = w.Write([]byte(`[{"id":"inv1","capability_name":"message_owner","status":"in_progress","elapsed_ms":0,"input_preview":{},"created_at":"2026-01-01T00:00:00Z","i_served":true,"i_invoked":false,"semantics":"human_in_loop"}]`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/invocations/inv1/result":
+			var body map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			posted.Store(body["output"])
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"status":"awaiting_confirmation","consent_request_id":"cr-1","approve_url":"https://chakramcp.com/app/approvals/cr-1","expires_at":"2026-10-24T00:00:00Z"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	drafts := make(chan DraftedReply, 1)
+	notices := make(chan Notice, 1)
+	opts := ServeOptions{
+		PollInterval: 20 * time.Millisecond,
+		HumanHandler: func(_ context.Context, inv Invocation) (*HandlerResult, error) {
+			r := Succeeded(map[string]any{"reply": "Tuesday works"})
+			return &r, nil
+		},
+		OnDraft:  func(_ Invocation, d DraftedReply) { drafts <- d },
+		OnNotice: func(n Notice) { notices <- n },
+	}
+	autonomous := func(context.Context, Invocation) (HandlerResult, error) {
+		t.Error("a human_in_loop call reached the autonomous handler")
+		return Failed("no"), nil
+	}
+	done := make(chan error, 1)
+	go func() { done <- c.Inbox().Serve(ctx, "agent-id", autonomous, opts) }()
+
+	select {
+	case d := <-drafts:
+		if d.ConsentRequestID != "cr-1" || d.ApproveURL != "https://chakramcp.com/app/approvals/cr-1" {
+			t.Errorf("draft = %+v", d)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no draft")
+	}
+	select {
+	case n := <-notices:
+		if n.Kind != NoticeConsentRequested || n.ConsentRequest == nil || *n.ConsentRequest.CapabilityName != "book_meeting" {
+			t.Errorf("notice = %+v", n)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no notice")
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	if got, _ := posted.Load().(map[string]any); got["reply"] != "Tuesday works" {
+		t.Errorf("posted output = %v", got)
+	}
+}
+
+func TestRespondReturnsTheFinishedInvocation(t *testing.T) {
+	_, c := newServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"id":"inv1","capability_name":"echo","status":"succeeded","elapsed_ms":3,"input_preview":{},"created_at":"2026-01-01T00:00:00Z","i_served":true,"i_invoked":false}`))
+	})
+	res, err := c.Inbox().Respond(context.Background(), "inv1", Succeeded("hi"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Drafted != nil || res.Invocation == nil || res.Invocation.Status != InvocationSucceeded {
+		t.Errorf("result = %+v", res)
+	}
+}
+
 // ─── Usage limits ─────────────────────────────────────────
 
 // invokeError runs Invoke against a server that answers with one

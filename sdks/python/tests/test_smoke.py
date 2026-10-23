@@ -514,7 +514,7 @@ def test_serve_warns_when_human_handler_missing_on_hitl(
     captured = capsys.readouterr()
     assert "human_in_loop" in captured.err
     assert "inv-hitl-noh" in captured.err
-    assert "chakramcp message reply" in captured.err
+    assert "web app's inbox" in captured.err
     assert autonomous_seen == []
 
 
@@ -725,3 +725,146 @@ async def test_async_inbox_serve_loops_then_stops(app_url: str, relay_url: str) 
             stop_event=stop_event,
         )
     assert handler_seen == ["inv2"]
+
+
+@respx.mock
+def test_serve_posts_a_human_handler_reply_as_a_draft(
+    app_url: str, relay_url: str
+) -> None:
+    """A reply returned by human_handler is posted; the relay keeps it as
+    a draft and on_draft gets the confirmation link."""
+    pull_count = {"n": 0}
+
+    def _pull(_req: httpx.Request) -> httpx.Response:
+        pull_count["n"] += 1
+        if pull_count["n"] > 1:
+            return httpx.Response(200, json=[])
+        return httpx.Response(200, json=[_hitl_inv_json("inv-draft")])
+
+    posted: list[dict[str, Any]] = []
+
+    def _result(req: httpx.Request) -> httpx.Response:
+        posted.append(json.loads(req.content))
+        return httpx.Response(
+            202,
+            json={
+                "status": "awaiting_confirmation",
+                "consent_request_id": "cr-1",
+                "approve_url": "https://chakramcp.com/app/approvals/cr-1",
+                "expires_at": "2026-10-24T00:00:00Z",
+            },
+        )
+
+    respx.get(f"{relay_url}/v1/inbox").mock(side_effect=_pull)
+    respx.get(f"{relay_url}/v1/inbox/notices").respond(200, json=[])
+    respx.post(f"{relay_url}/v1/invocations/inv-draft/result").mock(side_effect=_result)
+
+    drafts: list[tuple[str, str]] = []
+
+    with ChakraMCP(api_key="ck_test", app_url=app_url, relay_url=relay_url) as c:
+        c.inbox.serve(
+            "agent-id",
+            lambda inv: {"status": "succeeded", "output": {}},
+            human_handler=lambda inv: {"status": "succeeded", "output": {"reply": "Tuesday works"}},
+            on_draft=lambda inv, d: drafts.append((inv["id"], d["approve_url"])),
+            poll_interval_s=0.01,
+            stop=lambda: bool(drafts),
+        )
+
+    assert posted == [{"status": "succeeded", "output": {"reply": "Tuesday works"}}]
+    assert drafts == [("inv-draft", "https://chakramcp.com/app/approvals/cr-1")]
+
+
+_NOTICE = {
+    "id": "n1",
+    "kind": "consent_requested",
+    "created_at": "2026-10-23T00:00:00Z",
+    "consent_request": {
+        "id": "cr-9",
+        "capability_name": "book_meeting",
+        "approve_url": "https://chakramcp.com/app/approvals/cr-9",
+        "requester": {"agent_display_name": "Scheduler"},
+    },
+}
+
+
+@respx.mock
+def test_serve_passes_notices_on_and_prints_consent_links(
+    app_url: str, relay_url: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    notices = respx.get(f"{relay_url}/v1/inbox/notices").respond(200, json=[_NOTICE])
+    respx.get(f"{relay_url}/v1/inbox").respond(200, json=[])
+
+    seen: list[str] = []
+    with ChakraMCP(api_key="ck_test", app_url=app_url, relay_url=relay_url) as c:
+        assert c.inbox.notices("agent-id", limit=5)[0]["kind"] == "consent_requested"
+        assert notices.calls.last.request.url.params["limit"] == "5"
+        c.inbox.serve(
+            "agent-id",
+            lambda inv: {"status": "succeeded", "output": {}},
+            on_notice=lambda n: seen.append(n["id"]),
+            poll_interval_s=0.01,
+            stop=lambda: bool(seen),
+        )
+        # The default prints the approval link.
+        c.inbox.serve(
+            "agent-id",
+            lambda inv: {"status": "succeeded", "output": {}},
+            poll_interval_s=0.01,
+            stop=lambda: notices.call_count >= 3,
+        )
+
+    assert seen == ["n1"]
+    assert "Scheduler asks to use book_meeting" in capsys.readouterr().out
+
+
+@respx.mock
+async def test_async_serve_posts_a_human_handler_reply_as_a_draft(
+    app_url: str, relay_url: str
+) -> None:
+    pull_count = {"n": 0}
+
+    def _pull(_req: httpx.Request) -> httpx.Response:
+        pull_count["n"] += 1
+        if pull_count["n"] > 1:
+            return httpx.Response(200, json=[])
+        return httpx.Response(200, json=[_hitl_inv_json("inv-draft-async")])
+
+    respx.get(f"{relay_url}/v1/inbox").mock(side_effect=_pull)
+    respx.get(f"{relay_url}/v1/inbox/notices").respond(200, json=[_NOTICE])
+    respx.post(f"{relay_url}/v1/invocations/inv-draft-async/result").respond(
+        202,
+        json={
+            "status": "awaiting_confirmation",
+            "consent_request_id": "cr-2",
+            "approve_url": "https://chakramcp.com/app/approvals/cr-2",
+            "expires_at": "2026-10-24T00:00:00Z",
+        },
+    )
+
+    stop_event = asyncio.Event()
+    drafts: list[str] = []
+    seen: list[str] = []
+
+    async def human_handler(inv: dict) -> dict:
+        return {"status": "failed", "error": "Not available that week"}
+
+    def on_draft(inv: dict, drafted: dict) -> None:
+        drafts.append(drafted["consent_request_id"])
+        stop_event.set()
+
+    async with AsyncChakraMCP(
+        api_key="ck_test", app_url=app_url, relay_url=relay_url
+    ) as c:
+        await c.inbox.serve(
+            "agent-id",
+            lambda inv: None,  # type: ignore[arg-type,return-value]
+            human_handler=human_handler,
+            on_draft=on_draft,
+            on_notice=lambda n: seen.append(n["id"]),
+            poll_interval_s=0.01,
+            stop_event=stop_event,
+        )
+
+    assert drafts == ["cr-2"]
+    assert seen == ["n1"]

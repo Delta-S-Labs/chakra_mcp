@@ -10,16 +10,25 @@ Both share the same sub-clients (``.agents``, ``.friendships``,
 helpers (``invoke_and_wait``, ``inbox.serve``).
 """
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 from ._async import AsyncChakraMCP
+from ._consent import (
+    CONSENT_TOKEN_TYPE,
+    ConsentClaims,
+    ConsentTokenError,
+    averify_consent_token,
+    canonical_json,
+    sha256_jcs,
+    verify_consent_token,
+)
 from ._errors import (
     ChakraMCPError,
     CreditsExhaustedError,
     QuotaExhaustedError,
     RateLimitedError,
 )
-from ._sync import ChakraMCP
+from ._sync import ChakraMCP, is_drafted_reply
 from ._templates import (
     CHAKRAMCP_TEMPLATES,
     MESSAGE_OWNER,
@@ -31,9 +40,12 @@ from ._types import (
     Agent,
     AgentSummary,
     Capability,
+    CapabilityConsent,
+    ConsentTerms,
     CreateAgentRequest,
     CreateCapabilityRequest,
     CreateGrantRequest,
+    DraftedReply,
     EligibilityResponse,
     EligibleReviewer,
     Friendship,
@@ -45,11 +57,14 @@ from ._types import (
     HandlerFailed,
     HandlerResult,
     HandlerSucceeded,
+    HumanConfirmed,
     Invocation,
+    InvocationConsent,
     InvocationStatus,
     InvokeResponse,
     Membership,
     MeResponse,
+    Notice,
     ProposeFriendshipRequest,
     ResultStatus,
     Review,
@@ -72,6 +87,14 @@ __all__ = [
     "QuotaExhaustedError",
     "RateLimitedError",
     "CreditsExhaustedError",
+    "CONSENT_TOKEN_TYPE",
+    "ConsentClaims",
+    "ConsentTokenError",
+    "averify_consent_token",
+    "canonical_json",
+    "sha256_jcs",
+    "verify_consent_token",
+    "is_drafted_reply",
     "CHAKRAMCP_TEMPLATES",
     "MESSAGE_OWNER",
     "get_template",
@@ -80,6 +103,12 @@ __all__ = [
     "Agent",
     "AgentSummary",
     "Capability",
+    "CapabilityConsent",
+    "ConsentTerms",
+    "DraftedReply",
+    "HumanConfirmed",
+    "InvocationConsent",
+    "Notice",
     "CreateAgentRequest",
     "CreateCapabilityRequest",
     "UpdateCapabilityRequest",

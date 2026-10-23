@@ -46,7 +46,7 @@ mod types;
 
 pub use client::{ChakraMCP, ChakraMCPBuilder, PollOpts};
 pub use error::{Error, Result};
-pub use inbox::{HandlerResult, InboxClient, ServeBuilder};
+pub use inbox::{HandlerResult, InboxClient, RespondOutcome, ServeBuilder};
 pub use resources::{
     AgentsClient, CapabilitiesClient, FriendshipsClient, GrantsClient, InvocationsClient,
     ReviewsClient,

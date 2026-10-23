@@ -713,9 +713,9 @@ class VoiceAgentApp(App):
             self._set_phase("thinking")
             self.status = "thinking… (working on it)"
             # If a peer's message_owner is awaiting the owner's reply, give
-            # the agent the context + ids so this spoken turn can complete
-            # it (with confirmed_by_human=true) when the owner's words are
-            # the answer.
+            # the agent the context + ids so this spoken turn can draft it
+            # when the owner's words are the answer; the owner confirms the
+            # draft at the link the relay returns.
             prompt = text
             if self._pending_owner_msgs:
                 pend = "; ".join(
@@ -726,8 +726,9 @@ class VoiceAgentApp(App):
                     f"[Pending human-in-the-loop messages awaiting your owner's "
                     f"reply: {pend}. If the owner's message below is their reply "
                     f"to one, send it: respond(invocation_id=<id>, "
-                    f'status="succeeded", output={{"reply": <owner words>}}, '
-                    f"confirmed_by_human=true).]\n\n{text}"
+                    f'status="succeeded", output={{"reply": <owner words>}}). '
+                    f"It comes back as a draft with an approve_url: tell the "
+                    f"owner to confirm it there, and show them the link.]\n\n{text}"
                 )
             reply = await self._guarded_turn(prompt)
             # The owner has now had a chance to address them; drop so we

@@ -68,6 +68,50 @@ export interface Capability {
    * `public_invoke` is true.
    */
   public_monthly_quota_per_agent: number | null;
+  /**
+   * `"human_in_loop"`: a reply is a draft until one of the agent's
+   * owners confirms it on the web (owner consent).
+   */
+  semantics?: "autonomous" | "human_in_loop";
+  /**
+   * Owner consent: whether requests wait for the owner's approval before
+   * reaching the agent. `approvers` only for those who manage the agent.
+   */
+  consent?: CapabilityConsent;
+}
+
+/** The longest standing consent a capability's publisher allows. */
+export type MaxValidity = "once" | "1h" | "1d" | "7d" | "30d";
+
+export interface CapabilityConsent {
+  required: boolean;
+  /** User ids who may decide; empty means the account's owners and admins. */
+  approvers?: string[];
+  max_validity: MaxValidity;
+  /** How long a held request waits for a decision: `<n>m`, `<n>h`, `<n>d`. */
+  wait: string;
+}
+
+/** `consent` on create and update; absent fields keep their value. */
+export interface ConsentSettings {
+  required?: boolean;
+  /** User ids or emails of members of the agent's account. */
+  approvers?: string[];
+  max_validity?: MaxValidity;
+  /** `<n>m`, `<n>h` or `<n>d`, from 5m to 7d (default 24h). */
+  wait?: string;
+}
+
+/**
+ * What a caller proposes when a capability asks its owner first: the
+ * owner may approve it, narrow it, or deny it. Capped at the
+ * publisher's longest consent; without it, the request stands alone.
+ */
+export interface ConsentTerms {
+  purpose?: string;
+  /** `"once"` (default), `"<n>h"` (1-720) or `"<n>d"` (1-30). */
+  valid_for?: string;
+  max_requests?: number;
 }
 
 export interface AgentSummary {
@@ -127,12 +171,83 @@ export type InvocationStatus =
   | "succeeded"
   | "failed"
   | "rejected"
-  | "timeout";
+  | "timeout"
+  /** Held until the target agent's owner approves it (owner consent). */
+  | "awaiting_consent";
 
 export interface InvokeResponse {
   invocation_id: string;
   status: InvocationStatus;
   error: string | null;
+  /**
+   * Set when the capability asks its owner first: the request is held
+   * (`awaiting_consent`) or a standing consent covered it (`pending`).
+   */
+  consent_request_id?: string;
+}
+
+/** What the owner approved, and the consent token proving it. */
+export interface InvocationConsent {
+  consent_request_id: string;
+  /** The standing consent that covered the request, if one did. */
+  consent_id: string | null;
+  approved_at: string | null;
+  terms: ConsentTerms;
+  /** Check with `verifyConsentToken`. Null until delivered. */
+  token: string | null;
+}
+
+/** A person confirmed the reply (`human_in_loop`), and the token proving it. */
+export interface HumanConfirmed {
+  consent_request_id: string;
+  confirmed_at: string | null;
+  token: string | null;
+}
+
+/**
+ * A reply to a `human_in_loop` capability, kept as a draft until one of
+ * the agent's owners confirms it on the web (`approve_url`).
+ */
+export interface DraftedReply {
+  status: "awaiting_confirmation";
+  consent_request_id: string;
+  approve_url: string;
+  expires_at: string;
+}
+
+export type NoticeKind =
+  | "consent_requested"
+  | "reply_confirmed"
+  | "reply_rejected"
+  | "reply_expired";
+
+/**
+ * Something an agent is told out of band of its inbox. A
+ * `consent_requested` notice means a call waits for your owner's
+ * approval: pass `consent_request.approve_url` to them. Never includes
+ * the call's input.
+ */
+export interface Notice {
+  id: string;
+  kind: NoticeKind | (string & {});
+  created_at: string;
+  consent_request?: {
+    id: string;
+    invocation_id: string;
+    status: "pending" | "approved" | "denied" | "expired" | "cancelled";
+    capability_id: string;
+    capability_name: string | null;
+    requester: {
+      agent_id: string;
+      agent_display_name: string | null;
+      account_id: string;
+      account_display_name: string | null;
+      verified: boolean;
+    };
+    terms: ConsentTerms;
+    expires_at: string;
+    approve_url: string;
+  };
 }
 
 export interface Invocation {
@@ -164,18 +279,9 @@ export interface Invocation {
    */
   tier: "friend" | "public";
   /**
-   * HITL semantics of the underlying capability (issue #69). Populated
-   * on `inbox.pull` responses so `InboxClient.serve()` can route
-   * `human_in_loop` invocations to a `humanHandler` instead of an
-   * autonomous handler — autonomous replies on a HITL capability are
-   * rejected by the relay with 409 `chk.policy.requires_human_confirmation`.
-   *
-   * NOTE: as of PR 4 (TS SDK), the relay's `InvocationDto` does not yet
-   * serialise this field — that's a small backend follow-up. The SDK is
-   * forward-compatible: once the relay returns `semantics`, routing
-   * lights up automatically; until then the SDK treats every invocation
-   * as autonomous (the relay's gate still catches HITL mistakes — the
-   * worker just sees a 409 at result-post time instead of a clean route).
+   * The capability's semantics, so `InboxClient.serve()` can route
+   * `human_in_loop` invocations to a `humanHandler`. A reply to one is a
+   * draft until one of the agent's owners confirms it on the web.
    */
   semantics?: "autonomous" | "human_in_loop";
   /**
@@ -197,6 +303,10 @@ export interface Invocation {
    */
   friendship_context?: FriendshipContext;
   grant_context?: GrantContext;
+  /** For a capability that asks its owner first: what they approved. */
+  consent?: InvocationConsent;
+  /** For a `human_in_loop` capability: a person confirmed the reply. */
+  human_confirmed?: HumanConfirmed;
 }
 
 export interface FriendshipContext {
@@ -258,13 +368,9 @@ export interface CreateCapabilityRequest {
   output_schema?: Record<string, unknown>;
   visibility?: Visibility;
   /**
-   * HITL gate (issue #69 PR 2). `"autonomous"` (default) accepts any
-   * worker-posted result. `"human_in_loop"` forces the relay to reject
-   * the result with 409 `chk.policy.requires_human_confirmation`
-   * unless the response carries `confirmed_by_human: true`. PR 4 will
-   * plumb a `humanHandler` callback through `InboxClient.serve()`;
-   * until then, set this manually only on capabilities you handle
-   * out-of-band via the CLI.
+   * `"autonomous"` (default): the agent's replies go out as they are.
+   * `"human_in_loop"`: a reply is a draft until one of the agent's
+   * owners confirms it on the web (or answers there themselves).
    */
   semantics?: "autonomous" | "human_in_loop";
   /**
@@ -279,6 +385,8 @@ export interface CreateCapabilityRequest {
    * Required when `public_invoke` is `true`.
    */
   public_monthly_quota_per_agent?: number;
+  /** Ask the owner before requests reach the agent (pull-mode agents only). */
+  consent?: ConsentSettings;
 }
 
 export interface UpdateCapabilityRequest {
@@ -293,6 +401,8 @@ export interface UpdateCapabilityRequest {
    */
   public_invoke?: boolean;
   public_monthly_quota_per_agent?: number;
+  consent?: ConsentSettings;
+  semantics?: "autonomous" | "human_in_loop";
 }
 
 export interface ProposeFriendshipRequest {
@@ -337,12 +447,15 @@ export type InvokeRequest =
       capability_id?: never;
       grantee_agent_id: string;
       input: unknown;
+      /** For a capability that asks its owner first. */
+      consent_terms?: ConsentTerms;
     }
   | {
       grant_id?: never;
       capability_id: string;
       grantee_agent_id: string;
       input: unknown;
+      consent_terms?: ConsentTerms;
     };
 
 export type HandlerResult =

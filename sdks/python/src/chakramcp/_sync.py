@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, TypeGuard
 
 import httpx
 
@@ -19,6 +19,7 @@ from ._types import (
     CreateAgentRequest,
     CreateCapabilityRequest,
     CreateGrantRequest,
+    DraftedReply,
     EligibilityResponse,
     Friendship,
     FriendshipStatus,
@@ -29,6 +30,7 @@ from ._types import (
     InvocationStatus,
     InvokeResponse,
     MeResponse,
+    Notice,
     ProposeFriendshipRequest,
     Review,
     ReviewListResponse,
@@ -40,6 +42,29 @@ from ._types import (
 DEFAULT_APP_URL = "https://app.chakramcp.com"
 DEFAULT_RELAY_URL = "https://relay.chakramcp.com"
 USER_AGENT = "chakramcp-python-sdk"
+
+
+def is_drafted_reply(r: Invocation | DraftedReply) -> TypeGuard[DraftedReply]:
+    """True when ``inbox.respond()`` stored a draft rather than finishing
+    the call (a ``human_in_loop`` capability)."""
+    return r.get("status") == "awaiting_confirmation"
+
+
+def _default_on_notice(notice: Notice) -> None:
+    req = notice.get("consent_request")
+    if notice.get("kind") == "consent_requested" and req:
+        who = (req.get("requester") or {}).get("agent_display_name") or "An agent"
+        print(
+            f"[chakramcp] {who} asks to use {req.get('capability_name') or 'a capability'}; "
+            f"it waits for your owner's approval: {req.get('approve_url')}"
+        )
+
+
+def _default_on_draft(inv: Invocation, drafted: DraftedReply) -> None:
+    print(
+        f"[chakramcp] reply to {inv['id']} saved as a draft; your owner "
+        f"confirms it before the caller sees it: {drafted['approve_url']}"
+    )
 
 
 class ChakraMCP:
@@ -314,17 +339,37 @@ class InboxClient:
         suffix = "&".join(f"{k}={v}" for k, v in params.items())
         return self._c._relay("GET", f"/v1/inbox?{suffix}")
 
-    def respond(self, invocation_id: str, result: HandlerResult | dict[str, Any]) -> Invocation:
+    def respond(
+        self, invocation_id: str, result: HandlerResult | dict[str, Any]
+    ) -> Invocation | DraftedReply:
+        """Report the result for an in_progress invocation you claimed.
+
+        For a ``human_in_loop`` capability the relay keeps it as a draft
+        until one of the agent's owners confirms it: you get a
+        :class:`DraftedReply` (check with :func:`is_drafted_reply`) with
+        the link."""
         return self._c._relay(
             "POST", f"/v1/invocations/{invocation_id}/result", dict(result)
         )
+
+    def notices(self, agent_id: str, *, limit: int | None = None) -> list[Notice]:
+        """Claim the agent's notices, oldest first; each is delivered once.
+
+        A ``consent_requested`` notice means a call waits for your owner's
+        approval: pass ``notice["consent_request"]["approve_url"]`` on."""
+        suffix = f"&limit={limit}" if limit else ""
+        return self._c._relay("GET", f"/v1/inbox/notices?agent_id={agent_id}{suffix}")
 
     def serve(
         self,
         agent_id: str,
         handler: Callable[[Invocation], HandlerResult | dict[str, Any]],
         *,
-        human_handler: Callable[[Invocation], None] | None = None,
+        human_handler: Callable[[Invocation], HandlerResult | dict[str, Any] | None]
+        | None = None,
+        on_draft: Callable[[Invocation, DraftedReply], None] | None = None,
+        on_notice: Callable[[Notice], None] | None = None,
+        notice_interval_s: float = 15.0,
         poll_interval_s: float = 2.0,
         batch_size: int = 25,
         on_error: Callable[[BaseException, Invocation | None], None] | None = None,
@@ -339,27 +384,32 @@ class InboxClient:
         going. Pass ``stop=lambda: shutdown_event.is_set()`` to bail
         cleanly between iterations.
 
-        ``human_handler`` is the human-in-the-loop path. When an
-        invocation arrives with ``semantics == "human_in_loop"``, the
-        SDK invokes ``human_handler`` (e.g. to enqueue a notification,
-        write a pending-task file, page someone) and then **moves on
-        without posting a result** — the invocation row stays
-        ``in_progress`` until a human resolves it out-of-band via
-        ``chakramcp message reply <id> "<text>"``. That terminal path
-        sets ``confirmed_by_human: true`` on the relay's result
-        endpoint, which satisfies the HITL gate.
+        ``human_handler`` is the human-in-the-loop path, for invocations
+        with ``semantics == "human_in_loop"``: a person stands behind
+        each reply.
 
-        ``human_handler`` MUST NOT call ``respond()`` itself. If you
-        forget to wire ``human_handler`` while pulling HITL traffic,
-        the SDK emits a stderr warning per invocation and leaves the
-        row in flight (still resolvable via the CLI reply path).
+        * Return a result to propose a reply (for example, one your model
+          drafted). The relay keeps it as a draft until one of the
+          agent's owners confirms it on the web; ``on_draft`` gets the
+          link (default: print it).
+        * Return ``None`` to leave the reply to a person, who answers in
+          the web app's inbox (confirmed at once). Use this to notify
+          them.
 
-        Capabilities without ``semantics`` set (or with
-        ``"autonomous"``) take the existing path. The field is absent
-        on relays older than PR #80 — that's treated as autonomous so
-        old workers keep working against new relays and vice versa.
+        If ``human_handler`` raises, nothing is posted: a person still
+        has to answer. Without a ``human_handler`` the SDK warns on
+        stderr and leaves the invocation ``in_progress``.
+
+        Every ``notice_interval_s`` (0 turns it off) the loop also claims
+        the agent's notices and calls ``on_notice`` for each:
+        ``consent_requested`` (a call waits for your owner's approval;
+        the default prints the link) and what became of drafted replies.
         """
+        last_notices = 0.0
         while not (stop and stop()):
+            if notice_interval_s > 0 and time.monotonic() - last_notices >= notice_interval_s:
+                last_notices = time.monotonic()
+                self._dispatch_notices(agent_id, on_notice, on_error)
             try:
                 batch = self.pull(agent_id, limit=batch_size)
             except BaseException as err:
@@ -373,30 +423,23 @@ class InboxClient:
             for inv in batch:
                 if stop and stop():
                     return
-                # HITL routing — defer to human_handler and skip
-                # respond(). The row stays in_progress; a human
-                # resolves it later via the CLI reply path which
-                # sets `confirmed_by_human: true` on the result.
                 if inv.get("semantics") == "human_in_loop":
-                    if human_handler is not None:
-                        try:
-                            human_handler(inv)
-                        except BaseException as err:
-                            if on_error:
-                                on_error(err, inv)
-                    else:
-                        import sys
-
-                        print(
-                            f"[chakramcp] warning: pulled human_in_loop "
-                            f"invocation {inv['id']} "
-                            f"({inv.get('capability_name', '?')}) but no "
-                            f"human_handler is set. Leaving the row "
-                            f"in_progress; the human can reply via "
-                            f"`chakramcp message reply {inv['id']} "
-                            f'"<text>"`.',
-                            file=sys.stderr,
-                        )
+                    if human_handler is None:
+                        _warn_no_human_handler(inv)
+                        continue
+                    try:
+                        proposed = human_handler(inv)
+                        if proposed is None:
+                            continue
+                        posted = self.respond(inv["id"], proposed)
+                        if is_drafted_reply(posted):
+                            (on_draft or _default_on_draft)(inv, posted)
+                    except BaseException as err:
+                        # Don't post `failed`: a person still has to
+                        # answer, and closing the call would take that
+                        # away from them.
+                        if on_error:
+                            on_error(err, inv)
                     continue
                 try:
                     result = handler(inv)
@@ -409,6 +452,36 @@ class InboxClient:
                     except BaseException as inner:
                         if on_error:
                             on_error(inner, inv)
+
+    def _dispatch_notices(
+        self,
+        agent_id: str,
+        on_notice: Callable[[Notice], None] | None,
+        on_error: Callable[[BaseException, Invocation | None], None] | None,
+    ) -> None:
+        try:
+            notices = self.notices(agent_id)
+        except BaseException as err:
+            if on_error:
+                on_error(err, None)
+            return
+        for notice in notices:
+            try:
+                (on_notice or _default_on_notice)(notice)
+            except BaseException as err:
+                if on_error:
+                    on_error(err, None)
+
+
+def _warn_no_human_handler(inv: Invocation) -> None:
+    import sys
+
+    print(
+        f"[chakramcp] warning: pulled human_in_loop invocation {inv['id']} "
+        f"({inv.get('capability_name', '?')}) but no human_handler is set. "
+        f"Leaving it in_progress for your owner to answer in the web app's inbox.",
+        file=sys.stderr,
+    )
 
 
 class ReviewsClient:
