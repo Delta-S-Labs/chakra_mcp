@@ -32,8 +32,20 @@ the only visible differences are the new migrations and `accept_calls` on agents
   C2 starts writing it. C1's tests set it directly.
 - **`accept_calls` on agent DTOs is the effective value:** `nobody` for push agents
   whatever is stored. Agent cards gain it in C2, with the MCP work.
-- **The `q` filter's OR query is a shared helper** (`calls::search::or_query`), which C3's
-  recall reuses.
+- **The `q` filter's OR query is a SQL function,** `calls_or_query(text)` in `0044`, which
+  C3's recall reuses. Postgres makes the lexemes, so words in any script stay whole (a
+  Rust split would cut Hindi words at their vowel signs).
+
+**Refinements made while building:**
+- **The interactive-session check stays in the relay,** as `auth::is_interactive`, used by
+  the `InteractiveUser` extractor, consent replies and calls (step 2 had it moving to
+  shared). It needs `RelayState`'s pool, and only the relay uses it.
+- **Coded refusals:** `ApiError::Coded {status, code, message}` carries calls' `chk.calls.*`
+  codes with their statuses; MCP maps it like `Policy`.
+- **The Helm chart passes the calls settings through `extraEnv`,** as it does the credit
+  amounts and the System One switches; `values.yaml` and the README list them.
+- **Call charges ride in the invocation charge batch:** one transaction, one accounting
+  lock, and the credits-off discard and the queue-depth gauge cover both queues.
 
 ---
 

@@ -223,7 +223,7 @@ fn api_err_to_rpc(e: ApiError) -> RpcError {
                 data: Some(json!({ "code": code })),
             };
         }
-        Policy { code, message } => {
+        Policy { code, message } | Coded { code, message, .. } => {
             return RpcError {
                 code: ERR_INVALID_REQUEST,
                 message: message.clone(),

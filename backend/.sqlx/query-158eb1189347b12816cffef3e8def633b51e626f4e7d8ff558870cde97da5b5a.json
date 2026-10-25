@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT proposer_message, response_message\n          FROM friendships\n         WHERE status = 'accepted'\n           AND ((proposer_agent_id = $1 AND target_agent_id = $2)\n             OR (proposer_agent_id = $2 AND target_agent_id = $1))\n         ORDER BY updated_at DESC\n         LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "proposer_message",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "friendships",
+            "name": "proposer_message"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "response_message",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "friendships",
+            "name": "response_message"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "158eb1189347b12816cffef3e8def633b51e626f4e7d8ff558870cde97da5b5a"
+}

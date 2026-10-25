@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE calls\n           SET state = 'ended', ended_at = now(), ended_by = $2,\n               purge_at = now() + make_interval(secs => ttl_secs)\n         WHERE id = $1 AND state IN ('ringing', 'active')\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "calls",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "57cfb2d75373fc1530b617cdf799e26ade67a765ffc57bcd92dc1a070f770a9b"
+}

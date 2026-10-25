@@ -22,6 +22,9 @@ pub struct CreditsConfig {
     pub default_monthly_free_mc: i64,
     /// Flat cost of one accepted invocation (milli-credits).
     pub cost_per_invocation_mc: i64,
+    /// Flat cost of one delivered message on a call, paid by its sender
+    /// (milli-credits; calls spec §9).
+    pub cost_per_message_mc: i64,
     /// How often the worker charges and grants, and (separately) refreshes
     /// the switches.
     pub sweep_interval: Duration,
@@ -41,6 +44,7 @@ impl Default for CreditsConfig {
             // tier since credits P4 (it was 100 credits).
             default_monthly_free_mc: 5_000_000,
             cost_per_invocation_mc: 100,
+            cost_per_message_mc: 100,
             sweep_interval: Duration::from_secs(5),
             default_rate_per_min: 60,
             // 100 credits: about 1,000 calls at the default cost.
@@ -62,6 +66,7 @@ const MAX_SWEEP_INTERVAL_SECS: u64 = 300;
 pub struct CreditsFile {
     pub credits_default_monthly_free_mc: Option<i64>,
     pub credits_cost_per_invocation_mc: Option<i64>,
+    pub credits_cost_per_message_mc: Option<i64>,
     pub limits_default_rate_per_min: Option<i32>,
     pub credits_low_balance_mc: Option<i64>,
 }
@@ -128,6 +133,12 @@ impl CreditsConfig {
                 defaults.default_monthly_free_mc,
             )?,
             cost_per_invocation_mc,
+            cost_per_message_mc: positive(
+                &get,
+                "CREDITS_COST_PER_MESSAGE_MC",
+                file.credits_cost_per_message_mc,
+                defaults.cost_per_message_mc,
+            )?,
             sweep_interval: Duration::from_secs(sweep_secs),
             default_rate_per_min: positive(
                 &get,
@@ -274,10 +285,12 @@ mod tests {
             ("CREDITS_COST_PER_INVOCATION_MC", " 50 "),
             ("CREDITS_SWEEP_INTERVAL_SECS", "2"),
             ("LIMITS_DEFAULT_RATE_PER_MIN", "600"),
+            ("CREDITS_COST_PER_MESSAGE_MC", "20"),
         ])
         .unwrap();
         assert_eq!(cfg.default_monthly_free_mc, 250_000);
         assert_eq!(cfg.cost_per_invocation_mc, 50);
+        assert_eq!(cfg.cost_per_message_mc, 20);
         assert_eq!(cfg.sweep_interval, Duration::from_secs(2));
         assert_eq!(cfg.default_rate_per_min, 600);
     }
@@ -286,6 +299,7 @@ mod tests {
     fn bad_values_fail_instead_of_falling_back() {
         assert!(from(&[("CREDITS_COST_PER_INVOCATION_MC", "abc")]).is_err());
         assert!(from(&[("CREDITS_COST_PER_INVOCATION_MC", "-5")]).is_err());
+        assert!(from(&[("CREDITS_COST_PER_MESSAGE_MC", "0")]).is_err());
         // A zero interval would panic tokio's interval timer.
         assert!(from(&[("CREDITS_SWEEP_INTERVAL_SECS", "0")]).is_err());
         assert!(from(&[("LIMITS_DEFAULT_RATE_PER_MIN", "0")]).is_err());
@@ -313,6 +327,7 @@ mod tests {
         let file = CreditsFile {
             credits_default_monthly_free_mc: Some(5_000),
             credits_cost_per_invocation_mc: Some(10),
+            credits_cost_per_message_mc: Some(5),
             limits_default_rate_per_min: Some(30),
             credits_low_balance_mc: None,
         };
@@ -321,6 +336,7 @@ mod tests {
         assert!(!cfg.enabled);
         assert_eq!(cfg.default_monthly_free_mc, 5_000, "from the file");
         assert_eq!(cfg.cost_per_invocation_mc, 10, "from the file");
+        assert_eq!(cfg.cost_per_message_mc, 5, "from the file");
         assert_eq!(cfg.default_rate_per_min, 90, "the environment wins");
 
         let bad = CreditsFile {

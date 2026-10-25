@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE calls\n           SET state = 'declined', ended_at = now(), decline_reason = $2,\n               purge_at = now() + make_interval(secs => ttl_secs)\n         WHERE id = $1 AND state = 'ringing'\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "calls",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "cbdf8dfa44222bb249a697f34fdedcc1f3c73cfc945b19963016024f35eebf16"
+}

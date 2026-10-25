@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE calls SET last_message_at = now(), message_count = message_count + 1\n         WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ad07f70c2faccf998ab7da30f3dc6e7d603911fa65ed5624f83602fd4b5525ce"
+}

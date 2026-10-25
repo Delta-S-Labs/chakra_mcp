@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM call_deliveries d\n         USING call_entries e\n         WHERE d.entry_id = e.id AND e.call_id = $1\n           AND d.delivered_at IS NULL AND e.kind IN ('message', 'declined')\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a051886704940601c954e2fa044b9fdff4908060829aad73cc1f88bec48d0cd9"
+}

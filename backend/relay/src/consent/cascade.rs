@@ -89,6 +89,64 @@ pub async fn cancel_for_agent(
     Ok(record(row.cancelled, row.rejected))
 }
 
+/// Close a call's unfinished invocations when its content is deleted
+/// (calls spec §9): their pending consent requests (a held request, or a
+/// reply draft awaiting confirmation) are cancelled, so nobody can approve
+/// one later; a held request is rejected without charge; any other
+/// unfinished one fails. Returns how many invocations were closed.
+pub async fn cancel_for_call(
+    conn: &mut PgConnection,
+    call_id: Uuid,
+    reason: &str,
+) -> sqlx::Result<u64> {
+    let row = sqlx::query!(
+        r#"
+        WITH unfinished AS (
+            SELECT id FROM relay_invocations
+             WHERE call_id = $1
+               AND status IN ('pending', 'in_progress', 'awaiting_consent')
+        ),
+        cancelled AS (
+            UPDATE consent_requests c
+               SET status = 'cancelled', decided_at = now(), decision_note = $2
+              FROM unfinished u
+             WHERE c.invocation_id = u.id AND c.status = 'pending'
+            RETURNING c.invocation_id
+        ),
+        rejected AS (
+            UPDATE relay_invocations i
+               SET status = 'rejected', error_message = $2
+              FROM unfinished u
+             WHERE i.id = u.id AND i.status = 'awaiting_consent'
+            RETURNING i.id
+        ),
+        failed AS (
+            UPDATE relay_invocations i
+               SET status = 'failed', error_message = $2,
+                   elapsed_ms = LEAST(EXTRACT(EPOCH FROM (now() - i.created_at)) * 1000,
+                                      2147483647)::int
+              FROM unfinished u
+             WHERE i.id = u.id AND i.status IN ('pending', 'in_progress')
+            RETURNING i.id
+        )
+        SELECT (SELECT count(*) FROM cancelled) AS "cancelled!",
+               (SELECT count(*) FROM rejected) AS "rejected!",
+               (SELECT count(*) FROM failed) AS "failed!"
+        "#,
+        call_id,
+        reason,
+    )
+    .fetch_one(conn)
+    .await?;
+    crate::telemetry::record_invocation_outcome(
+        crate::telemetry::Mode::Pull,
+        "failed",
+        0,
+        row.failed as u64,
+    );
+    Ok(record(row.cancelled, row.rejected) + row.failed as u64)
+}
+
 /// Record a cascade's metrics. They're counted when the statement succeeds;
 /// a delete whose transaction then rolls back would overcount, which is rare.
 fn record(cancelled: i64, rejected: i64) -> u64 {

@@ -14,16 +14,24 @@ pub enum Channel {
     /// A short text one party sends the other: a friendship message, a
     /// grant purpose, an approver's deny note.
     Note,
+    /// A message on a call (calls spec §5), on its way to the other party.
+    Message,
 }
 
 impl Channel {
-    pub const ALL: [Channel; 3] = [Channel::Request, Channel::Reply, Channel::Note];
+    pub const ALL: [Channel; 4] = [
+        Channel::Request,
+        Channel::Reply,
+        Channel::Note,
+        Channel::Message,
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
             Channel::Request => "request",
             Channel::Reply => "reply",
             Channel::Note => "note",
+            Channel::Message => "message",
         }
     }
 }

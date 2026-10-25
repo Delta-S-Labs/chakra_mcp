@@ -55,6 +55,8 @@ pub struct RelayState {
     pub usage_retention_days: Option<u32>,
     /// The signing key for consent tokens, cached (owner consent §6).
     pub consent_signer: Arc<crate::consent::signer::ConsentSigner>,
+    /// Calls settings (`CALLS_*`); off by default.
+    pub calls: crate::calls::CallsConfig,
 }
 
 impl RelayState {
@@ -78,6 +80,7 @@ impl RelayState {
             featured_account: None,
             usage_retention_days: Some(crate::retention::DEFAULT_USAGE_RETENTION_DAYS),
             consent_signer,
+            calls: crate::calls::CallsConfig::default(),
         }
     }
 
@@ -103,6 +106,11 @@ impl RelayState {
 
     /// Point out-of-credits refusals at the web app's credits page (managed
     /// hosting only).
+    pub fn with_calls(mut self, calls: crate::calls::CallsConfig) -> Self {
+        self.calls = calls;
+        self
+    }
+
     pub fn with_credits_url(mut self, credits_url: Option<String>) -> Self {
         self.credits_url = credits_url;
         self

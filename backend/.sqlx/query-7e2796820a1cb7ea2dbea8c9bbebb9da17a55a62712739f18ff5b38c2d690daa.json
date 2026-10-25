@@ -1,0 +1,139 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT e.id, e.call_id, e.seq, e.kind, e.from_agent_id, e.text, e.data,\n               e.blocked, e.safety, e.created_at\n          FROM call_entries e\n         WHERE e.call_id = $1\n           AND e.seq > $2\n           AND ($3::text IS NULL OR e.search @@ calls_or_query($3))\n         ORDER BY CASE WHEN $3::text IS NULL THEN 0\n                       ELSE ts_rank_cd(e.search, calls_or_query($3)) END DESC,\n                  e.seq ASC\n         LIMIT $4\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "call_entries",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "call_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "call_entries",
+            "name": "call_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "seq",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "call_entries",
+            "name": "seq"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "call_entries",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "from_agent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "call_entries",
+            "name": "from_agent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "text",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "call_entries",
+            "name": "text"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "data",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "call_entries",
+            "name": "data"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "blocked",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "call_entries",
+            "name": "blocked"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "safety",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "call_entries",
+            "name": "safety"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "call_entries",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "7e2796820a1cb7ea2dbea8c9bbebb9da17a55a62712739f18ff5b38c2d690daa"
+}

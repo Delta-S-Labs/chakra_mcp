@@ -212,8 +212,16 @@ async fn discard_batch(db: &PgPool) -> Result<Option<i64>, sqlx::Error> {
                                               LIMIT $1
                                               FOR UPDATE SKIP LOCKED))
             RETURNING 1
+        ), drained_calls AS (
+            DELETE FROM call_charge_queue
+             WHERE id = ANY(ARRAY(SELECT id FROM call_charge_queue
+                                   ORDER BY id
+                                   LIMIT $1
+                                   FOR UPDATE SKIP LOCKED))
+            RETURNING 1
         )
-        SELECT count(*) AS "drained!" FROM drained
+        SELECT (SELECT count(*) FROM drained) + (SELECT count(*) FROM drained_calls)
+            AS "drained!"
         "#,
         CHARGE_BATCH,
     )
@@ -349,7 +357,17 @@ async fn charge_batch(db: &PgPool, cost_mc: i64) -> Result<Option<ChargeTotals>,
     let Some(mut tx) = begin_accounting(db).await? else {
         return Ok(None);
     };
-    let result = charge_rows(&mut tx, CHARGE_BATCH, cost_mc).await;
+    let result = match charge_rows(&mut tx, CHARGE_BATCH, cost_mc).await {
+        Ok(invocations) => {
+            charge_call_rows(&mut tx, CHARGE_BATCH)
+                .await
+                .map(|calls| ChargeTotals {
+                    rows: invocations.rows + calls.rows,
+                    debits: invocations.debits + calls.debits,
+                })
+        }
+        Err(e) => Err(e),
+    };
     finish(tx, result).await.map(Some)
 }
 
@@ -401,6 +419,56 @@ async fn charge_rows(
         "#,
         batch,
         cost_mc,
+    )
+    .fetch_one(&mut *conn)
+    .await?;
+    Ok(ChargeTotals {
+        rows: row.drained,
+        debits: row.debits,
+    })
+}
+
+/// Like [`charge_rows`], for calls' messages and memory work (calls spec
+/// §9): each queued row carries its own cost.
+async fn charge_call_rows(
+    conn: &mut PgConnection,
+    batch: i64,
+) -> Result<ChargeTotals, sqlx::Error> {
+    let row = sqlx::query!(
+        r#"
+        WITH drained AS (
+            DELETE FROM call_charge_queue
+             WHERE id = ANY(ARRAY(SELECT id FROM call_charge_queue
+                                   ORDER BY id
+                                   LIMIT $1
+                                   FOR UPDATE SKIP LOCKED))
+            RETURNING id, account_id, call_id, kind, cost_mc, created_at
+        ), charged AS (
+            INSERT INTO call_charges (id, account_id, call_id, kind, cost_mc, created_at)
+            SELECT d.id, d.account_id, d.call_id, d.kind,
+                   CASE WHEN EXISTS (SELECT 1 FROM accounts a WHERE a.id = d.account_id)
+                        THEN d.cost_mc ELSE 0 END,
+                   d.created_at
+              FROM drained d
+            ON CONFLICT (id) DO NOTHING
+            RETURNING account_id, cost_mc
+        ), totals AS (
+            SELECT account_id, SUM(cost_mc)::bigint AS total
+              FROM charged
+             WHERE cost_mc > 0
+             GROUP BY account_id
+        ), debited AS (
+            INSERT INTO credit_wallets (account_id, balance_mc, updated_at)
+            SELECT account_id, -total, now() FROM totals
+            ON CONFLICT (account_id) DO UPDATE
+               SET balance_mc = credit_wallets.balance_mc + EXCLUDED.balance_mc,
+                   updated_at = now()
+            RETURNING account_id
+        )
+        SELECT (SELECT count(*) FROM drained) AS "drained!",
+               (SELECT count(*) FROM debited) AS "debits!"
+        "#,
+        batch,
     )
     .fetch_one(&mut *conn)
     .await?;
@@ -514,9 +582,14 @@ async fn finish<T>(
 async fn queue_depth(db: &PgPool) -> Result<i64, sqlx::Error> {
     let mut tx = db.begin().await?;
     sqlx::query(SET_LOCK_TIMEOUT).execute(&mut *tx).await?;
-    let depth = sqlx::query_scalar!(r#"SELECT count(*) AS "depth!" FROM credit_charge_queue"#)
-        .fetch_one(&mut *tx)
-        .await?;
+    let depth = sqlx::query_scalar!(
+        r#"
+        SELECT (SELECT count(*) FROM credit_charge_queue)
+             + (SELECT count(*) FROM call_charge_queue) AS "depth!"
+        "#
+    )
+    .fetch_one(&mut *tx)
+    .await?;
     tx.commit().await?;
     Ok(depth)
 }

@@ -89,13 +89,18 @@ async fn main() -> Result<()> {
         .with_credit_cache(credit_cache)
         .with_featured_account(env::var("DISCOVERY_FEATURED_ACCOUNT").ok())
         .with_usage_retention_days(usage_retention)
-        .with_compliance(chakramcp_relay::compliance::ComplianceChecker::from_env());
+        .with_compliance(chakramcp_relay::compliance::ComplianceChecker::from_env())
+        .with_calls(chakramcp_relay::calls::CallsConfig::from_env()?);
     state.heartbeats.clone().spawn_flusher(state.db.clone());
     if let Some(days) = usage_retention {
         chakramcp_relay::retention::spawn_usage_pruner(state.db.clone(), days);
     }
     // Owner consent: expire undecided requests and prune old notices.
     chakramcp_relay::consent::expiry::spawn_expiry_worker(state.db.clone());
+    if state.calls.enabled {
+        tracing::info!("calls enabled");
+        chakramcp_relay::calls::workers::spawn_workers(state.db.clone());
+    }
     // Usage metering runs on a background writer so requests never wait on it.
     let usage = chakramcp_relay::events::UsageRecorder::spawn(state.clone());
     let state = state.with_usage_recorder(usage);

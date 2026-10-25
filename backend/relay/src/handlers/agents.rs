@@ -97,6 +97,9 @@ pub struct AgentDto {
     /// endpoint). Push agents can't ask their owner first (owner consent
     /// §11).
     pub mode: String,
+    /// Who may call it: `friends`, `anyone` or `nobody` (calls spec §3.1).
+    /// Always `nobody` for push agents, which can't take calls yet.
+    pub accept_calls: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
     /// True when the requesting user is a member of the owning account.
@@ -163,6 +166,20 @@ pub struct UpdateRequest {
     /// inconsistency at COMMIT time as a defense in depth.
     #[serde(default)]
     pub agent_card_url: Option<String>,
+    /// Who may call this agent: `friends`, `anyone` or `nobody` (calls spec
+    /// §3.1). Push agents only take `nobody`.
+    #[serde(default)]
+    pub accept_calls: Option<String>,
+}
+
+/// The `accept_calls` an agent shows: push agents can't take calls yet,
+/// whatever is stored.
+fn effective_accept_calls(mode: &str, stored: String) -> String {
+    if mode == "push" {
+        "nobody".into()
+    } else {
+        stored
+    }
 }
 
 // ─── GET /v1/agents — list mine ──────────────────────────
@@ -180,7 +197,7 @@ pub async fn list_mine(
         r#"
         SELECT
             a.id, a.account_id, a.slug, a.display_name, a.description,
-            a.visibility, a.endpoint_url, a.mode, a.created_at, a.updated_at,
+            a.visibility, a.endpoint_url, a.mode, a.accept_calls, a.created_at, a.updated_at,
             acc.slug as account_slug, acc.display_name as account_display_name,
             (SELECT COUNT(*)::bigint FROM agent_capabilities c WHERE c.agent_id = a.id) as "capability_count!",
             (SELECT COUNT(*)::bigint FROM agent_capabilities c
@@ -229,6 +246,7 @@ pub async fn list_mine(
                 description: r.description,
                 visibility: r.visibility,
                 endpoint_url: r.endpoint_url,
+                accept_calls: effective_accept_calls(&r.mode, r.accept_calls),
                 mode: r.mode,
                 created_at: r.created_at,
                 updated_at: r.updated_at,
@@ -275,6 +293,8 @@ pub struct NetworkAgentDto {
     pub display_name: String,
     pub description: String,
     pub mode: String,
+    /// Who may call it (calls spec §3.1); `nobody` for push agents.
+    pub accept_calls: String,
     pub tags: Vec<String>,
     pub verified: bool,
     pub endpoint_url: Option<String>,
@@ -354,7 +374,7 @@ pub async fn list_network(
         r#"
         SELECT
             a.id, a.account_id, a.slug, a.display_name, a.description,
-            a.visibility, a.endpoint_url, a.mode, a.tags,
+            a.visibility, a.endpoint_url, a.mode, a.accept_calls, a.tags,
             a.created_at, a.updated_at,
             acc.slug as account_slug,
             acc.display_name as account_display_name,
@@ -473,6 +493,7 @@ pub async fn list_network(
             slug: r.slug,
             display_name: r.display_name,
             description: r.description,
+            accept_calls: effective_accept_calls(&r.mode, r.accept_calls),
             mode: r.mode,
             tags: r.tags,
             verified: r.verified,
@@ -540,7 +561,7 @@ pub async fn get_one(
         r#"
         SELECT
             a.id, a.account_id, a.slug, a.display_name, a.description,
-            a.visibility, a.endpoint_url, a.mode, a.created_at, a.updated_at,
+            a.visibility, a.endpoint_url, a.mode, a.accept_calls, a.created_at, a.updated_at,
             acc.slug as account_slug, acc.display_name as account_display_name,
             (SELECT COUNT(*)::bigint FROM agent_capabilities c WHERE c.agent_id = a.id) as "capability_count!",
             (SELECT AVG(rating)::float8 FROM agent_reviews r
@@ -594,6 +615,7 @@ pub async fn get_one(
         description: r.description,
         visibility: r.visibility,
         endpoint_url: if manageable { r.endpoint_url } else { None },
+        accept_calls: effective_accept_calls(&r.mode, r.accept_calls),
         mode: r.mode,
         created_at: r.created_at,
         updated_at: r.updated_at,
@@ -697,7 +719,7 @@ pub async fn create(
              created_by_client_id, created_by_api_key_id)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         ON CONFLICT (account_id, slug) WHERE tombstoned_at IS NULL DO NOTHING
-        RETURNING id, account_id, slug, display_name, description, visibility, endpoint_url, mode, created_at, updated_at
+        RETURNING id, account_id, slug, display_name, description, visibility, endpoint_url, mode, accept_calls, created_at, updated_at
         "#,
         id,
         req.account_id,
@@ -812,6 +834,7 @@ pub async fn create(
         description: inserted.description,
         visibility: inserted.visibility,
         endpoint_url: inserted.endpoint_url,
+        accept_calls: effective_accept_calls(&inserted.mode, inserted.accept_calls),
         mode: inserted.mode,
         created_at: inserted.created_at,
         updated_at: inserted.updated_at,
@@ -849,6 +872,14 @@ pub async fn update(
     let grant = crate::auth::resolve_grant(&state.db, &user).await?;
     if !crate::auth::grant_allows_agent(&state.db, &grant, id).await? {
         return Err(ApiError::Forbidden);
+    }
+
+    if let Some(v) = req.accept_calls.as_deref() {
+        if !matches!(v, "friends" | "anyone" | "nobody") {
+            return Err(ApiError::InvalidRequest(
+                "accept_calls must be friends|anyone|nobody".into(),
+            ));
+        }
     }
 
     if let Some(v) = req.visibility.as_deref() {
@@ -964,7 +995,8 @@ pub async fn update(
             slug = CASE
                 WHEN $11::boolean THEN $12
                 ELSE slug
-            END
+            END,
+            accept_calls = COALESCE($13, accept_calls)
         WHERE id = $1
         "#,
         id,
@@ -979,9 +1011,21 @@ pub async fn update(
         new_mode,
         set_slug,
         new_slug,
+        req.accept_calls.as_deref(),
     )
     .execute(&mut *tx)
     .await?;
+
+    // Push agents can't take calls yet (calls spec §3.1); checked after the
+    // update so a mode change in the same request counts.
+    if req.accept_calls.as_deref().is_some_and(|v| v != "nobody") {
+        let mode = sqlx::query_scalar!("SELECT mode FROM agents WHERE id = $1", id)
+            .fetch_one(&mut *tx)
+            .await?;
+        if mode == "push" {
+            return Err(crate::calls::push_unsupported());
+        }
+    }
 
     // Slug rename: write the alias so the old slug 301-redirects
     // for the rename window (90 days for agent slugs per spec).
@@ -1013,7 +1057,7 @@ pub async fn update(
         r#"
         SELECT
             a.id, a.account_id, a.slug, a.display_name, a.description,
-            a.visibility, a.endpoint_url, a.mode, a.created_at, a.updated_at,
+            a.visibility, a.endpoint_url, a.mode, a.accept_calls, a.created_at, a.updated_at,
             acc.slug as account_slug, acc.display_name as account_display_name,
             (SELECT COUNT(*)::bigint FROM agent_capabilities c WHERE c.agent_id = a.id) as "capability_count!",
             (SELECT AVG(rating)::float8 FROM agent_reviews r
@@ -1052,6 +1096,7 @@ pub async fn update(
         description: r.description,
         visibility: r.visibility,
         endpoint_url: r.endpoint_url,
+        accept_calls: effective_accept_calls(&r.mode, r.accept_calls),
         mode: r.mode,
         created_at: r.created_at,
         updated_at: r.updated_at,

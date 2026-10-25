@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE calls SET topic = NULL, decline_reason = NULL, purged_at = now()\n         WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9c1b0bb887ad557fc6534f93806846639d3d91627bb62cce9c32b62451b0ed05"
+}

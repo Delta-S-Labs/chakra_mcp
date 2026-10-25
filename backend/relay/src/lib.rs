@@ -12,6 +12,7 @@ use tower_http::cors::{Any, CorsLayer};
 
 pub mod agent_card;
 pub mod auth;
+pub mod calls;
 pub mod compliance;
 pub mod consent;
 pub mod events;
@@ -243,7 +244,14 @@ pub fn router(state: RelayState) -> Router {
         .route(
             "/agents/{account_slug}/{agent_slug}/a2a/stream",
             post(handlers::a2a::stream_stub),
-        )
+        );
+    // Calls (spec 2026-10-25), only with CALLS_ENABLED: off, they 404.
+    let router = if state.calls.enabled {
+        router.merge(handlers::calls::routes())
+    } else {
+        router
+    };
+    let router = router
         .layer(from_fn_with_state(state.clone(), usage_middleware))
         .layer(from_fn_with_state(state.clone(), www_authenticate))
         .with_state(state)
