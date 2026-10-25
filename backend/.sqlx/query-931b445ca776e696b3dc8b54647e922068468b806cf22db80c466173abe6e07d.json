@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH unfinished AS (\n            SELECT id FROM relay_invocations\n             WHERE call_id = $1\n               AND status IN ('pending', 'in_progress', 'awaiting_consent')\n        ),\n        cancelled AS (\n            UPDATE consent_requests c\n               SET status = 'cancelled', decided_at = now(), decision_note = $2\n              FROM unfinished u\n             WHERE c.invocation_id = u.id AND c.status = 'pending'\n            RETURNING c.invocation_id\n        ),\n        rejected AS (\n            UPDATE relay_invocations i\n               SET status = 'rejected', error_message = $2\n              FROM unfinished u\n             WHERE i.id = u.id AND i.status = 'awaiting_consent'\n            RETURNING i.id\n        ),\n        failed AS (\n            UPDATE relay_invocations i\n               SET status = 'failed', error_message = $2,\n                   elapsed_ms = LEAST(EXTRACT(EPOCH FROM (now() - i.created_at)) * 1000,\n                                      2147483647)::int\n              FROM unfinished u\n             WHERE i.id = u.id AND i.status IN ('pending', 'in_progress')\n            RETURNING i.id\n        )\n        SELECT (SELECT count(*) FROM cancelled) AS \"cancelled!\",\n               (SELECT count(*) FROM rejected) AS \"rejected!\",\n               (SELECT count(*) FROM failed) AS \"failed!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "cancelled!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "rejected!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "failed!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "931b445ca776e696b3dc8b54647e922068468b806cf22db80c466173abe6e07d"
+}

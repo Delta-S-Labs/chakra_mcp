@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT c.id FROM calls c\n         WHERE c.purged_at IS NULL AND c.purge_at <= now()\n           AND (c.ended_at <= now() - interval '24 hours'\n                OR NOT EXISTS (\n                    SELECT 1 FROM call_deliveries d\n                      JOIN call_entries e ON e.id = d.entry_id\n                     WHERE e.call_id = c.id AND d.delivered_at IS NULL))\n           AND (c.purge_at <= now() - interval '7 days'\n                OR NOT EXISTS (\n                    SELECT 1 FROM relay_invocations i\n                     WHERE i.call_id = c.id\n                       AND i.status IN ('pending', 'in_progress', 'awaiting_consent')))\n         ORDER BY c.purge_at\n         LIMIT $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "calls",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "994153a5450e1d60d0fe584d8d013d4896eeaea660d5f451615e486685712c0d"
+}

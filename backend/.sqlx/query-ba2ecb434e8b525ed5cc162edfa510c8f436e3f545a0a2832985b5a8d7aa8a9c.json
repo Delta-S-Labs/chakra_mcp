@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n          (SELECT count(*) FROM calls\n            WHERE state = 'active' AND (caller_agent_id = $1 OR callee_agent_id = $1))\n        + (SELECT count(*) FROM calls WHERE state = 'ringing' AND caller_agent_id = $1)\n              AS \"caller!\",\n          (SELECT count(*) FROM calls\n            WHERE state = 'active' AND (caller_agent_id = $2 OR callee_agent_id = $2))\n              AS \"callee!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "caller!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "callee!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "ba2ecb434e8b525ed5cc162edfa510c8f436e3f545a0a2832985b5a8d7aa8a9c"
+}

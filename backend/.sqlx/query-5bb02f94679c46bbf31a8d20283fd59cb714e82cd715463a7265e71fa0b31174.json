@@ -1,0 +1,318 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT c.id, c.state, c.memory, c.memory_features, c.ttl_secs, c.idle_secs,\n               c.topic, c.created_at, c.answered_at, c.ended_at, c.ended_by,\n               c.purge_at, c.purged_at, c.message_count,\n               c.caller_agent_id, c.callee_agent_id,\n               c.caller_account_id, c.callee_account_id,\n               ca.account_id AS \"caller_current_account?\",\n               ca.display_name AS \"caller_name?\",\n               cacc.slug AS \"caller_slug?\",\n               (ca.tombstoned_at IS NOT NULL) AS \"caller_gone?\",\n               cb.account_id AS \"callee_current_account?\",\n               cb.display_name AS \"callee_name?\",\n               cbacc.slug AS \"callee_slug?\",\n               (cb.tombstoned_at IS NOT NULL) AS \"callee_gone?\"\n          FROM calls c\n          LEFT JOIN agents ca ON ca.id = c.caller_agent_id\n          LEFT JOIN accounts cacc ON cacc.id = ca.account_id\n          LEFT JOIN agents cb ON cb.id = c.callee_agent_id\n          LEFT JOIN accounts cbacc ON cbacc.id = cb.account_id\n         WHERE c.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "calls",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "state",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "calls",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "memory",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "calls",
+            "name": "memory"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "memory_features",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "calls",
+            "name": "memory_features"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "ttl_secs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "calls",
+            "name": "ttl_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "idle_secs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "calls",
+            "name": "idle_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "topic",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "calls",
+            "name": "topic"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "calls",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "answered_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "calls",
+            "name": "answered_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "ended_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "calls",
+            "name": "ended_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "ended_by",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "calls",
+            "name": "ended_by"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "purge_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "calls",
+            "name": "purge_at"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "purged_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "calls",
+            "name": "purged_at"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "message_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "calls",
+            "name": "message_count"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "caller_agent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "calls",
+            "name": "caller_agent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "callee_agent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "calls",
+            "name": "callee_agent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "caller_account_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "calls",
+            "name": "caller_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "callee_account_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "calls",
+            "name": "callee_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "caller_current_account?",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "caller_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 20,
+        "name": "caller_slug?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 21,
+        "name": "caller_gone?",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 22,
+        "name": "callee_current_account?",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 23,
+        "name": "callee_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 24,
+        "name": "callee_slug?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 25,
+        "name": "callee_gone?",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      null,
+      true,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "5bb02f94679c46bbf31a8d20283fd59cb714e82cd715463a7265e71fa0b31174"
+}

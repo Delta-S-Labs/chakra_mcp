@@ -74,6 +74,26 @@ pub enum ApiError {
     /// `chk.policy.safety_blocked`, or `chk.policy.compliance_denied`.
     #[error("{message}")]
     Policy { code: &'static str, message: String },
+
+    /// A refusal with its own status and `chk.*` code, e.g. calls'
+    /// `chk.calls.busy` (409). A 429 is retryable.
+    #[error("{message}")]
+    Coded {
+        status: StatusCode,
+        code: &'static str,
+        message: String,
+    },
+}
+
+impl ApiError {
+    /// A [`ApiError::Coded`] refusal.
+    pub fn coded(status: StatusCode, code: &'static str, message: impl Into<String>) -> Self {
+        ApiError::Coded {
+            status,
+            code,
+            message: message.into(),
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -131,6 +151,9 @@ impl IntoResponse for ApiError {
             ApiError::PaymentProvider => (StatusCode::BAD_GATEWAY, "payment_provider_error", true),
             ApiError::PayloadTooLarge { code, .. } => (StatusCode::PAYLOAD_TOO_LARGE, *code, false),
             ApiError::Policy { code, .. } => (StatusCode::FORBIDDEN, *code, false),
+            ApiError::Coded { status, code, .. } => {
+                (*status, *code, *status == StatusCode::TOO_MANY_REQUESTS)
+            }
         };
         let retry_after = match &self {
             ApiError::SigninRateLimited { retry_after_secs }

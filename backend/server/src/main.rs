@@ -157,6 +157,7 @@ fn init(
          # credits_enabled = false\n\
          # credits_default_monthly_free_mc = 5000000\n\
          # credits_cost_per_invocation_mc = 100\n\
+         # credits_cost_per_message_mc = 100\n\
          # Below this balance an account is \"running low\": agents see a\n\
          # ChakraMCP-Credits: low header (default 100 credits, at least the cost).\n\
          # credits_low_balance_mc = 100000\n\
@@ -302,7 +303,8 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
         .with_credit_cache(credit_cache)
         .with_featured_account(std::env::var("DISCOVERY_FEATURED_ACCOUNT").ok())
         .with_usage_retention_days(usage_retention)
-        .with_compliance_shared(system_one);
+        .with_compliance_shared(system_one)
+        .with_calls(chakramcp_relay::calls::CallsConfig::from_env()?);
     relay_state
         .heartbeats
         .clone()
@@ -312,6 +314,10 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
     }
     // Owner consent: expire undecided requests and prune old notices.
     chakramcp_relay::consent::expiry::spawn_expiry_worker(relay_state.db.clone());
+    if relay_state.calls.enabled {
+        tracing::info!("calls enabled");
+        chakramcp_relay::calls::workers::spawn_workers(relay_state.db.clone());
+    }
     // Usage metering runs on a background writer so requests never wait on it.
     let usage = chakramcp_relay::events::UsageRecorder::spawn(relay_state.clone());
     let relay_state = relay_state.with_usage_recorder(usage);

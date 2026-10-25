@@ -109,6 +109,30 @@ impl ComplianceChecker {
         })
     }
 
+    /// Screen a message on a call (calls spec §5.1): `{text, data?}` at root
+    /// `message`. `relationship` is the two agents' friendship, when they're
+    /// friends; it's what `off_relationship` judges the message against.
+    pub async fn screen_message(
+        &self,
+        text: &str,
+        data: Option<&Value>,
+        relationship: Option<Relationship<'_>>,
+    ) -> Result<Screened, TooLarge> {
+        let mut input = json!({ "text": text });
+        if let Some(d) = data {
+            input["data"] = d.clone();
+        }
+        let subject = Subject {
+            capability_name: "(call)",
+            capability_description: None,
+            grant_purpose: None,
+            relationship,
+            input: &input,
+        };
+        self.screen(Channel::Message, &subject, "message", None, "")
+            .await
+    }
+
     /// Screen a note (spec §3): a friendship message, a grant purpose, an
     /// approver's deny note. `about` is what the note concerns.
     pub async fn screen_note(
@@ -135,10 +159,13 @@ impl ComplianceChecker {
         let mut set = JoinSet::new();
         for (i, chunk) in plan.chunks.iter().enumerate() {
             let mut q = Map::new();
-            if channel == Channel::Request {
-                if let Value::Object(m) = questions::questions_in(subject, Shape::Fields) {
-                    q.extend(m);
-                }
+            let compliance = match channel {
+                Channel::Request => questions::questions_in(subject, Shape::Fields),
+                Channel::Message => questions::message_questions(subject),
+                Channel::Reply | Channel::Note => Value::Null,
+            };
+            if let Value::Object(m) = compliance {
+                q.extend(m);
             }
             let ids: &[usize] = if i == 0 { &plan.judged } else { &[] };
             if let Value::Object(m) = questions::safety_questions(channel, i == 0, ids) {
@@ -502,7 +529,9 @@ fn block_for(channel: Channel, hits: &[(String, f64)]) -> Option<Block> {
     };
     // Replies and notes only face safety's questions (a reply's
     // `prompt_injection` included), so their blocks are safety blocks.
-    if channel != Channel::Request {
+    // Requests and call messages also face compliance questions: harm wins,
+    // and the rest are compliance denials.
+    if matches!(channel, Channel::Reply | Channel::Note) {
         let all: Vec<&(String, f64)> = hits.iter().collect();
         return Some(Block {
             reason: format!(
@@ -526,7 +555,8 @@ fn block_for(channel: Channel, hits: &[(String, f64)]) -> Option<Block> {
     let all: Vec<&(String, f64)> = hits.iter().collect();
     Some(Block {
         reason: format!(
-            "System One compliance check denied this request: {}",
+            "System One compliance check denied this {}: {}",
+            channel.as_str(),
             list(&all)
         ),
         code: "chk.policy.compliance_denied",
@@ -538,6 +568,12 @@ fn label(channel: Channel, id: &str) -> &'static str {
     match (channel, id) {
         (Channel::Reply, questions::PROMPT_INJECTION) => {
             "reply tries to override the calling agent's instructions"
+        }
+        (Channel::Message, questions::PROMPT_INJECTION) => {
+            "message tries to override the receiving agent's instructions"
+        }
+        (Channel::Message, questions::OFF_RELATIONSHIP) => {
+            "message goes beyond what the agents agreed when they became friends"
         }
         _ => questions::label(id),
     }
@@ -780,6 +816,86 @@ mod tests {
             s.findings
         );
         assert!(flagged.iter().all(|f| f.question.is_none()));
+    }
+
+    const FRIENDS: Relationship<'static> = Relationship {
+        proposer_message: Some("Let's plan the offsite venue together"),
+        response_message: Some("Sure, venue planning only"),
+    };
+
+    #[tokio::test]
+    async fn call_messages_are_redacted_or_refused_with_their_codes() {
+        let text = "Sounds good. Text me on +91 98450 12345 instead.";
+        let screen = |nouls: &'static [(&'static str, f64)]| async move {
+            let url = serve(fake(nouls)).await;
+            checker(&url)
+                .with_safety(true)
+                .screen_message(text, None, Some(FRIENDS))
+                .await
+                .unwrap()
+        };
+
+        let s = screen(&[("contact_0", 0.95)]).await;
+        assert!(s.block.is_none());
+        assert_eq!(
+            s.value["text"],
+            "Sounds good. Text me on [contact removed] instead."
+        );
+        assert_eq!(s.findings[0].path.as_deref(), Some("message.text"));
+
+        let b = screen(&[("harm_violence", 0.95), ("off_relationship", 0.95)])
+            .await
+            .block
+            .unwrap();
+        assert_eq!(b.code, "chk.policy.safety_blocked");
+        assert!(
+            b.reason
+                .starts_with("System One safety check blocked this message:"),
+            "{}",
+            b.reason
+        );
+
+        let b = screen(&[("off_relationship", 0.95)]).await.block.unwrap();
+        assert_eq!(b.code, "chk.policy.compliance_denied");
+        assert_eq!(
+            b.reason,
+            "System One compliance check denied this message: message goes beyond what \
+             the agents agreed when they became friends (off_relationship=0.95)"
+        );
+
+        let b = screen(&[("prompt_injection", 0.95)]).await.block.unwrap();
+        assert_eq!(b.code, "chk.policy.compliance_denied");
+    }
+
+    #[tokio::test]
+    async fn call_messages_ask_off_relationship_only_when_the_friendship_sets_terms() {
+        let f = fake(&[]);
+        let url = serve(f.clone()).await;
+        let c = checker(&url).with_safety(true);
+        let text = "How is the venue search going? Anything shortlisted yet?";
+        let asked = |f: &Fake| {
+            let body = f.last_body.lock().unwrap().clone().unwrap();
+            body["questions"].as_object().unwrap().clone()
+        };
+
+        c.screen_message(text, None, None).await.unwrap();
+        let q = asked(&f);
+        assert!(q.contains_key("prompt_injection"));
+        assert!(q.contains_key("harm_crime"));
+        assert!(!q.contains_key("off_relationship"));
+        assert!(!q.contains_key("off_capability"));
+        assert!(!q.contains_key("data_exfiltration"));
+
+        let data = json!({ "budget": 4000 });
+        c.screen_message(text, Some(&data), Some(FRIENDS))
+            .await
+            .unwrap();
+        let q = asked(&f);
+        let instructions = q["off_relationship"]["instructions"].as_str().unwrap();
+        assert!(
+            instructions.contains("the message (`message.fields`"),
+            "{instructions}"
+        );
     }
 
     #[tokio::test]

@@ -14,7 +14,6 @@ use chakramcp_shared::consent::decide::Actor;
 use chakramcp_shared::consent::reply::{self, Draft, ReplyTarget};
 use chakramcp_shared::error::ApiError;
 use chakramcp_shared::safety::{Channel, Safety};
-use chakramcp_shared::sessions::is_delegated_token;
 
 use crate::auth::{user_is_member, AuthUser};
 use crate::state::RelayState;
@@ -43,15 +42,6 @@ pub enum Submitted {
         expires_at: DateTime<Utc>,
         safety: Option<Safety>,
     },
-}
-
-/// Whether `user` is a person in their own web session (not an API key,
-/// nor a token minted for an OAuth client or a device pairing).
-async fn interactive(state: &RelayState, user: &AuthUser) -> Result<bool, ApiError> {
-    match (user.api_key_id, user.minted_jti) {
-        (None, Some(jti)) => Ok(!is_delegated_token(&state.db, jti).await?),
-        _ => Ok(false),
-    }
 }
 
 pub async fn submit_result(
@@ -182,7 +172,7 @@ pub async fn submit_result(
             error,
         };
         let approvers = row.approvers.unwrap_or_default();
-        let may_decide = interactive(state, user).await?
+        let may_decide = crate::auth::is_interactive(state, user).await?
             && chakramcp_shared::consent::approvers::may_decide(
                 &state.db,
                 user.user_id,

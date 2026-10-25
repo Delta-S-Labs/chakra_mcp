@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE relay_invocations\n           SET input_preview = NULL, output_preview = NULL,\n               error_message = CASE WHEN error_message = $2 THEN error_message END\n         WHERE call_id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d935797c8554db8e443673b47deb26f8421520d528fd2c9345110246346fee40"
+}

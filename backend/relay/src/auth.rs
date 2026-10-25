@@ -69,13 +69,21 @@ impl FromRequestParts<RelayState> for InteractiveUser {
         state: &RelayState,
     ) -> Result<Self, Self::Rejection> {
         let user = AuthUser::from_request_parts(parts, state).await?;
-        let Some(jti) = user.minted_jti.filter(|_| user.api_key_id.is_none()) else {
-            return Err(ApiError::Forbidden);
-        };
-        if chakramcp_shared::sessions::is_delegated_token(&state.db, jti).await? {
+        if !is_interactive(state, &user).await? {
             return Err(ApiError::Forbidden);
         }
         Ok(Self(user))
+    }
+}
+
+/// Whether `user` is a person in their own web session: not an API key,
+/// nor a token minted for an OAuth client or a device pairing.
+pub async fn is_interactive(state: &RelayState, user: &AuthUser) -> Result<bool, ApiError> {
+    match (user.api_key_id, user.minted_jti) {
+        (None, Some(jti)) => {
+            Ok(!chakramcp_shared::sessions::is_delegated_token(&state.db, jti).await?)
+        }
+        _ => Ok(false),
     }
 }
 

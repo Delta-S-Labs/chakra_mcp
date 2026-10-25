@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO call_deliveries (entry_id, agent_id)\n            SELECT $1, unnest($2::uuid[])\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e8df5da13f1e53c246ed05461db24274a4216ffd8a9d8c880329bdbe2c742b6b"
+}

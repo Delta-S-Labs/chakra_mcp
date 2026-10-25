@@ -38,13 +38,13 @@ non-root user with a read-only root filesystem.
 | `config.appPublicUrl`, `config.relayPublicUrl` | from the Ingress hosts | The URLs the server advertises: OAuth redirects and discovery documents |
 | `config.frontendPublicUrl` | `appPublicUrl` | Where sign-in and pairing links point. The server serves its own sign-in pages at `appPublicUrl`; set this only if you run the web UI |
 | `config.signupEnabled` | unset (closed) | Public sign-up. Create accounts with `chakramcp-server users add` (see `NOTES.txt`) |
-| `config.creditsEnabled` | unset (off) | Credits: a monthly allowance per account. Amounts via `extraEnv` (`CREDITS_DEFAULT_MONTHLY_FREE_MC`, `CREDITS_COST_PER_INVOCATION_MC`, `CREDITS_LOW_BALANCE_MC`, `LIMITS_DEFAULT_RATE_PER_MIN`) |
+| `config.creditsEnabled` | unset (off) | Credits: a monthly allowance per account. Amounts via `extraEnv` (`CREDITS_DEFAULT_MONTHLY_FREE_MC`, `CREDITS_COST_PER_INVOCATION_MC`, `CREDITS_COST_PER_MESSAGE_MC`, `CREDITS_LOW_BALANCE_MC`, `LIMITS_DEFAULT_RATE_PER_MIN`) |
 | `config.adminEmail` | `""` | chakramcp.com only (`HOSTING_MODE=managed`); no effect on a self-hosted server |
 | `config.limitsEnforce` | `true` | `false`: over-limit calls are only logged |
 | `config.discoveryV2` | `true` | |
 | `config.rustLog` | `info,…,sqlx=warn` | The log filter; logs are JSON |
 | `secrets.existingSecret` | `""` | A Secret whose keys all become environment variables: `JWT_SECRET` (required), plus optional ones such as `TYPESAFE_AI_KEY`. Unset: `JWT_SECRET` is generated once and kept. |
-| `extraEnv`, `extraEnvFrom` | `[]` | More environment for the server, e.g. `USAGE_RETENTION_DAYS` (days of usage events to keep, default 90; `0` keeps them forever), or the System One switches (`SYSTEM_ONE_CHECKS`, `SYSTEM_ONE_SAFETY`, with `TYPESAFE_AI_KEY` from a secret) |
+| `extraEnv`, `extraEnvFrom` | `[]` | More environment for the server, e.g. `USAGE_RETENTION_DAYS` (days of usage events to keep, default 90; `0` keeps them forever), or the System One switches (`SYSTEM_ONE_CHECKS`, `SYSTEM_ONE_SAFETY`, with `TYPESAFE_AI_KEY` from a secret), or calls (`CALLS_ENABLED`, and the limits `CALLS_MAX_TTL_DAYS`, `CALLS_DEFAULT_TTL_DAYS`, `CALLS_MAX_ACTIVE_PER_AGENT`, `CALLS_MAX_MESSAGES`) |
 | `metrics.enabled`, `metrics.port` | `true`, `9464` | Prometheus metrics on their own port, never on the Ingress |
 | `service.type`, `service.appPort`, `service.relayPort` | `ClusterIP`, `8080`, `8090` | |
 | `ingress.enabled`, `ingress.className`, `ingress.annotations` | `false`, `""`, `{}` | E.g. `cert-manager.io/cluster-issuer` for TLS |
