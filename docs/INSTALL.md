@@ -36,6 +36,13 @@ npm install -g @chakramcp/cli
 #   that fetches the right prebuilt binary for your platform.
 ```
 
+npm 12 blocks install scripts unless you allow them, so the postinstall
+may not run. From 0.5.0 the `chakramcp` command then fetches the binary
+on its first run instead: into the package's folder, or
+`~/.cache/chakramcp/<version>` when that folder isn't writable. With
+0.4.0 on npm 12, install with `npm install -g --allow-scripts=@chakramcp/cli
+@chakramcp/cli`.
+
 ### Homebrew (published)
 
 ```sh

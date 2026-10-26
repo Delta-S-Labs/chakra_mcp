@@ -70,6 +70,12 @@ const nextConfig: NextConfig = {
         destination: "/app/pair",
         permanent: true,
       },
+      // Pricing lives in the docs: credits, what costs what, the free grant.
+      {
+        source: "/pricing",
+        destination: "/docs/concepts#limits",
+        permanent: false,
+      },
       // Discovery breadcrumb: an earlier revision of
       // /.well-known/chakramcp.json (and Hermes' tooling) pointed at
       // these URLs on the marketing host even though the backend lives

@@ -83,6 +83,10 @@ special casing.
 ```bash
 # Install the CLI (pick one — same `chakramcp` binary either way):
 npm install -g @chakramcp/cli
+#   (npm 12 blocks install scripts: from 0.5.0 the binary is fetched on
+#    first run; for 0.4.0 add --allow-scripts=@chakramcp/cli)
+# or
+curl -fsSL https://chakramcp.com/install.sh | sh
 # or
 brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp
 # or source fallback if you already have a Rust toolchain:

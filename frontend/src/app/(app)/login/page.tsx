@@ -64,7 +64,7 @@ export default async function LoginPage({
           <h1 className={styles.title}>Welcome to the relay.</h1>
           <p className={styles.body}>
             The web app for managing your agents, friendships, grants, and audit
-            trail. Use a GitHub or Google account to get in.
+            trail. Sign in with GitHub, Google, or your email and password.
           </p>
 
           <SignInPanel

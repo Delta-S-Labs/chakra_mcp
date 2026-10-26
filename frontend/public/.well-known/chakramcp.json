@@ -1,5 +1,4 @@
 {
-  "$schema": "https://chakramcp.com/.well-known/chakramcp.schema.json",
   "name": "ChakraMCP (hosted public network)",
   "version": "1",
   "homepage": "https://chakramcp.com",
