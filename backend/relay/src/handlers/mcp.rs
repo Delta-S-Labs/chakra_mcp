@@ -95,7 +95,7 @@ pub async fn handle(
             // Spec: notifications get no response body.
             return StatusCode::NO_CONTENT.into_response();
         }
-        "tools/list" => Ok(tools_list_result()),
+        "tools/list" => Ok(tools_list_result(state.calls.enabled)),
         "tools/call" => match call_tool(&state, &user, req.params).await {
             Ok((value, tool_signals)) => {
                 signals = tool_signals;
@@ -262,8 +262,8 @@ fn initialize_result() -> Value {
 
 // ─── tools/list ──────────────────────────────────────────
 
-fn tools_list_result() -> Value {
-    json!({
+fn tools_list_result(calls: bool) -> Value {
+    let mut result = json!({
         "tools": [
             tool("list_my_accounts",
                 "List the accounts you belong to (with your role). Use an account's id as the account_id for create_agent.",
@@ -300,6 +300,7 @@ fn tools_list_result() -> Value {
                         "grant_id": { "type": "string", "format": "uuid" },
                         "grantee_agent_id": { "type": "string", "format": "uuid", "description": "One of your agents — the caller side." },
                         "input": { "type": "object" },
+                        "call_id": { "type": "string", "format": "uuid", "description": "Make the request inside this call; the capability must be the other party's." },
                         "consent_terms": {
                             "type": "object",
                             "description": "Only for capabilities that ask their owner first: what you're asking the owner to approve. The owner may narrow it, never widen it.",
@@ -581,10 +582,17 @@ fn tools_list_result() -> Value {
                     }
                 })),
         ]
-    })
+    });
+    // Calls (spec 2026-10-25), only with CALLS_ENABLED.
+    if calls {
+        if let Some(tools) = result["tools"].as_array_mut() {
+            tools.extend(crate::calls::mcp::tools());
+        }
+    }
+    result
 }
 
-fn tool(name: &str, description: &str, input_schema: Value) -> Value {
+pub(crate) fn tool(name: &str, description: &str, input_schema: Value) -> Value {
     json!({
         "name": name,
         "description": description,
@@ -653,6 +661,9 @@ async fn call_tool(
         "review_eligibility" => bridge_review_eligibility(state, user, p.arguments).await,
         "hide_review" => bridge_hide_review(state, user, p.arguments, true).await,
         "unhide_review" => bridge_hide_review(state, user, p.arguments, false).await,
+        name if state.calls.enabled && crate::calls::mcp::handles(name) => {
+            crate::calls::mcp::call(state, user, name, p.arguments).await
+        }
         other => {
             return Err(rpc_err(
                 ERR_INVALID_PARAMS,
@@ -874,7 +885,7 @@ async fn list_invocations(db: &PgPool, user: &AuthUser, args: Value) -> Result<V
         SELECT i.id, i.status, i.capability_name,
                i.granter_agent_id, ga.display_name as "granter_display_name?",
                i.grantee_agent_id, ea.display_name as "grantee_display_name?",
-               i.input_preview, i.output_preview, i.error_message, i.trust_snapshot,
+               i.input_preview, i.output_preview, i.error_message, i.trust_snapshot, i.call_id,
                i.elapsed_ms, i.created_at, i.claimed_at,
                EXISTS(
                    SELECT 1 FROM account_memberships m
@@ -932,6 +943,9 @@ async fn list_invocations(db: &PgPool, user: &AuthUser, args: Value) -> Result<V
                 &r.status,
             ) {
                 item["safety"] = json!(safety);
+            }
+            if let Some(call_id) = r.call_id {
+                item["call_id"] = json!(call_id);
             }
             item
         })
@@ -1048,6 +1062,8 @@ async fn invoke(
         input: Value,
         #[serde(default)]
         consent_terms: Option<crate::consent::terms::ConsentTerms>,
+        #[serde(default)]
+        call_id: Option<Uuid>,
     }
     let a: A = serde_json::from_value(args)
         .map_err(|e| ApiError::InvalidRequest(format!("bad invoke args: {e}")))?;
@@ -1063,6 +1079,7 @@ async fn invoke(
         &a.input,
         a.consent_terms.as_ref(),
         "mcp",
+        a.call_id,
     )
     .await?
     {
@@ -1130,7 +1147,7 @@ async fn poll_invocation(db: &PgPool, user: &AuthUser, args: Value) -> Result<Va
         r#"
         SELECT i.id, i.status, i.elapsed_ms, i.error_message,
                i.input_preview, i.output_preview, i.trust_snapshot,
-               i.created_at, i.claimed_at, i.capability_name,
+               i.created_at, i.claimed_at, i.capability_name, i.call_id,
                EXISTS(
                    SELECT 1 FROM account_memberships m
                    JOIN agents a ON a.account_id = m.account_id
@@ -1176,6 +1193,9 @@ async fn poll_invocation(db: &PgPool, user: &AuthUser, args: Value) -> Result<Va
         &r.status,
     ) {
         out["safety"] = json!(safety);
+    }
+    if let Some(call_id) = r.call_id {
+        out["call_id"] = json!(call_id);
     }
     Ok(out)
 }
@@ -1243,7 +1263,7 @@ async fn pull_inbox(state: &RelayState, user: &AuthUser, args: Value) -> Result<
     let rows = sqlx::query!(
         r#"
         SELECT i.id, i.capability_name, i.input_preview, i.status, i.trust_snapshot,
-               i.created_at, i.claimed_at,
+               i.created_at, i.claimed_at, i.call_id,
                i.grantee_agent_id, ea.display_name as "grantee_display_name?"
         FROM relay_invocations i
         LEFT JOIN agents ea ON ea.id = i.grantee_agent_id
@@ -1269,6 +1289,9 @@ async fn pull_inbox(state: &RelayState, user: &AuthUser, args: Value) -> Result<
             });
             if let Some(consent) = consents.remove(&r.id) {
                 item["consent"] = json!(consent);
+            }
+            if let Some(call_id) = r.call_id {
+                item["call_id"] = json!(call_id);
             }
             if let Some(safety) = crate::handlers::invoke::safety_from_snapshot(
                 r.trust_snapshot.as_ref(),
@@ -3005,7 +3028,7 @@ mod manage_agents_tests {
 
     #[test]
     fn new_tools_are_advertised() {
-        let listed = super::tools_list_result();
+        let listed = super::tools_list_result(false);
         let names: Vec<&str> = listed["tools"]
             .as_array()
             .unwrap()

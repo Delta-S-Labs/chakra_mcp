@@ -201,6 +201,7 @@ pub async fn send(
             blocked: false,
             size_bytes: size,
             safety: screened.findings,
+            invocation_id: None,
         },
         &to,
     )
@@ -253,8 +254,11 @@ pub async fn history(
         Entry,
         r#"
         SELECT e.id, e.call_id, e.seq, e.kind, e.from_agent_id, e.text, e.data,
-               e.blocked, e.safety, e.created_at
+               e.blocked, e.safety, e.created_at, e.invocation_id,
+               i.capability_name AS "invocation_capability?",
+               i.status AS "invocation_status?"
           FROM call_entries e
+          LEFT JOIN relay_invocations i ON i.id = e.invocation_id
          WHERE e.call_id = $1
            AND e.seq > $2
            AND ($3::text IS NULL OR e.search @@ calls_or_query($3))

@@ -10,6 +10,8 @@ pub mod access;
 pub mod config;
 pub mod feed;
 pub mod lifecycle;
+pub mod link;
+pub mod mcp;
 pub mod messages;
 pub mod purge;
 pub mod read;
@@ -337,6 +339,11 @@ pub struct Entry {
     pub blocked: bool,
     pub safety: Option<Value>,
     pub created_at: DateTime<Utc>,
+    /// For `invocation` entries: the invocation, and its capability and
+    /// status as they are now (read by join).
+    pub invocation_id: Option<Uuid>,
+    pub invocation_capability: Option<String>,
+    pub invocation_status: Option<String>,
 }
 
 impl Entry {
@@ -358,6 +365,13 @@ impl Entry {
         {
             v["safety"] = s.clone();
         }
+        if let Some(id) = self.invocation_id {
+            v["invocation"] = json!({
+                "id": id,
+                "capability": self.invocation_capability,
+                "status": self.invocation_status,
+            });
+        }
         v
     }
 }
@@ -371,6 +385,7 @@ pub struct NewEntry<'a> {
     pub blocked: bool,
     pub size_bytes: i32,
     pub safety: Option<Value>,
+    pub invocation_id: Option<Uuid>,
 }
 
 impl<'a> NewEntry<'a> {
@@ -384,6 +399,7 @@ impl<'a> NewEntry<'a> {
             blocked: false,
             size_bytes: 0,
             safety: None,
+            invocation_id: None,
         }
     }
 }
@@ -407,8 +423,9 @@ pub async fn append(
     let created_at = sqlx::query_scalar!(
         r#"
         INSERT INTO call_entries
-            (id, call_id, seq, kind, from_agent_id, text, data, blocked, size_bytes, safety)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            (id, call_id, seq, kind, from_agent_id, text, data, blocked, size_bytes, safety,
+             invocation_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         RETURNING created_at
         "#,
         id,
@@ -421,6 +438,7 @@ pub async fn append(
         entry.blocked,
         entry.size_bytes,
         entry.safety,
+        entry.invocation_id,
     )
     .fetch_one(&mut *conn)
     .await?;
@@ -447,6 +465,9 @@ pub async fn append(
         blocked: entry.blocked,
         safety: entry.safety,
         created_at,
+        invocation_id: entry.invocation_id,
+        invocation_capability: None,
+        invocation_status: None,
     })
 }
 

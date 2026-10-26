@@ -61,10 +61,14 @@ pub async fn claim(
     let entries = sqlx::query_as!(
         Entry,
         r#"
-        SELECT id, call_id, seq, kind, from_agent_id, text, data, blocked, safety, created_at
-          FROM call_entries
-         WHERE id = ANY($1)
-         ORDER BY created_at, call_id, seq
+        SELECT e.id, e.call_id, e.seq, e.kind, e.from_agent_id, e.text, e.data,
+               e.blocked, e.safety, e.created_at, e.invocation_id,
+               i.capability_name AS "invocation_capability?",
+               i.status AS "invocation_status?"
+          FROM call_entries e
+          LEFT JOIN relay_invocations i ON i.id = e.invocation_id
+         WHERE e.id = ANY($1)
+         ORDER BY e.created_at, e.call_id, e.seq
         "#,
         &claimed,
     )

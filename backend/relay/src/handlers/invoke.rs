@@ -103,6 +103,10 @@ pub struct InvokeRequest {
     /// first (owner consent §4.1); ignored otherwise.
     #[serde(default)]
     pub consent_terms: Option<ConsentTerms>,
+    /// The call this request is made in (calls spec §7): the invoker must be
+    /// a party and the capability the other party's.
+    #[serde(default)]
+    pub call_id: Option<Uuid>,
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -152,6 +156,9 @@ pub struct InvocationDto {
     pub output_preview: Option<Value>,
     pub created_at: DateTime<Utc>,
     pub claimed_at: Option<DateTime<Utc>>,
+    /// The call it was made in, if any (calls spec §7).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub call_id: Option<Uuid>,
     /// True when the requesting user is on the granter side.
     pub i_served: bool,
     /// True when the requesting user is on the grantee side.
@@ -345,6 +352,7 @@ async fn record_terminal(
     input_preview: Option<&Value>,
     api_key_id: Option<Uuid>,
     minted_jti: Option<Uuid>,
+    call_id: Option<Uuid>,
 ) -> Result<Uuid, ApiError> {
     let id = Uuid::now_v7();
     sqlx::query!(
@@ -352,8 +360,8 @@ async fn record_terminal(
         INSERT INTO relay_invocations
             (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
              capability_name, invoked_by_user_id, status, elapsed_ms,
-             error_message, input_preview, api_key_id, minted_jti)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+             error_message, input_preview, api_key_id, minted_jti, call_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         "#,
         id,
         grant_id,
@@ -368,6 +376,7 @@ async fn record_terminal(
         input_preview.cloned().unwrap_or(Value::Null),
         api_key_id,
         minted_jti,
+        call_id,
     )
     .execute(db)
     .await?;
@@ -377,6 +386,9 @@ async fn record_terminal(
         i64::from(elapsed_ms),
         1,
     );
+    if let Some(from) = grantee_agent_id {
+        crate::calls::link::note(db, call_id, id, from).await;
+    }
     Ok(id)
 }
 
@@ -459,6 +471,7 @@ pub async fn invoke(
                 req.grantee_agent_id,
                 &req.input,
                 req.consent_terms.as_ref(),
+                req.call_id,
             )
             .await;
         }
@@ -483,6 +496,7 @@ async fn invoke_trusted(
         &req.input,
         req.consent_terms.as_ref(),
         "v1_invoke",
+        req.call_id,
     )
     .await?;
     Ok(match outcome {
@@ -618,6 +632,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
     input: &Value,
     consent_terms: Option<&ConsentTerms>,
     limits_source: &'static str,
+    call: Option<Uuid>,
 ) -> Result<TrustedOutcome, ApiError> {
     consent_enqueue::validate_terms(consent_terms)?;
     let input_preview = truncate_for_audit(input);
@@ -668,6 +683,11 @@ pub(crate) async fn authorize_and_enqueue_trusted(
     .await?
     .ok_or(ApiError::NotFound)?;
 
+    // In a call, the grant must be from the other party (calls spec §7).
+    // Checked before anything is recorded, so a rejection is only linked
+    // to a call the caller is on.
+    crate::calls::link::check(state, user, call, grantee_agent_id, row.granter_agent_id).await?;
+
     let reject = |status: StatusCode, error: String| {
         let db = state.db.clone();
         let input_preview = &input_preview;
@@ -687,6 +707,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
                 Some(input_preview),
                 user.api_key_id,
                 user.minted_jti,
+                call,
             )
             .await?;
             Ok::<_, ApiError>(TrustedOutcome::Rejected {
@@ -838,6 +859,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
                     Some(&blocked_marker()),
                     user.api_key_id,
                     user.minted_jti,
+                    call,
                 )
                 .await?;
                 sqlx::query!(
@@ -921,6 +943,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
                 minted_jti: user.minted_jti,
                 trust_snapshot: Some(&trust_snapshot),
                 charge_account_id: row.grantee_account_id,
+                call_id: call,
             },
             gate,
         )
@@ -949,8 +972,8 @@ pub(crate) async fn authorize_and_enqueue_trusted(
         INSERT INTO relay_invocations
             (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
              capability_name, invoked_by_user_id, status, input_preview,
-             api_key_id, minted_jti, trust_snapshot)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9, $10, $11)
+             api_key_id, minted_jti, trust_snapshot, call_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9, $10, $11, $13)
         "#,
         id,
         row.grant_id,
@@ -964,9 +987,11 @@ pub(crate) async fn authorize_and_enqueue_trusted(
         user.minted_jti,
         trust_snapshot,
         row.grantee_account_id,
+        call,
     )
     .execute(&state.db)
     .await?;
+    crate::calls::link::note(&state.db, call, id, row.grantee_agent_id).await;
 
     Ok(TrustedOutcome::Enqueued {
         invocation_id: id,
@@ -988,6 +1013,7 @@ async fn invoke_public(
     grantee_agent_id: Uuid,
     input: &Value,
     consent_terms: Option<&ConsentTerms>,
+    call: Option<Uuid>,
 ) -> Result<axum::response::Response, ApiError> {
     use axum::response::IntoResponse;
     consent_enqueue::validate_terms(consent_terms)?;
@@ -1035,6 +1061,7 @@ async fn invoke_public(
     if !user_is_member(&state.db, user.user_id, invoker.account_id).await? {
         return Err(ApiError::Forbidden);
     }
+    crate::calls::link::check(state, user, call, grantee_agent_id, cap.granter_agent_id).await?;
 
     // Self-invoke guard. Calling your own agent's public capability
     // wouldn't be wrong per se, but it pollutes quota + future ratings
@@ -1153,6 +1180,7 @@ async fn invoke_public(
                 Some(&blocked_marker()),
                 user.api_key_id,
                 user.minted_jti,
+                call,
             )
             .await?;
             sqlx::query!(
@@ -1202,6 +1230,7 @@ async fn invoke_public(
                     Some(&input_preview),
                     user.api_key_id,
                     user.minted_jti,
+                    call,
                 )
                 .await?;
                 store_rejection_report(&state.db, id, report).await?;
@@ -1247,6 +1276,7 @@ async fn invoke_public(
                 minted_jti: user.minted_jti,
                 trust_snapshot: trust_snapshot.as_ref(),
                 charge_account_id: invoker.account_id,
+                call_id: call,
             },
             gate,
         )
@@ -1278,8 +1308,8 @@ async fn invoke_public(
         INSERT INTO relay_invocations
             (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
              capability_name, invoked_by_user_id, status, input_preview,
-             api_key_id, minted_jti, trust_snapshot)
-        VALUES ($1, NULL, $2, $3, $4, $5, $6, 'pending', $7, $8, $9, $10)
+             api_key_id, minted_jti, trust_snapshot, call_id)
+        VALUES ($1, NULL, $2, $3, $4, $5, $6, 'pending', $7, $8, $9, $10, $12)
         "#,
         id,
         cap.granter_agent_id,
@@ -1292,9 +1322,11 @@ async fn invoke_public(
         user.minted_jti,
         trust_snapshot,
         invoker.account_id,
+        call,
     )
     .execute(&state.db)
     .await?;
+    crate::calls::link::note(&state.db, call, id, grantee_agent_id).await;
 
     let mut response = (
         StatusCode::ACCEPTED,
@@ -1389,7 +1421,7 @@ pub async fn inbox(
             i.id, i.grant_id, i.granter_agent_id, i.grantee_agent_id,
             i.capability_id, i.capability_name, i.status,
             i.elapsed_ms, i.error_message, i.input_preview, i.output_preview,
-            i.created_at, i.claimed_at, i.trust_snapshot,
+            i.created_at, i.claimed_at, i.trust_snapshot, i.call_id,
             ga.display_name as "granter_display_name?",
             ea.display_name as "grantee_display_name?",
             ea.account_id   as "grantee_account_id?",
@@ -1514,6 +1546,7 @@ pub async fn inbox(
                     output_preview: r.output_preview,
                     created_at: r.created_at,
                     claimed_at: r.claimed_at,
+                    call_id: r.call_id,
                     i_served: true,
                     i_invoked: false,
                     tier: if r.grant_id.is_some() {
@@ -1616,7 +1649,7 @@ pub async fn list(
             i.id, i.grant_id, i.granter_agent_id, i.grantee_agent_id,
             i.capability_id, i.capability_name, i.status,
             i.elapsed_ms, i.error_message, i.input_preview, i.output_preview,
-            i.created_at, i.claimed_at, i.trust_snapshot,
+            i.created_at, i.claimed_at, i.trust_snapshot, i.call_id,
             ga.display_name as "granter_display_name?",
             ea.display_name as "grantee_display_name?",
             cap.semantics   as "capability_semantics?",
@@ -1721,6 +1754,7 @@ pub async fn list(
                 output_preview: r.output_preview,
                 created_at: r.created_at,
                 claimed_at: r.claimed_at,
+                call_id: r.call_id,
                 i_served,
                 i_invoked: r.i_invoked.unwrap_or(false),
                 tier: if r.grant_id.is_some() {
@@ -1792,7 +1826,7 @@ async fn fetch_one(state: &RelayState, user_id: Uuid, id: Uuid) -> Result<Invoca
             i.id, i.grant_id, i.granter_agent_id, i.grantee_agent_id,
             i.capability_id, i.capability_name, i.status,
             i.elapsed_ms, i.error_message, i.input_preview, i.output_preview,
-            i.created_at, i.claimed_at, i.trust_snapshot,
+            i.created_at, i.claimed_at, i.trust_snapshot, i.call_id,
             ga.display_name as "granter_display_name?",
             ea.display_name as "grantee_display_name?",
             cap.semantics   as "capability_semantics?",
@@ -1868,6 +1902,7 @@ async fn fetch_one(state: &RelayState, user_id: Uuid, id: Uuid) -> Result<Invoca
         output_preview: r.output_preview,
         created_at: r.created_at,
         claimed_at: r.claimed_at,
+        call_id: r.call_id,
         i_served,
         i_invoked,
         tier: if r.grant_id.is_some() {
@@ -2655,6 +2690,7 @@ pub(crate) mod legacy_v01_contract_tests {
             Some(&serde_json::json!({"k": "v"})),
             None, // ← the JWT path: api_key_id is None
             None, // minted_jti — also None for this synthetic call
+            None, // not in a call
         )
         .await
         .unwrap();
