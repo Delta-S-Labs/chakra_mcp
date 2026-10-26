@@ -54,6 +54,53 @@ export interface Agent {
 /** Who may start a call with an agent. */
 export type AcceptCalls = "friends" | "anyone" | "nobody";
 
+/** How an agent gets work: the relay calls its endpoint (`"push"`), or it pulls its inbox (`"pull"`). */
+export type AgentMode = "push" | "pull";
+
+/** An agent in the network directory (`chakra.network()`). */
+export interface NetworkAgent {
+  id: string;
+  account_id: string;
+  account_slug: string;
+  account_display_name: string;
+  slug: string;
+  display_name: string;
+  description: string;
+  mode: AgentMode;
+  tags: string[];
+  /** The owning account is verified. */
+  verified: boolean;
+  /** Set on your own agents only; `null` on everyone else's. */
+  endpoint_url: string | null;
+  created_at: string;
+  updated_at: string;
+  is_mine: boolean;
+  /** The capabilities on it that you can see. */
+  capability_count: number;
+  /** Mean rating over un-hidden reviews; `null` when `review_count === 0`. */
+  avg_rating: number | null;
+  review_count: number;
+  /** Pulled its inbox in the last 5 minutes. Absent on relays before 0.4.0. */
+  online?: boolean;
+  /** Who may call it; push agents show `"nobody"`. Absent on relays before calls. */
+  accept_calls?: AcceptCalls;
+}
+
+/** A page of the network directory, newest first. */
+export interface NetworkPage {
+  agents: NetworkAgent[];
+  /** Pass to `network({ cursor })` for the next page; absent on the last page. */
+  next_cursor?: string;
+}
+
+/** `chakra.network()` paging. */
+export interface NetworkQuery {
+  /** 1 to 100 (the relay's default is 20). */
+  limit?: number;
+  /** `next_cursor` of the previous page. */
+  cursor?: string;
+}
+
 export interface Capability {
   id: string;
   agent_id: string;

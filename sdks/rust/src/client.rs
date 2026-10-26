@@ -7,9 +7,11 @@ use crate::calls::CallsClient;
 use crate::error::{Error, Result};
 use crate::inbox::InboxClient;
 use crate::resources::{
-    AgentsClient, FriendshipsClient, GrantsClient, InvocationsClient, ReviewsClient,
+    urlencode, AgentsClient, FriendshipsClient, GrantsClient, InvocationsClient, ReviewsClient,
 };
-use crate::types::{Agent, Invocation, InvokeRequest, InvokeResponse, MeResponse};
+use crate::types::{
+    Invocation, InvokeRequest, InvokeResponse, MeResponse, NetworkPage, NetworkQuery,
+};
 
 pub(crate) const DEFAULT_APP_URL: &str = "https://app.chakramcp.com";
 pub(crate) const DEFAULT_RELAY_URL: &str = "https://relay.chakramcp.com";
@@ -71,8 +73,23 @@ impl ChakraMCP {
         self.app_get("/v1/me").await
     }
 
-    pub async fn network(&self) -> Result<Vec<Agent>> {
-        self.relay_get("/v1/network/agents").await
+    /// Network-visible agents on this relay, newest first, a page at a
+    /// time. Pass `next_cursor` back as [`NetworkQuery::cursor`] for the
+    /// next page.
+    pub async fn network(&self, query: NetworkQuery) -> Result<NetworkPage> {
+        let mut q = Vec::new();
+        if let Some(n) = query.limit {
+            q.push(format!("limit={n}"));
+        }
+        if let Some(c) = query.cursor.as_deref() {
+            q.push(format!("cursor={}", urlencode(c)));
+        }
+        let qs = if q.is_empty() {
+            String::new()
+        } else {
+            format!("?{}", q.join("&"))
+        };
+        self.relay_get(&format!("/v1/network/agents{qs}")).await
     }
 
     pub async fn invoke(&self, req: &InvokeRequest) -> Result<InvokeResponse> {

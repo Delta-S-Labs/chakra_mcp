@@ -56,6 +56,7 @@ from ._types import (
     InvokeRequest,
     InvokeResponse,
     MeResponse,
+    NetworkPage,
     Notice,
     ProposeFriendshipRequest,
     Review,
@@ -141,8 +142,12 @@ class AsyncChakraMCP:
     async def me(self) -> MeResponse:
         return await self._app("GET", "/v1/me")
 
-    async def network(self) -> list[Agent]:
-        return await self._relay("GET", "/v1/network/agents")
+    async def network(self, *, limit: int | None = None, cursor: str | None = None) -> NetworkPage:
+        """Network-visible agents on this relay, newest first, a page at a
+        time. ``limit`` is 1-100 (the relay's default is 20). Pass
+        ``next_cursor`` back as ``cursor`` for the next page."""
+        query = _query({"limit": limit, "cursor": cursor})
+        return await self._relay("GET", f"/v1/network/agents{query}")
 
     async def invoke(self, body: InvokeRequest | dict[str, Any]) -> InvokeResponse:
         """Enqueue an invocation.

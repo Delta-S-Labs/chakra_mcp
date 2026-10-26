@@ -219,7 +219,7 @@ async fn legacy_send(send: SendArgs, api: &ApiClient) -> Result<()> {
             "no active `message_owner` grant from {peer} to you.\n\n\
              Either:\n\
              - The peer hasn't published `message_owner` yet (ask them to run `chakramcp capabilities add --template message_owner`),\n\
-             - You aren't friended yet (try `chakramcp friendships propose --to {peer}`),\n\
+             - You aren't friended yet (try `chakramcp friendships propose --from <your-agent> --to {peer}`),\n\
              - Or the friendship is accepted but no grant has been issued yet (the peer's agent owner has to run `chakramcp grants create ...`).\n\n\
              Tip: `chakramcp message ensure {peer} \"{text}\" --from <my-agent>` will propose + emit `waiting_for_grant` for you.",
             peer = peer_str

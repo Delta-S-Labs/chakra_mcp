@@ -19,6 +19,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -107,12 +108,31 @@ func (c *Client) Me(ctx context.Context) (*MeResponse, error) {
 	return &out, nil
 }
 
-func (c *Client) Network(ctx context.Context) ([]Agent, error) {
-	var out []Agent
-	if err := c.do(ctx, http.MethodGet, c.relayURL, "/v1/network/agents", nil, &out); err != nil {
+// NetworkOptions pages Network. Zero values are left out.
+type NetworkOptions struct {
+	Limit  int    // 1-100; the relay's default is 20
+	Cursor string // NetworkPage.NextCursor of the previous page
+}
+
+// Network returns the network-visible agents on this relay, newest
+// first, a page at a time.
+func (c *Client) Network(ctx context.Context, opts NetworkOptions) (*NetworkPage, error) {
+	q := url.Values{}
+	if opts.Limit > 0 {
+		q.Set("limit", strconv.Itoa(opts.Limit))
+	}
+	if opts.Cursor != "" {
+		q.Set("cursor", opts.Cursor)
+	}
+	path := "/v1/network/agents"
+	if enc := q.Encode(); enc != "" {
+		path += "?" + enc
+	}
+	var out NetworkPage
+	if err := c.do(ctx, http.MethodGet, c.relayURL, path, nil, &out); err != nil {
 		return nil, err
 	}
-	return out, nil
+	return &out, nil
 }
 
 // Invoke enqueues an invocation and returns the InvokeResponse.

@@ -68,6 +68,60 @@ describe("ChakraMCP", () => {
     } satisfies Partial<ChakraMCPError>);
   });
 
+  it("network sends limit + cursor and decodes a page", async () => {
+    const seen: string[] = [];
+    const agent = {
+      id: "a1",
+      account_id: "acc1",
+      account_slug: "alice",
+      account_display_name: "Alice",
+      slug: "scheduler",
+      display_name: "Scheduler",
+      description: "Books meetings",
+      mode: "pull",
+      accept_calls: "friends",
+      tags: ["calendar"],
+      verified: true,
+      endpoint_url: null,
+      created_at: "2026-10-26T10:00:00Z",
+      updated_at: "2026-10-26T10:00:00Z",
+      is_mine: false,
+      capability_count: 2,
+      avg_rating: 4.5,
+      review_count: 3,
+      online: true,
+    };
+    let body: unknown = { agents: [agent], next_cursor: "cur-2" };
+    const sdk = new ChakraMCP({
+      apiKey: "ck_test",
+      relayUrl: "http://relay",
+      fetch: mockFetch(async (req) => {
+        seen.push(`${req.method} ${req.url}`);
+        return new Response(JSON.stringify(body), { status: 200 });
+      }),
+    });
+
+    const page = await sdk.network({ limit: 1, cursor: "cur 1" });
+    expect(seen[0]).toBe("GET http://relay/v1/network/agents?limit=1&cursor=cur+1");
+    expect(page.next_cursor).toBe("cur-2");
+    expect(page.agents).toHaveLength(1);
+    expect(page.agents[0]).toMatchObject({
+      slug: "scheduler",
+      mode: "pull",
+      tags: ["calendar"],
+      verified: true,
+      capability_count: 2,
+      online: true,
+    });
+
+    // No query; the last page has no next_cursor.
+    body = { agents: [] };
+    const last = await sdk.network();
+    expect(seen[1]).toBe("GET http://relay/v1/network/agents");
+    expect(last.agents).toEqual([]);
+    expect(last.next_cursor).toBeUndefined();
+  });
+
   it("capabilities.update PATCHes the capability on the relay", async () => {
     const seen: { method: string; url: string; body: unknown }[] = [];
     const sdk = new ChakraMCP({

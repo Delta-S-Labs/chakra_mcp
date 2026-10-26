@@ -290,6 +290,9 @@ any response that carries `awaiting_consent`. For calls, `Agent` and
 `UpdateAgentRequest` gain `accept_calls`, and `Invocation` and
 `InvokeRequest` gain `call_id`: build an `InvokeRequest` with
 `..Default::default()` to keep compiling.
+`network()` now takes a `NetworkQuery` (`limit`, `cursor`) and returns a
+`NetworkPage` (`agents: Vec<NetworkAgent>`, `next_cursor`); pass
+`NetworkQuery::default()` for the first page.
 
 ## Get an API key
 

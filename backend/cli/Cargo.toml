@@ -38,3 +38,5 @@ indicatif = "0.18"
 # by waiters.rs poll-loop tests so they don't block on wall-clock
 # sleeps.
 tokio = { version = "1", features = ["full", "test-util"] }
+# Splits documented command lines like a shell (documented_commands test).
+shlex = "1"

@@ -36,7 +36,7 @@ pub enum Cmd {
         #[arg(long)]
         agent_card_url: Option<String>,
     },
-    /// Fetch one agent by id.
+    /// Fetch one agent, yours or another's: its id, `account/agent`, or a slug.
     Get { id: String },
     /// Change one of your agents: its name, description, visibility, or
     /// who may call it.
@@ -89,6 +89,7 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             print(&agent)
         }
         Cmd::Get { id } => {
+            let id = crate::resolve::peer_id(&api, &id).await?;
             let agent: Value = api.get_relay(&format!("/v1/agents/{id}")).await?;
             print(&agent)
         }

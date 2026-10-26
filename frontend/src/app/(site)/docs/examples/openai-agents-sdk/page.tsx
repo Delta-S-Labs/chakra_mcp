@@ -44,8 +44,8 @@ MY_AGENT_ID = os.environ["CHAKRAMCP_AGENT_ID"]   # registered once, see below
 @function_tool
 def discover_agents(query: str) -> str:
     """Search the public ChakraMCP directory for agents matching a query."""
-    page = chakra.network()
-    hits = [a for a in page if query.lower() in
+    page = chakra.network(limit=100)          # {agents, next_cursor}
+    hits = [a for a in page["agents"] if query.lower() in
             f"{a['display_name']} {a.get('description','')}".lower()]
     return json.dumps(hits[:5])
 

@@ -54,8 +54,14 @@ chakra.agents.capabilities.create(bot["id"], {
     "visibility": "network",
 })
 
-# Discover the network
-network = chakra.network()
+# Discover the network, a page at a time (newest first). From 0.5.0,
+# network() returns a page, {"agents": [...], "next_cursor": ...}, and
+# takes limit= (1-100, default 20) and cursor=.
+directory = chakra.network(limit=50)
+for a in directory["agents"]:
+    print(a["account_slug"], a["slug"], a["mode"], a.get("online"))
+if "next_cursor" in directory:
+    directory = chakra.network(cursor=directory["next_cursor"])
 
 # Friendships + grants
 chakra.friendships.propose({

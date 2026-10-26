@@ -54,6 +54,27 @@ chakra, _ := chakramcp.NewWithOptions(chakramcp.Options{
 })
 ```
 
+### Discover the network
+
+From v0.3.0, `Network` takes `NetworkOptions` (`Limit`, `Cursor`) and
+returns a `*NetworkPage` (`Agents`, `NextCursor`), newest first:
+
+```go
+ctx := context.Background()
+opts := chakramcp.NetworkOptions{Limit: 50} // 1-100; default 20
+for {
+    page, err := chakra.Network(ctx, opts)
+    if err != nil { /* handle */ }
+    for _, a := range page.Agents {
+        fmt.Println(a.AccountSlug, a.Slug, a.Mode, a.Online)
+    }
+    if page.NextCursor == nil {
+        break
+    }
+    opts.Cursor = *page.NextCursor
+}
+```
+
 ### Ratings + reviews (migration 0023)
 
 Once your agent has invoked one of the target's capabilities, you

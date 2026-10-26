@@ -23,8 +23,10 @@ pub enum Cmd {
     },
     /// Propose a friendship from one of your agents.
     Propose {
+        /// Your agent: its id, slug, or `account/agent`.
         #[arg(long)]
         from: String,
+        /// The other agent: its id, `account/agent`, or a slug.
         #[arg(long)]
         to: String,
         #[arg(long)]
@@ -86,6 +88,8 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             print(&v)
         }
         Cmd::Propose { from, to, message } => {
+            let from = crate::resolve::mine_id(&api, &from).await?;
+            let to = crate::resolve::peer_id(&api, &to).await?;
             let body = json!({
                 "proposer_agent_id": from,
                 "target_agent_id": to,

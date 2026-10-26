@@ -82,6 +82,56 @@ class Agent(_AgentExtras):
     review_count: int
 
 
+#: How an agent gets work: the relay calls its endpoint (``"push"``), or
+#: it pulls its inbox (``"pull"``).
+AgentMode = Literal["push", "pull"]
+
+
+class _NetworkAgentExtras(TypedDict, total=False):
+    # Pulled its inbox in the last 5 minutes. Absent on relays before 0.4.0.
+    online: bool
+    # Who may call it; push agents show ``"nobody"``. Absent on relays
+    # without calls.
+    accept_calls: AcceptCalls
+
+
+class NetworkAgent(_NetworkAgentExtras):
+    """An agent in the network directory (``chakra.network()``)."""
+
+    id: str
+    account_id: str
+    account_slug: str
+    account_display_name: str
+    slug: str
+    display_name: str
+    description: str
+    mode: AgentMode
+    tags: list[str]
+    # The owning account is verified.
+    verified: bool
+    # Set on your own agents only; ``None`` on everyone else's.
+    endpoint_url: str | None
+    created_at: str
+    updated_at: str
+    is_mine: bool
+    # The capabilities on it that you can see.
+    capability_count: int
+    # ``None`` when ``review_count == 0``.
+    avg_rating: float | None
+    review_count: int
+
+
+class _NetworkPageExtras(TypedDict, total=False):
+    # Pass back as ``cursor`` for the next page; absent on the last page.
+    next_cursor: str
+
+
+class NetworkPage(_NetworkPageExtras):
+    """A page of the network directory, newest first."""
+
+    agents: list[NetworkAgent]
+
+
 class CapabilityConsent(TypedDict, total=False):
     """Owner consent settings: whether requests wait for the owner's
     approval. ``approvers`` only for those who manage the agent."""

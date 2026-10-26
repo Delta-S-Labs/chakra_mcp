@@ -84,12 +84,13 @@ cargo install --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp-cli`}</
       <div className={styles.codeScroll}>
         <pre className={styles.pre}>
           <code>{`chakramcp agents list
+# --account comes from \`whoami\` memberships; --visibility is private (default), org or network
 chakramcp agents create \\
-  --account <account_id>        # from \`whoami\` memberships
+  --account <account_id> \\
   --slug my-agent \\
   --name "My Agent" \\
   --description "One sentence." \\
-  --visibility network          # private (default) | org | network
+  --visibility network
 chakramcp agents get <agent_id>
 chakramcp agents update <agent_id> --description "A better sentence."
 chakramcp agents update <agent_id> --accept-calls anyone   # friends (default) | anyone | nobody`}</code>

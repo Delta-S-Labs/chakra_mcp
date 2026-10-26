@@ -58,6 +58,19 @@ pub struct MeResponse {
     pub user: UserDto,
     pub memberships: Vec<MembershipDto>,
     pub survey_required: bool,
+    /// What the caller signed in with, and which agents it may act as.
+    pub credential: CredentialDto,
+}
+
+/// The credential behind a request (MCP and discovery spec §4.5).
+#[derive(Debug, Serialize)]
+pub struct CredentialDto {
+    /// `session`, `api_key`, `oauth` or `device`.
+    pub kind: &'static str,
+    /// `all`, `own` or `selected`.
+    pub agent_scope: &'static str,
+    /// `"all"`, or the ids of the agents in scope (in your accounts).
+    pub agents: serde_json::Value,
 }
 
 /// Header carrying the secret shared with the frontend's sign-in callback.
@@ -305,6 +318,7 @@ pub async fn me(State(state): State<AppState>, user: AuthUser) -> ApiResult<Json
     let survey_required =
         crate::handlers::surveys::is_required(&state.db, state.config.survey_enabled, user.user_id)
             .await?;
+    let credential = credential_of(&state, &user).await?;
 
     Ok(Json(MeResponse {
         user: UserDto {
@@ -316,7 +330,57 @@ pub async fn me(State(state): State<AppState>, user: AuthUser) -> ApiResult<Json
         },
         memberships,
         survey_required,
+        credential,
     }))
+}
+
+async fn credential_of(state: &AppState, user: &AuthUser) -> ApiResult<CredentialDto> {
+    let kind = match (user.api_key_id, user.jti) {
+        (Some(_), _) => "api_key",
+        (None, Some(jti)) => {
+            let r = sqlx::query!(
+                r#"SELECT
+                     EXISTS(SELECT 1 FROM oauth_device_codes WHERE minted_jti = $1) AS "device!",
+                     EXISTS(SELECT 1 FROM oauth_authorizations WHERE minted_jti = $1)
+                       OR EXISTS(SELECT 1 FROM credential_scopes
+                                  WHERE cred_kind = 'jwt' AND cred_ref = $1::text
+                                    AND client_id IS NOT NULL) AS "oauth!""#,
+                jti,
+            )
+            .fetch_one(&state.db)
+            .await?;
+            if r.device {
+                "device"
+            } else if r.oauth {
+                "oauth"
+            } else {
+                "session"
+            }
+        }
+        (None, None) => "session",
+    };
+    let grant =
+        chakramcp_shared::scope::resolve_grant(&state.db, user.jti, user.api_key_id).await?;
+    let agents = match chakramcp_shared::scope::manageable_agent_ids(&state.db, &grant).await? {
+        None => serde_json::json!("all"),
+        Some(ids) => {
+            let mine = sqlx::query_scalar!(
+                r#"SELECT a.id FROM agents a
+                     JOIN account_memberships m ON m.account_id = a.account_id AND m.user_id = $2
+                    WHERE a.id = ANY($1)"#,
+                &ids,
+                user.user_id,
+            )
+            .fetch_all(&state.db)
+            .await?;
+            serde_json::json!(mine)
+        }
+    };
+    Ok(CredentialDto {
+        kind,
+        agent_scope: grant.mode_str(),
+        agents,
+    })
 }
 
 #[cfg(test)]
@@ -478,5 +542,93 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK);
         assert!(is_admin(&pool).await, "the stored flag is left alone");
+    }
+}
+
+#[cfg(test)]
+mod credential_tests {
+    //! `/v1/me` says what the caller signed in with and which agents it may
+    //! act as (MCP and discovery spec §4.5).
+    use crate::tests_support::*;
+    use axum::body::Body;
+    use axum::http::{header, Request};
+    use http_body_util::BodyExt;
+    use serde_json::{json, Value};
+    use sqlx::PgPool;
+    use tower::ServiceExt;
+
+    async fn call(
+        state: &crate::AppState,
+        method: &str,
+        uri: &str,
+        token: &str,
+        body: Option<Value>,
+    ) -> Value {
+        let b = Request::builder()
+            .method(method)
+            .uri(uri)
+            .header(header::AUTHORIZATION, format!("Bearer {token}"));
+        let req = match body {
+            Some(v) => b
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(v.to_string()))
+                .unwrap(),
+            None => b.body(Body::empty()).unwrap(),
+        };
+        let res = crate::router(state.clone()).oneshot(req).await.unwrap();
+        serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap()
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn me_names_the_credential_and_its_agents(pool: PgPool) {
+        let (user, jwt, account) = seed_user_with_personal(&pool, "alice").await;
+        let agent = seed_agent(&pool, account, "a1", user.user_id).await;
+        let state = crate::AppState::new(pool.clone(), test_config());
+
+        let me = call(&state, "GET", "/v1/me", &jwt, None).await;
+        assert_eq!(
+            me["credential"],
+            json!({ "kind": "session", "agent_scope": "all", "agents": "all" })
+        );
+
+        let key = call(
+            &state,
+            "POST",
+            "/v1/api-keys",
+            &jwt,
+            Some(json!({ "name": "all" })),
+        )
+        .await;
+        let me = call(
+            &state,
+            "GET",
+            "/v1/me",
+            key["plaintext"].as_str().unwrap(),
+            None,
+        )
+        .await;
+        assert_eq!(me["credential"]["kind"], "api_key");
+        assert_eq!(me["credential"]["agents"], "all");
+
+        let scoped = call(
+            &state,
+            "POST",
+            "/v1/api-keys",
+            &jwt,
+            Some(
+                json!({ "name": "one", "agent_scope": "selected", "selected_agent_ids": [agent] }),
+            ),
+        )
+        .await;
+        let me = call(
+            &state,
+            "GET",
+            "/v1/me",
+            scoped["plaintext"].as_str().unwrap(),
+            None,
+        )
+        .await;
+        assert_eq!(me["credential"]["agent_scope"], "selected");
+        assert_eq!(me["credential"]["agents"], json!([agent]));
     }
 }
