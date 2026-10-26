@@ -9,8 +9,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(process.env.DOCS_ROOT ?? join(here, "../../.."));
 const MAX_BYTES = 130_000;
 
+// observability.md (running the Grafana stack) is for operators, not the
+// Guide's questions; it's left out to keep the bundle under MAX_BYTES.
 const selfHosting = readdirSync(join(root, "docs/self-hosting"))
-  .filter((f) => f.endsWith(".md"))
+  .filter((f) => f.endsWith(".md") && f !== "observability.md")
   .sort()
   .map((f) => `docs/self-hosting/${f}`);
 
