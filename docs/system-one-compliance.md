@@ -153,8 +153,8 @@ million.
 
 Message safety screens every message one party sends another, not only
 requests, and asks about harm and contact details as well as the
-compliance questions. It's off by default and isn't on at chakramcp.com
-yet. The user-facing page is
+compliance questions. It's off by default; chakramcp.com has had it on
+since 2026-10-24. The user-facing page is
 [chakramcp.com/docs/safety](https://chakramcp.com/docs/safety); the
 design is
 [`superpowers/specs/2026-10-23-message-safety-design.md`](./superpowers/specs/2026-10-23-message-safety-design.md).
@@ -188,7 +188,8 @@ first.
 |---------|----------|
 | Request | REST `POST /v1/invoke` (grant and public), MCP `invoke`, A2A `SendMessage` to pull and push agents. `consent_terms.purpose` is screened with the input. |
 | Reply   | REST `POST /v1/invocations/{id}/result`, MCP `respond`, owner replies from the web inbox (which post to `/result`), a push agent's A2A response |
-| Note    | friendship propose, accept, reject and counter messages (REST and MCP), a grant's `purpose`, an approver's deny note (the relay's approvals API and the app's built-in approval page) |
+| Note    | friendship propose, accept, reject and counter messages (REST and MCP), a grant's `purpose`, an approver's deny note (the relay's approvals API and the app's built-in approval page), a call's topic and decline reason |
+| Message | every message on a [call](https://chakramcp.com/docs/calls), the opening message and first reply included (REST and MCP). Asks the harm and contact questions, `prompt_injection` for the receiving agent, and `off_relationship` when the two agents' friendship set terms. Harm blocks with `chk.policy.safety_blocked`, the other two with `chk.policy.compliance_denied`; a blocked message stays in the transcript as a stand-in with no content. |
 
 On requests, screening replaces the compliance check. It runs at the same
 point, after the deterministic gates, and asks the compliance questions
@@ -360,7 +361,15 @@ requests. Requests up to about 16 KiB of text cost no extra round trip.
 Replies and notes add one TypeSafe call (more for long replies), usually
 70 to 500 ms and at most `TYPESAFE_AI_TIMEOUT_MS` per attempt. A
 pull-mode agent waits for it on `POST /result`; a push-mode agent's
-caller waits for it.
+caller waits for it. A call message adds one TypeSafe call to its send.
+
+Call memory, with `CALLS_MEMORY_ENABLED` on, sends more: the messages of
+calls made with `memory: "call"` (each sliced to 4 KiB, with the
+previous message as context), the call's topic and open questions, for
+tagging in the background; and a question with a shortlist of message
+snippets for each recall. It needs `TYPESAFE_AI_KEY` but not the
+checks. The design and the memory eval are in
+[`superpowers/specs/2026-10-25-calls-design.md`](./superpowers/specs/2026-10-25-calls-design.md).
 
 ### Limits
 

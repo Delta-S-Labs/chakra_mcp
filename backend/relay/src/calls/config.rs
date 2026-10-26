@@ -16,7 +16,8 @@ const DEFAULT_MEMORY_MC_PER_1K_TOKENS: i64 = 42;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CallsConfig {
-    /// The whole feature. Off: no calls routes (404) and no workers.
+    /// The whole feature, on by default. Off: no calls routes (404) and no
+    /// workers.
     pub enabled: bool,
     /// The longest content TTL a caller may ask for.
     pub max_ttl_secs: i64,
@@ -26,8 +27,8 @@ pub struct CallsConfig {
     pub max_active_per_agent: i64,
     /// Messages one call may hold (spec §3.4).
     pub max_messages: i32,
-    /// Call memory's Jev work (spec §8): tagging and recall. Off until the
-    /// memory eval has run; without a TypeSafe key it stays off.
+    /// Call memory's Jev work (spec §8): tagging and recall. Off by default;
+    /// without a TypeSafe key it stays off.
     pub memory_enabled: bool,
     /// A tag counts at or above this probability.
     pub tag_threshold: f64,
@@ -38,7 +39,7 @@ pub struct CallsConfig {
 impl Default for CallsConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             max_ttl_secs: days(DEFAULT_MAX_TTL_DAYS),
             default_ttl_secs: days(DEFAULT_TTL_DAYS),
             max_active_per_agent: DEFAULT_MAX_ACTIVE_PER_AGENT,
@@ -60,7 +61,7 @@ impl CallsConfig {
     pub fn from_sources(get: impl Fn(&str) -> Option<String>) -> anyhow::Result<Self> {
         let enabled = match env_value(&get, "CALLS_ENABLED") {
             Some(raw) => parse_bool("CALLS_ENABLED", &raw)?,
-            None => false,
+            None => true,
         };
         let max_ttl_days = number(&get, "CALLS_MAX_TTL_DAYS", DEFAULT_MAX_TTL_DAYS, 1, 3650)?;
         let default_ttl_days = number(&get, "CALLS_DEFAULT_TTL_DAYS", DEFAULT_TTL_DAYS, 0, 3650)?;
@@ -158,14 +159,15 @@ mod tests {
     }
 
     #[test]
-    fn off_with_the_defaults_when_unset_or_empty() {
+    fn the_defaults_when_unset_or_empty() {
         assert_eq!(from(&[]).unwrap(), CallsConfig::default());
         assert_eq!(
             from(&[("CALLS_ENABLED", ""), ("CALLS_MAX_TTL_DAYS", " ")]).unwrap(),
             CallsConfig::default()
         );
         let d = CallsConfig::default();
-        assert!(!d.enabled);
+        assert!(d.enabled);
+        assert!(!d.memory_enabled);
         assert_eq!(d.max_ttl_secs, 365 * 86_400);
         assert_eq!(d.default_ttl_secs, 30 * 86_400);
     }

@@ -225,6 +225,12 @@ declines it, then `active` until either side ends it (or it goes idle).
 Who may call an agent is its `accept_calls` (`"friends"`, the default,
 `"anyone"` or `"nobody"`), set with `agents.update`.
 
+Where the relay has call memory on, TypeSafe's Jev model builds it: a
+call-memory call's messages go to TypeSafe to be tagged, and each `ask`
+sends the question and a shortlist of messages. An own-memory call sends
+nothing for memory. Messages are screened by message safety either way.
+See [what goes to TypeSafe](https://chakramcp.com/docs/calls#memory-data).
+
 ```ts
 const call = await chakra.calls.start({
   from_agent_id: myAgentId,

@@ -33,6 +33,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${BASE}/docs/concepts`, lastModified: now, changeFrequency: "monthly", priority: 0.7 },
     { url: `${BASE}/docs/consent`, lastModified: now, changeFrequency: "monthly", priority: 0.7 },
     { url: `${BASE}/docs/safety`, lastModified: now, changeFrequency: "monthly", priority: 0.7 },
+    { url: `${BASE}/docs/calls`, lastModified: now, changeFrequency: "monthly", priority: 0.7 },
     { url: `${BASE}/docs/cli`, lastModified: now, changeFrequency: "monthly", priority: 0.7 },
     { url: `${BASE}/docs/sdk`, lastModified: now, changeFrequency: "monthly", priority: 0.7 },
     { url: `${BASE}/docs/mcp`, lastModified: now, changeFrequency: "monthly", priority: 0.7 },

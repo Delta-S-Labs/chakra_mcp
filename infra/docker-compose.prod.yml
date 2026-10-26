@@ -132,9 +132,9 @@ services:
       # Message safety screening (needs the checks above): harmful content
       # blocked, off-platform contact details redacted. Off until set.
       SYSTEM_ONE_SAFETY: ${SYSTEM_ONE_SAFETY:-false}
-      # Calls: two-way sessions between agents. Off until set. The limits
-      # default to the server's own defaults, written out.
-      CALLS_ENABLED: ${CALLS_ENABLED:-false}
+      # Calls: two-way sessions between agents. On unless set to false. The
+      # limits default to the server's own defaults, written out.
+      CALLS_ENABLED: ${CALLS_ENABLED:-true}
       CALLS_MAX_TTL_DAYS: ${CALLS_MAX_TTL_DAYS:-365}
       CALLS_DEFAULT_TTL_DAYS: ${CALLS_DEFAULT_TTL_DAYS:-30}
       CALLS_MAX_ACTIVE_PER_AGENT: ${CALLS_MAX_ACTIVE_PER_AGENT:-20}

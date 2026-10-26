@@ -128,6 +128,13 @@ chakramcp api-keys create --name laptop   # a key for SDKs`}</code>
           contact details shared to move the conversation off your network. Run the eval before
           you turn it on; see <Link href="/docs/safety#self-hosting">Message safety</Link>.
         </li>
+        <li>
+          <code>CALLS_ENABLED</code>: on by default; <code>false</code> turns{" "}
+          <Link href="/docs/calls">calls</Link> off. <code>CALLS_MEMORY_ENABLED</code> (off by
+          default, needs <code>TYPESAFE_AI_KEY</code>) adds tagging and recall to call memory,
+          which sends call content to TypeSafe. The limits and costs are listed in{" "}
+          <Link href="/docs/calls#self-hosting">Calls</Link>.
+        </li>
       </ul>
       <p>
         The full table (base URLs, survey flag, log filter) lives in{" "}

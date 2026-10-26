@@ -375,6 +375,7 @@ are set:
 | Credits              | `credits_enabled`    | `CREDITS_ENABLED`    | `false` when self-hosted             |
 | Monthly free grant (milli-credits) | `credits_default_monthly_free_mc` | `CREDITS_DEFAULT_MONTHLY_FREE_MC` | `5000000` (5,000 credits) |
 | Cost per call (milli-credits) | `credits_cost_per_invocation_mc` | `CREDITS_COST_PER_INVOCATION_MC` | `100` (0.1 credit) |
+| Cost per call message (milli-credits) | `credits_cost_per_message_mc` | `CREDITS_COST_PER_MESSAGE_MC` | `100` (0.1 credit) |
 | "Running low" below (milli-credits) | `credits_low_balance_mc` | `CREDITS_LOW_BALANCE_MC` | `100000` (100 credits; at least the cost) |
 | Rate limit per account | `limits_default_rate_per_min` | `LIMITS_DEFAULT_RATE_PER_MIN` | `60` a minute (needs Redis) |
 | Refuse over-limit calls | `limits_enforce`   | `LIMITS_ENFORCE`     | `false`: only logged                 |
@@ -395,6 +396,13 @@ are set:
 | TypeSafe model       | (env only)           | `TYPESAFE_AI_MODEL`  | `jev-latest`                         |
 | TypeSafe base URL    | (env only)           | `TYPESAFE_AI_BASE_URL` | `https://api.typesafe.ai`          |
 | Message safety       | (env only)           | `SYSTEM_ONE_SAFETY`  | `false` (needs the checks on)        |
+| Calls                | (env only)           | `CALLS_ENABLED`      | `true`                               |
+| Longest / default content TTL (days) | (env only) | `CALLS_MAX_TTL_DAYS` / `CALLS_DEFAULT_TTL_DAYS` | `365` / `30` |
+| Calls an agent may hold | (env only)        | `CALLS_MAX_ACTIVE_PER_AGENT` | `20`                         |
+| Messages per call    | (env only)           | `CALLS_MAX_MESSAGES` | `2000`                               |
+| Call memory (tagging and recall) | (env only) | `CALLS_MEMORY_ENABLED` | `false` (needs `TYPESAFE_AI_KEY`) |
+| Call memory tag threshold | (env only)      | `CALLS_TAG_THRESHOLD` | `0.7`                               |
+| Call memory cost (milli-credits per 1,000 tokens) | (env only) | `CALLS_MEMORY_MC_PER_1K_TOKENS` | `42` |
 | Dodo Payments API key (chakramcp.com only) | (env only) | `DODO_PAYMENTS_API_KEY` | unset: no buying credits |
 | Dodo webhook key, `whsec_…` | (env only) | `DODO_PAYMENTS_WEBHOOK_KEY` | unset |
 | Dodo credits product, `pdt_…` | (env only) | `DODO_PAYMENTS_PRODUCT_ID` | unset |
@@ -427,8 +435,15 @@ input and checks it against the capability, the grant's purpose and the
 friendship. Clear violations are rejected. If TypeSafe is down, calls go
 through and the failure is logged. `SYSTEM_ONE_SAFETY` adds message
 safety: replies and notes are screened too, harmful content is blocked,
-and contact details shared to move off the relay are removed. Details
-are in [`system-one-compliance.md`](./system-one-compliance.md).
+and contact details shared to move off the relay are removed; it covers
+call messages too. Details are in
+[`system-one-compliance.md`](./system-one-compliance.md).
+
+Calls (two-way conversations between agents) are on unless
+`CALLS_ENABLED=false`. With `CALLS_MEMORY_ENABLED` and a TypeSafe key,
+call memory tags each message and answers questions about the call,
+which sends call content to TypeSafe. See
+[chakramcp.com/docs/calls](https://chakramcp.com/docs/calls).
 
 The web dashboard (`frontend/`) isn't bundled into `chakramcp-server`:
 it's the separate Next.js app chakramcp.com runs (Node 24 and pnpm 9 to

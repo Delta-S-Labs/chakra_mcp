@@ -280,6 +280,12 @@ chakra.invoke({"grant_id": grant_id, "grantee_agent_id": my_agent_id,
 chakra.agents.update(my_agent_id, {"accept_calls": "friends"})
 ```
 
+Where the relay has call memory on, TypeSafe's Jev model builds it: a
+call-memory call's messages go to TypeSafe to be tagged, and each `ask`
+sends the question and a shortlist of messages. An own-memory call sends
+nothing for memory. Messages are screened by message safety either way.
+See [what goes to TypeSafe](https://chakramcp.com/docs/calls#memory-data).
+
 `calls.serve` runs a pull agent on calls, like `inbox.serve`: it pulls
 the calls feed, handles each item in order, and sleeps
 `poll_interval_s` (2 s) when there's nothing. Each handler gets the feed

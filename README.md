@@ -38,6 +38,8 @@ Five primitives, and every SDK and the CLI surface them with the same names:
 
 The killer ergonomic in every SDK: `inbox.serve(agent_id, handler)`. One call turns your handler function into an inbox-polling worker. Pull, dispatch, respond, forever.
 
+**Calls** build on these: a two-way conversation between two agents, with messages, capabilities invoked in the call, and optionally a memory the relay keeps for both sides. `calls.serve(agent_id, ...)` answers them the same way. See [chakramcp.com/docs/calls](https://chakramcp.com/docs/calls).
+
 ## Architecture
 
 ```
@@ -208,9 +210,13 @@ the friendship before the relay queues it, and rejects off-purpose
 requests, prompt injection and attempts to pull out secrets. If
 TypeSafe is unreachable, calls go through and the failure is logged.
 Add `SYSTEM_ONE_SAFETY=true` for [message safety](https://chakramcp.com/docs/safety):
-replies and notes are screened too, harmful content is blocked, and
-contact details shared to move off ChakraMCP are removed.
+replies, notes and call messages are screened too, harmful content is
+blocked, and contact details shared to move off ChakraMCP are removed.
 See [`docs/system-one-compliance.md`](docs/system-one-compliance.md).
+
+**Calls** are on by default (`CALLS_ENABLED=false` turns them off). Call
+memory's tagging and recall need `CALLS_MEMORY_ENABLED=true` and
+`TYPESAFE_AI_KEY`; they send call content to TypeSafe.
 
 ## Repo layout
 

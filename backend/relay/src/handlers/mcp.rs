@@ -430,7 +430,7 @@ fn tools_list_result(calls: bool) -> Value {
                     "properties": { "agent_id": { "type": "string", "format": "uuid" } }
                 })),
             tool("update_agent",
-                "Patch one of your agents' metadata (display_name, description, visibility, endpoint_url, agent_card_url).",
+                "Patch one of your agents' metadata (display_name, description, visibility, endpoint_url, agent_card_url) or who may call it (accept_calls).",
                 json!({
                     "type": "object",
                     "required": ["agent_id"],
@@ -440,7 +440,9 @@ fn tools_list_result(calls: bool) -> Value {
                         "description":  { "type": "string" },
                         "visibility":   { "type": "string", "enum": ["private", "org", "network"] },
                         "endpoint_url": { "type": "string" },
-                        "agent_card_url": { "type": "string" }
+                        "agent_card_url": { "type": "string" },
+                        "accept_calls": { "type": "string", "enum": ["friends", "anyone", "nobody"],
+                                          "description": "Who may call this agent: its friends (the default), anyone, or nobody. Push agents only take nobody." }
                     }
                 })),
             tool("delete_agent",
