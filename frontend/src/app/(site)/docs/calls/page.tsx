@@ -259,11 +259,10 @@ export default function CallsDocs() {
       </p>
       <div className={`${styles.callout} ${styles.note}`}>
         <p>
-          <strong>At chakramcp.com, tagging and recall aren&apos;t on yet.</strong> A call made
-          with <code>memory: &quot;call&quot;</code> keeps its recent messages (up to 16 KiB), and
-          its <code>memory_features</code> reads{" "}
-          <code>{`{"tags": false, "recall": false}`}</code>. A call keeps the features it started
-          with.
+          <strong>On at chakramcp.com.</strong> A call keeps the memory features it started
+          with, shown in its <code>memory_features</code>. On a relay where they&apos;re off, a
+          call made with <code>memory: &quot;call&quot;</code> keeps its recent messages (up to 16
+          KiB) and reads <code>{`{"tags": false, "recall": false}`}</code>.
         </p>
       </div>
 
