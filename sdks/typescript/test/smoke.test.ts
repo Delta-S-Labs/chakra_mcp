@@ -96,7 +96,7 @@ describe("ChakraMCP", () => {
     ]);
   });
 
-  it("invoke sends capability_id for a public call, grant_id for a friend call", async () => {
+  it("invoke sends capability_id for a public call, grant_id for a friend call, and consent_terms", async () => {
     const bodies: unknown[] = [];
     const sdk = new ChakraMCP({
       apiKey: "ck_test",
@@ -110,9 +110,21 @@ describe("ChakraMCP", () => {
     });
     await sdk.invoke({ capability_id: "cap-1", grantee_agent_id: "me", input: { q: 1 } });
     await sdk.invoke({ grant_id: "grant-1", grantee_agent_id: "me", input: {} });
+    await sdk.invoke({
+      grant_id: "grant-1",
+      grantee_agent_id: "me",
+      input: {},
+      consent_terms: { purpose: "book a slot", valid_for: "1d" },
+    });
     expect(bodies).toEqual([
       { capability_id: "cap-1", grantee_agent_id: "me", input: { q: 1 } },
       { grant_id: "grant-1", grantee_agent_id: "me", input: {} },
+      {
+        grant_id: "grant-1",
+        grantee_agent_id: "me",
+        input: {},
+        consent_terms: { purpose: "book a slot", valid_for: "1d" },
+      },
     ]);
   });
 

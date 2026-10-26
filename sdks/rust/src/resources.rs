@@ -344,14 +344,14 @@ impl<'a> ReviewsClient<'a> {
 
 // ─── Tiny utilities ──────────────────────────────────────
 
-fn urlencode(s: &str) -> String {
+pub(crate) fn urlencode(s: &str) -> String {
     url::form_urlencoded::byte_serialize(s.as_bytes()).collect()
 }
 
 /// Serialize a tiny enum (e.g. FriendshipStatus) to its serde plain
 /// rendering, without bringing in the serde_plain crate. We just JSON-
 /// serialize the enum and strip the surrounding quotes.
-fn serde_plain<T: Serialize>(v: &T) -> String {
+pub(crate) fn serde_plain<T: Serialize>(v: &T) -> String {
     let mut s = serde_json::to_string(v).unwrap_or_default();
     if s.starts_with('"') && s.ends_with('"') {
         s = s[1..s.len() - 1].to_string();

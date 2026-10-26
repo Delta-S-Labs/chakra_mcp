@@ -181,7 +181,7 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
 /// org-shared) for a match. We do a single page-200 fetch which is
 /// fine for tens-of-thousands-of-agents scale; if it ever grows past
 /// that, swap in `/v1/discovery/agents` which is search-indexed.
-async fn resolve_target(api: &ApiClient, ident: &str) -> Result<Uuid> {
+pub(crate) async fn resolve_target(api: &ApiClient, ident: &str) -> Result<Uuid> {
     if let Ok(id) = Uuid::parse_str(ident) {
         return Ok(id);
     }

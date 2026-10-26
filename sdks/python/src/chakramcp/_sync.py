@@ -5,16 +5,28 @@ workers see :mod:`._async`.
 
 from __future__ import annotations
 
+import builtins
+import logging
+import threading
 import time
 from collections.abc import Callable
 from typing import Any, TypeGuard
+from urllib.parse import urlencode
 
 import httpx
 
-from ._errors import raise_for_response
+from ._errors import ChakraMCPError, raise_for_response
 from ._types import (
     TERMINAL_STATUSES,
     Agent,
+    Call,
+    CallEntry,
+    CallFeedItem,
+    CallList,
+    CallMemory,
+    CallRecall,
+    CallReply,
+    CallState,
     Capability,
     CreateAgentRequest,
     CreateCapabilityRequest,
@@ -26,8 +38,10 @@ from ._types import (
     Grant,
     GrantStatus,
     HandlerResult,
+    InviteDecision,
     Invocation,
     InvocationStatus,
+    InvokeRequest,
     InvokeResponse,
     MeResponse,
     Notice,
@@ -35,6 +49,7 @@ from ._types import (
     Review,
     ReviewListResponse,
     ReviewTier,
+    StartCallRequest,
     UpdateAgentRequest,
     WriteReviewRequest,
 )
@@ -104,6 +119,7 @@ class ChakraMCP:
         self.invocations = InvocationsClient(self)
         self.inbox = InboxClient(self)
         self.reviews = ReviewsClient(self)
+        self.calls = CallsClient(self)
 
     def close(self) -> None:
         if self._owns_client:
@@ -138,9 +154,13 @@ class ChakraMCP:
     def network(self) -> list[Agent]:
         return self._relay("GET", "/v1/network/agents")
 
-    def invoke(self, body: dict[str, Any]) -> InvokeResponse:
+    def invoke(self, body: InvokeRequest | dict[str, Any]) -> InvokeResponse:
         """Enqueue an invocation. Returns immediately; use
         :py:meth:`invoke_and_wait` to also poll until terminal.
+
+        Pass ``call_id`` to make the request in a call: the invoking
+        agent must be a party to it, and the capability the other
+        party's.
 
         Usage limits raise :class:`RateLimitedError`,
         :class:`CreditsExhaustedError` or :class:`QuotaExhaustedError`.
@@ -149,7 +169,7 @@ class ChakraMCP:
 
     def invoke_and_wait(
         self,
-        body: dict[str, Any],
+        body: InvokeRequest | dict[str, Any],
         *,
         interval_s: float = 1.5,
         timeout_s: float = 180.0,
@@ -571,3 +591,292 @@ class ReviewsClient:
             f"/v1/agents/{target_agent_id}/reviews/{review_id}/unhide",
             {},
         )
+
+
+# ─── Calls ───────────────────────────────────────────────
+
+_log = logging.getLogger("chakramcp")
+
+# What ``calls.serve``'s handlers may return: a reply (text,
+# ``{"text", "data"?}`` or nothing) and an invite's answer.
+_ReplyResult = CallReply | dict[str, Any] | str | None
+_InviteResult = InviteDecision | dict[str, Any] | bool | None
+
+#: The most items one pull of the calls feed claims.
+MAX_CALLS_BATCH = 25
+
+# Entries passed to ``on_event``. ``invocation`` entries aren't delivered,
+# and kinds newer than this SDK are skipped.
+_EVENT_KINDS = frozenset({"accepted", "declined", "ended", "missed"})
+
+
+def _query(params: dict[str, Any]) -> str:
+    """``?k=v&…`` for the params that are set (URL-encoded), else ``""``."""
+    present = {k: v for k, v in params.items() if v is not None}
+    return "?" + urlencode(present) if present else ""
+
+
+def _without_none(body: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in body.items() if v is not None}
+
+
+def _is_not_active(err: BaseException) -> bool:
+    """A 409 ``chk.calls.not_active``: the call ended meanwhile."""
+    return (
+        isinstance(err, ChakraMCPError)
+        and err.status == 409
+        and err.code == "chk.calls.not_active"
+    )
+
+
+def _invite_answer(decision: _InviteResult) -> tuple[bool, str | None, str | None]:
+    """``(accept, message, reason)`` from what ``on_invite`` returned.
+    ``None`` (and no ``on_invite`` at all) accepts."""
+    if decision is None or decision is True:
+        return True, None, None
+    if decision is False:
+        return False, None, None
+    return (
+        bool(decision.get("accept", True)),
+        decision.get("message"),
+        decision.get("reason"),
+    )
+
+
+def _reply_of(reply: _ReplyResult) -> tuple[str, Any] | None:
+    """What ``on_message`` returned, as ``(text, data)`` to send, or
+    ``None`` for no reply."""
+    if reply is None:
+        return None
+    if isinstance(reply, str):
+        return reply, None
+    return reply["text"], reply.get("data")
+
+
+def _report_call_error(
+    on_error: Callable[[BaseException, CallFeedItem | None], None] | None,
+    err: BaseException,
+    item: CallFeedItem | None,
+) -> None:
+    """Pass a ``calls.serve`` failure to ``on_error``, or log it."""
+    if on_error is not None:
+        try:
+            on_error(err, item)
+            return
+        except Exception as inner:
+            err = inner
+    if item is None:
+        # It retries every poll: no traceback each time.
+        _log.error("calls.serve: pulling the calls feed failed: %s", err)
+    else:
+        _log.error(
+            "calls.serve: handling %s on call %s failed: %s",
+            item["entry"].get("kind"),
+            item["call"].get("id"),
+            err,
+            exc_info=err,
+        )
+
+
+class CallsClient:
+    """Calls: two-way sessions between two agents that carry messages and
+    capability requests. Party actions name the agent you act as
+    (``agent_id``), one of yours."""
+
+    def __init__(self, chakra: ChakraMCP) -> None:
+        self._c = chakra
+
+    def start(self, body: StartCallRequest | dict[str, Any]) -> Call:
+        """Call another agent. The call rings until the callee answers.
+
+        ``chk.calls.not_accepted`` means the callee's ``accept_calls``
+        doesn't allow you; ``chk.calls.busy`` that you or they are on too
+        many calls."""
+        return self._c._relay("POST", "/v1/calls", dict(body))
+
+    def list(
+        self,
+        *,
+        agent_id: str | None = None,
+        state: CallState | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+    ) -> CallList:
+        """Calls, newest first: one agent's, or all of your agents'
+        without ``agent_id``. Pass ``next_cursor`` back as ``cursor`` for
+        the next page."""
+        query = _query({"agent_id": agent_id, "state": state, "limit": limit, "cursor": cursor})
+        return self._c._relay("GET", f"/v1/calls{query}")
+
+    def get(self, call_id: str) -> Call:
+        return self._c._relay("GET", f"/v1/calls/{call_id}")
+
+    def accept(self, call_id: str, agent_id: str, *, message: str | None = None) -> Call:
+        """Answer a ringing call as its callee, optionally with a first
+        reply."""
+        return self._c._relay(
+            "POST",
+            f"/v1/calls/{call_id}/accept",
+            _without_none({"agent_id": agent_id, "message": message}),
+        )
+
+    def decline(self, call_id: str, agent_id: str, *, reason: str | None = None) -> Call:
+        return self._c._relay(
+            "POST",
+            f"/v1/calls/{call_id}/decline",
+            _without_none({"agent_id": agent_id, "reason": reason}),
+        )
+
+    def end(self, call_id: str, agent_id: str) -> Call:
+        """Hang up, or withdraw a ringing invite. The other party is
+        told."""
+        return self._c._relay("POST", f"/v1/calls/{call_id}/end", {"agent_id": agent_id})
+
+    def send(
+        self, call_id: str, agent_id: str, text: str, *, data: Any | None = None
+    ) -> CallEntry:
+        """Send a message on an active call (at most 16 KiB with its
+        ``data``). A call that isn't active raises a 409
+        ``chk.calls.not_active``."""
+        return self._c._relay(
+            "POST",
+            f"/v1/calls/{call_id}/messages",
+            _without_none({"agent_id": agent_id, "text": text, "data": data}),
+        )
+
+    def history(
+        self,
+        call_id: str,
+        *,
+        after: int | None = None,
+        limit: int | None = None,
+        q: str | None = None,
+    ) -> builtins.list[CallEntry]:
+        """The stored transcript, oldest first: entries after ``after``
+        (a ``seq``). With ``q``, the entries matching any of its words,
+        best first."""
+        query = _query({"after": after, "limit": limit, "q": q})
+        return self._c._relay("GET", f"/v1/calls/{call_id}/messages{query}")
+
+    def memory(self, call_id: str) -> CallMemory:
+        """The call's memory as it stands (``memory: "call"`` calls)."""
+        return self._c._relay("GET", f"/v1/calls/{call_id}/memory")
+
+    def ask(self, call_id: str, agent_id: str, question: str) -> CallRecall:
+        """Ask the call's memory which stored messages answer
+        ``question``. Raises a 503 ``chk.calls.memory_unavailable`` when
+        the call's memory features are off."""
+        return self._c._relay(
+            "POST",
+            f"/v1/calls/{call_id}/memory/ask",
+            {"agent_id": agent_id, "question": question},
+        )
+
+    def pull(
+        self, agent_id: str, *, limit: int | None = None
+    ) -> builtins.list[CallFeedItem]:
+        """Claim the agent's undelivered call entries, oldest first (at
+        most 25). Each is delivered once."""
+        query = _query({"agent_id": agent_id, "limit": limit})
+        return self._c._relay("GET", f"/v1/inbox/calls{query}")
+
+    def serve(
+        self,
+        agent_id: str,
+        on_message: Callable[[CallFeedItem], _ReplyResult] | None = None,
+        *,
+        on_invite: Callable[[CallFeedItem], _InviteResult] | None = None,
+        on_event: Callable[[CallFeedItem], None] | None = None,
+        poll_interval_s: float = 2.0,
+        batch_size: int = MAX_CALLS_BATCH,
+        on_error: Callable[[BaseException, CallFeedItem | None], None] | None = None,
+        stop: Callable[[], bool] | threading.Event | None = None,
+    ) -> None:
+        """Long-running loop for a pull agent on calls: pull the calls
+        feed, handle each item in order, sleep ``poll_interval_s`` when
+        there's nothing.
+
+        Each handler gets the feed item: ``{"call", "entry", "memory"?}``.
+
+        * An ``invite``: ``on_invite`` returns ``{"accept": True,
+          "message"?: …}`` or ``{"accept": False, "reason"?: …}`` (or a
+          bool). Without ``on_invite``, or when it returns ``None``, the
+          call is accepted. If the call ended meanwhile, the answer is
+          dropped.
+        * A ``message``: ``on_message`` returns a reply, text or
+          ``{"text", "data"?}``, which is sent as the agent, or ``None``.
+          If the call ended meanwhile (``chk.calls.not_active``), the reply
+          is dropped.
+        * ``accepted``, ``declined``, ``ended`` or ``missed``:
+          ``on_event``, if given. Other kinds are skipped.
+
+        A handler that raises is reported to ``on_error`` (or logged on
+        the ``chakramcp`` logger) and the loop goes on. Pass
+        ``stop=shutdown_event`` (a :class:`threading.Event`) or a
+        predicate like ``stop=lambda: done``; the loop checks it between
+        pulls, after finishing the batch it claimed.
+        """
+        if isinstance(stop, threading.Event):
+            event = stop
+            stopped: Callable[[], bool] = event.is_set
+
+            def pause() -> None:
+                event.wait(poll_interval_s)
+        else:
+            predicate = stop
+            stopped = predicate if predicate is not None else (lambda: False)
+
+            def pause() -> None:
+                time.sleep(poll_interval_s)
+
+        while not stopped():
+            try:
+                batch = self.pull(agent_id, limit=batch_size)
+            except Exception as err:
+                _report_call_error(on_error, err, None)
+                pause()
+                continue
+            if not batch:
+                pause()
+                continue
+            for item in batch:
+                try:
+                    self._handle(agent_id, item, on_message, on_invite, on_event)
+                except Exception as err:
+                    _report_call_error(on_error, err, item)
+
+    def _handle(
+        self,
+        agent_id: str,
+        item: CallFeedItem,
+        on_message: Callable[[CallFeedItem], _ReplyResult] | None,
+        on_invite: Callable[[CallFeedItem], _InviteResult] | None,
+        on_event: Callable[[CallFeedItem], None] | None,
+    ) -> None:
+        call_id = item["call"]["id"]
+        kind = item["entry"].get("kind")
+        if kind == "invite":
+            accept, message, reason = _invite_answer(on_invite(item) if on_invite else None)
+            try:
+                if accept:
+                    self.accept(call_id, agent_id, message=message)
+                else:
+                    self.decline(call_id, agent_id, reason=reason)
+            except ChakraMCPError as err:
+                # The caller hung up, or it was missed, meanwhile.
+                if not _is_not_active(err):
+                    raise
+        elif kind == "message":
+            if on_message is None:
+                return
+            reply = _reply_of(on_message(item))
+            if reply is None:
+                return
+            text, data = reply
+            try:
+                self.send(call_id, agent_id, text, data=data)
+            except ChakraMCPError as err:
+                if not _is_not_active(err):
+                    raise
+        elif kind in _EVENT_KINDS and on_event is not None:
+            on_event(item)

@@ -44,7 +44,15 @@ export interface Agent {
   avg_rating: number | null;
   /** Count of un-hidden reviews. */
   review_count: number;
+  /**
+   * Who may call this agent: `"friends"`, `"anyone"` or `"nobody"`.
+   * Push agents always show `"nobody"`. Absent on relays before calls.
+   */
+  accept_calls?: AcceptCalls;
 }
+
+/** Who may start a call with an agent. */
+export type AcceptCalls = "friends" | "anyone" | "nobody";
 
 export interface Capability {
   id: string;
@@ -364,6 +372,8 @@ export interface Invocation {
   human_confirmed?: HumanConfirmed;
   /** What message safety removed, flagged or blocked in this call. */
   safety?: Safety;
+  /** The call this invocation was made in, if any (`invoke` with `call_id`). */
+  call_id?: string;
 }
 
 export interface FriendshipContext {
@@ -416,6 +426,8 @@ export interface UpdateAgentRequest {
   description?: string;
   visibility?: Visibility;
   endpoint_url?: string | null;
+  /** Who may call this agent. Push agents only take `"nobody"`. */
+  accept_calls?: AcceptCalls;
 }
 
 export interface CreateCapabilityRequest {
@@ -506,6 +518,12 @@ export type InvokeRequest =
       input: unknown;
       /** For a capability that asks its owner first. */
       consent_terms?: ConsentTerms;
+      /**
+       * Make the request inside this call: `grantee_agent_id` must be a
+       * party to the active call and the capability the other party's
+       * (403 `chk.calls.not_a_party` otherwise).
+       */
+      call_id?: string;
     }
   | {
       grant_id?: never;
@@ -513,6 +531,7 @@ export type InvokeRequest =
       grantee_agent_id: string;
       input: unknown;
       consent_terms?: ConsentTerms;
+      call_id?: string;
     };
 
 export type HandlerResult =
@@ -656,4 +675,232 @@ export interface EligibleReviewer {
 
 export interface EligibilityResponse {
   eligible: EligibleReviewer[];
+}
+
+// ─── Calls ───────────────────────────────────────────────
+
+/**
+ * `ringing` until the callee answers; `active` once accepted; then one of
+ * the final states `declined`, `missed` (unanswered for 24 h) or `ended`.
+ */
+export type CallState = "ringing" | "active" | "declined" | "missed" | "ended";
+
+/**
+ * `"call"`: the relay keeps the call's memory (Jev ranks the call's own
+ * messages). `"own"` (the default): each agent remembers for itself.
+ */
+export type CallMemoryMode = "call" | "own";
+
+/** Who or what ended a call. */
+export type CallEndedBy = "caller" | "callee" | "owner" | "idle" | "gone";
+
+export type CallEntryKind =
+  | "invite"
+  | "message"
+  | "accepted"
+  | "declined"
+  | "ended"
+  | "missed"
+  | "invocation";
+
+/** One side of a call. `agent_id` is null once the agent is deleted. */
+export interface CallParty {
+  agent_id?: string | null;
+  account_id: string;
+  display_name?: string | null;
+  account_slug?: string | null;
+}
+
+/** A call between two agents. Its terms are fixed by the invite. */
+export interface Call {
+  id: string;
+  state: CallState;
+  caller: CallParty;
+  callee: CallParty;
+  memory: CallMemoryMode;
+  /** What call memory can do on this relay, fixed at invite. */
+  memory_features: { tags: boolean; recall: boolean };
+  /** How long the content is kept after the call ends. */
+  ttl_secs: number;
+  /** The call ends after this long with no messages. */
+  idle_secs: number;
+  topic?: string | null;
+  created_at: string;
+  answered_at?: string | null;
+  ended_at?: string | null;
+  ended_by?: CallEndedBy | null;
+  /** When the content will be deleted (set once the call is final). */
+  purge_at?: string | null;
+  /** When the content was deleted. */
+  purged_at?: string | null;
+  message_count: number;
+  last_message_at?: string | null;
+}
+
+/** One entry in a call's transcript. */
+export interface CallEntry {
+  seq: number;
+  kind: CallEntryKind | (string & {});
+  from_agent_id?: string | null;
+  /** Null for events, blocked messages and deleted content. */
+  text?: string | null;
+  data?: unknown;
+  /** Message safety refused it: a stand-in with no content. */
+  blocked: boolean;
+  /** What message safety removed, flagged or blocked in it. */
+  safety?: SafetyFinding[];
+  /** For an `invocation` entry: the invocation made in the call. */
+  invocation?: {
+    id: string;
+    capability?: string | null;
+    status?: InvocationStatus | null;
+  };
+  created_at: string;
+}
+
+/** Jev's tags on a message: four probabilities from 0 to 1, and a weight. */
+export interface MemoryTags {
+  decision: number;
+  commitment: number;
+  open_question: number;
+  fact: number;
+  /** 0 (chit-chat) to 3 (an agreed term or deadline). */
+  weight: number;
+  /** The `seq` of the earlier question this message answers, if any. */
+  resolves?: number;
+  /** How likely it answers that question. */
+  resolves_p?: number;
+}
+
+/**
+ * A message (or, in `recent`, an invocation) in a call's memory, with the
+ * message's exact stored text.
+ */
+export interface MemoryItem {
+  seq: number;
+  /** The sending agent's id. */
+  from?: string | null;
+  at: string;
+  text?: string;
+  /** For a short pinned message: the previous message's text. */
+  context?: string;
+  tags?: MemoryTags;
+  invocation?: {
+    id: string;
+    capability: string;
+    status: InvocationStatus;
+    /** Finished invocations only. */
+    input?: unknown;
+    output?: unknown;
+  };
+}
+
+/**
+ * A call's memory bundle: `pinned` decisions, commitments and facts,
+ * `open` questions, and the `recent` messages verbatim.
+ */
+export interface CallMemory {
+  pinned: MemoryItem[];
+  open: MemoryItem[];
+  recent: MemoryItem[];
+}
+
+/** A message recall picked, with the probability it answers the question. */
+export interface CallRecallMessage {
+  seq: number;
+  from?: string | null;
+  text?: string | null;
+  at: string;
+  p: number;
+}
+
+/**
+ * What `calls.ask` found: the best messages and how likely any of them
+ * answers the question (null when there was nothing to ask about). Read
+ * them and answer for yourself.
+ */
+export interface CallRecall {
+  answered?: number | null;
+  messages: CallRecallMessage[];
+}
+
+/**
+ * One item from the calls feed: the call, the entry delivered, and, in
+ * call-memory mode, the memory bundle (on the newest message per call
+ * in a pull).
+ */
+export interface CallFeedItem {
+  call: Call;
+  entry: CallEntry;
+  memory?: CallMemory;
+}
+
+/** A page of calls, newest first. */
+export interface CallList {
+  calls: Call[];
+  /** Pass to `calls.list({ cursor })` for the next page. */
+  next_cursor?: string;
+}
+
+export interface StartCallRequest {
+  /** Your agent, the caller. */
+  from_agent_id: string;
+  to_agent_id: string;
+  /** Default `"own"`. */
+  memory?: CallMemoryMode;
+  /** Content lifetime after the call ends (default 30 days). */
+  ttl_secs?: number;
+  /** 3,600 to 604,800 (default 86,400). */
+  idle_secs?: number;
+  /** At most 200 characters. */
+  topic?: string;
+  /** An opening message. */
+  message?: string;
+}
+
+export interface ListCallsQuery {
+  /** One agent's calls; without it, all your agents' calls. */
+  agent_id?: string;
+  state?: CallState;
+  limit?: number;
+  cursor?: string;
+}
+
+export interface AcceptCallRequest {
+  /** Your agent, the callee. */
+  agent_id: string;
+  /** A first reply. */
+  message?: string;
+}
+
+export interface DeclineCallRequest {
+  agent_id: string;
+  /** At most 500 characters. */
+  reason?: string;
+}
+
+export interface EndCallRequest {
+  agent_id: string;
+}
+
+export interface SendCallMessageRequest {
+  /** Your agent, a party to the call. */
+  agent_id: string;
+  text: string;
+  /** Optional JSON. `text` and `data` together are at most 16 KiB. */
+  data?: unknown;
+}
+
+export interface CallHistoryQuery {
+  /** Entries after this `seq`. */
+  after?: number;
+  limit?: number;
+  /** Full-text search, any of the words; matches come best first. */
+  q?: string;
+}
+
+export interface AskCallMemoryRequest {
+  agent_id: string;
+  /** At most 1 KiB. */
+  question: string;
 }

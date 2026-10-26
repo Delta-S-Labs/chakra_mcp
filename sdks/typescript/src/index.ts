@@ -23,6 +23,11 @@
  *     const out = await myAgentLogic(inv.input_preview);
  *     return { status: "succeeded", output: out };
  *   });
+ *
+ *   // Calls: answer invites and reply to messages.
+ *   await chakra.calls.serve(myAgentId, {
+ *     onMessage: async ({ entry }) => `You said: ${entry.text}`,
+ *   });
  */
 
 export * from "./types.js";
@@ -30,8 +35,17 @@ export * from "./templates.js";
 export * from "./consent.js";
 import { getTemplate } from "./templates.js";
 import {
+  AcceptCallRequest,
   Agent,
   AgentSummary,
+  AskCallMemoryRequest,
+  Call,
+  CallEntry,
+  CallFeedItem,
+  CallHistoryQuery,
+  CallList,
+  CallMemory,
+  CallRecall,
   Capability,
   ChakraMCPError,
   CreditsExhaustedError,
@@ -40,8 +54,10 @@ import {
   CreateAgentRequest,
   CreateCapabilityRequest,
   CreateGrantRequest,
+  DeclineCallRequest,
   DraftedReply,
   EligibilityResponse,
+  EndCallRequest,
   FriendshipCounterRequest,
   FriendshipResponseRequest,
   Friendship,
@@ -52,6 +68,7 @@ import {
   InvokeResponse,
   Invocation,
   InvocationStatus,
+  ListCallsQuery,
   MeResponse,
   Notice,
   ProposeFriendshipRequest,
@@ -59,6 +76,8 @@ import {
   ReviewListQuery,
   ReviewListResponse,
   RevokeGrantRequest,
+  SendCallMessageRequest,
+  StartCallRequest,
   TERMINAL_STATUSES,
   UpdateAgentRequest,
   UpdateCapabilityRequest,
@@ -89,6 +108,7 @@ export class ChakraMCP {
   readonly invocations: InvocationsClient;
   readonly inbox: InboxClient;
   readonly reviews: ReviewsClient;
+  readonly calls: CallsClient;
 
   private readonly fetcher: typeof fetch;
   private readonly headers: Record<string, string>;
@@ -111,6 +131,7 @@ export class ChakraMCP {
     this.invocations = new InvocationsClient(this);
     this.inbox = new InboxClient(this);
     this.reviews = new ReviewsClient(this);
+    this.calls = new CallsClient(this);
   }
 
   /** Current user + memberships. */
@@ -134,6 +155,8 @@ export class ChakraMCP {
       ...target,
       grantee_agent_id: args.grantee_agent_id,
       input: args.input,
+      ...(args.consent_terms !== undefined ? { consent_terms: args.consent_terms } : {}),
+      ...(args.call_id !== undefined ? { call_id: args.call_id } : {}),
     });
   }
 
@@ -737,6 +760,271 @@ export class ReviewsClient {
       `/v1/agents/${encodeURIComponent(targetAgentId)}/reviews/${encodeURIComponent(reviewId)}/unhide`,
       {},
     );
+  }
+}
+
+// ─── Calls ───────────────────────────────────────────────
+
+/** A reply to a call message: text, or text with JSON `data`. */
+export type CallReply = string | { text: string; data?: unknown };
+
+/** What `onInvite` decides: accept (with an optional first reply) or decline. */
+export type CallInviteDecision =
+  | { accept: true; message?: string }
+  | { accept: false; reason?: string };
+
+export interface CallServeOptions {
+  /**
+   * Called for each message from the other party with `{call, entry,
+   * memory?}` (`memory` in call-memory mode, on the newest message per
+   * call in a pull). Return a reply to send it as your agent, or
+   * nothing. A reply to a call that ended meanwhile is dropped.
+   */
+  onMessage: (item: CallFeedItem) => Promise<CallReply | null | void> | CallReply | null | void;
+  /**
+   * Called for each invite to your agent: return `{ accept: true,
+   * message? }` (an optional first reply) or `{ accept: false, reason? }`.
+   * Default: accept.
+   */
+  onInvite?: (item: CallFeedItem) => Promise<CallInviteDecision> | CallInviteDecision;
+  /**
+   * Called for `accepted`, `declined`, `ended` and `missed` entries.
+   * Default: ignore them.
+   */
+  onEvent?: (item: CallFeedItem) => Promise<void> | void;
+  /** How often to poll when the feed is empty. Default 2000ms. */
+  pollIntervalMs?: number;
+  /** Max items to claim per poll, at most 25. Default 25. */
+  batchSize?: number;
+  /** Cancel the loop. */
+  signal?: AbortSignal;
+  /**
+   * Called when a pull, a handler, or answering or replying fails; the
+   * loop continues. Default: log it.
+   */
+  onError?: (err: unknown, item?: CallFeedItem) => void;
+}
+
+/** The call ended (or was missed) before we answered or replied. */
+function isNotActive(err: unknown): boolean {
+  return err instanceof ChakraMCPError && err.code === "chk.calls.not_active";
+}
+
+function defaultOnCallError(err: unknown, item?: CallFeedItem): void {
+  const where = item ? ` (call ${item.call.id}, entry ${item.entry.seq})` : "";
+  console.error(`[@chakramcp/sdk] calls.serve${where}:`, err);
+}
+
+/**
+ * Calls: an ongoing conversation between two agents, with messages,
+ * capabilities invoked in it (`invoke` with `call_id`) and, in
+ * call-memory mode, a memory the relay keeps. Party actions take
+ * `agent_id`, the agent acting, and need an API key or agent token
+ * (interactive web sessions get 403 `chk.calls.owner_session`).
+ */
+export class CallsClient {
+  constructor(private readonly chakra: ChakraMCP) {}
+
+  /**
+   * Call another agent as `from_agent_id`. The call is `ringing` until
+   * the callee accepts or declines it (missed after 24 h). The terms
+   * (`memory`, `ttl_secs`, `idle_secs`, `topic`) are fixed for the call.
+   */
+  start(body: StartCallRequest): Promise<Call> {
+    return this.chakra.relayRequest<Call>("POST", "/v1/calls", body);
+  }
+
+  /**
+   * One agent's calls (`agent_id`), or all your agents' calls, newest
+   * first. Pass `next_cursor` back as `cursor` for the next page.
+   */
+  list(query: ListCallsQuery = {}): Promise<CallList> {
+    const qs = new URLSearchParams();
+    if (query.agent_id) qs.set("agent_id", query.agent_id);
+    if (query.state) qs.set("state", query.state);
+    if (query.limit !== undefined) qs.set("limit", String(query.limit));
+    if (query.cursor) qs.set("cursor", query.cursor);
+    const q = qs.toString();
+    return this.chakra.relayRequest<CallList>("GET", `/v1/calls${q ? `?${q}` : ""}`);
+  }
+
+  get(callId: string): Promise<Call> {
+    return this.chakra.relayRequest<Call>("GET", `/v1/calls/${encodeURIComponent(callId)}`);
+  }
+
+  /** Accept a ringing call as the callee, with an optional first reply. */
+  accept(callId: string, body: AcceptCallRequest): Promise<Call> {
+    return this.chakra.relayRequest<Call>(
+      "POST",
+      `/v1/calls/${encodeURIComponent(callId)}/accept`,
+      body,
+    );
+  }
+
+  /** Decline a ringing call as the callee, with an optional reason. */
+  decline(callId: string, body: DeclineCallRequest): Promise<Call> {
+    return this.chakra.relayRequest<Call>(
+      "POST",
+      `/v1/calls/${encodeURIComponent(callId)}/decline`,
+      body,
+    );
+  }
+
+  /** End a ringing or active call as either party. */
+  end(callId: string, body: EndCallRequest): Promise<Call> {
+    return this.chakra.relayRequest<Call>(
+      "POST",
+      `/v1/calls/${encodeURIComponent(callId)}/end`,
+      body,
+    );
+  }
+
+  /**
+   * Send a message on an active call (409 `chk.calls.not_active`
+   * otherwise). Returns the stored entry, with any safety findings; a
+   * message that message safety refuses throws a 403 with a `chk.policy.*`
+   * code.
+   */
+  send(callId: string, body: SendCallMessageRequest): Promise<CallEntry> {
+    return this.chakra.relayRequest<CallEntry>(
+      "POST",
+      `/v1/calls/${encodeURIComponent(callId)}/messages`,
+      body,
+    );
+  }
+
+  /**
+   * The call's stored transcript, oldest first, until its content is
+   * deleted. With `q`, the matching entries, best first.
+   */
+  history(callId: string, query: CallHistoryQuery = {}): Promise<CallEntry[]> {
+    const qs = new URLSearchParams();
+    if (query.after !== undefined) qs.set("after", String(query.after));
+    if (query.limit !== undefined) qs.set("limit", String(query.limit));
+    if (query.q) qs.set("q", query.q);
+    const q = qs.toString();
+    return this.chakra.relayRequest<CallEntry[]>(
+      "GET",
+      `/v1/calls/${encodeURIComponent(callId)}/messages${q ? `?${q}` : ""}`,
+    );
+  }
+
+  /** The call's current memory bundle (call-memory mode). */
+  memory(callId: string): Promise<CallMemory> {
+    return this.chakra.relayRequest<CallMemory>(
+      "GET",
+      `/v1/calls/${encodeURIComponent(callId)}/memory`,
+    );
+  }
+
+  /**
+   * Ask the call's memory a question: returns the messages most likely
+   * to answer it, verbatim, to answer from yourself. 503
+   * `chk.calls.memory_unavailable` when the call's memory has no recall.
+   */
+  ask(callId: string, body: AskCallMemoryRequest): Promise<CallRecall> {
+    return this.chakra.relayRequest<CallRecall>(
+      "POST",
+      `/v1/calls/${encodeURIComponent(callId)}/memory/ask`,
+      body,
+    );
+  }
+
+  /**
+   * Claim the agent's undelivered call entries, oldest first (at most
+   * 25); each is delivered once.
+   */
+  pull(agentId: string, opts: { limit?: number } = {}): Promise<CallFeedItem[]> {
+    const qs = new URLSearchParams({ agent_id: agentId });
+    if (opts.limit) qs.set("limit", String(opts.limit));
+    return this.chakra.relayRequest<CallFeedItem[]>("GET", `/v1/inbox/calls?${qs.toString()}`);
+  }
+
+  /**
+   * Long-running loop for a pull agent: pull the calls feed and handle
+   * each item in order until `signal` fires.
+   *
+   * - `invite`: `onInvite` accepts or declines (default: accept).
+   * - `message`: `onMessage`'s reply, if any, is sent as the agent.
+   * - `accepted`, `declined`, `ended`, `missed`: `onEvent`, if given.
+   *
+   * An answer or reply to a call that ended meanwhile is dropped. A
+   * handler that throws, or another failed answer or reply, goes to
+   * `onError` and the loop continues. A pulled batch is already claimed,
+   * so it finishes before the loop stops.
+   */
+  async serve(agentId: string, opts: CallServeOptions): Promise<void> {
+    const interval = opts.pollIntervalMs ?? 2000;
+    const limit = Math.min(opts.batchSize ?? 25, 25);
+    const report = opts.onError ?? defaultOnCallError;
+    while (!opts.signal?.aborted) {
+      let batch: CallFeedItem[];
+      try {
+        batch = await this.pull(agentId, { limit });
+      } catch (err) {
+        report(err);
+        await sleep(interval, opts.signal);
+        continue;
+      }
+      if (batch.length === 0) {
+        await sleep(interval, opts.signal);
+        continue;
+      }
+      // In order: a call's entries build on the ones before them.
+      for (const item of batch) {
+        try {
+          await this.dispatch(agentId, item, opts);
+        } catch (err) {
+          report(err, item);
+        }
+      }
+    }
+  }
+
+  private async dispatch(agentId: string, item: CallFeedItem, opts: CallServeOptions): Promise<void> {
+    const callId = item.call.id;
+    switch (item.entry.kind) {
+      case "invite": {
+        const decision = opts.onInvite ? await opts.onInvite(item) : undefined;
+        try {
+          if (decision?.accept === false) {
+            await this.decline(callId, { agent_id: agentId, reason: decision.reason });
+          } else {
+            await this.accept(callId, { agent_id: agentId, message: decision?.message });
+          }
+        } catch (err) {
+          // The caller hung up, or it was missed, meanwhile.
+          if (isNotActive(err)) return;
+          throw err;
+        }
+        return;
+      }
+      case "message": {
+        const reply = await opts.onMessage(item);
+        if (reply === undefined || reply === null) return;
+        const body: SendCallMessageRequest =
+          typeof reply === "string"
+            ? { agent_id: agentId, text: reply }
+            : { agent_id: agentId, text: reply.text, data: reply.data };
+        try {
+          await this.send(callId, body);
+        } catch (err) {
+          // The call ended meanwhile: there's no one to reply to.
+          if (isNotActive(err)) return;
+          throw err;
+        }
+        return;
+      }
+      case "accepted":
+      case "declined":
+      case "ended":
+      case "missed":
+        await opts.onEvent?.(item);
+        return;
+      default:
+        // `invocation` entries aren't delivered; skip kinds newer than this SDK.
+        return;
+    }
   }
 }
 

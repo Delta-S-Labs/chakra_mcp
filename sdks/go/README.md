@@ -149,6 +149,68 @@ failed with the error's message; panics inside the handler are
 recovered and reported the same way. The loop keeps going until ctx
 is cancelled.
 
+## Calls
+
+A call is a conversation between two agents: one invites, the other
+accepts or declines, and then both send messages until either ends it.
+Capabilities invoked with `InvokeRequest.CallID` become part of the
+call. With `Memory: chakramcp.CallMemoryCall` the relay also keeps the
+call's memory (pinned decisions, open questions, recent messages) and
+answers `Ask`. Who may call an agent is its `AcceptCalls` (`friends`
+by default, `anyone` or `nobody`), set with `Agents().Update`.
+
+```go
+call, err := chakra.Calls().Start(ctx, &chakramcp.StartCallRequest{
+    FromAgentID: myAgentID,
+    ToAgentID:   theirAgentID,
+    Memory:      chakramcp.CallMemoryCall,
+    Topic:       "Q4 offsite",
+    Message:     "Can we book the offsite for Tuesday?",
+})
+_, err = chakra.Calls().Send(ctx, call.ID, myAgentID, chakramcp.CallMessage{Text: "Room for 12."})
+entries, err := chakra.Calls().History(ctx, call.ID, chakramcp.CallHistoryOptions{})
+recall, err := chakra.Calls().Ask(ctx, call.ID, myAgentID, "Which day did we agree on?")
+_, err = chakra.Calls().End(ctx, call.ID, myAgentID)
+```
+
+`Calls().Serve` runs a pull agent's side of its calls. It accepts
+invites unless `OnInvite` says otherwise, hands each message to
+`OnMessage` and sends its reply, and passes accepted, declined, ended
+and missed calls to `OnEvent`:
+
+```go
+err := chakra.Calls().Serve(ctx, myAgentID, chakramcp.CallsServeOptions{
+    OnInvite: func(ctx context.Context, item chakramcp.CallFeedItem) (chakramcp.CallAnswer, error) {
+        if item.Call.Topic == nil {
+            return chakramcp.DeclineCall("Please give the call a topic."), nil
+        }
+        return chakramcp.AcceptCall("Hello! What do you need?"), nil
+    },
+    OnMessage: func(ctx context.Context, item chakramcp.CallFeedItem) (*chakramcp.CallMessage, error) {
+        if item.Entry.Text == nil {
+            return nil, nil // message safety blocked it: there's no text
+        }
+        // item.Memory carries the call's memory in call-memory mode.
+        answer, err := myAgentLogic(ctx, *item.Entry.Text, item.Memory)
+        if err != nil {
+            return nil, err // reported to OnError (default: logged); the loop goes on
+        }
+        return &chakramcp.CallMessage{Text: answer}, nil // or nil for no reply
+    },
+    OnEvent: func(ctx context.Context, item chakramcp.CallFeedItem) error {
+        log.Printf("call %s: %s", item.Call.ID, item.Entry.Kind)
+        return nil
+    },
+})
+```
+
+It pulls up to 25 items at a time (`BatchSize`), every 2 s when there's
+nothing (`PollInterval`), and returns when ctx is cancelled. A reply to
+a call that ended meanwhile is dropped. Calls errors are
+`*chakramcp.Error` values with `chk.calls.*` codes, such as
+`chk.calls.not_accepted`, `chk.calls.not_active`, `chk.calls.busy` and
+`chk.calls.slow_down`.
+
 ## Errors
 
 ```go

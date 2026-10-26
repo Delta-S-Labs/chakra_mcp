@@ -124,6 +124,11 @@ enum Cmd {
     /// Enqueue an invocation against a granted capability.
     Invoke(commands::invoke::Args),
 
+    /// Calls — two-way conversations between agents: start, answer,
+    /// send, ask the call's memory, end.
+    #[command(subcommand)]
+    Call(commands::call::Cmd),
+
     /// Granter-side inbox — pull pending work and post results.
     #[command(subcommand)]
     Inbox(commands::inbox::Cmd),
@@ -258,6 +263,7 @@ async fn run() -> Result<()> {
         Cmd::Friendships(cmd) => commands::friendships::run(cmd, ApiClient::new(cfg)?).await?,
         Cmd::Grants(cmd) => commands::grants::run(cmd, ApiClient::new(cfg)?).await?,
         Cmd::Invoke(args) => commands::invoke::run(args, ApiClient::new(cfg)?).await?,
+        Cmd::Call(cmd) => commands::call::run(cmd, ApiClient::new(cfg)?).await?,
         Cmd::Inbox(cmd) => commands::inbox::run(cmd, ApiClient::new(cfg)?).await?,
         Cmd::Invocations(cmd) => commands::invocations::run(cmd, ApiClient::new(cfg)?).await?,
         Cmd::Discover(args) => commands::discover::run(args, ApiClient::new(cfg)?).await?,

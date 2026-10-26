@@ -3,6 +3,7 @@ use std::time::Duration;
 use reqwest::{Client, Method, RequestBuilder, Response, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
 
+use crate::calls::CallsClient;
 use crate::error::{Error, Result};
 use crate::inbox::InboxClient;
 use crate::resources::{
@@ -59,6 +60,9 @@ impl ChakraMCP {
     }
     pub fn reviews(&self) -> ReviewsClient<'_> {
         ReviewsClient::new(self)
+    }
+    pub fn calls(&self) -> CallsClient<'_> {
+        CallsClient::new(self)
     }
 
     // ─── Top-level RPC ───────────────────────────────────

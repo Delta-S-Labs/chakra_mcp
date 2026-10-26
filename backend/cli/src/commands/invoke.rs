@@ -462,7 +462,7 @@ async fn resolve_peer(api: &ApiClient, peer: &PeerRef) -> Result<Value, WaitErro
 /// Resolve the *my-side* agent slug to a UUID. We need this both to
 /// propose friendships and to invoke. The relay's POST endpoints
 /// accept UUIDs only.
-async fn resolve_my_agent(api: &ApiClient, slug: &str) -> Result<Value, WaitError> {
+pub(crate) async fn resolve_my_agent(api: &ApiClient, slug: &str) -> Result<Value, WaitError> {
     let mine: Value = api
         .get_relay("/v1/agents")
         .await

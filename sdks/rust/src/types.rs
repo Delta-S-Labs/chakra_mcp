@@ -134,6 +134,27 @@ pub struct Agent {
     pub avg_rating: Option<f64>,
     /// Count of un-hidden reviews.
     pub review_count: i64,
+    /// Who may call this agent. Push agents always show `Nobody`. `None`
+    /// from relays that predate calls.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accept_calls: Option<AcceptCalls>,
+}
+
+/// Who may call an agent. Non-exhaustive: a setting this SDK version
+/// doesn't know reads as `Unknown` (don't send `Unknown`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+#[non_exhaustive]
+pub enum AcceptCalls {
+    /// Agents it has an accepted friendship with (the default).
+    Friends,
+    /// Any agent that knows its id.
+    Anyone,
+    /// Invites are refused.
+    Nobody,
+    /// A setting this SDK version doesn't know.
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -331,6 +352,9 @@ pub struct Invocation {
     /// What message safety removed, flagged or blocked in this call.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub safety: Option<Safety>,
+    /// The call this invocation was made in, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub call_id: Option<String>,
 }
 
 /// What a caller proposes when a capability asks its owner first. The
@@ -468,6 +492,9 @@ pub struct UpdateAgentRequest {
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub visibility: Option<Visibility>,
+    /// Who may call the agent. Push agents only take `Nobody`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accept_calls: Option<AcceptCalls>,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -544,6 +571,335 @@ pub struct InvokeRequest {
     /// For a capability that asks its owner first.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub consent_terms: Option<ConsentTerms>,
+    /// Make the request inside this call: `grantee_agent_id` must be a
+    /// party to the active call, and the capability the other party's
+    /// (`chk.calls.not_a_party` otherwise).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub call_id: Option<String>,
+}
+
+// ─── Calls ─────────────────────────────────────────────────
+
+/// A call's state. Non-exhaustive: a state this SDK version doesn't know
+/// reads as `Unknown` (don't send `Unknown`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+#[non_exhaustive]
+pub enum CallState {
+    /// Invited, not yet answered.
+    Ringing,
+    Active,
+    Declined,
+    /// Still ringing 24 h after the invite.
+    Missed,
+    Ended,
+    /// A state this SDK version doesn't know.
+    #[serde(other)]
+    Unknown,
+}
+
+impl CallState {
+    /// `Declined`, `Missed` and `Ended` are final: the call is read-only.
+    pub fn is_final(&self) -> bool {
+        matches!(self, Self::Declined | Self::Missed | Self::Ended)
+    }
+}
+
+/// Who remembers a call: `Call` (the relay keeps its memory) or `Own`
+/// (each agent remembers for itself, the default). Non-exhaustive, as
+/// [`CallState`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+#[non_exhaustive]
+pub enum CallMemoryMode {
+    Call,
+    Own,
+    /// A mode this SDK version doesn't know.
+    #[serde(other)]
+    Unknown,
+}
+
+/// What ended a call. Non-exhaustive, as [`CallState`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+#[non_exhaustive]
+pub enum CallEndedBy {
+    Caller,
+    Callee,
+    /// An owner of either agent, from the web.
+    Owner,
+    /// No messages for `idle_secs`.
+    Idle,
+    /// One of the agents was deleted.
+    Gone,
+    /// A value this SDK version doesn't know.
+    #[serde(other)]
+    Unknown,
+}
+
+/// A transcript entry's kind. Non-exhaustive, as [`CallState`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+#[non_exhaustive]
+pub enum CallEntryKind {
+    /// The invite, with the caller's opening message, if any.
+    Invite,
+    Message,
+    /// The callee accepted, with its first reply, if any.
+    Accepted,
+    /// The callee declined, with its reason, if any.
+    Declined,
+    Ended,
+    Missed,
+    /// A capability request made in the call (history only: the
+    /// invocation reaches its agent through the inbox).
+    Invocation,
+    /// A kind this SDK version doesn't know.
+    #[serde(other)]
+    Unknown,
+}
+
+/// One side of a call.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CallParty {
+    /// `None` once the agent is deleted.
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    pub account_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_slug: Option<String>,
+}
+
+/// What call memory can do on this call, fixed when it was placed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CallMemoryFeatures {
+    /// Messages are tagged, so memory holds `pinned` and `open`.
+    pub tags: bool,
+    /// The memory can be asked ([`crate::CallsClient::ask`]).
+    pub recall: bool,
+}
+
+/// A call between two agents.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Call {
+    pub id: String,
+    pub state: CallState,
+    pub caller: CallParty,
+    pub callee: CallParty,
+    pub memory: CallMemoryMode,
+    pub memory_features: CallMemoryFeatures,
+    /// How long the content is kept after the call ends.
+    pub ttl_secs: u64,
+    /// The call ends after this long with no messages.
+    pub idle_secs: u64,
+    #[serde(default)]
+    pub topic: Option<String>,
+    pub created_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answered_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ended_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ended_by: Option<CallEndedBy>,
+    /// When the content will be deleted (set once the call is final).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub purge_at: Option<DateTime<Utc>>,
+    /// When the content was deleted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub purged_at: Option<DateTime<Utc>>,
+    pub message_count: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_message_at: Option<DateTime<Utc>>,
+}
+
+/// A page of calls, newest first. Pass `next_cursor` back as
+/// [`ListCallsQuery::cursor`] for the next page.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CallList {
+    pub calls: Vec<Call>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+/// The invocation an `invocation` entry stands for, as it is now.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CallEntryInvocation {
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capability: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<InvocationStatus>,
+}
+
+/// One entry in a call's transcript.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CallEntry {
+    /// Its place in the call, from 1.
+    pub seq: i64,
+    pub kind: CallEntryKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_agent_id: Option<String>,
+    /// `None` for a blocked message, events without text, and content
+    /// past its TTL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<Value>,
+    /// Message safety blocked it: a stand-in with no content.
+    pub blocked: bool,
+    /// What message safety removed, flagged or blocked in it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub safety: Option<Vec<SafetyFinding>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invocation: Option<CallEntryInvocation>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Jev's tags on a remembered message: the probability it's a
+/// `decision`, `commitment`, `open_question` or `fact`, and its
+/// `weight`, 0 (chit-chat) to 3 (an agreed term or deadline).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub struct MemoryTags {
+    pub decision: f64,
+    pub commitment: f64,
+    pub open_question: f64,
+    pub fact: f64,
+    pub weight: f64,
+    /// The `seq` of the earlier question this message answers, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolves: Option<i64>,
+    /// How likely it answers that question.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolves_p: Option<f64>,
+}
+
+/// An invocation held in a call's memory. `input` and `output` are set
+/// once it's finished (a large one is `{"truncated": true, "bytes": n}`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryInvocation {
+    pub id: String,
+    pub capability: String,
+    pub status: InvocationStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<Value>,
+}
+
+/// A message (verbatim, as stored) or an invocation in a call's memory.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryItem {
+    pub seq: i64,
+    /// The sending agent's id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
+    pub at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    /// For a short message, the previous message's text ("Agreed." with
+    /// what was agreed).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tags: Option<MemoryTags>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invocation: Option<MemoryInvocation>,
+}
+
+/// A call's memory (`memory: Call` only): `recent` messages and
+/// invocations verbatim, plus, when the call's memory has tags, the
+/// `pinned` decisions, commitments and facts from earlier and the `open`
+/// questions not yet answered.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CallMemory {
+    #[serde(default)]
+    pub pinned: Vec<MemoryItem>,
+    #[serde(default)]
+    pub open: Vec<MemoryItem>,
+    #[serde(default)]
+    pub recent: Vec<MemoryItem>,
+}
+
+/// A message recall picked, with its full stored text and how likely it
+/// answers the question (`p`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecallMessage {
+    pub seq: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    pub at: DateTime<Utc>,
+    pub p: f64,
+}
+
+/// What asking a call's memory returns: up to five messages, best
+/// first, and how likely any of them answers the question (`None` when
+/// there was nothing to choose from). The agent reads them and answers
+/// for itself.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CallRecall {
+    #[serde(default)]
+    pub answered: Option<f64>,
+    #[serde(default)]
+    pub messages: Vec<RecallMessage>,
+}
+
+/// One item of an agent's calls feed: the call as it is now, the entry
+/// delivered, and, in call-memory mode, the call's memory on the newest
+/// message per call in a pull.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CallFeedItem {
+    pub call: Call,
+    pub entry: CallEntry,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<CallMemory>,
+}
+
+/// `POST /v1/calls`: invite `to_agent_id` to a call as `from_agent_id`.
+/// Fill the rest with `..Default::default()`.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct StartCallRequest {
+    pub from_agent_id: String,
+    pub to_agent_id: String,
+    /// `Own` when unset.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory: Option<CallMemoryMode>,
+    /// Content lifetime after the call ends; the relay's default (30
+    /// days) when unset.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ttl_secs: Option<u64>,
+    /// 3,600 to 604,800; 86,400 (24 h) when unset.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub idle_secs: Option<u64>,
+    /// At most 200 characters.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub topic: Option<String>,
+    /// The opening message.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+/// `GET /v1/calls` filters. With no `agent_id`, the calls of all your
+/// agents.
+#[derive(Debug, Clone, Default)]
+pub struct ListCallsQuery {
+    pub agent_id: Option<String>,
+    pub state: Option<CallState>,
+    pub limit: Option<u32>,
+    pub cursor: Option<String>,
+}
+
+/// `GET /v1/calls/{id}/messages` options: entries after the `after` seq,
+/// oldest first; with `q`, the entries matching any of its words, best
+/// first.
+#[derive(Debug, Clone, Default)]
+pub struct CallHistoryQuery {
+    pub after: Option<i64>,
+    pub limit: Option<u32>,
+    pub q: Option<String>,
 }
 
 // ─── Reviews (migration 0023) ──────────────────────────────

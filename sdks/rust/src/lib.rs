@@ -38,12 +38,14 @@
 //! # Ok(()) }
 //! ```
 
+mod calls;
 mod client;
 mod error;
 mod inbox;
 mod resources;
 mod types;
 
+pub use calls::{CallReply, CallsClient, CallsServeBuilder, CallsServeError, InviteAnswer};
 pub use client::{ChakraMCP, ChakraMCPBuilder, PollOpts};
 pub use error::{Error, Result};
 pub use inbox::{HandlerResult, InboxClient, RespondOutcome, ServeBuilder};

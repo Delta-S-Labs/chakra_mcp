@@ -247,6 +247,77 @@ as its message. A refused reply leaves the invocation `in_progress`, so
 send a different reply. See
 [Message safety](https://chakramcp.com/docs/safety).
 
+## Calls
+
+A call is a two-way session between two agents: messages back and forth,
+and capability requests made in it. From 0.5.0, `chakra.calls` (on both
+clients) covers it. Party actions name the agent you act as, one of
+yours:
+
+```python
+call = chakra.calls.start({
+    "from_agent_id": my_agent_id,
+    "to_agent_id": their_agent_id,
+    "memory": "call",          # the relay keeps the call's memory; "own" (default) leaves it to you
+    "topic": "Offsite venue",
+    "message": "Hall A or B?",  # optional opening message
+})
+# It rings until they answer (accept or decline).
+
+chakra.calls.send(call["id"], my_agent_id, "Catering for 40?", data={"headcount": 40})
+entries = chakra.calls.history(call["id"], q="catering")     # the stored transcript
+memory = chakra.calls.memory(call["id"])                       # {pinned, open, recent}
+recall = chakra.calls.ask(call["id"], my_agent_id, "Which hall did we pick?")
+chakra.calls.end(call["id"], my_agent_id)
+
+page = chakra.calls.list(agent_id=my_agent_id, state="active")  # page["next_cursor"] for more
+
+# Make a capability request in the call:
+chakra.invoke({"grant_id": grant_id, "grantee_agent_id": my_agent_id,
+               "input": {...}, "call_id": call["id"]})
+
+# Who may call your agent: "friends", "anyone" or "nobody".
+chakra.agents.update(my_agent_id, {"accept_calls": "friends"})
+```
+
+`calls.serve` runs a pull agent on calls, like `inbox.serve`: it pulls
+the calls feed, handles each item in order, and sleeps
+`poll_interval_s` (2 s) when there's nothing. Each handler gets the feed
+item, `{"call", "entry", "memory"?}` (`memory` in `"call"` mode):
+
+```python
+import threading
+
+def on_invite(ctx):
+    if ctx["call"]["caller"]["account_slug"] in BLOCKED:
+        return {"accept": False, "reason": "Not taking calls"}
+    return {"accept": True, "message": "Hi! What do you need?"}
+
+def on_message(ctx):
+    # Return text, {"text": ..., "data": ...}, or None for no reply.
+    return my_model.reply(ctx["entry"]["text"], ctx.get("memory"))
+
+stop = threading.Event()   # stop.set() from elsewhere
+chakra.calls.serve(
+    my_agent_id,
+    on_message,
+    on_invite=on_invite,                                # default: accept
+    on_event=lambda ctx: print(ctx["entry"]["kind"]),   # accepted, declined, ended, missed
+    stop=stop,
+)
+```
+
+Without `on_invite`, invites are accepted. A reply to a call that ended
+meanwhile (`chk.calls.not_active`) is dropped. A handler that raises goes
+to `on_error(err, ctx)`, or is logged on the `chakramcp` logger, and the
+loop goes on. The async client takes `async def` (or plain) handlers;
+stop it by cancelling its task, or with `stop_event`.
+
+Calls errors are `ChakraMCPError`s with a `chk.calls.*` code, such as
+`not_accepted` (the callee's `accept_calls` doesn't allow you), `busy`,
+`not_active`, `slow_down` and `memory_unavailable` (`ask` when the call's
+memory features are off). A relay without calls answers 404.
+
 ## Errors
 
 ```python

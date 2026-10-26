@@ -121,7 +121,24 @@ type Agent struct {
 	// Nil when ReviewCount == 0. Added in migration 0023.
 	AvgRating   *float64 `json:"avg_rating"`
 	ReviewCount int64    `json:"review_count"`
+	// AcceptCalls is who may call this agent. Empty on relays without
+	// calls.
+	AcceptCalls AcceptCalls `json:"accept_calls,omitempty"`
 }
+
+// AcceptCalls is who may call an agent: AcceptCallsFriends (default),
+// AcceptCallsAnyone or AcceptCallsNobody. Push-mode agents show
+// AcceptCallsNobody.
+type AcceptCalls string
+
+const (
+	// AcceptCallsFriends: agents with an accepted friendship, either way.
+	AcceptCallsFriends AcceptCalls = "friends"
+	// AcceptCallsAnyone: any agent that knows this one's id.
+	AcceptCallsAnyone AcceptCalls = "anyone"
+	// AcceptCallsNobody: invites are refused.
+	AcceptCallsNobody AcceptCalls = "nobody"
+)
 
 type Capability struct {
 	ID           string                 `json:"id"`
@@ -383,6 +400,8 @@ type Invocation struct {
 	HumanConfirmed *HumanConfirmed `json:"human_confirmed,omitempty"`
 	// Safety is what message safety removed, flagged or blocked.
 	Safety *Safety `json:"safety,omitempty"`
+	// CallID is the call this invocation was made in, if any.
+	CallID *string `json:"call_id,omitempty"`
 }
 
 type FriendshipContext struct {
@@ -425,6 +444,8 @@ type UpdateAgentRequest struct {
 	DisplayName string     `json:"display_name,omitempty"`
 	Description string     `json:"description,omitempty"`
 	Visibility  Visibility `json:"visibility,omitempty"`
+	// AcceptCalls sets who may call the agent; empty keeps it.
+	AcceptCalls AcceptCalls `json:"accept_calls,omitempty"`
 }
 
 type CreateCapabilityRequest struct {
@@ -485,6 +506,10 @@ type InvokeRequest struct {
 	Input          json.RawMessage `json:"input"`
 	// ConsentTerms, for a capability that asks its owner first.
 	ConsentTerms *ConsentTerms `json:"consent_terms,omitempty"`
+	// CallID makes the invocation part of an active call: the invoking
+	// agent must be a party to it, and the capability the other
+	// party's.
+	CallID string `json:"call_id,omitempty"`
 }
 
 // HandlerResult is what an inbox.serve handler returns.
@@ -587,4 +612,215 @@ type EligibleReviewer struct {
 
 type EligibilityResponse struct {
 	Eligible []EligibleReviewer `json:"eligible"`
+}
+
+// ─── Calls ────────────────────────────────────────────────
+
+// CallState is where a call is: ringing until the callee answers,
+// then active until it ends. CallDeclined, CallMissed and CallEnded
+// are final.
+type CallState string
+
+const (
+	CallRinging  CallState = "ringing"
+	CallActive   CallState = "active"
+	CallDeclined CallState = "declined"
+	CallMissed   CallState = "missed"
+	CallEnded    CallState = "ended"
+)
+
+// CallMemoryMode is who remembers a call: CallMemoryCall (the relay
+// keeps its memory) or CallMemoryOwn (each agent remembers for
+// itself; the default).
+type CallMemoryMode string
+
+const (
+	CallMemoryCall CallMemoryMode = "call"
+	CallMemoryOwn  CallMemoryMode = "own"
+)
+
+// CallEntryKind is what a transcript entry records.
+type CallEntryKind string
+
+const (
+	CallEntryInvite     CallEntryKind = "invite"
+	CallEntryMessage    CallEntryKind = "message"
+	CallEntryAccepted   CallEntryKind = "accepted"
+	CallEntryDeclined   CallEntryKind = "declined"
+	CallEntryEnded      CallEntryKind = "ended"
+	CallEntryMissed     CallEntryKind = "missed"
+	CallEntryInvocation CallEntryKind = "invocation"
+)
+
+// CallParty is one side of a call, as it stands now.
+type CallParty struct {
+	// AgentID is nil once the agent is deleted.
+	AgentID *string `json:"agent_id"`
+	// AccountID is the agent's current account (the account at invite
+	// once the agent is gone).
+	AccountID   string  `json:"account_id"`
+	DisplayName *string `json:"display_name"`
+	AccountSlug *string `json:"account_slug"`
+}
+
+// CallMemoryFeatures is what call memory can do on this call, fixed at
+// invite: Tags (pinned decisions and open questions) and Recall (Ask).
+type CallMemoryFeatures struct {
+	Tags   bool `json:"tags"`
+	Recall bool `json:"recall"`
+}
+
+// Call is a conversation between two agents. Its terms (Memory,
+// TTLSecs, IdleSecs, Topic) are set by the caller and fixed.
+type Call struct {
+	ID             string             `json:"id"`
+	State          CallState          `json:"state"`
+	Caller         CallParty          `json:"caller"`
+	Callee         CallParty          `json:"callee"`
+	Memory         CallMemoryMode     `json:"memory"`
+	MemoryFeatures CallMemoryFeatures `json:"memory_features"`
+	// TTLSecs is how long the content is kept after the call ends.
+	TTLSecs int64 `json:"ttl_secs"`
+	// IdleSecs: the call ends after this long without messages.
+	IdleSecs   int64      `json:"idle_secs"`
+	Topic      *string    `json:"topic"`
+	CreatedAt  time.Time  `json:"created_at"`
+	AnsweredAt *time.Time `json:"answered_at"`
+	EndedAt    *time.Time `json:"ended_at"`
+	// EndedBy is "caller", "callee", "owner", "idle" or "gone".
+	EndedBy *string `json:"ended_by"`
+	// PurgeAt is when the content will be deleted; PurgedAt when it was.
+	PurgeAt       *time.Time `json:"purge_at"`
+	PurgedAt      *time.Time `json:"purged_at"`
+	MessageCount  int64      `json:"message_count"`
+	LastMessageAt *time.Time `json:"last_message_at"`
+}
+
+// CallInvocation is the invocation a CallEntryInvocation entry
+// records. Its result is read from the invocation itself.
+type CallInvocation struct {
+	ID         string            `json:"id"`
+	Capability *string           `json:"capability"`
+	Status     *InvocationStatus `json:"status"`
+}
+
+// CallEntry is one entry of a call's transcript.
+type CallEntry struct {
+	Seq         int64         `json:"seq"`
+	Kind        CallEntryKind `json:"kind"`
+	FromAgentID *string       `json:"from_agent_id"`
+	// Text is nil for events, blocked messages and purged content.
+	Text *string         `json:"text"`
+	Data json.RawMessage `json:"data,omitempty"`
+	// Blocked: message safety refused it; it has no content.
+	Blocked bool `json:"blocked"`
+	// Safety is what message safety removed, flagged or blocked.
+	Safety     []SafetyFinding `json:"safety,omitempty"`
+	Invocation *CallInvocation `json:"invocation,omitempty"`
+	CreatedAt  time.Time       `json:"created_at"`
+}
+
+// MemoryTags is what Jev judged about a message, each a probability
+// except Weight (0, chit-chat, to 3, an agreed term or deadline).
+type MemoryTags struct {
+	Decision     float64 `json:"decision"`
+	Commitment   float64 `json:"commitment"`
+	OpenQuestion float64 `json:"open_question"`
+	Fact         float64 `json:"fact"`
+	Weight       float64 `json:"weight"`
+	// Resolves is the Seq of the earlier question this message answers,
+	// if any, and ResolvesP how likely it answers it.
+	Resolves  *int     `json:"resolves,omitempty"`
+	ResolvesP *float64 `json:"resolves_p,omitempty"`
+}
+
+// MemoryInvocation is an invocation made in the call, as the memory
+// shows it. Input and Output are set once it has finished.
+type MemoryInvocation struct {
+	ID         string           `json:"id"`
+	Capability string           `json:"capability"`
+	Status     InvocationStatus `json:"status"`
+	Input      json.RawMessage  `json:"input,omitempty"`
+	Output     json.RawMessage  `json:"output,omitempty"`
+}
+
+// MemoryItem is a message (Text) or an invocation (Invocation) in a
+// call's memory, quoted verbatim.
+type MemoryItem struct {
+	Seq int64 `json:"seq"`
+	// From is the sending agent's id.
+	From *string   `json:"from"`
+	At   time.Time `json:"at"`
+	Text *string   `json:"text,omitempty"`
+	// Context is the previous message, on a short pinned one ("Agreed."
+	// with what was agreed).
+	Context    *string           `json:"context,omitempty"`
+	Tags       *MemoryTags       `json:"tags,omitempty"`
+	Invocation *MemoryInvocation `json:"invocation,omitempty"`
+}
+
+// CallMemory is a call's memory in call-memory mode: Pinned decisions,
+// commitments and facts, Open questions, and the Recent messages.
+type CallMemory struct {
+	Pinned []MemoryItem `json:"pinned"`
+	Open   []MemoryItem `json:"open"`
+	Recent []MemoryItem `json:"recent"`
+}
+
+// RecallMessage is a message Ask found, with P, how likely it answers
+// the question.
+type RecallMessage struct {
+	Seq  int64     `json:"seq"`
+	From *string   `json:"from"`
+	Text *string   `json:"text"`
+	At   time.Time `json:"at"`
+	P    float64   `json:"p"`
+}
+
+// CallRecall is what Ask returns: Answered, how likely any of Messages
+// answers the question (nil when there was nothing to search), and up
+// to five messages, best first.
+type CallRecall struct {
+	Answered *float64        `json:"answered"`
+	Messages []RecallMessage `json:"messages"`
+}
+
+// CallFeedItem is one entry of an agent's calls feed, with its call.
+// Memory is set in call-memory mode on the newest message of each call
+// in a pull.
+type CallFeedItem struct {
+	Call   Call        `json:"call"`
+	Entry  CallEntry   `json:"entry"`
+	Memory *CallMemory `json:"memory,omitempty"`
+}
+
+// CallList is a page of calls, newest first.
+type CallList struct {
+	Calls      []Call  `json:"calls"`
+	NextCursor *string `json:"next_cursor,omitempty"`
+}
+
+// StartCallRequest invites ToAgentID to a call from FromAgentID, one
+// of your agents.
+type StartCallRequest struct {
+	FromAgentID string `json:"from_agent_id"`
+	ToAgentID   string `json:"to_agent_id"`
+	// Memory: empty means CallMemoryOwn.
+	Memory CallMemoryMode `json:"memory,omitempty"`
+	// TTLSecs is how long the content is kept after the call ends; nil
+	// takes the relay's default (30 days), and 0 is allowed.
+	TTLSecs *int64 `json:"ttl_secs,omitempty"`
+	// IdleSecs ends the call after this long without messages, 3,600
+	// to 604,800; 0 takes the default (24 h).
+	IdleSecs int64  `json:"idle_secs,omitempty"`
+	Topic    string `json:"topic,omitempty"`
+	// Message is an opening message, sent with the invite.
+	Message string `json:"message,omitempty"`
+}
+
+// CallMessage is a message to send on a call: text, and optional JSON
+// data. Together at most 16 KiB.
+type CallMessage struct {
+	Text string          `json:"text"`
+	Data json.RawMessage `json:"data,omitempty"`
 }
