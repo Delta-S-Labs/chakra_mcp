@@ -37,7 +37,12 @@ export interface Agent {
   /** Capabilities others can see (`network`, public ones included). On
    *  `GET /v1/agents` only. */
   network_capability_count?: number;
+  /** Who may call it: friends (default), anyone, or nobody. Always
+   *  `nobody` for push agents. */
+  accept_calls?: AcceptCalls;
 }
+
+export type AcceptCalls = "friends" | "anyone" | "nobody";
 
 export interface Capability {
   id: string;
@@ -99,6 +104,7 @@ export interface UpdateAgentRequest {
   visibility?: Visibility;
   /** Pass undefined to leave unchanged, null to clear, string to set. */
   endpoint_url?: string | null;
+  accept_calls?: AcceptCalls;
 }
 
 export interface CreateCapabilityRequest {
@@ -241,6 +247,7 @@ export function updateAgent(token: string, id: string, body: UpdateAgentRequest)
   if (body.endpoint_url !== undefined && body.endpoint_url !== null) {
     payload.endpoint_url = body.endpoint_url;
   }
+  if (body.accept_calls !== undefined) payload.accept_calls = body.accept_calls;
   return request<Agent>(`/v1/agents/${encodeURIComponent(id)}`, {
     method: "PATCH",
     token,
@@ -1021,4 +1028,146 @@ export function revokeConsent(token: string, id: string) {
     `/v1/consents/${encodeURIComponent(id)}/revoke`,
     { method: "POST", token },
   );
+}
+
+// ─── Calls ───────────────────────────────────────────────
+// Two-way sessions between two agents (calls spec 2026-10-25). Owners read
+// them and can end them or delete their content; agents do the talking.
+
+export type CallState = "ringing" | "active" | "declined" | "missed" | "ended";
+export type CallEndedBy = "caller" | "callee" | "owner" | "idle" | "gone";
+
+export interface CallParty {
+  /** `null` once the agent is deleted. */
+  agent_id: string | null;
+  account_id: string;
+  display_name: string | null;
+  account_slug: string | null;
+}
+
+export interface Call {
+  id: string;
+  state: CallState;
+  caller: CallParty;
+  callee: CallParty;
+  /** `call`: the relay keeps the call's memory; `own`: each agent does. */
+  memory: "call" | "own";
+  memory_features: { tags: boolean; recall: boolean };
+  ttl_secs: number;
+  idle_secs: number;
+  topic: string | null;
+  created_at: string;
+  answered_at: string | null;
+  ended_at: string | null;
+  ended_by: CallEndedBy | null;
+  /** When the content will be deleted (set once the call is over). */
+  purge_at: string | null;
+  purged_at: string | null;
+  message_count: number;
+  last_message_at: string | null;
+}
+
+export type CallEntryKind =
+  | "invite"
+  | "message"
+  | "accepted"
+  | "declined"
+  | "ended"
+  | "missed"
+  | "invocation";
+
+export interface CallEntry {
+  seq: number;
+  kind: CallEntryKind;
+  from_agent_id: string | null;
+  /** `null` once the content is deleted, or for a blocked message. */
+  text: string | null;
+  data: unknown;
+  blocked: boolean;
+  safety?: SafetyFinding[];
+  invocation?: { id: string; capability: string | null; status: string | null };
+  created_at: string;
+}
+
+export interface CallMemoryItem {
+  seq: number;
+  from: string | null;
+  at: string;
+  text?: string;
+  /** For a short message: the one before it, for what it refers to. */
+  context?: string;
+  tags?: Record<string, number>;
+  invocation?: { id: string; capability: string; status: string };
+}
+
+export interface CallMemory {
+  pinned: CallMemoryItem[];
+  open: CallMemoryItem[];
+  recent: CallMemoryItem[];
+}
+
+export interface CallList {
+  calls: Call[];
+  next_cursor?: string;
+}
+
+export function listCalls(
+  token: string,
+  query: { agent_id?: string; state?: CallState; limit?: number; cursor?: string } = {},
+) {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(query)) {
+    if (v !== undefined && v !== "") qs.set(k, String(v));
+  }
+  const suffix = qs.toString() ? `?${qs}` : "";
+  return request<CallList>(`/v1/calls${suffix}`, { token });
+}
+
+export function getCall(token: string, id: string) {
+  return request<Call>(`/v1/calls/${encodeURIComponent(id)}`, { token });
+}
+
+export function listCallMessages(
+  token: string,
+  id: string,
+  query: { after?: number; limit?: number; q?: string } = {},
+) {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(query)) {
+    if (v !== undefined && v !== "") qs.set(k, String(v));
+  }
+  const suffix = qs.toString() ? `?${qs}` : "";
+  return request<CallEntry[]>(`/v1/calls/${encodeURIComponent(id)}/messages${suffix}`, {
+    token,
+  });
+}
+
+export function getCallMemory(token: string, id: string) {
+  return request<CallMemory>(`/v1/calls/${encodeURIComponent(id)}/memory`, { token });
+}
+
+/** An owner ends a call (web session only). */
+export function ownerEndCall(token: string, id: string) {
+  return request<Call>(`/v1/calls/${encodeURIComponent(id)}/owner-end`, {
+    method: "POST",
+    token,
+  });
+}
+
+/** An owner deletes a call's content now, for both sides (web session only). */
+export function deleteCallContent(token: string, id: string) {
+  return request<void>(`/v1/calls/${encodeURIComponent(id)}/content`, {
+    method: "DELETE",
+    token,
+  });
+}
+
+/** Whether this relay has calls switched on: its calls routes 404 when off. */
+export async function callsEnabled(token: string): Promise<boolean> {
+  try {
+    await listCalls(token, { limit: 1 });
+    return true;
+  } catch {
+    return false;
+  }
 }

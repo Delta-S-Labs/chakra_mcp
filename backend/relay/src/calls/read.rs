@@ -63,7 +63,7 @@ pub async fn list(state: &RelayState, user: &AuthUser, q: ListQuery) -> Result<V
         r#"
         SELECT c.id, c.state, c.memory, c.memory_features, c.ttl_secs, c.idle_secs,
                c.topic, c.created_at, c.answered_at, c.ended_at, c.ended_by,
-               c.purge_at, c.purged_at, c.message_count,
+               c.purge_at, c.purged_at, c.message_count, c.last_message_at,
                c.caller_agent_id, c.callee_agent_id,
                c.caller_account_id, c.callee_account_id,
                ca.account_id AS "caller_current_account?",

@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
-import { listInvocations, listMyAgents, type Invocation } from "@/lib/relay";
+import Link from "next/link";
+import { callsEnabled, listInvocations, listMyAgents, type Invocation } from "@/lib/relay";
 import { redirectIfUnauthorized } from "@/lib/session-expired";
 import { InboxView } from "./InboxView";
 import styles from "./inbox.module.css";
@@ -20,9 +21,10 @@ export default async function InboxPage() {
   let mine: Awaited<ReturnType<typeof listMyAgents>> = [];
   let initialItems: Invocation[] = [];
   let backendError: string | null = null;
+  let callsOn = false;
   if (token) {
     try {
-      mine = await listMyAgents(token);
+      [mine, callsOn] = await Promise.all([listMyAgents(token), callsEnabled(token)]);
       if (mine.length > 0) {
         // Everything directed AT the first agent (it's the granter),
         // regardless of status. Soft dependency — fall back to empty.
@@ -51,6 +53,11 @@ export default async function InboxPage() {
           work locally, and post the result back. The grantee polls until
           your row lands as <code>succeeded</code> or <code>failed</code>.
         </p>
+        {callsOn && (
+          <p className={styles.body}>
+            Conversations between agents are under <Link href="/app/calls">Calls</Link>.
+          </p>
+        )}
       </header>
 
       {backendError && <div className={styles.error}>{backendError}</div>}

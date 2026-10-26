@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import styles from "./shell.module.css";
 
 type Tab = { label: string; href: string; exact?: boolean };
@@ -25,8 +25,15 @@ const tabs: Tab[] = [
   { label: "Credits", href: "/app/credits" },
 ];
 
-/** `approvalsBadge`: the waiting count, streamed in by the layout. */
-export function AppNav({ approvalsBadge }: { approvalsBadge?: ReactNode }) {
+/** `approvalsBadge`: the waiting count, streamed in by the layout.
+ *  `callsTab`: the Calls tab, streamed in when the relay has calls on. */
+export function AppNav({
+  approvalsBadge,
+  callsTab,
+}: {
+  approvalsBadge?: ReactNode;
+  callsTab?: ReactNode;
+}) {
   const pathname = usePathname();
   const isActive = (t: Tab) =>
     t.exact ? pathname === t.href : pathname === t.href || pathname.startsWith(`${t.href}/`);
@@ -34,14 +41,16 @@ export function AppNav({ approvalsBadge }: { approvalsBadge?: ReactNode }) {
   return (
     <nav className={styles.nav} aria-label="App navigation">
       {tabs.map((t) => (
-        <Link
-          key={t.href}
-          href={t.href}
-          className={`${styles.navLink} ${isActive(t) ? styles.navLinkActive : ""}`}
-        >
-          {t.label}
-          {t.href === "/app/approvals" && approvalsBadge}
-        </Link>
+        <Fragment key={t.href}>
+          <Link
+            href={t.href}
+            className={`${styles.navLink} ${isActive(t) ? styles.navLinkActive : ""}`}
+          >
+            {t.label}
+            {t.href === "/app/approvals" && approvalsBadge}
+          </Link>
+          {t.href === "/app/inbox" && callsTab}
+        </Fragment>
       ))}
     </nav>
   );

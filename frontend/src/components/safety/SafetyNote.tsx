@@ -1,11 +1,18 @@
-import type { Safety } from "@/lib/relay";
-import { describeSafety } from "@/lib/safety";
+import type { Safety, SafetyFinding } from "@/lib/relay";
+import { describeFindings, describeSafety } from "@/lib/safety";
 import styles from "./safety.module.css";
 
-/** What message safety removed, flagged or blocked in a call, in words.
- *  Renders nothing when there's nothing to say. */
-export default function SafetyNote({ safety }: { safety: Safety | undefined | null }) {
-  const lines = describeSafety(safety);
+/** What message safety removed, flagged or blocked, in words: an
+ *  invocation's `safety`, or one call message's `findings`. Renders nothing
+ *  when there's nothing to say. */
+export default function SafetyNote({
+  safety,
+  findings,
+}: {
+  safety?: Safety | null;
+  findings?: SafetyFinding[] | null;
+}) {
+  const lines = findings ? describeFindings(findings, "message") : describeSafety(safety);
   if (!lines.length) return null;
   return (
     <div className={styles.note}>

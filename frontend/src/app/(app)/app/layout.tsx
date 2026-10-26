@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { AppNav } from "./AppNav";
+import { CallsTab } from "./CallsTab";
 import { BottomTabBar } from "./BottomTabBar";
 import { CommandPalette } from "./CommandPalette";
 import { UserMenu } from "./UserMenu";
@@ -57,6 +58,11 @@ export default async function AppShellLayout({ children }: { children: ReactNode
             approvalsBadge={
               <Suspense fallback={null}>
                 <ApprovalsCount />
+              </Suspense>
+            }
+            callsTab={
+              <Suspense fallback={null}>
+                <CallsTab />
               </Suspense>
             }
           />

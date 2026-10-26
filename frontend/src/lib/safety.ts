@@ -42,17 +42,26 @@ function counted(findings: SafetyFinding[]): string {
  *  number." Empty when there's nothing to say. */
 export function describeSafety(safety: Safety | undefined | null): string[] {
   if (!safety) return [];
+  return (["request", "reply"] as const).flatMap((part) =>
+    describeFindings(safety[part], part),
+  );
+}
+
+/** One line per action for one part's findings, e.g. a call message's:
+ *  "Removed from the message: a phone number." */
+export function describeFindings(
+  findings: SafetyFinding[] | undefined | null,
+  part: string,
+): string[] {
   const lines: string[] = [];
-  for (const part of ["request", "reply"] as const) {
-    const findings = safety[part] ?? [];
-    const of = (action: SafetyFinding["action"]) => findings.filter((f) => f.action === action);
-    const blocked = of("blocked");
-    const redacted = of("redacted");
-    const flagged = of("flagged");
-    if (blocked.length) lines.push(`Blocked the ${part}: ${counted(blocked)}.`);
-    if (redacted.length) lines.push(`Removed from the ${part}: ${counted(redacted)}.`);
-    if (flagged.length) lines.push(`Flagged in the ${part}: ${counted(flagged)}.`);
-  }
+  const of = (action: SafetyFinding["action"]) =>
+    (findings ?? []).filter((f) => f.action === action);
+  const blocked = of("blocked");
+  const redacted = of("redacted");
+  const flagged = of("flagged");
+  if (blocked.length) lines.push(`Blocked the ${part}: ${counted(blocked)}.`);
+  if (redacted.length) lines.push(`Removed from the ${part}: ${counted(redacted)}.`);
+  if (flagged.length) lines.push(`Flagged in the ${part}: ${counted(flagged)}.`);
   return lines;
 }
 
