@@ -80,6 +80,14 @@ install -m 0755 "$tmp/chakramcp" "$INSTALL_DIR/chakramcp"
 echo "==> Installed to $INSTALL_DIR/chakramcp"
 case ":$PATH:" in
   *":$INSTALL_DIR:"*) ;;
-  *) echo "Note: $INSTALL_DIR isn't on \$PATH — add it or move the binary." >&2 ;;
+  *)
+    echo "Note: $INSTALL_DIR isn't on \$PATH. To add it:" >&2
+    case "$(basename "${SHELL:-sh}")" in
+      zsh)  echo "  echo 'export PATH=\"$INSTALL_DIR:\$PATH\"' >> ~/.zshrc && exec zsh" >&2 ;;
+      bash) echo "  echo 'export PATH=\"$INSTALL_DIR:\$PATH\"' >> ~/.bashrc && exec bash" >&2 ;;
+      fish) echo "  fish_add_path $INSTALL_DIR" >&2 ;;
+      *)    echo "  export PATH=\"$INSTALL_DIR:\$PATH\"   (add it to your shell's startup file)" >&2 ;;
+    esac
+    ;;
 esac
 "$INSTALL_DIR/chakramcp" --version

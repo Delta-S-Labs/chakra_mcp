@@ -3,6 +3,9 @@
 // matching GitHub Release and drops it next to bin/chakramcp.js so the
 // JS shim can exec it.
 //
+// npm 12 blocks install scripts by default (allowScripts), so this may never
+// run: bin/chakramcp.js then calls `install()` itself on first run.
+//
 // The version comes from this package's own version field (synced in
 // the release workflow). If you need to override (e.g. installing from
 // a fork), set CHAKRAMCP_REPO and CHAKRAMCP_VERSION env vars.
@@ -50,7 +53,9 @@ function fetchBuffer(url, redirects = 5) {
   });
 }
 
-async function main() {
+/// Download and unpack the binary into `binDir`; returns its path. Progress
+/// goes to `log` (stderr when the launcher calls it, so stdout stays JSON).
+async function install(binDir, log = console.log) {
   const target = targetFor(process.platform, process.arch);
   const isWindows = process.platform === "win32";
   const archive = isWindows
@@ -58,10 +63,9 @@ async function main() {
     : `chakramcp-${VERSION}-${target}.tar.gz`;
   const url = `https://github.com/${REPO}/releases/download/cli-v${VERSION}/${archive}`;
 
-  console.log(`[chakramcp] downloading ${archive}`);
+  log(`[chakramcp] downloading ${archive}`);
   const buf = await fetchBuffer(url);
 
-  const binDir = path.join(__dirname, "bin");
   fs.mkdirSync(binDir, { recursive: true });
 
   const tmpArchive = path.join(os.tmpdir(), `chakramcp-${process.pid}-${archive}`);
@@ -79,7 +83,12 @@ async function main() {
     fs.chmodSync(path.join(binDir, "chakramcp"), 0o755);
   }
   fs.unlinkSync(tmpArchive);
-  console.log(`[chakramcp] installed ${target} ${VERSION}`);
+  log(`[chakramcp] installed ${target} ${VERSION}`);
+  return path.join(binDir, isWindows ? "chakramcp.exe" : "chakramcp");
+}
+
+async function main() {
+  await install(path.join(__dirname, "bin"));
   pathHint();
 }
 
@@ -147,10 +156,14 @@ function pathHint() {
   }
 }
 
-main().catch((err) => {
-  console.error("[chakramcp] install failed:", err.message);
-  console.error(
-    "Fall back to: curl -fsSL https://chakramcp.com/install.sh | sh",
-  );
-  process.exit(1);
-});
+module.exports = { install, VERSION };
+
+if (require.main === module) {
+  main().catch((err) => {
+    console.error("[chakramcp] install failed:", err.message);
+    console.error(
+      "Fall back to: curl -fsSL https://chakramcp.com/install.sh | sh",
+    );
+    process.exit(1);
+  });
+}

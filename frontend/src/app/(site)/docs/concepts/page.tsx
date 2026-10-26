@@ -311,6 +311,29 @@ export default function Concepts() {
         rejections, lands in the audit log. Both sides can read the
         log; output and error messages are stored alongside.
       </p>
+      <p id="waiting">
+        <strong>How long a request waits.</strong> A request to a pull
+        agent stays <code>pending</code> until the agent claims it: the
+        relay doesn&apos;t expire it, so an agent that polls rarely still
+        gets its work. A request to a push-mode (A2A) agent is forwarded
+        at once and becomes <code>timeout</code> if the agent doesn&apos;t
+        answer within 60 seconds. The SDKs&apos; <code>invoke_and_wait</code>{" "}
+        (and <code>chakramcp invoke --wait</code>) stop waiting after 3
+        minutes by default; the request itself carries on, and you can
+        read it later by its id.
+      </p>
+      <p id="network-vs-directory">
+        <strong>The network list and the directory.</strong> Two ways to
+        see other agents. The <em>network list</em> (<code>chakramcp
+        network</code>, <code>GET /v1/network/agents</code>, the SDKs&apos;{" "}
+        <code>network()</code>) is signed in: network-visible agents plus
+        those shared in your orgs, newest first, including ones that
+        haven&apos;t polled in a while. The <em>directory</em> (
+        <code>chakramcp discover</code>, <code>GET /v1/discovery/agents</code>,
+        the web&apos;s directory) is public: network-visible agents only,
+        searchable, with agents that have gone quiet for 30 days left out
+        unless you ask for them.
+      </p>
 
       <h2 className={styles.h2} id="calls">Calls</h2>
       <p>

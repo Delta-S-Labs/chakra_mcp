@@ -182,7 +182,11 @@ pub async fn search(State(state): State<RelayState>, Query(q): Query<DiscoveryQu
                 a.description,
                 a.mode,
                 a.tags,
-                a.friend_count,
+                -- Counted live: the column's refresh job was never built.
+                (SELECT count(*) FROM friendships f
+                  WHERE f.status = 'accepted'
+                    AND (f.proposer_agent_id = a.id OR f.target_agent_id = a.id))::int
+                    AS friend_count,
                 a.created_at,
                 acc.slug       AS account_slug,
                 acc.verified_at IS NOT NULL AS verified,
@@ -205,8 +209,8 @@ pub async fn search(State(state): State<RelayState>, Query(q): Query<DiscoveryQu
                -- Dormant pull agents are hidden unless asked for.
                AND ($10::boolean OR NOT (
                        a.mode = 'pull'
-                       AND (h.last_polled_at IS NULL
-                            OR h.last_polled_at < now() - interval '30 days')
+                       -- A new agent counts as seen when it's created.
+                       AND COALESCE(h.last_polled_at, a.created_at) < now() - interval '30 days'
                        AND NOT EXISTS (
                            SELECT 1 FROM agent_capabilities c
                             WHERE c.agent_id = a.id AND c.public_invoke = true)))
@@ -302,8 +306,8 @@ pub async fn search(State(state): State<RelayState>, Query(q): Query<DiscoveryQu
                AND a.visibility = 'network'
                AND ($7::boolean OR NOT (
                        a.mode = 'pull'
-                       AND (h.last_polled_at IS NULL
-                            OR h.last_polled_at < now() - interval '30 days')
+                       -- A new agent counts as seen when it's created.
+                       AND COALESCE(h.last_polled_at, a.created_at) < now() - interval '30 days'
                        AND NOT EXISTS (
                            SELECT 1 FROM agent_capabilities c
                             WHERE c.agent_id = a.id AND c.public_invoke = true)))
@@ -752,6 +756,41 @@ mod tests {
             .collect()
     }
 
+    /// Friends are counted live from accepted friendships.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn friend_counts_are_live(pool: PgPool) {
+        let acct = seed_account(&pool, "acme", false).await;
+        let a = seed_agent(&pool, acct, "a", "A", "first", "pull", &[]).await;
+        let b = seed_agent(&pool, acct, "b", "B", "second", "pull", &[]).await;
+        let c = seed_agent(&pool, acct, "c", "C", "third", "pull", &[]).await;
+        for (p, t, status) in [(a, b, "accepted"), (a, c, "proposed")] {
+            sqlx::query(
+                "INSERT INTO friendships (id, proposer_agent_id, target_agent_id, status)
+                 VALUES ($1, $2, $3, $4)",
+            )
+            .bind(Uuid::now_v7())
+            .bind(p)
+            .bind(t)
+            .bind(status)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        let body = search_url(pool, "").await;
+        let count = |slug: &str| {
+            body["agents"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|x| x["agent_slug"] == slug)
+                .unwrap()["friend_count"]
+                .clone()
+        };
+        assert_eq!(count("a"), 1);
+        assert_eq!(count("b"), 1);
+        assert_eq!(count("c"), 0, "a proposal isn't a friendship");
+    }
+
     #[sqlx::test(migrations = "../migrations")]
     async fn dormant_agents_are_hidden_unless_asked_for(pool: PgPool) {
         let acct = seed_account(&pool, "acme", false).await;
@@ -776,7 +815,23 @@ mod tests {
             &[],
         )
         .await;
+        // Never polled: new ones count as seen when created, old ones are dormant.
         seed_agent(&pool, acct, "never", "Never", "never polled", "pull", &[]).await;
+        let old = seed_agent(
+            &pool,
+            acct,
+            "old",
+            "Old",
+            "never polled, made long ago",
+            "pull",
+            &[],
+        )
+        .await;
+        sqlx::query("UPDATE agents SET created_at = now() - interval '40 days' WHERE id = $1")
+            .bind(old)
+            .execute(&pool)
+            .await
+            .unwrap();
         let public = seed_agent(
             &pool,
             acct,
@@ -806,12 +861,12 @@ mod tests {
         let body = get_json(state.clone(), "/v1/discovery/agents").await;
         let mut shown = slugs(&body);
         shown.sort();
-        assert_eq!(shown, ["online", "public", "pushy", "recent"]);
-        assert_eq!(body["total_estimate"], 4, "the count uses the same filter");
+        assert_eq!(shown, ["never", "online", "public", "pushy", "recent"]);
+        assert_eq!(body["total_estimate"], 5, "the count uses the same filter");
 
         let all = get_json(state, "/v1/discovery/agents?include_dormant=true").await;
-        assert_eq!(all["agents"].as_array().unwrap().len(), 6);
-        assert_eq!(all["total_estimate"], 6);
+        assert_eq!(all["agents"].as_array().unwrap().len(), 7);
+        assert_eq!(all["total_estimate"], 7);
 
         let row = |slug: &str| {
             body["agents"]

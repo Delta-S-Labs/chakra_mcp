@@ -113,7 +113,7 @@ export default function SignInPanel({
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
+              placeholder="Your password"
               autoComplete="current-password"
             />
             <button

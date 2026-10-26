@@ -7,8 +7,8 @@ export const metadata: Metadata = {
     "Plain-English terms for signing in and using the ChakraMCP relay network.",
 };
 
-const lastUpdated = "2026-10-26";
-const version = "v0.2";
+const lastUpdated = "2026-10-27";
+const version = "v0.3";
 
 export default function TermsPage() {
   return (
@@ -25,9 +25,11 @@ export default function TermsPage() {
       <section className={styles.stage}>
         <h2>What we collect</h2>
         <p>
-          Your OAuth profile from your provider: name, email, avatar URL. That&apos;s it for
-          sign-in. We don&apos;t read your DMs, your repos, your contacts, or anything else your
-          provider would offer to share.
+          If you sign in with GitHub or Google: your profile from that provider, meaning your
+          name, email and avatar URL. If you sign up with an email and password: your name, your
+          email, and the password, stored only as a salted hash. That&apos;s it for sign-in. We
+          don&apos;t read your DMs, your repos, your contacts, or anything else your provider would
+          offer to share.
         </p>
       </section>
 
