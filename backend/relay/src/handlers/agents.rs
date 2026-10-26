@@ -1146,7 +1146,10 @@ pub async fn delete(
     }
 
     // Requests to or from it that wait for an owner's approval can't be
-    // delivered any more: cancel them with it (owner consent §9).
+    // delivered any more: cancel them with it (owner consent §9). Its
+    // grants, either way, are revoked like a manual revoke, and requests
+    // still queued on them, or queued to it, are rejected: nothing can
+    // deliver them now.
     let mut tx = state.db.begin().await?;
     sqlx::query!(
         r#"UPDATE agents SET tombstoned_at = now() WHERE id = $1"#,
@@ -1155,6 +1158,34 @@ pub async fn delete(
     .execute(&mut *tx)
     .await?;
     crate::consent::cascade::cancel_for_agent(&mut tx, id, "Agent deleted").await?;
+    let revoked = sqlx::query!(
+        r#"
+        WITH revoked AS (
+            UPDATE grants
+               SET status = 'revoked',
+                   revoked_at = now(),
+                   revoked_by_user_id = $2,
+                   revoke_reason = 'agent deleted'
+             WHERE status = 'active'
+               AND (granter_agent_id = $1 OR grantee_agent_id = $1)
+            RETURNING id
+        ),
+        rejected AS (
+            UPDATE relay_invocations
+               SET status = 'rejected',
+                   error_message = COALESCE(error_message, 'agent deleted while queued')
+             WHERE status = 'pending'
+               AND (grant_id IN (SELECT id FROM revoked) OR granter_agent_id = $1)
+            RETURNING id
+        )
+        SELECT COALESCE((SELECT array_agg(id) FROM revoked), '{}') AS "revoked!",
+               (SELECT count(*) FROM rejected) AS "rejected!"
+        "#,
+        id,
+        user.user_id,
+    )
+    .fetch_one(&mut *tx)
+    .await?;
     tx.commit().await?;
 
     crate::events::record_audit(
@@ -1166,7 +1197,10 @@ pub async fn delete(
         Some(id),
         None,
         "tombstoned agent",
-        serde_json::json!({}),
+        serde_json::json!({
+            "grants_revoked": revoked.revoked,
+            "invocations_rejected": revoked.rejected,
+        }),
     )
     .await;
 

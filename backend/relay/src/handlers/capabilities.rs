@@ -169,8 +169,9 @@ pub async fn list(
     Path(agent_id): Path<Uuid>,
 ) -> ApiResult<Json<Vec<CapabilityDto>>> {
     // Members see all; non-members see only network-visible capabilities of network agents.
+    // A deleted agent has no capabilities to show.
     let agent = sqlx::query!(
-        r#"SELECT account_id, visibility FROM agents WHERE id = $1"#,
+        r#"SELECT account_id, visibility FROM agents WHERE id = $1 AND tombstoned_at IS NULL"#,
         agent_id
     )
     .fetch_optional(&state.db)

@@ -675,6 +675,14 @@ pub(crate) async fn authorize_and_enqueue_trusted(
                     AND f.target_agent_id = g.granter_agent_id)
             )
         WHERE g.id = $1
+          -- Deleted agents, or agents of deleted accounts, neither call
+          -- nor get called (their grants are revoked too).
+          AND ga.tombstoned_at IS NULL
+          AND ea.tombstoned_at IS NULL
+          AND NOT EXISTS (
+              SELECT 1 FROM accounts x
+               WHERE x.id IN (ga.account_id, ea.account_id)
+                 AND x.tombstoned_at IS NOT NULL)
         LIMIT 1
         "#,
         grant_id,
@@ -1033,7 +1041,10 @@ async fn invoke_public(
                ga.visibility AS granter_visibility, ga.mode AS granter_mode
         FROM agent_capabilities cap
         JOIN agents ga ON ga.id = cap.agent_id
+        JOIN accounts gacc ON gacc.id = ga.account_id
         WHERE cap.id = $1
+          AND ga.tombstoned_at IS NULL
+          AND gacc.tombstoned_at IS NULL
         "#,
         capability_id,
     )
@@ -1358,11 +1369,13 @@ pub async fn inbox(
         .clamp(1, INBOX_MAX_LIMIT);
 
     // Caller must be a member of the agent's account.
-    let agent_account =
-        sqlx::query_scalar!(r#"SELECT account_id FROM agents WHERE id = $1"#, q.agent_id,)
-            .fetch_optional(&state.db)
-            .await?
-            .ok_or(ApiError::NotFound)?;
+    let agent_account = sqlx::query_scalar!(
+        r#"SELECT account_id FROM agents WHERE id = $1 AND tombstoned_at IS NULL"#,
+        q.agent_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(ApiError::NotFound)?;
     if !user_is_member(&state.db, user.user_id, agent_account).await? {
         return Err(ApiError::Forbidden);
     }
@@ -4665,5 +4678,247 @@ mod safety_reply_tests {
             error.contains("Ping me at [contact removed] instead"),
             "{error}"
         );
+    }
+}
+
+#[cfg(test)]
+mod deleted_agent_tests {
+    //! A deleted agent neither calls nor gets called (MCP and discovery
+    //! spec §4.1): deleting it revokes its grants and rejects requests still
+    //! queued, and every lookup skips it.
+    use super::legacy_v01_contract_tests::{config, seed_demo, DemoFixture};
+    use super::public_invoke_tests::{invoke_req, seed_public};
+    use axum::body::Body;
+    use axum::http::{header, Request, StatusCode};
+    use http_body_util::BodyExt;
+    use serde_json::{json, Value};
+    use sha2::{Digest, Sha256};
+    use sqlx::PgPool;
+    use tower::ServiceExt;
+    use uuid::Uuid;
+
+    fn request(method: &str, uri: &str, token: &str, body: Option<Value>) -> Request<Body> {
+        let b = Request::builder()
+            .method(method)
+            .uri(uri)
+            .header(header::AUTHORIZATION, format!("Bearer {token}"));
+        match body {
+            Some(v) => b
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(serde_json::to_vec(&v).unwrap()))
+                .unwrap(),
+            None => b.body(Body::empty()).unwrap(),
+        }
+    }
+
+    async fn send(pool: &PgPool, req: Request<Body>) -> (StatusCode, Value) {
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        let res = app.oneshot(req).await.unwrap();
+        let status = res.status();
+        let bytes = res.into_body().collect().await.unwrap().to_bytes();
+        (
+            status,
+            serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+        )
+    }
+
+    fn invoke(f: &DemoFixture) -> Value {
+        json!({ "grant_id": f.grant_id, "grantee_agent_id": f.grantee_agent_id, "input": {} })
+    }
+
+    /// An API key for the granter side (the fixture only gives the caller one).
+    async fn granter_key(pool: &PgPool, f: &DemoFixture) -> String {
+        let user: Uuid = sqlx::query_scalar(
+            "SELECT m.user_id FROM account_memberships m
+               JOIN agents a ON a.account_id = m.account_id WHERE a.id = $1",
+        )
+        .bind(f.granter_agent_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        let key = format!("ck_granter_{user}");
+        let hash = hex::encode(Sha256::digest(key.as_bytes()));
+        sqlx::query(
+            "INSERT INTO api_keys (id, user_id, key_hash, name, key_prefix)
+             VALUES ($1, $2, $3, 'granter', 'ck_granter')",
+        )
+        .bind(Uuid::now_v7())
+        .bind(user)
+        .bind(hash)
+        .execute(pool)
+        .await
+        .unwrap();
+        key
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn deleting_an_agent_revokes_its_grants_and_rejects_queued_requests(pool: PgPool) {
+        let f = seed_demo(&pool).await;
+        let (status, body) = send(
+            &pool,
+            request("POST", "/v1/invoke", &f.caller_token, Some(invoke(&f))),
+        )
+        .await;
+        assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+        let queued = body["invocation_id"].as_str().unwrap().to_owned();
+
+        let (status, _) = send(
+            &pool,
+            request(
+                "DELETE",
+                &format!("/v1/agents/{}", f.grantee_agent_id),
+                &f.caller_token,
+                None,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+
+        let (grant_status, reason): (String, Option<String>) =
+            sqlx::query_as("SELECT status, revoke_reason FROM grants WHERE id = $1")
+                .bind(f.grant_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(grant_status, "revoked");
+        assert_eq!(reason.as_deref(), Some("agent deleted"));
+
+        let inv_status: String =
+            sqlx::query_scalar("SELECT status FROM relay_invocations WHERE id = $1::uuid")
+                .bind(&queued)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(inv_status, "rejected");
+
+        let metadata: Value = sqlx::query_scalar(
+            "SELECT metadata FROM audit_events WHERE action = 'agent.delete' AND resource_id = $1",
+        )
+        .bind(f.grantee_agent_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(metadata["grants_revoked"], json!([f.grant_id]));
+        assert_eq!(metadata["invocations_rejected"], json!(1));
+
+        // The grant no longer carries a call.
+        let (status, _) = send(
+            &pool,
+            request("POST", "/v1/invoke", &f.caller_token, Some(invoke(&f))),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn a_deleted_agent_has_no_inbox_capabilities_or_friendships(pool: PgPool) {
+        let f = seed_demo(&pool).await;
+        let granter = granter_key(&pool, &f).await;
+        let (status, _) = send(
+            &pool,
+            request(
+                "DELETE",
+                &format!("/v1/agents/{}", f.granter_agent_id),
+                &granter,
+                None,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+
+        let inbox = format!("/v1/inbox?agent_id={}", f.granter_agent_id);
+        let (status, _) = send(&pool, request("GET", &inbox, &granter, None)).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        let caps = format!("/v1/agents/{}/capabilities", f.granter_agent_id);
+        let (status, _) = send(&pool, request("GET", &caps, &f.caller_token, None)).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        let propose = json!({
+            "proposer_agent_id": f.grantee_agent_id,
+            "target_agent_id": f.granter_agent_id,
+        });
+        let (status, _) = send(
+            &pool,
+            request("POST", "/v1/friendships", &f.caller_token, Some(propose)),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        // MCP's network list leaves it out too.
+        let rpc = json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": { "name": "list_network_agents", "arguments": {} },
+        });
+        let (status, body) = send(&pool, request("POST", "/mcp", &f.caller_token, Some(rpc))).await;
+        assert_eq!(status, StatusCode::OK);
+        let listed = body["result"].to_string();
+        assert!(listed.contains(&f.grantee_agent_id.to_string()), "{listed}");
+        assert!(
+            !listed.contains(&f.granter_agent_id.to_string()),
+            "{listed}"
+        );
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn a_deleted_agents_public_capability_is_404(pool: PgPool) {
+        let f = seed_public(&pool, 5, false).await;
+        sqlx::query("UPDATE agents SET tombstoned_at = now() WHERE id = $1")
+            .bind(f.granter_agent)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let (status, _) = send(
+            &pool,
+            invoke_req(
+                &f.invoker_token,
+                json!({
+                    "capability_id": f.public_cap,
+                    "grantee_agent_id": f.invoker_agent,
+                    "input": {"hi": 1}
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    /// Migration 0050 revokes grants of agents deleted before deletes did.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn migration_0050_revokes_grants_of_earlier_deletions(pool: PgPool) {
+        let f = seed_demo(&pool).await;
+        let (status, body) = send(
+            &pool,
+            request("POST", "/v1/invoke", &f.caller_token, Some(invoke(&f))),
+        )
+        .await;
+        assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+        // An old-style delete: tombstoned, grant left active.
+        sqlx::query("UPDATE agents SET tombstoned_at = now() WHERE id = $1")
+            .bind(f.granter_agent_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::raw_sql(include_str!(
+            "../../../migrations/0050_revoke_grants_of_deleted_agents.sql"
+        ))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let grant_status: String = sqlx::query_scalar("SELECT status FROM grants WHERE id = $1")
+            .bind(f.grant_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(grant_status, "revoked");
+        let rejected: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM relay_invocations WHERE grant_id = $1 AND status = 'rejected'",
+        )
+        .bind(f.grant_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(rejected, 1);
     }
 }
