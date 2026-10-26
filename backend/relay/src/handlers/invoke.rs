@@ -740,6 +740,9 @@ pub(crate) async fn authorize_and_enqueue_trusted(
     if !user_is_member(&state.db, user.user_id, row.grantee_account_id).await? {
         return Err(ApiError::Forbidden);
     }
+    // Acting as the grantee needs the credential's scope too (MCP and
+    // discovery spec §4.2), not membership alone.
+    crate::auth::require_scope(state, user, row.grantee_agent_id).await?;
 
     // Grant must be active and not expired.
     if row.grant_status != "active" {
@@ -1072,6 +1075,7 @@ async fn invoke_public(
     if !user_is_member(&state.db, user.user_id, invoker.account_id).await? {
         return Err(ApiError::Forbidden);
     }
+    crate::auth::require_scope(state, user, grantee_agent_id).await?;
     crate::calls::link::check(state, user, call, grantee_agent_id, cap.granter_agent_id).await?;
 
     // Self-invoke guard. Calling your own agent's public capability
@@ -1380,10 +1384,7 @@ pub async fn inbox(
     // agent, so require scope to manage it — membership alone isn't enough.
     // respond/report_result stay off this gate: they act only on rows
     // already claimed here, so gating the claim bounds them.
-    let grant = crate::auth::resolve_grant(&state.db, &user).await?;
-    if !crate::auth::grant_allows_agent(&state.db, &grant, q.agent_id).await? {
-        return Err(ApiError::Forbidden);
-    }
+    crate::auth::require_scope(&state, &user, q.agent_id).await?;
     // The agent is online (in memory; flushed in batches).
     state.heartbeats.record(q.agent_id);
 

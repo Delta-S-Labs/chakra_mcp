@@ -48,6 +48,9 @@ pub enum DenyReason {
     AuthInvalid,
     CallerAgentHeaderMissing,
     CallerAgentNotOwnedByCaller,
+    /// The caller agent is the user's, but outside the credential's agent
+    /// scope (MCP and discovery spec §4.2).
+    CallerAgentOutOfScope,
     CapabilityHeaderMissing,
     CapabilityHeaderInvalid,
     TargetAccountNotFound,
@@ -98,6 +101,8 @@ impl DenyReason {
             Self::InsufficientCredits => -32008,
             // -32009: System One compliance denial (→ HTTP 403).
             Self::ComplianceDenied => -32009,
+            // -32010: the credential can't act as the caller agent (→ HTTP 403).
+            Self::CallerAgentOutOfScope => -32010,
         }
     }
 
@@ -109,6 +114,7 @@ impl DenyReason {
             Self::AuthInvalid => "chk.auth.invalid",
             Self::CallerAgentHeaderMissing => "chk.auth.caller_agent_header_missing",
             Self::CallerAgentNotOwnedByCaller => "chk.auth.caller_agent_not_owned",
+            Self::CallerAgentOutOfScope => "chk.auth.out_of_scope",
             Self::CapabilityHeaderMissing => "chk.auth.capability_header_missing",
             Self::CapabilityHeaderInvalid => "chk.auth.capability_header_invalid",
             Self::TargetAccountNotFound => "chk.target.not_found",
@@ -132,6 +138,7 @@ impl DenyReason {
             Self::AuthInvalid => "invalid token",
             Self::CallerAgentHeaderMissing => "caller agent header required",
             Self::CallerAgentNotOwnedByCaller => "caller agent not owned by authenticated user",
+            Self::CallerAgentOutOfScope => "this credential can't act as that agent",
             Self::CapabilityHeaderMissing => "capability header required",
             Self::CapabilityHeaderInvalid => "capability header is not a valid UUID",
             Self::TargetAccountNotFound => "target account not found",

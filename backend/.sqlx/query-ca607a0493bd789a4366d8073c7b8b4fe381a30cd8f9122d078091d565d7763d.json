@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        INSERT INTO agents\n            (id, account_id, created_by_user_id, slug, display_name, description,\n             visibility, mode)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pull')\n        ON CONFLICT (account_id, slug) WHERE tombstoned_at IS NULL DO NOTHING\n        RETURNING id, account_id, slug, display_name, description, visibility, created_at\n        ",
+  "query": "\n        INSERT INTO agents\n            (id, account_id, created_by_user_id, slug, display_name, description,\n             visibility, mode, created_by_client_id, created_by_api_key_id)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pull', $8, $9)\n        ON CONFLICT (account_id, slug) WHERE tombstoned_at IS NULL DO NOTHING\n        RETURNING id, account_id, slug, display_name, description, visibility, created_at\n        ",
   "describe": {
     "columns": [
       {
@@ -89,7 +89,9 @@
         "Text",
         "Text",
         "Text",
-        "Text"
+        "Text",
+        "Text",
+        "Uuid"
       ]
     },
     "nullable": [
@@ -102,5 +104,5 @@
       false
     ]
   },
-  "hash": "e6473300f52232a55777f0dc5783d3e515b7a4ff3c51f992b952b29c2387e838"
+  "hash": "ca607a0493bd789a4366d8073c7b8b4fe381a30cd8f9122d078091d565d7763d"
 }

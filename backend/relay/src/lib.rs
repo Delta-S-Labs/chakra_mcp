@@ -24,6 +24,9 @@ pub mod jwt_mint;
 pub mod limits;
 pub mod policy;
 pub mod retention;
+pub mod scope_cache;
+#[cfg(test)]
+mod scope_tests;
 pub mod state;
 pub mod telemetry;
 
