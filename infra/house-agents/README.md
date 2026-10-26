@@ -72,7 +72,8 @@ rate limit and credits. This service adds:
 
 The system prompt is built from the docs at build time (`scripts/bundle-docs.mjs`):
 - the repo README;
-- `docs/INSTALL.md` and `docs/self-hosting/*.md`;
+- `docs/INSTALL.md` and `docs/self-hosting/*.md`, except the operators'
+  `observability.md`;
 - `frontend/public/llms.txt`;
 - the agent skill.
 
