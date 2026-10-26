@@ -343,10 +343,7 @@ pub async fn propose(
 
     // Scope gate (migration 0027): proposing acts on the proposer agent's
     // behalf, so a scoped credential must be permitted to manage it.
-    let grant_scope = crate::auth::resolve_grant(&state.db, &user).await?;
-    if !crate::auth::grant_allows_agent(&state.db, &grant_scope, req.proposer_agent_id).await? {
-        return Err(ApiError::Forbidden);
-    }
+    crate::auth::require_scope(&state, &user, req.proposer_agent_id).await?;
 
     // Target must exist; the unique partial index will block duplicate
     // active proposals via a 23505 SQLSTATE.
@@ -436,10 +433,7 @@ pub async fn cancel(
 
     // Scope gate (migration 0027): cancelling acts on the proposer agent's
     // behalf, so require scope to manage it.
-    let grant_scope = crate::auth::resolve_grant(&state.db, &user).await?;
-    if !crate::auth::grant_allows_agent(&state.db, &grant_scope, row.proposer_agent_id).await? {
-        return Err(ApiError::Forbidden);
-    }
+    crate::auth::require_scope(&state, &user, row.proposer_agent_id).await?;
 
     sqlx::query!(
         r#"
@@ -500,10 +494,7 @@ pub async fn accept(
 
     // Scope gate (migration 0027): accepting acts on the target agent's
     // behalf, so require scope to manage it.
-    let grant_scope = crate::auth::resolve_grant(&state.db, &user).await?;
-    if !crate::auth::grant_allows_agent(&state.db, &grant_scope, row.target_agent_id).await? {
-        return Err(ApiError::Forbidden);
-    }
+    crate::auth::require_scope(&state, &user, row.target_agent_id).await?;
 
     // Message safety (when on): the reply is a note to the proposer.
     let req = ResponseRequest {
@@ -578,10 +569,7 @@ pub async fn reject(
 
     // Scope gate (migration 0027): rejecting acts on the target agent's
     // behalf, so require scope to manage it.
-    let grant_scope = crate::auth::resolve_grant(&state.db, &user).await?;
-    if !crate::auth::grant_allows_agent(&state.db, &grant_scope, row.target_agent_id).await? {
-        return Err(ApiError::Forbidden);
-    }
+    crate::auth::require_scope(&state, &user, row.target_agent_id).await?;
 
     // Message safety (when on): the reply is a note to the proposer.
     let req = ResponseRequest {
@@ -660,10 +648,7 @@ pub async fn counter(
     // Scope gate (migration 0027): countering acts on the target agent's
     // behalf (it opens a reverse proposal from that agent), so require
     // scope to manage it.
-    let grant_scope = crate::auth::resolve_grant(&state.db, &user).await?;
-    if !crate::auth::grant_allows_agent(&state.db, &grant_scope, row.target_agent_id).await? {
-        return Err(ApiError::Forbidden);
-    }
+    crate::auth::require_scope(&state, &user, row.target_agent_id).await?;
 
     // Message safety (when on): both messages are notes to the other side.
     let req = CounterRequest {

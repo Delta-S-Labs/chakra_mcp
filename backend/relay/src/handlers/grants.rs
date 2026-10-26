@@ -348,10 +348,7 @@ pub async fn create(
     // agent's behalf (it exposes that agent's capability), so a scoped
     // credential must be permitted to manage the granter agent — account
     // membership alone is not enough.
-    let grant_scope = crate::auth::resolve_grant(&state.db, &user).await?;
-    if !crate::auth::grant_allows_agent(&state.db, &grant_scope, req.granter_agent_id).await? {
-        return Err(ApiError::Forbidden);
-    }
+    crate::auth::require_scope(&state, &user, req.granter_agent_id).await?;
 
     // Grantee must exist.
     let _grantee_exists = sqlx::query_scalar!(
@@ -461,10 +458,7 @@ pub async fn revoke(
 
     // Scope gate (migration 0027): revoking acts on the granter agent's
     // grants, so require scope to manage that agent, not just membership.
-    let grant_scope = crate::auth::resolve_grant(&state.db, &user).await?;
-    if !crate::auth::grant_allows_agent(&state.db, &grant_scope, row.granter_agent_id).await? {
-        return Err(ApiError::Forbidden);
-    }
+    crate::auth::require_scope(&state, &user, row.granter_agent_id).await?;
 
     // Atomic: flip the grant to revoked AND cancel any in-flight
     // invocations that depend on it. Without this second UPDATE the

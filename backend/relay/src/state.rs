@@ -55,6 +55,9 @@ pub struct RelayState {
     pub usage_retention_days: Option<u32>,
     /// The signing key for consent tokens, cached (owner consent §6).
     pub consent_signer: Arc<crate::consent::signer::ConsentSigner>,
+    /// Which agents each credential may act as, for 30 s (MCP and discovery
+    /// spec §4.2): scope checks on the invoke path read only memory.
+    pub scope_cache: Arc<crate::scope_cache::ScopeCache>,
     /// Calls settings (`CALLS_*`); off by default.
     pub calls: crate::calls::CallsConfig,
     /// The TypeSafe client for call memory (calls spec §8): set when
@@ -83,6 +86,7 @@ impl RelayState {
             featured_account: None,
             usage_retention_days: Some(crate::retention::DEFAULT_USAGE_RETENTION_DAYS),
             consent_signer,
+            scope_cache: Arc::default(),
             // Off until the binary reads the settings (`with_calls`).
             calls: crate::calls::CallsConfig {
                 enabled: false,

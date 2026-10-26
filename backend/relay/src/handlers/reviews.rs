@@ -220,10 +220,7 @@ pub async fn write(
 
     // Scope (migration 0027): a review is authored AS the reviewer agent,
     // so require scope to manage it — not just membership of its account.
-    let grant = crate::auth::resolve_grant(&state.db, &user).await?;
-    if !crate::auth::grant_allows_agent(&state.db, &grant, req.reviewer_agent_id).await? {
-        return Err(ApiError::Forbidden);
-    }
+    crate::auth::require_scope(&state, &user, req.reviewer_agent_id).await?;
 
     // 4. Every tag must belong to the target AND the reviewer must
     //    have a non-'rejected' invocation of it. One query verifies
@@ -556,10 +553,7 @@ async fn set_hidden(
 
     // Scope (migration 0027): hiding/unhiding moderates the target agent's
     // reviews, so require scope to manage that agent.
-    let grant = crate::auth::resolve_grant(&state.db, user).await?;
-    if !crate::auth::grant_allows_agent(&state.db, &grant, target_agent_id).await? {
-        return Err(ApiError::Forbidden);
-    }
+    crate::auth::require_scope(state, user, target_agent_id).await?;
 
     let updated = sqlx::query!(
         r#"

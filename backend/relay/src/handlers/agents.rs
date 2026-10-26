@@ -755,6 +755,8 @@ pub async fn create(
             .await?;
         }
     }
+    // The credential just gained an agent: its cached scope is stale.
+    state.scope_cache.forget(crate::auth::credential(&user));
 
     let acc = sqlx::query!(
         r#"SELECT slug, display_name FROM accounts WHERE id = $1"#,
@@ -869,10 +871,7 @@ pub async fn update(
     // Scope gate (migration 0027): membership in the agent's account is
     // necessary but not sufficient — the caller's credential must also be
     // permitted to manage THIS specific agent (all / own / selected).
-    let grant = crate::auth::resolve_grant(&state.db, &user).await?;
-    if !crate::auth::grant_allows_agent(&state.db, &grant, id).await? {
-        return Err(ApiError::Forbidden);
-    }
+    crate::auth::require_scope(&state, &user, id).await?;
 
     if let Some(v) = req.accept_calls.as_deref() {
         if !matches!(v, "friends" | "anyone" | "nobody") {
@@ -1139,10 +1138,7 @@ pub async fn delete(
     // Scope gate (migration 0027): even an account admin acting through a
     // scoped credential may only delete agents that credential is allowed
     // to manage (all / own / selected).
-    let grant = crate::auth::resolve_grant(&state.db, &user).await?;
-    if !crate::auth::grant_allows_agent(&state.db, &grant, id).await? {
-        return Err(ApiError::Forbidden);
-    }
+    crate::auth::require_scope(&state, &user, id).await?;
 
     if row.tombstoned_at.is_some() {
         // Idempotent: re-tombstoning a tombstoned agent is a no-op.

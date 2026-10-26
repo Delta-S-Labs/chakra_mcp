@@ -335,6 +335,15 @@ pub async fn rotate(
     )
     .execute(&mut *tx)
     .await?;
+    // And the agents it created: an `own` key finds its agents by
+    // `created_by_api_key_id`, so they move to the new id too.
+    sqlx::query!(
+        r#"UPDATE agents SET created_by_api_key_id = $1 WHERE created_by_api_key_id = $2"#,
+        new_id,
+        old.id,
+    )
+    .execute(&mut *tx)
+    .await?;
 
     // Retire the predecessor. Once this commits, any in-flight request
     // using the old plaintext starts failing at the auth extractor.
@@ -786,5 +795,63 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["total_requests"], 0);
         assert_eq!(json["key_id"], serde_json::json!(key_id));
+    }
+
+    /// An `own` key finds its agents by `created_by_api_key_id`, so
+    /// rotating it moves them to the new key id rather than stranding them.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn rotate_keeps_an_own_keys_agents(pool: PgPool) {
+        let (user, jwt, personal) = seed_user_with_personal(&pool, "alice").await;
+        let agent_id = seed_agent(&pool, personal, "a1", user.user_id).await;
+        let state = crate::AppState::new(pool.clone(), test_config());
+
+        let res = crate::router(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/api-keys")
+                    .header(header::AUTHORIZATION, format!("Bearer {jwt}"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::json!({ "name": "own key", "agent_scope": "own" }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(res.status().is_success());
+        let v: serde_json::Value =
+            serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        let old_id: uuid::Uuid = v["api_key"]["id"].as_str().unwrap().parse().unwrap();
+        sqlx::query("UPDATE agents SET created_by_api_key_id = $1 WHERE id = $2")
+            .bind(old_id)
+            .bind(agent_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let res = crate::router(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/api-keys/{old_id}/rotate"))
+                    .header(header::AUTHORIZATION, format!("Bearer {jwt}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CREATED);
+        let v: serde_json::Value =
+            serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        let new_id: uuid::Uuid = v["api_key"]["id"].as_str().unwrap().parse().unwrap();
+
+        let by: Option<uuid::Uuid> =
+            sqlx::query_scalar("SELECT created_by_api_key_id FROM agents WHERE id = $1")
+                .bind(agent_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(by, Some(new_id));
     }
 }

@@ -627,21 +627,21 @@ async fn call_tool(
         "list_my_accounts" => list_my_accounts(&state.db, user).await,
         "list_my_agents" => list_my_agents(&state.db, user).await,
         "list_network_agents" => list_network_agents(&state.db, user).await,
-        "list_grants" => list_grants(&state.db, user, p.arguments).await,
-        "list_friendships" => list_friendships(&state.db, user, p.arguments).await,
+        "list_grants" => list_grants(state, user, p.arguments).await,
+        "list_friendships" => list_friendships(state, user, p.arguments).await,
         "invoke" => invoke(state, user, p.arguments).await.map(|(value, sig)| {
             signals = sig;
             value
         }),
-        "poll_invocation" => poll_invocation(&state.db, user, p.arguments).await,
+        "poll_invocation" => poll_invocation(state, user, p.arguments).await,
         "pull_inbox" => pull_inbox(state, user, p.arguments).await,
         "pull_notices" => pull_notices(state, user, p.arguments).await,
         "consent_status" => consent_status(state, user, p.arguments).await,
-        "list_invocations" => list_invocations(&state.db, user, p.arguments).await,
+        "list_invocations" => list_invocations(state, user, p.arguments).await,
         "respond" => respond(state, user, p.arguments).await,
         "propose_friendship" => propose_friendship(state, user, p.arguments).await,
-        "create_agent" => create_agent(&state.db, user, p.arguments).await,
-        "publish_capability" => publish_capability(&state.db, user, p.arguments).await,
+        "create_agent" => create_agent(state, user, p.arguments).await,
+        "publish_capability" => publish_capability(state, user, p.arguments).await,
         // ── REST-handler bridges (full parity with CLI/SDKs) ──
         "get_agent" => bridge_get_agent(state, user, p.arguments).await,
         "update_agent" => bridge_update_agent(state, user, p.arguments).await,
@@ -848,7 +848,15 @@ async fn list_network_agents(db: &PgPool, user: &AuthUser) -> Result<Value, ApiE
         .collect::<Vec<_>>()))
 }
 
-async fn list_invocations(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
+async fn list_invocations(
+    state: &RelayState,
+    user: &AuthUser,
+    args: Value,
+) -> Result<Value, ApiError> {
+    let db = &state.db;
+    // Only rows touching an agent the credential may act as (MCP and
+    // discovery spec §4.2), as REST's reads are.
+    let scope = crate::auth::agents_in_scope(state, user).await?;
     #[derive(Deserialize, Default)]
     struct A {
         direction: Option<String>,
@@ -923,6 +931,7 @@ async fn list_invocations(db: &PgPool, user: &AuthUser, args: Value) -> Result<V
 
     Ok(json!(rows
         .into_iter()
+        .filter(|r| crate::scope_cache::allows_either(&scope, r.granter_agent_id.unwrap_or_default(), r.grantee_agent_id.unwrap_or_default()))
         .map(|r| {
             let mut item = json!({
                 "id": r.id,
@@ -954,7 +963,11 @@ async fn list_invocations(db: &PgPool, user: &AuthUser, args: Value) -> Result<V
         .collect::<Vec<_>>()))
 }
 
-async fn list_grants(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
+async fn list_grants(state: &RelayState, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
+    let db = &state.db;
+    // Only rows touching an agent the credential may act as (MCP and
+    // discovery spec §4.2), as REST's reads are.
+    let scope = crate::auth::agents_in_scope(state, user).await?;
     #[derive(Deserialize, Default)]
     struct A {
         direction: Option<String>,
@@ -986,6 +999,11 @@ async fn list_grants(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value,
 
     Ok(json!(rows
         .into_iter()
+        .filter(|r| crate::scope_cache::allows_either(
+            &scope,
+            r.granter_agent_id,
+            r.grantee_agent_id
+        ))
         .map(|r| json!({
             "id": r.id,
             "status": r.status,
@@ -1002,7 +1020,15 @@ async fn list_grants(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value,
         .collect::<Vec<_>>()))
 }
 
-async fn list_friendships(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
+async fn list_friendships(
+    state: &RelayState,
+    user: &AuthUser,
+    args: Value,
+) -> Result<Value, ApiError> {
+    let db = &state.db;
+    // Only rows touching an agent the credential may act as (MCP and
+    // discovery spec §4.2), as REST's reads are.
+    let scope = crate::auth::agents_in_scope(state, user).await?;
     #[derive(Deserialize, Default)]
     struct A {
         direction: Option<String>,
@@ -1037,6 +1063,11 @@ async fn list_friendships(db: &PgPool, user: &AuthUser, args: Value) -> Result<V
 
     Ok(json!(rows
         .into_iter()
+        .filter(|r| crate::scope_cache::allows_either(
+            &scope,
+            r.proposer_agent_id,
+            r.target_agent_id
+        ))
         .map(|r| json!({
             "id": r.id,
             "status": r.status,
@@ -1137,7 +1168,15 @@ async fn invoke(
     }
 }
 
-async fn poll_invocation(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
+async fn poll_invocation(
+    state: &RelayState,
+    user: &AuthUser,
+    args: Value,
+) -> Result<Value, ApiError> {
+    let db = &state.db;
+    // Only rows touching an agent the credential may act as (MCP and
+    // discovery spec §4.2), as REST's reads are.
+    let scope = crate::auth::agents_in_scope(state, user).await?;
     #[derive(Deserialize)]
     struct A {
         invocation_id: Uuid,
@@ -1150,6 +1189,7 @@ async fn poll_invocation(db: &PgPool, user: &AuthUser, args: Value) -> Result<Va
         SELECT i.id, i.status, i.elapsed_ms, i.error_message,
                i.input_preview, i.output_preview, i.trust_snapshot,
                i.created_at, i.claimed_at, i.capability_name, i.call_id,
+               i.granter_agent_id, i.grantee_agent_id,
                EXISTS(
                    SELECT 1 FROM account_memberships m
                    JOIN agents a ON a.account_id = m.account_id
@@ -1174,7 +1214,13 @@ async fn poll_invocation(db: &PgPool, user: &AuthUser, args: Value) -> Result<Va
     .await?
     .ok_or(ApiError::NotFound)?;
 
-    if !r.may_view {
+    if !r.may_view
+        || !crate::scope_cache::allows_either(
+            &scope,
+            r.granter_agent_id.unwrap_or_default(),
+            r.grantee_agent_id.unwrap_or_default(),
+        )
+    {
         return Err(ApiError::NotFound);
     }
 
@@ -1224,10 +1270,7 @@ async fn pull_inbox(state: &RelayState, user: &AuthUser, args: Value) -> Result<
 
     // Scope (migration 0027): mirror REST inbox — claiming an agent's
     // inbox requires scope to manage that agent.
-    let grant = crate::auth::resolve_grant(db, user).await?;
-    if !crate::auth::grant_allows_agent(db, &grant, a.agent_id).await? {
-        return Err(ApiError::Forbidden);
-    }
+    crate::auth::require_scope(state, user, a.agent_id).await?;
     // The agent is online (in memory; flushed in batches).
     state.heartbeats.record(a.agent_id);
 
@@ -1408,10 +1451,7 @@ async fn propose_friendship(
     // Scope gate (migration 0027): mirror the REST friendships::propose
     // gate — proposing acts on the proposer agent's behalf, so a scoped
     // credential must be permitted to manage it.
-    let grant = crate::auth::resolve_grant(db, user).await?;
-    if !crate::auth::grant_allows_agent(db, &grant, a.proposer_agent_id).await? {
-        return Err(ApiError::Forbidden);
-    }
+    crate::auth::require_scope(state, user, a.proposer_agent_id).await?;
     // Confirm target exists.
     let _t = sqlx::query_scalar!(
         r#"SELECT account_id FROM agents WHERE id = $1"#,
@@ -1483,7 +1523,8 @@ fn mcp_slug_ok(s: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
-async fn create_agent(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
+async fn create_agent(state: &RelayState, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
+    let db = &state.db;
     #[derive(Deserialize)]
     struct A {
         account_id: Uuid,
@@ -1533,12 +1574,15 @@ async fn create_agent(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value
     // Pull mode only over MCP — laptop / sandboxed agents serve the
     // relay inbox and have no public A2A endpoint.
     let id = Uuid::now_v7();
+    // Creator attribution, as REST create does (migration 0026), so an
+    // `own`-scoped client can act as the agent it just made.
+    let created_by_client_id = crate::auth::caller_client_id(db, user.minted_jti).await?;
     let inserted = sqlx::query!(
         r#"
         INSERT INTO agents
             (id, account_id, created_by_user_id, slug, display_name, description,
-             visibility, mode)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pull')
+             visibility, mode, created_by_client_id, created_by_api_key_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pull', $8, $9)
         ON CONFLICT (account_id, slug) WHERE tombstoned_at IS NULL DO NOTHING
         RETURNING id, account_id, slug, display_name, description, visibility, created_at
         "#,
@@ -1549,6 +1593,8 @@ async fn create_agent(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value
         display_name,
         a.description.unwrap_or_default(), // column is NOT NULL DEFAULT ''
         visibility,
+        created_by_client_id,
+        user.api_key_id,
     )
     .fetch_optional(db)
     .await?
@@ -1557,6 +1603,22 @@ async fn create_agent(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value
             "agent slug '{slug}' already exists in this account"
         ))
     })?;
+
+    // A `selected` credential keeps managing what it creates (migration 0027).
+    let grant = crate::auth::resolve_grant(db, user).await?;
+    if grant.mode == crate::auth::AgentScopeMode::Selected {
+        if let Some(scope_id) = grant.scope_id {
+            sqlx::query!(
+                r#"INSERT INTO credential_scope_agents (credential_scope_id, agent_id)
+                   VALUES ($1, $2) ON CONFLICT DO NOTHING"#,
+                scope_id,
+                inserted.id,
+            )
+            .execute(db)
+            .await?;
+        }
+    }
+    state.scope_cache.forget(crate::auth::credential(user));
 
     crate::events::record_audit(
         db,
@@ -1582,7 +1644,12 @@ async fn create_agent(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value
     }))
 }
 
-async fn publish_capability(db: &PgPool, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
+async fn publish_capability(
+    state: &RelayState,
+    user: &AuthUser,
+    args: Value,
+) -> Result<Value, ApiError> {
+    let db = &state.db;
     #[derive(Deserialize)]
     struct A {
         agent_id: Uuid,
@@ -1615,10 +1682,7 @@ async fn publish_capability(db: &PgPool, user: &AuthUser, args: Value) -> Result
     // enforces this, so the MCP path must too — otherwise a scoped
     // credential could publish a capability on an agent it isn't permitted
     // to manage by going through /mcp instead of the REST endpoint.
-    let grant = crate::auth::resolve_grant(db, user).await?;
-    if !crate::auth::grant_allows_agent(db, &grant, a.agent_id).await? {
-        return Err(ApiError::Forbidden);
-    }
+    crate::auth::require_scope(state, user, a.agent_id).await?;
 
     let name = a.name.trim().to_string();
     if name.is_empty() {

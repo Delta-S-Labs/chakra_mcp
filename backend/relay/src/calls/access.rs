@@ -40,10 +40,7 @@ pub async fn act_as(
     if !user_is_member(&state.db, user.user_id, account_id).await? {
         return Err(ApiError::NotFound);
     }
-    let grant = crate::auth::resolve_grant(&state.db, user).await?;
-    if !crate::auth::grant_allows_agent(&state.db, &grant, agent_id).await? {
-        return Err(ApiError::Forbidden);
-    }
+    crate::auth::require_scope(state, user, agent_id).await?;
     if is_interactive(state, user).await? {
         return Err(ApiError::coded(
             StatusCode::FORBIDDEN,

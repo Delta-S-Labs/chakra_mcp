@@ -798,7 +798,7 @@ fn discovery_disabled() -> Response {
 fn jsonrpc_to_http(code: i32) -> StatusCode {
     match code {
         -32000 | -32001 => StatusCode::UNAUTHORIZED,
-        -32002 | -32003 | -32009 => StatusCode::FORBIDDEN,
+        -32002 | -32003 | -32009 | -32010 => StatusCode::FORBIDDEN,
         -32005 => StatusCode::SERVICE_UNAVAILABLE,
         -32006 => StatusCode::NOT_FOUND,
         -32007 | -32008 => StatusCode::TOO_MANY_REQUESTS,

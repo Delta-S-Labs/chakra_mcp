@@ -292,6 +292,54 @@ pub async fn resolve_grant(db: &PgPool, user: &AuthUser) -> Result<GrantScope, A
 
 // `grant_allows_agent` is re-exported from `chakramcp_shared::scope` above.
 
+/// The caller's credential, as the scope cache keys it.
+pub fn credential(user: &AuthUser) -> crate::scope_cache::Credential {
+    crate::scope_cache::Credential {
+        user_id: user.user_id,
+        minted_jti: user.minted_jti,
+        api_key_id: user.api_key_id,
+    }
+}
+
+/// The agents the caller's credential may act as (`None`: all), from the
+/// in-memory cache (MCP and discovery spec §4.2).
+pub async fn agents_in_scope(
+    state: &crate::state::RelayState,
+    user: &AuthUser,
+) -> Result<crate::scope_cache::InScope, ApiError> {
+    state
+        .scope_cache
+        .in_scope(&state.db, credential(user))
+        .await
+}
+
+/// Refuse acting as `agent_id` when it's outside the credential's scope.
+/// Call after the membership check: scope only narrows.
+pub async fn require_scope(
+    state: &crate::state::RelayState,
+    user: &AuthUser,
+    agent_id: Uuid,
+) -> Result<(), ApiError> {
+    if state
+        .scope_cache
+        .allows(&state.db, credential(user), agent_id)
+        .await?
+    {
+        Ok(())
+    } else {
+        Err(out_of_scope())
+    }
+}
+
+/// 403 `chk.auth.out_of_scope`: the credential can't act as that agent.
+pub fn out_of_scope() -> ApiError {
+    ApiError::coded(
+        axum::http::StatusCode::FORBIDDEN,
+        "chk.auth.out_of_scope",
+        "this credential can't act as that agent",
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
