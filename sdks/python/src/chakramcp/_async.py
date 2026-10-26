@@ -5,21 +5,41 @@ the sync :class:`ChakraMCP` exactly with ``await`` on every call.
 from __future__ import annotations
 
 import asyncio
+import builtins
+import contextlib
+import inspect
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, TypeVar
 
 import httpx
 
-from ._errors import raise_for_response
+from ._errors import ChakraMCPError, raise_for_response
 from ._sync import (
+    _EVENT_KINDS,
+    MAX_CALLS_BATCH,
     _default_on_draft,
     _default_on_notice,
+    _invite_answer,
+    _InviteResult,
+    _is_not_active,
+    _query,
+    _reply_of,
+    _ReplyResult,
+    _report_call_error,
     _warn_no_human_handler,
+    _without_none,
     is_drafted_reply,
 )
 from ._types import (
     TERMINAL_STATUSES,
     Agent,
+    Call,
+    CallEntry,
+    CallFeedItem,
+    CallList,
+    CallMemory,
+    CallRecall,
+    CallState,
     Capability,
     CreateAgentRequest,
     CreateCapabilityRequest,
@@ -33,6 +53,7 @@ from ._types import (
     HandlerResult,
     Invocation,
     InvocationStatus,
+    InvokeRequest,
     InvokeResponse,
     MeResponse,
     Notice,
@@ -40,9 +61,12 @@ from ._types import (
     Review,
     ReviewListResponse,
     ReviewTier,
+    StartCallRequest,
     UpdateAgentRequest,
     WriteReviewRequest,
 )
+
+_T = TypeVar("_T")
 
 DEFAULT_APP_URL = "https://app.chakramcp.com"
 DEFAULT_RELAY_URL = "https://relay.chakramcp.com"
@@ -87,6 +111,7 @@ class AsyncChakraMCP:
         self.invocations = AsyncInvocationsClient(self)
         self.inbox = AsyncInboxClient(self)
         self.reviews = AsyncReviewsClient(self)
+        self.calls = AsyncCallsClient(self)
 
     async def aclose(self) -> None:
         if self._owns_client:
@@ -119,7 +144,7 @@ class AsyncChakraMCP:
     async def network(self) -> list[Agent]:
         return await self._relay("GET", "/v1/network/agents")
 
-    async def invoke(self, body: dict[str, Any]) -> InvokeResponse:
+    async def invoke(self, body: InvokeRequest | dict[str, Any]) -> InvokeResponse:
         """Enqueue an invocation.
 
         Body must carry exactly one of:
@@ -132,6 +157,9 @@ class AsyncChakraMCP:
 
         Plus ``grantee_agent_id`` (the agent making the call — you must
         be a member of its account) and ``input`` (the JSON payload).
+        Add ``call_id`` to make the request in a call: the invoking
+        agent must be a party to it, and the capability the other
+        party's.
 
         An account over its rate limit or out of credits gets
         :class:`RateLimitedError` or :class:`CreditsExhaustedError`.
@@ -140,7 +168,7 @@ class AsyncChakraMCP:
 
     async def invoke_and_wait(
         self,
-        body: dict[str, Any],
+        body: InvokeRequest | dict[str, Any],
         *,
         interval_s: float = 1.5,
         timeout_s: float = 180.0,
@@ -524,3 +552,188 @@ class AsyncReviewsClient:
             f"/v1/agents/{target_agent_id}/reviews/{review_id}/unhide",
             {},
         )
+
+
+async def _resolve(value: Awaitable[_T] | _T) -> _T:
+    """Await a handler's result when it's awaitable (``async def``)."""
+    result: Any = value
+    if inspect.isawaitable(result):
+        result = await result
+    return result
+
+
+class AsyncCallsClient:
+    """Async mirror of :py:class:`chakramcp._sync.CallsClient`. See its
+    docstrings for the semantics."""
+
+    def __init__(self, chakra: AsyncChakraMCP) -> None:
+        self._c = chakra
+
+    async def start(self, body: StartCallRequest | dict[str, Any]) -> Call:
+        return await self._c._relay("POST", "/v1/calls", dict(body))
+
+    async def list(
+        self,
+        *,
+        agent_id: str | None = None,
+        state: CallState | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+    ) -> CallList:
+        query = _query({"agent_id": agent_id, "state": state, "limit": limit, "cursor": cursor})
+        return await self._c._relay("GET", f"/v1/calls{query}")
+
+    async def get(self, call_id: str) -> Call:
+        return await self._c._relay("GET", f"/v1/calls/{call_id}")
+
+    async def accept(
+        self, call_id: str, agent_id: str, *, message: str | None = None
+    ) -> Call:
+        return await self._c._relay(
+            "POST",
+            f"/v1/calls/{call_id}/accept",
+            _without_none({"agent_id": agent_id, "message": message}),
+        )
+
+    async def decline(
+        self, call_id: str, agent_id: str, *, reason: str | None = None
+    ) -> Call:
+        return await self._c._relay(
+            "POST",
+            f"/v1/calls/{call_id}/decline",
+            _without_none({"agent_id": agent_id, "reason": reason}),
+        )
+
+    async def end(self, call_id: str, agent_id: str) -> Call:
+        return await self._c._relay(
+            "POST", f"/v1/calls/{call_id}/end", {"agent_id": agent_id}
+        )
+
+    async def send(
+        self, call_id: str, agent_id: str, text: str, *, data: Any | None = None
+    ) -> CallEntry:
+        return await self._c._relay(
+            "POST",
+            f"/v1/calls/{call_id}/messages",
+            _without_none({"agent_id": agent_id, "text": text, "data": data}),
+        )
+
+    async def history(
+        self,
+        call_id: str,
+        *,
+        after: int | None = None,
+        limit: int | None = None,
+        q: str | None = None,
+    ) -> builtins.list[CallEntry]:
+        query = _query({"after": after, "limit": limit, "q": q})
+        return await self._c._relay("GET", f"/v1/calls/{call_id}/messages{query}")
+
+    async def memory(self, call_id: str) -> CallMemory:
+        return await self._c._relay("GET", f"/v1/calls/{call_id}/memory")
+
+    async def ask(self, call_id: str, agent_id: str, question: str) -> CallRecall:
+        return await self._c._relay(
+            "POST",
+            f"/v1/calls/{call_id}/memory/ask",
+            {"agent_id": agent_id, "question": question},
+        )
+
+    async def pull(
+        self, agent_id: str, *, limit: int | None = None
+    ) -> builtins.list[CallFeedItem]:
+        query = _query({"agent_id": agent_id, "limit": limit})
+        return await self._c._relay("GET", f"/v1/inbox/calls{query}")
+
+    async def serve(
+        self,
+        agent_id: str,
+        on_message: Callable[[CallFeedItem], Awaitable[_ReplyResult] | _ReplyResult]
+        | None = None,
+        *,
+        on_invite: Callable[[CallFeedItem], Awaitable[_InviteResult] | _InviteResult]
+        | None = None,
+        on_event: Callable[[CallFeedItem], Awaitable[None] | None] | None = None,
+        poll_interval_s: float = 2.0,
+        batch_size: int = MAX_CALLS_BATCH,
+        on_error: Callable[[BaseException, CallFeedItem | None], None] | None = None,
+        stop_event: asyncio.Event | None = None,
+    ) -> None:
+        """Long-running loop for a pull agent on calls, as in
+        :meth:`chakramcp.ChakraMCP.calls.serve`: ``on_invite`` answers
+        invites (default: accept), ``on_message`` returns a reply (text or
+        ``{"text", "data"?}``) or ``None``, ``on_event`` gets ``accepted``,
+        ``declined``, ``ended`` and ``missed``.
+        Handlers may be ``async def`` or plain functions. Items are
+        handled one at a time, in order.
+
+        Stop it by cancelling its task (``task.cancel()``; cancellation
+        propagates), or with ``stop_event``, which is checked between
+        pulls. A handler that raises is reported to ``on_error`` (or
+        logged) and the loop goes on.
+        """
+
+        def stopped() -> bool:
+            return bool(stop_event and stop_event.is_set())
+
+        async def pause() -> None:
+            if stop_event is None:
+                await asyncio.sleep(poll_interval_s)
+                return
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(stop_event.wait(), poll_interval_s)
+
+        while not stopped():
+            try:
+                batch = await self.pull(agent_id, limit=batch_size)
+            except Exception as err:
+                _report_call_error(on_error, err, None)
+                await pause()
+                continue
+            if not batch:
+                await pause()
+                continue
+            for item in batch:
+                try:
+                    await self._handle(agent_id, item, on_message, on_invite, on_event)
+                except Exception as err:
+                    _report_call_error(on_error, err, item)
+
+    async def _handle(
+        self,
+        agent_id: str,
+        item: CallFeedItem,
+        on_message: Callable[[CallFeedItem], Awaitable[_ReplyResult] | _ReplyResult]
+        | None,
+        on_invite: Callable[[CallFeedItem], Awaitable[_InviteResult] | _InviteResult]
+        | None,
+        on_event: Callable[[CallFeedItem], Awaitable[None] | None] | None,
+    ) -> None:
+        call_id = item["call"]["id"]
+        kind = item["entry"].get("kind")
+        if kind == "invite":
+            decision = await _resolve(on_invite(item)) if on_invite else None
+            accept, message, reason = _invite_answer(decision)
+            try:
+                if accept:
+                    await self.accept(call_id, agent_id, message=message)
+                else:
+                    await self.decline(call_id, agent_id, reason=reason)
+            except ChakraMCPError as err:
+                # The caller hung up, or it was missed, meanwhile.
+                if not _is_not_active(err):
+                    raise
+        elif kind == "message":
+            if on_message is None:
+                return
+            reply = _reply_of(await _resolve(on_message(item)))
+            if reply is None:
+                return
+            text, data = reply
+            try:
+                await self.send(call_id, agent_id, text, data=data)
+            except ChakraMCPError as err:
+                if not _is_not_active(err):
+                    raise
+        elif kind in _EVENT_KINDS and on_event is not None:
+            await _resolve(on_event(item))

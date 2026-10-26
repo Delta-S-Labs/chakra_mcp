@@ -52,7 +52,17 @@ class MeResponse(TypedDict):
     survey_required: bool
 
 
-class Agent(TypedDict):
+#: Who may call an agent: its friends, any agent, or nobody.
+AcceptCalls = Literal["friends", "anyone", "nobody"]
+
+
+class _AgentExtras(TypedDict, total=False):
+    # Who may call this agent. Push agents always show ``"nobody"``.
+    # Absent on relays without calls.
+    accept_calls: AcceptCalls
+
+
+class Agent(_AgentExtras):
     id: str
     account_id: str
     account_slug: str
@@ -329,9 +339,26 @@ class Invocation(TypedDict, total=False):
     human_confirmed: HumanConfirmed
     # What message safety removed, flagged or blocked in this call.
     safety: Safety
+    # The call this invocation was made in, if any.
+    call_id: str | None
 
 
 # ─── Request bodies ──────────────────────────────────────
+
+
+class InvokeRequest(TypedDict, total=False):
+    """The body of ``invoke()``: exactly one of ``grant_id`` (a friendship
+    and grant) or ``capability_id`` (a ``public_invoke`` capability)."""
+
+    grant_id: str
+    capability_id: str
+    grantee_agent_id: str  # required: the agent making the request
+    input: Any  # required
+    # Proposed terms, for a capability that asks its owner first.
+    consent_terms: ConsentTerms
+    # Make the request in this call: the invoking agent must be a party to
+    # it, and the capability the other party's.
+    call_id: str
 
 
 class CreateAgentRequest(TypedDict, total=False):
@@ -348,6 +375,8 @@ class UpdateAgentRequest(TypedDict, total=False):
     description: str
     visibility: Visibility
     endpoint_url: str | None
+    # Who may call this agent. Push agents only take ``"nobody"``.
+    accept_calls: AcceptCalls
 
 
 class CreateCapabilityRequest(TypedDict, total=False):
@@ -468,3 +497,240 @@ class HandlerFailed(TypedDict, total=False):
 
 
 HandlerResult = HandlerSucceeded | HandlerFailed
+
+
+# ─── Calls ───────────────────────────────────────────────
+
+CallState = Literal["ringing", "active", "declined", "missed", "ended"]
+#: ``"call"``: the relay keeps the call's memory. ``"own"``: each agent
+#: keeps its own; the relay only stores the transcript.
+CallMemoryMode = Literal["call", "own"]
+CallEndedBy = Literal["caller", "callee", "owner", "idle", "gone"]
+CallEntryKind = Literal[
+    "invite", "message", "accepted", "declined", "ended", "missed", "invocation"
+]
+
+
+class _CallPartyExtras(TypedDict, total=False):
+    display_name: str | None
+    account_slug: str | None
+
+
+class CallParty(_CallPartyExtras):
+    """One side of a call. ``agent_id`` is ``None`` once the agent is
+    deleted."""
+
+    agent_id: str | None
+    account_id: str
+
+
+class CallMemoryFeatures(TypedDict):
+    """Fixed at invite: whether the relay tags messages and answers
+    ``calls.ask``."""
+
+    tags: bool
+    recall: bool
+
+
+class _CallExtras(TypedDict, total=False):
+    topic: str | None
+    answered_at: str | None
+    ended_at: str | None
+    ended_by: CallEndedBy | None
+    purge_at: str | None
+    purged_at: str | None
+    last_message_at: str | None
+
+
+class Call(_CallExtras):
+    """A call between two agents."""
+
+    id: str
+    state: CallState
+    caller: CallParty
+    callee: CallParty
+    memory: CallMemoryMode
+    memory_features: CallMemoryFeatures
+    ttl_secs: int
+    idle_secs: int
+    created_at: str
+    message_count: int
+
+
+class _CallEntryInvocationExtras(TypedDict, total=False):
+    capability: str | None
+    status: str | None
+
+
+class CallEntryInvocation(_CallEntryInvocationExtras):
+    """The invocation an ``invocation`` entry stands for. Poll the
+    invocation for its result."""
+
+    id: str
+
+
+class _CallEntryExtras(TypedDict, total=False):
+    from_agent_id: str | None
+    text: str | None
+    data: Any
+    # What message safety removed or flagged in this message.
+    safety: list[SafetyFinding]
+    invocation: CallEntryInvocation
+
+
+class CallEntry(_CallEntryExtras):
+    """One entry of a call's transcript, in ``seq`` order."""
+
+    seq: int
+    kind: CallEntryKind
+    blocked: bool
+    created_at: str
+
+
+class _MemoryTagsExtras(TypedDict, total=False):
+    # The ``seq`` of the earlier question the message answers, if any, and
+    # how likely it answers it.
+    resolves: int
+    resolves_p: float
+
+
+class MemoryTags(_MemoryTagsExtras):
+    """How likely a message is each of these, and how much it matters:
+    ``weight`` runs from 0 (chit-chat) to 3 (an agreed term or deadline)."""
+
+    decision: float
+    commitment: float
+    open_question: float
+    fact: float
+    weight: float
+
+
+class _MemoryInvocationExtras(TypedDict, total=False):
+    # Sliced JSON, on finished invocations only.
+    input: Any
+    output: Any
+
+
+class MemoryInvocation(_MemoryInvocationExtras):
+    id: str
+    capability: str
+    status: str
+
+
+# ``from`` is a keyword, so these use the functional syntax.
+_MemoryItemExtras = TypedDict(
+    "_MemoryItemExtras",
+    {
+        "from": str | None,
+        "text": str | None,
+        # The previous message, for a short pinned one ("Agreed.").
+        "context": str | None,
+        "tags": MemoryTags,
+        "invocation": MemoryInvocation,
+    },
+    total=False,
+)
+
+
+class MemoryItem(_MemoryItemExtras):
+    """A message (verbatim, possibly sliced) or an invocation in a call's
+    memory. ``item["from"]`` is the sending agent's id."""
+
+    seq: int
+    at: str
+
+
+class CallMemory(TypedDict):
+    """A call's memory: ``recent`` messages verbatim, ``pinned``
+    decisions, commitments and facts from earlier, and ``open``
+    questions not yet answered."""
+
+    pinned: list[MemoryItem]
+    open: list[MemoryItem]
+    recent: list[MemoryItem]
+
+
+_RecallMessageExtras = TypedDict(
+    "_RecallMessageExtras",
+    {"from": str | None, "text": str | None},
+    total=False,
+)
+
+
+class RecallMessage(_RecallMessageExtras):
+    seq: int
+    at: str
+    #: How likely this message answers the question.
+    p: float
+
+
+class _CallRecallExtras(TypedDict, total=False):
+    # How likely any of ``messages`` answers the question; ``None`` when
+    # there was nothing to ask about.
+    answered: float | None
+
+
+class CallRecall(_CallRecallExtras):
+    """What ``calls.ask`` found: the stored messages most likely to answer
+    the question, best first. Read them and answer for yourself."""
+
+    messages: list[RecallMessage]
+
+
+class _CallFeedItemExtras(TypedDict, total=False):
+    # In ``memory: "call"`` mode, on the newest message per call in a pull.
+    memory: CallMemory
+
+
+class CallFeedItem(_CallFeedItemExtras):
+    """One item of an agent's calls feed (``calls.pull``): the call as it
+    stands and the entry delivered to the agent."""
+
+    call: Call
+    entry: CallEntry
+
+
+class _CallListExtras(TypedDict, total=False):
+    next_cursor: str
+
+
+class CallList(_CallListExtras):
+    calls: list[Call]
+
+
+class StartCallRequest(TypedDict, total=False):
+    from_agent_id: str  # required: the calling agent, one of yours
+    to_agent_id: str  # required
+    # ``"own"`` (the default) or ``"call"``.
+    memory: CallMemoryMode
+    ttl_secs: int
+    idle_secs: int
+    topic: str
+    # An opening message.
+    message: str
+
+
+class _CallReplyExtras(TypedDict, total=False):
+    data: Any
+
+
+class CallReply(_CallReplyExtras):
+    """A reply from ``calls.serve``'s ``on_message``: text and optional
+    structured data. Returning a plain string sends just the text."""
+
+    text: str
+
+
+class _InviteDecisionExtras(TypedDict, total=False):
+    # When accepting: a first reply.
+    message: str
+    # When declining: why.
+    reason: str
+
+
+class InviteDecision(_InviteDecisionExtras):
+    """What ``calls.serve``'s ``on_invite`` decides: ``{"accept": True}``
+    (optionally with a first ``message``) or ``{"accept": False}``
+    (optionally with a ``reason``)."""
+
+    accept: bool

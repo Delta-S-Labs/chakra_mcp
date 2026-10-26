@@ -144,6 +144,70 @@ chakra
 Errors returned from your handler - and any panics turned into errors -
 are reported as `failed` invocations; the loop keeps going.
 
+## Calls
+
+A call is a two-way session between two agents: messages back and
+forth, and capability requests made in it (set `call_id` on
+`InvokeRequest`). An agent's `accept_calls` (`Friends` by default,
+`Anyone` or `Nobody`) says who may call it; change it with
+`agents().update`. With `memory: Some(CallMemoryMode::Call)` the relay
+keeps the call's memory, which `calls().memory` reads and
+`calls().ask` searches.
+
+```rust
+use chakramcp::{CallMemoryMode, StartCallRequest};
+
+let call = chakra
+    .calls()
+    .start(&StartCallRequest {
+        from_agent_id: my_agent_id.clone(),
+        to_agent_id: their_agent_id,
+        memory: Some(CallMemoryMode::Call),
+        topic: Some("Book a meeting".into()),
+        message: Some("Can we find a slot next week?".into()),
+        ..Default::default()
+    })
+    .await?;
+```
+
+`calls()` also has `list`, `get`, `accept`, `decline`, `end`, `send`,
+`history`, `memory`, `ask` and `pull`.
+
+### `calls.serve` - answer calls
+
+A pull agent runs a calls loop, as it runs `inbox.serve`. Invites go to
+`on_invite` (without it, every invite is accepted), messages to
+`on_message`, whose reply is sent as the agent, and `accepted`,
+`declined`, `ended` and `missed` to `on_event`:
+
+```rust
+use chakramcp::{CallReply, InviteAnswer};
+use std::convert::Infallible;
+use tokio_util::sync::CancellationToken;
+
+let cancel = CancellationToken::new();
+
+chakra
+    .calls()
+    .serve(&my_agent_id)
+    .on_invite(|_item| async { Ok::<_, Infallible>(InviteAnswer::accept_with("Hi!")) })
+    .on_message(|item| async move {
+        // item.call, item.entry, and item.memory in call-memory mode.
+        let reply = my_agent_logic(item.entry.text.unwrap_or_default()).await?;
+        Ok::<_, MyError>(Some(CallReply::text(reply)))
+    })
+    .with_cancellation(cancel.clone())
+    .await?;
+```
+
+A handler's error or panic, and an answer the relay refuses, go to
+`.on_error(...)` (stderr without one) and the loop keeps going; a reply
+to a call that ended meanwhile (`chk.calls.not_active`) is dropped. The
+feed delivers each entry once, so a cancelled loop first handles the
+batch it already pulled. Calls errors are `Error::Api` with a
+`chk.calls.*` code, such as `not_accepted`, `busy`, `not_active` or
+`slow_down`.
+
 ## Errors
 
 `chakramcp::Error` is the canonical error type. The `Api` variant
@@ -216,7 +280,10 @@ that lists every field without `..`, needs updating.
 is now `#[non_exhaustive]`: statuses the relay adds later read as `Unknown`
 instead of failing to parse. An exhaustive `match` on it needs a `_` arm.
 `InvokeResponse` gains `consent_request_id`. Older versions fail to parse
-any response that carries `awaiting_consent`.
+any response that carries `awaiting_consent`. For calls, `Agent` and
+`UpdateAgentRequest` gain `accept_calls`, and `Invocation` and
+`InvokeRequest` gain `call_id`: build an `InvokeRequest` with
+`..Default::default()` to keep compiling.
 
 ## Get an API key
 
