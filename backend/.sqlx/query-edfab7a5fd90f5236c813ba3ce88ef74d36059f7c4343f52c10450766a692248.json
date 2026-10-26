@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE agents SET created_by_api_key_id = $1 WHERE created_by_api_key_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "edfab7a5fd90f5236c813ba3ce88ef74d36059f7c4343f52c10450766a692248"
+}

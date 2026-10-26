@@ -94,6 +94,11 @@ pub async fn submit_result(
     if !user_is_member(&state.db, user.user_id, granter_account).await? {
         return Err(ApiError::Forbidden);
     }
+    // Answering as the called agent needs the credential's scope too (MCP and
+    // discovery spec §4.2).
+    if let Some(agent) = row.granter_agent_id {
+        crate::auth::require_scope(state, user, agent).await?;
+    }
 
     // Message safety (when on): screen the reply before anything below
     // stores or releases it, so drafts, confirmations and tokens all cover

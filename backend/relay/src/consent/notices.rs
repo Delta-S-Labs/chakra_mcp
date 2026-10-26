@@ -83,10 +83,7 @@ pub async fn claim(
     if !user_is_member(&state.db, user.user_id, account).await? {
         return Err(ApiError::Forbidden);
     }
-    let grant = crate::auth::resolve_grant(&state.db, user).await?;
-    if !crate::auth::grant_allows_agent(&state.db, &grant, agent_id).await? {
-        return Err(ApiError::Forbidden);
-    }
+    crate::auth::require_scope(state, user, agent_id).await?;
     state.heartbeats.record(agent_id);
 
     let rows = sqlx::query!(

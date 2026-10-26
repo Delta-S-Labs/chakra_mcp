@@ -92,6 +92,16 @@ pub async fn evaluate(
             return Decision::Denied(DenyReason::CallerAgentNotOwnedByCaller);
         }
     };
+    // Membership isn't enough: the credential's agent scope must cover the
+    // caller agent (MCP and discovery spec §4.2).
+    match caller.in_scope(state, caller_agent.id).await {
+        Ok(true) => {}
+        Ok(false) => return Decision::Denied(DenyReason::CallerAgentOutOfScope),
+        Err(e) => {
+            tracing::error!(error = ?e, "caller scope lookup failed");
+            return Decision::Denied(DenyReason::CallerAgentOutOfScope);
+        }
+    }
 
     // ── 5-6: capability header ────────────────────────────
     let Some(cap_id_str) = headers.get(CAPABILITY_HEADER).and_then(|v| v.to_str().ok()) else {
@@ -261,6 +271,22 @@ struct CallerIdentity {
     minted_jti: Option<Uuid>,
 }
 
+impl CallerIdentity {
+    /// Whether this credential's agent scope covers `agent_id`.
+    async fn in_scope(
+        &self,
+        state: &RelayState,
+        agent_id: Uuid,
+    ) -> Result<bool, chakramcp_shared::error::ApiError> {
+        let cred = crate::scope_cache::Credential {
+            user_id: self.user_id,
+            minted_jti: self.minted_jti,
+            api_key_id: self.api_key_id,
+        };
+        state.scope_cache.allows(&state.db, cred, agent_id).await
+    }
+}
+
 /// Resolve `(caller_agent_id)` for a GetTask call. Reuses the same
 /// bearer + X-ChakraMCP-Caller-Agent path as the full policy gate
 /// but skips capability/friendship/grant — GetTask is a per-task
@@ -314,6 +340,13 @@ pub async fn resolve_caller_agent_for_get_task(
     .unwrap_or(false);
     if !owns {
         return Err(DenyReason::CallerAgentNotOwnedByCaller);
+    }
+    if !caller
+        .in_scope(state, caller_agent_id)
+        .await
+        .unwrap_or(false)
+    {
+        return Err(DenyReason::CallerAgentOutOfScope);
     }
     Ok(caller_agent_id)
 }

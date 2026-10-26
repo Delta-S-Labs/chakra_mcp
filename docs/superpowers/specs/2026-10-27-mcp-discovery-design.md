@@ -669,8 +669,8 @@ New codes:
 
 | Code | Where it comes back | When |
 |---|---|---|
-| `chk.auth.out_of_scope` | REST 403; on `/mcp` a JSON-RPC error with `data.code` (as `/mcp` refusals are today); on an agent endpoint a tool error, or a JSON-RPC error on `initialize` | acting as an agent outside the credential's scope (§4.2, §6.1) |
-| `chk.mcp.as_required` | on `/mcp` `invoke` a JSON-RPC error; on an agent endpoint a tool error | no agent to call as, and a scope that doesn't settle it (§6.1) |
+| `chk.auth.out_of_scope` | REST 403; A2A JSON-RPC `-32010` (HTTP 403); on `/mcp` and agent endpoints a tool error (`isError`, the code in `structuredContent.code`, as `/mcp` refusals are today), or a JSON-RPC error on an agent endpoint's `initialize` | acting as an agent outside the credential's scope (§4.2, §6.1) |
+| `chk.mcp.as_required` | a tool error, on `/mcp` `invoke` and agent endpoints | no agent to call as, and a scope that doesn't settle it (§6.1) |
 | `chk.mcp.push_agent` | JSON-RPC error on `initialize` | an agent endpoint for a push-mode agent |
 | `directory_rate_limited` | HTTP 429 | the directory's per-IP limit |
 
