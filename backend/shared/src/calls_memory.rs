@@ -156,14 +156,15 @@ pub fn tag_request(topic: Option<&str>, messages: &[Message], open: &[Open]) -> 
             format!("{id}_decision"),
             noul(
                 format!(
-                    "Does {it} make or confirm a decision between the two parties of this \
-                     call? `messages[{i}].previous` is the message before it, for what a short \
-                     reply refers to."
+                    "Does {it} itself make or confirm a decision between the two parties of \
+                     this call? `messages[{i}].previous` is the message before it, there only \
+                     to show what a short reply refers to."
                 ),
-                "It decides or agrees to something: a choice, a plan, a price, a date. A \
-                 short 'Agreed.' or 'Yes, let's do that.' accepting the previous message's \
-                 proposal counts.",
-                "It proposes, asks, informs or chats without settling anything.",
+                "It settles something: a choice, a plan, a price, a date. A short 'Agreed.' \
+                 or 'Yes, let's do that.' accepting the previous message's proposal counts.",
+                "It proposes, asks, informs, thanks or chats without settling anything. A \
+                 question is never a decision, and saying it will do a task ('I'll send \
+                 it') isn't one unless it also settles a choice.",
             ),
         );
         q.insert(
@@ -172,7 +173,9 @@ pub fn tag_request(topic: Option<&str>, messages: &[Message], open: &[Open]) -> 
                 format!("Does {it} have someone commit to doing something?"),
                 "Someone says they will do something, with or without a time: 'I'll send \
                  the contract by Friday'.",
-                "No one takes on a task.",
+                "No one takes on a task in this message. Questions, thanks and \
+                 acknowledgements don't count, nor does a commitment made only in \
+                 `previous`.",
             ),
         );
         q.insert(
