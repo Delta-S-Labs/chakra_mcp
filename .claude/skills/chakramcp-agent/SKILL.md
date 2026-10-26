@@ -119,7 +119,7 @@ chakramcp whoami 2>/dev/null || echo "not authed"
   back to:
 
   ```bash
-  chakramcp configure --api-key
+  chakramcp configure --api-key <ck_…>
   ```
 
   …and tell them to grab a key at
@@ -1011,7 +1011,7 @@ $ chakramcp capabilities add --name do_math …
 $ chakramcp friendships list --status proposed --direction inbound
 [shows the request from laptop A]
 $ chakramcp friendships accept <id>
-$ chakramcp grants create --granter <b_id> --grantee <a_id> --capability <do_math_id>
+$ chakramcp grants create --from <b_id> --to <a_id> --capability <do_math_id>
 ```
 
 **Back on laptop A:**

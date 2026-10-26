@@ -70,6 +70,8 @@ import {
   InvocationStatus,
   ListCallsQuery,
   MeResponse,
+  NetworkPage,
+  NetworkQuery,
   Notice,
   ProposeFriendshipRequest,
   Review,
@@ -139,9 +141,16 @@ export class ChakraMCP {
     return this.appRequest<MeResponse>("GET", "/v1/me");
   }
 
-  /** Discover all network-visible agents on this relay. */
-  async network(): Promise<Agent[]> {
-    return this.relayRequest<Agent[]>("GET", "/v1/network/agents");
+  /**
+   * Discover the network-visible agents on this relay, newest first, a
+   * page at a time. Pass `next_cursor` back as `cursor` for the next page.
+   */
+  async network(query: NetworkQuery = {}): Promise<NetworkPage> {
+    const qs = new URLSearchParams();
+    if (query.limit !== undefined) qs.set("limit", String(query.limit));
+    if (query.cursor) qs.set("cursor", query.cursor);
+    const q = qs.toString();
+    return this.relayRequest<NetworkPage>("GET", `/v1/network/agents${q ? `?${q}` : ""}`);
   }
 
   /**

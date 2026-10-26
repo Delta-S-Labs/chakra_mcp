@@ -78,8 +78,10 @@ impl ConsentFlags {
 
 #[derive(Subcommand, Debug)]
 pub enum Cmd {
-    /// List the capabilities published by one of your agents.
+    /// List an agent's capabilities, with their schemas: all of your own
+    /// agent's, or the network-visible ones of anyone else's.
     List {
+        /// The agent: its id, `account/agent`, or a slug.
         #[arg(long)]
         agent: String,
     },
@@ -207,6 +209,7 @@ fn parse_schema(arg: &str, label: &str) -> Result<Value> {
 pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
     match cmd {
         Cmd::List { agent } => {
+            let agent = crate::resolve::peer_id(&api, &agent).await?;
             let body: Value = api
                 .get_relay(&format!("/v1/agents/{agent}/capabilities"))
                 .await?;

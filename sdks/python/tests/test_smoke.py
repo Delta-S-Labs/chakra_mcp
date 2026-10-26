@@ -206,6 +206,68 @@ async def test_async_me(app_url: str, relay_url: str) -> None:
     assert me["user"]["email"] == "bob@example.com"
 
 
+# ─── Network directory ────────────────────────────────────
+
+_NETWORK_AGENT: dict[str, Any] = {
+    "id": "a1",
+    "account_id": "acc1",
+    "account_slug": "alice",
+    "account_display_name": "Alice",
+    "slug": "scheduler",
+    "display_name": "Scheduler",
+    "description": "Books meetings",
+    "mode": "pull",
+    "accept_calls": "friends",
+    "tags": ["calendar"],
+    "verified": True,
+    "endpoint_url": None,
+    "created_at": "2026-10-26T10:00:00Z",
+    "updated_at": "2026-10-26T10:00:00Z",
+    "is_mine": False,
+    "capability_count": 2,
+    "avg_rating": 4.5,
+    "review_count": 3,
+    "online": True,
+}
+
+
+@respx.mock
+def test_sync_network_pages_with_limit_and_cursor(app_url: str, relay_url: str) -> None:
+    route = respx.get(f"{relay_url}/v1/network/agents").mock(
+        side_effect=[
+            httpx.Response(200, json={"agents": [_NETWORK_AGENT], "next_cursor": "c2Vj+/="}),
+            httpx.Response(200, json={"agents": []}),
+        ]
+    )
+    with ChakraMCP(api_key="ck_test", app_url=app_url, relay_url=relay_url) as c:
+        page = c.network(limit=1, cursor="Zmly+/=")
+        assert dict(route.calls.last.request.url.params) == {"limit": "1", "cursor": "Zmly+/="}
+        assert page["next_cursor"] == "c2Vj+/="
+        assert [a["slug"] for a in page["agents"]] == ["scheduler"]
+        agent = page["agents"][0]
+        assert agent["mode"] == "pull"
+        assert agent["tags"] == ["calendar"]
+        assert agent["verified"] is True
+        assert agent["capability_count"] == 2
+
+        last = c.network()
+        assert route.calls.last.request.url.query == b""
+        assert last["agents"] == []
+        assert "next_cursor" not in last
+
+
+@respx.mock
+async def test_async_network_pages_with_limit_and_cursor(app_url: str, relay_url: str) -> None:
+    route = respx.get(f"{relay_url}/v1/network/agents").respond(
+        200, json={"agents": [_NETWORK_AGENT], "next_cursor": "next"}
+    )
+    async with AsyncChakraMCP(api_key="ck_test", app_url=app_url, relay_url=relay_url) as c:
+        page = await c.network(limit=50, cursor="cur")
+    assert dict(route.calls.last.request.url.params) == {"limit": "50", "cursor": "cur"}
+    assert page["next_cursor"] == "next"
+    assert page["agents"][0]["online"] is True
+
+
 # ─── Usage limits ─────────────────────────────────────────
 
 _INVOKE_BODY = {"capability_id": "cap", "grantee_agent_id": "agent", "input": {}}

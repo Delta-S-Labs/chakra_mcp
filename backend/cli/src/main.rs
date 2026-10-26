@@ -18,6 +18,7 @@ mod client;
 mod commands;
 mod config;
 mod onboarding;
+mod resolve;
 mod templates;
 mod ui;
 mod waiters;
@@ -37,6 +38,10 @@ struct Cli {
     /// Override the network to use for this command (defaults to the active one).
     #[arg(long, env = "CHAKRAMCP_NETWORK", global = true)]
     network: Option<String>,
+
+    /// Accepted everywhere: output is always JSON already.
+    #[arg(long, global = true, hide = true)]
+    json: bool,
 
     #[command(subcommand)]
     cmd: Cmd,
@@ -91,7 +96,8 @@ enum Cmd {
     Configure(commands::configure::Args),
     /// Forget any saved credentials for the active network.
     Logout,
-    /// Show the currently signed-in user.
+    /// Show the signed-in user, and the credential in use: its kind
+    /// (session, API key, OAuth, device) and which agents it may act as.
     Whoami,
 
     /// Manage configured networks (public, self-hosted, local dev).
@@ -249,6 +255,9 @@ async fn run() -> Result<()> {
                 "auth": net.auth_kind(),
                 "user": me.get("user"),
                 "memberships": me.get("memberships"),
+                // What this credential is and which agents it may act as
+                // (absent on relays before 0.5.0).
+                "credential": me.get("credential"),
             }))?;
         }
         Cmd::Networks(cmd) => commands::networks::run(cmd, &mut cfg)?,
@@ -295,5 +304,47 @@ pub fn read_json_arg(s: &str) -> Result<serde_json::Value> {
         Ok(serde_json::from_str(&raw)?)
     } else {
         Ok(serde_json::from_str(s)?)
+    }
+}
+
+#[cfg(test)]
+mod documented_commands;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn the_command_line_is_well_formed() {
+        Cli::command().debug_assert();
+    }
+
+    /// `--json` is accepted anywhere, and commands with their own `--json`
+    /// still see it.
+    #[test]
+    fn json_is_accepted_everywhere() {
+        for args in [
+            vec!["chakramcp", "whoami", "--json"],
+            vec!["chakramcp", "agents", "list", "--json"],
+            vec!["chakramcp", "--json", "network"],
+        ] {
+            assert!(Cli::try_parse_from(&args).is_ok(), "{args:?}");
+        }
+        let cli = Cli::try_parse_from([
+            "chakramcp",
+            "invoke",
+            "wait",
+            "00000000-0000-0000-0000-000000000000",
+            "--json",
+        ])
+        .unwrap();
+        let Cmd::Invoke(args) = cli.cmd else {
+            panic!("not invoke");
+        };
+        let Some(commands::invoke::Sub::Wait(w)) = args.sub else {
+            panic!("not wait");
+        };
+        assert!(w.json);
     }
 }

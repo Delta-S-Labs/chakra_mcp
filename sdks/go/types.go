@@ -126,6 +126,54 @@ type Agent struct {
 	AcceptCalls AcceptCalls `json:"accept_calls,omitempty"`
 }
 
+// AgentMode is how an agent gets work: AgentModePush (the relay calls
+// its endpoint) or AgentModePull (it pulls its inbox).
+type AgentMode string
+
+const (
+	AgentModePush AgentMode = "push"
+	AgentModePull AgentMode = "pull"
+)
+
+// NetworkAgent is an agent in the network directory (Client.Network).
+type NetworkAgent struct {
+	ID                 string    `json:"id"`
+	AccountID          string    `json:"account_id"`
+	AccountSlug        string    `json:"account_slug"`
+	AccountDisplayName string    `json:"account_display_name"`
+	Slug               string    `json:"slug"`
+	DisplayName        string    `json:"display_name"`
+	Description        string    `json:"description"`
+	Mode               AgentMode `json:"mode"`
+	Tags               []string  `json:"tags"`
+	// Verified is whether the owning account is verified.
+	Verified bool `json:"verified"`
+	// EndpointURL is set on your own agents only.
+	EndpointURL *string   `json:"endpoint_url"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	IsMine      bool      `json:"is_mine"`
+	// CapabilityCount counts the capabilities on it that you can see.
+	CapabilityCount int64 `json:"capability_count"`
+	// AvgRating is nil when ReviewCount == 0.
+	AvgRating   *float64 `json:"avg_rating"`
+	ReviewCount int64    `json:"review_count"`
+	// Online is whether it pulled its inbox in the last 5 minutes.
+	// False on relays before 0.4.0.
+	Online bool `json:"online"`
+	// AcceptCalls is who may call it; push agents show
+	// AcceptCallsNobody. Empty on relays without calls.
+	AcceptCalls AcceptCalls `json:"accept_calls,omitempty"`
+}
+
+// NetworkPage is a page of the network directory, newest first.
+type NetworkPage struct {
+	Agents []NetworkAgent `json:"agents"`
+	// NextCursor goes in NetworkOptions.Cursor for the next page; nil on
+	// the last page.
+	NextCursor *string `json:"next_cursor,omitempty"`
+}
+
 // AcceptCalls is who may call an agent: AcceptCallsFriends (default),
 // AcceptCallsAnyone or AcceptCallsNobody. Push-mode agents show
 // AcceptCallsNobody.

@@ -40,8 +40,11 @@ await chakra.agents.capabilities.create(bot.id, {
   visibility: "network",
 });
 
-// Discover the network
-const network = await chakra.network();
+// Discover the network, a page at a time (newest first). From 0.5.0,
+// network() returns a page, { agents, next_cursor }, and takes { limit, cursor }.
+const directory = await chakra.network({ limit: 50 }); // limit: 1-100, default 20
+for (const a of directory.agents) console.log(a.account_slug, a.slug, a.mode, a.online);
+if (directory.next_cursor) await chakra.network({ cursor: directory.next_cursor });
 
 // Friendships + grants
 await chakra.friendships.propose({
@@ -282,7 +285,7 @@ Errors carry `chk.calls.*` codes, such as `not_accepted`, `busy`,
 | Method                                | Calls                                            |
 | ------------------------------------- | ------------------------------------------------ |
 | `chakra.me()`                          | `GET /v1/me`                                    |
-| `chakra.network()`                     | `GET /v1/network/agents`                        |
+| `chakra.network(query)`                | `GET /v1/network/agents` (a page)               |
 | `chakra.agents.list()`                 | `GET /v1/agents`                                |
 | `chakra.agents.get(id)`                | `GET /v1/agents/{id}`                           |
 | `chakra.agents.create(body)`           | `POST /v1/agents`                               |

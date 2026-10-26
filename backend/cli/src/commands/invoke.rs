@@ -144,14 +144,14 @@ pub struct WaitArgs {
 
 #[derive(Parser, Debug)]
 pub struct EnsureArgs {
-    /// Peer to invoke. Either `account-slug/agent-slug` or just
-    /// `agent-slug` (must be unambiguous in the network).
+    /// Peer to invoke: its id, `account-slug/agent-slug`, or a bare
+    /// `agent-slug` (one of your agents first, else unique on the network).
     pub peer: String,
     /// Name of the capability to invoke (e.g. `message_owner`).
     pub capability_name: String,
     /// Input — JSON literal, or `@path` to read from a file, or `@-` for stdin.
     pub input_json: String,
-    /// Your agent slug — the grantee side that will issue the call.
+    /// Your agent (id, slug, or `account/agent`): the side that makes the call.
     #[arg(long)]
     pub from: String,
 
@@ -391,16 +391,6 @@ impl PeerRef {
         })
     }
 
-    pub(crate) fn matches(&self, account_slug: &str, agent_slug: &str) -> bool {
-        if self.agent_slug != agent_slug {
-            return false;
-        }
-        match &self.account_slug {
-            Some(acc) => acc == account_slug,
-            None => true,
-        }
-    }
-
     pub(crate) fn display(&self) -> String {
         match &self.account_slug {
             Some(acc) => format!("{acc}/{}", self.agent_slug),
@@ -413,75 +403,6 @@ impl PeerRef {
 struct FriendshipState {
     /// Existing friendship row (if any).
     row: Option<Value>,
-}
-
-/// Look up the peer in the network directory and return their agent id +
-/// account/agent slugs. Errors with `InvalidArgs` (exit 6) on ambiguous
-/// or missing match — these are user-fixable.
-async fn resolve_peer(api: &ApiClient, peer: &PeerRef) -> Result<Value, WaitError> {
-    let agents: Value = api
-        .get_relay("/v1/network/agents")
-        .await
-        .map_err(|e| classify_http_err(&e))?;
-    let empty = vec![];
-    let agents = agents.as_array().unwrap_or(&empty);
-
-    let mut matches: Vec<&Value> = agents
-        .iter()
-        .filter(|a| {
-            let agent_slug = a.get("slug").and_then(|v| v.as_str()).unwrap_or("");
-            let account_slug = a.get("account_slug").and_then(|v| v.as_str()).unwrap_or("");
-            peer.matches(account_slug, agent_slug)
-        })
-        .collect();
-
-    match matches.len() {
-        0 => Err(WaitError::InvalidArgs(format!(
-            "no network-visible agent matched `{}`. Try `chakramcp network` to list.",
-            peer.display()
-        ))),
-        1 => Ok(matches.remove(0).clone()),
-        n => {
-            let candidates: Vec<String> = matches
-                .iter()
-                .filter_map(|a| {
-                    let acc = a.get("account_slug").and_then(|v| v.as_str())?;
-                    let slug = a.get("slug").and_then(|v| v.as_str())?;
-                    Some(format!("{acc}/{slug}"))
-                })
-                .collect();
-            Err(WaitError::InvalidArgs(format!(
-                "{n} agents matched `{}` — disambiguate with `account/agent` form. Candidates: {}",
-                peer.display(),
-                candidates.join(", ")
-            )))
-        }
-    }
-}
-
-/// Resolve the *my-side* agent slug to a UUID. We need this both to
-/// propose friendships and to invoke. The relay's POST endpoints
-/// accept UUIDs only.
-pub(crate) async fn resolve_my_agent(api: &ApiClient, slug: &str) -> Result<Value, WaitError> {
-    let mine: Value = api
-        .get_relay("/v1/agents")
-        .await
-        .map_err(|e| classify_http_err(&e))?;
-    let empty = vec![];
-    let mine = mine.as_array().unwrap_or(&empty);
-    mine.iter()
-        .find(|a| {
-            a.get("slug")
-                .and_then(|v| v.as_str())
-                .map(|s| s == slug)
-                .unwrap_or(false)
-        })
-        .cloned()
-        .ok_or_else(|| {
-            WaitError::InvalidArgs(format!(
-                "no agent owned by you with slug `{slug}` — see `chakramcp agents list`"
-            ))
-        })
 }
 
 /// Find any friendship row between `my_agent_id` ↔ `peer_agent_id`,
@@ -558,7 +479,7 @@ async fn find_grant(
 /// Map an `anyhow::Error` from `api.get_relay` / `post_relay` into our
 /// `WaitError` taxonomy. The decode helper bails with the HTTP status
 /// in the message; we sniff for it.
-fn classify_http_err(e: &anyhow::Error) -> WaitError {
+pub(crate) fn classify_http_err(e: &anyhow::Error) -> WaitError {
     let msg = format!("{e:#}");
     if msg.contains("401") {
         WaitError::Unauthorized(msg)
@@ -580,7 +501,7 @@ pub(crate) async fn ensure_run(e: EnsureArgs, api: &ApiClient) -> Result<()> {
     // 1. Resolve the peer + my agent. Both have to be UUIDs for
     //    downstream POSTs.
     eprintln!("Resolving peer `{}`…", peer_ref.display());
-    let peer_row = resolve_peer(api, &peer_ref)
+    let peer_row = crate::resolve::peer(api, &e.peer)
         .await
         .map_err(anyhow::Error::from)?;
     let peer_agent_id = peer_row
@@ -600,7 +521,7 @@ pub(crate) async fn ensure_run(e: EnsureArgs, api: &ApiClient) -> Result<()> {
         .to_string();
     let peer_display = format!("{peer_account_slug}/{peer_agent_slug}");
 
-    let my_row = resolve_my_agent(api, &e.from)
+    let my_row = crate::resolve::mine(api, &e.from)
         .await
         .map_err(anyhow::Error::from)?;
     let my_agent_id = my_row
@@ -927,22 +848,6 @@ mod tests {
             PeerRef::parse("acct/"),
             Err(WaitError::InvalidArgs(_))
         ));
-    }
-
-    #[test]
-    fn peer_ref_matches_qualified() {
-        let p = PeerRef::parse("acct/agent").unwrap();
-        assert!(p.matches("acct", "agent"));
-        assert!(!p.matches("acct2", "agent"));
-        assert!(!p.matches("acct", "agent2"));
-    }
-
-    #[test]
-    fn peer_ref_matches_bare_ignores_account() {
-        let p = PeerRef::parse("agent").unwrap();
-        assert!(p.matches("anywhere", "agent"));
-        assert!(p.matches("else", "agent"));
-        assert!(!p.matches("anywhere", "other"));
     }
 
     #[test]

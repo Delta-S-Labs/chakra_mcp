@@ -460,8 +460,9 @@ chakra.reviews.unhide(target_agent_id, review_id)  # ...and restore it`}</code>
       </p>
       <ul>
         <li>
-          <strong>Top-level:</strong> <code>me()</code>, <code>network()</code> (list
-          network-visible agents), <code>invoke()</code>, <code>invoke_and_wait()</code>.
+          <strong>Top-level:</strong> <code>me()</code>, <code>network()</code> (a page of
+          network-visible agents, <code>{"{agents, next_cursor}"}</code>, taking{" "}
+          <code>limit</code> and <code>cursor</code>), <code>invoke()</code>, <code>invoke_and_wait()</code>.
         </li>
         <li>
           <strong>agents:</strong> <code>list</code>, <code>get</code>, <code>create</code>,{" "}

@@ -12,10 +12,9 @@
 //! ergonomics; the latter resolves via `/v1/network/agents` plus a
 //! filter pass. UUIDs hit the endpoint directly.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::Subcommand;
 use serde_json::{json, Value};
-use uuid::Uuid;
 
 use crate::client::ApiClient;
 use crate::print;
@@ -101,7 +100,7 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             limit,
             cursor,
         } => {
-            let target_id = resolve_target(&api, &target).await?;
+            let target_id = crate::resolve::peer_id(&api, &target).await?;
             let mut path = format!("/v1/agents/{target_id}/reviews");
             let mut qs: Vec<String> = Vec::new();
             if let Some(t) = tier {
@@ -133,8 +132,8 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             if !(1..=5).contains(&rating) {
                 anyhow::bail!("rating must be between 1 and 5 (got {rating})");
             }
-            let target_id = resolve_target(&api, &target).await?;
-            let reviewer_id = resolve_target(&api, &from).await?;
+            let target_id = crate::resolve::peer_id(&api, &target).await?;
+            let reviewer_id = crate::resolve::mine_id(&api, &from).await?;
             let body = json!({
                 "reviewer_agent_id": reviewer_id,
                 "rating": rating,
@@ -147,14 +146,14 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             print(&v)
         }
         Cmd::Eligibility { target } => {
-            let target_id = resolve_target(&api, &target).await?;
+            let target_id = crate::resolve::peer_id(&api, &target).await?;
             let v: Value = api
                 .get_relay(&format!("/v1/agents/{target_id}/reviews/eligibility"))
                 .await?;
             print(&v)
         }
         Cmd::Hide { target, review_id } => {
-            let target_id = resolve_target(&api, &target).await?;
+            let target_id = crate::resolve::peer_id(&api, &target).await?;
             let v: Value = api
                 .post_relay(
                     &format!("/v1/agents/{target_id}/reviews/{review_id}/hide"),
@@ -164,7 +163,7 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             print(&v)
         }
         Cmd::Unhide { target, review_id } => {
-            let target_id = resolve_target(&api, &target).await?;
+            let target_id = crate::resolve::peer_id(&api, &target).await?;
             let v: Value = api
                 .post_relay(
                     &format!("/v1/agents/{target_id}/reviews/{review_id}/unhide"),
@@ -174,43 +173,6 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             print(&v)
         }
     }
-}
-
-/// Accept either a UUID or `account_slug/agent_slug`. The slug form is
-/// resolved by scanning `/v1/network/agents` (visibility=network or
-/// org-shared) for a match. We do a single page-200 fetch which is
-/// fine for tens-of-thousands-of-agents scale; if it ever grows past
-/// that, swap in `/v1/discovery/agents` which is search-indexed.
-pub(crate) async fn resolve_target(api: &ApiClient, ident: &str) -> Result<Uuid> {
-    if let Ok(id) = Uuid::parse_str(ident) {
-        return Ok(id);
-    }
-    let (account_slug, agent_slug) = ident.split_once('/').with_context(|| {
-        format!("agent identifier must be UUID or `account_slug/agent_slug` (got `{ident}`)")
-    })?;
-    // Page through up to 200 results. That's wider than the directory
-    // page size to give slug-resolution headroom; we still need only
-    // one round-trip per command.
-    let body: Value = api.get_relay("/v1/network/agents?limit=100").await?;
-    let agents = body
-        .get("agents")
-        .and_then(|v| v.as_array())
-        .ok_or_else(|| anyhow::anyhow!("unexpected /v1/network/agents shape"))?;
-    for a in agents {
-        let a_acc = a.get("account_slug").and_then(|v| v.as_str());
-        let a_slug = a.get("slug").and_then(|v| v.as_str());
-        if a_acc == Some(account_slug) && a_slug == Some(agent_slug) {
-            let id = a
-                .get("id")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("agent row missing id"))?;
-            return Uuid::parse_str(id).context("malformed agent id from relay");
-        }
-    }
-    anyhow::bail!(
-        "no agent matched `{account_slug}/{agent_slug}` on the active network — \
-         try a UUID, or run `chakramcp network` to list visible agents."
-    )
 }
 
 fn urlencode(s: &str) -> String {

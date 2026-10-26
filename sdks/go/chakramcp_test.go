@@ -61,6 +61,63 @@ func TestMeSetsBearer(t *testing.T) {
 	}
 }
 
+func TestNetworkSendsLimitAndCursorAndDecodesPage(t *testing.T) {
+	const agentJSON = `{"id":"a1","account_id":"acc1","account_slug":"alice","account_display_name":"Alice",` +
+		`"slug":"scheduler","display_name":"Scheduler","description":"Books meetings","mode":"pull",` +
+		`"accept_calls":"friends","tags":["calendar"],"verified":true,"endpoint_url":null,` +
+		`"created_at":"2026-10-26T10:00:00Z","updated_at":"2026-10-26T10:00:00Z","is_mine":false,` +
+		`"capability_count":2,"avg_rating":4.5,"review_count":3,"online":true}`
+	var queries []map[string]string
+	_, c := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/network/agents" {
+			http.NotFound(w, r)
+			return
+		}
+		q := map[string]string{}
+		for k := range r.URL.Query() {
+			q[k] = r.URL.Query().Get(k)
+		}
+		queries = append(queries, q)
+		if len(q) > 0 {
+			_, _ = w.Write([]byte(`{"agents":[` + agentJSON + `],"next_cursor":"cur-2"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"agents":[]}`))
+	})
+
+	page, err := c.Network(context.Background(), NetworkOptions{Limit: 1, Cursor: "cur 1"})
+	if err != nil {
+		t.Fatalf("Network: %v", err)
+	}
+	if queries[0]["limit"] != "1" || queries[0]["cursor"] != "cur 1" || len(queries[0]) != 2 {
+		t.Errorf("query = %v, want limit=1 cursor=%q", queries[0], "cur 1")
+	}
+	if page.NextCursor == nil || *page.NextCursor != "cur-2" {
+		t.Errorf("next_cursor = %v, want cur-2", page.NextCursor)
+	}
+	if len(page.Agents) != 1 {
+		t.Fatalf("agents = %+v, want 1", page.Agents)
+	}
+	a := page.Agents[0]
+	if a.Slug != "scheduler" || a.Mode != AgentModePull || !a.Verified || !a.Online ||
+		a.CapabilityCount != 2 || a.AcceptCalls != AcceptCallsFriends ||
+		len(a.Tags) != 1 || a.Tags[0] != "calendar" || a.AvgRating == nil || *a.AvgRating != 4.5 {
+		t.Errorf("agent = %+v", a)
+	}
+
+	// No options: no query; the last page has no next_cursor.
+	last, err := c.Network(context.Background(), NetworkOptions{})
+	if err != nil {
+		t.Fatalf("Network (last page): %v", err)
+	}
+	if len(queries[1]) != 0 {
+		t.Errorf("query = %v, want none", queries[1])
+	}
+	if len(last.Agents) != 0 || last.NextCursor != nil {
+		t.Errorf("last page = %+v, want empty with no cursor", last)
+	}
+}
+
 func TestErrorEnvelopeDecoded(t *testing.T) {
 	_, c := newServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("content-type", "application/json")

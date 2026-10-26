@@ -11,7 +11,6 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::client::ApiClient;
-use crate::commands::{invoke::resolve_my_agent, reviews::resolve_target};
 use crate::{print, read_json_arg};
 
 /// The relay's page size for a transcript.
@@ -232,24 +231,14 @@ fn call_id(s: &str) -> Result<Uuid> {
     Uuid::parse_str(s).with_context(|| format!("`{s}` isn't a call id"))
 }
 
-/// One of your agents, by id or slug.
+/// One of your agents, by id, slug or `account/agent`.
 async fn my_agent(api: &ApiClient, ident: &str) -> Result<String> {
-    if let Ok(id) = Uuid::parse_str(ident) {
-        return Ok(id.to_string());
-    }
-    let a = resolve_my_agent(api, ident).await?;
-    a.get("id")
-        .and_then(Value::as_str)
-        .map(str::to_owned)
-        .context("agent row missing id")
+    Ok(crate::resolve::mine_id(api, ident).await?.to_string())
 }
 
-/// The agent to call: an id, `account_slug/agent_slug`, or your own slug.
+/// The agent to call: an id, `account/agent`, or a bare slug (yours first).
 async fn any_agent(api: &ApiClient, ident: &str) -> Result<String> {
-    if ident.contains('/') || Uuid::parse_str(ident).is_ok() {
-        return Ok(resolve_target(api, ident).await?.to_string());
-    }
-    my_agent(api, ident).await
+    Ok(crate::resolve::peer_id(api, ident).await?.to_string())
 }
 
 fn start_body(
