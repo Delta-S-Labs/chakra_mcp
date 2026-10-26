@@ -825,6 +825,8 @@ async fn list_network_agents(db: &PgPool, user: &AuthUser) -> Result<Value, ApiE
         FROM agents a
         JOIN accounts acc ON acc.id = a.account_id
         WHERE a.visibility = 'network'
+          AND a.tombstoned_at IS NULL
+          AND acc.tombstoned_at IS NULL
         ORDER BY a.created_at DESC
         "#,
         user.user_id,

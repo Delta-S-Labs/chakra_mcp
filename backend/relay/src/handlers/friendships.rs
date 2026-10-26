@@ -180,11 +180,15 @@ async fn fetch_friendship(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<Friend
     })
 }
 
+/// A live agent's account: a deleted agent is 404, so nobody can befriend it.
 async fn agent_account(db: &PgPool, agent_id: Uuid) -> Result<Uuid, ApiError> {
-    sqlx::query_scalar!(r#"SELECT account_id FROM agents WHERE id = $1"#, agent_id)
-        .fetch_optional(db)
-        .await?
-        .ok_or(ApiError::NotFound)
+    sqlx::query_scalar!(
+        r#"SELECT account_id FROM agents WHERE id = $1 AND tombstoned_at IS NULL"#,
+        agent_id
+    )
+    .fetch_optional(db)
+    .await?
+    .ok_or(ApiError::NotFound)
 }
 
 // ─── GET /v1/friendships ─────────────────────────────────
