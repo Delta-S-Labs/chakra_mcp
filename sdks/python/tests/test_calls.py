@@ -566,7 +566,7 @@ async def test_async_serve_handles_items_in_order_and_stops_on_cancel(
         assert not task.done()
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
-            await task
+            await asyncio.wait_for(task, 5)
 
     assert order == [
         "accept call-1",
