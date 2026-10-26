@@ -290,6 +290,29 @@ is out of credits.
 
 Nothing on the send path waits for tagging; the bundle uses whatever is tagged.
 
+**Tuned on the memory eval (2026-10-26),** 16 labelled calls and 202 messages in five
+languages, run against `jev-latest` from the relay container:
+
+- **Recall:** top-1 44 of 44 answerable questions, and `answered` averaged 0.98 when a
+  question could be answered and 0.04 when it couldn't.
+- **Pinning** (any of decision, commitment and fact) **at 0.7:** precision 0.92, recall
+  0.88. At 0.6 it's 0.85 and 0.94; at 0.8, 0.95 and 0.77. 0.7 stays the default.
+- **Wording:** the first run's commitment question also fired on questions, thanks and
+  short replies whose previous message held the commitment, and the decision question on
+  commitments and even questions. Its F1 at 0.7 was 0.69 for commitment and 0.75 for
+  decision. Both now judge the message itself, with those cases spelled out as "no":
+  commitment F1 0.81, decision 0.75 with fewer false decisions.
+  - A stricter commitment question ("does the sender commit, itself…") was tried and
+    dropped: it cut commitment recall to 0.56.
+- **Closing questions:** 51 of the 52 answered questions were closed by a predicted
+  `resolves`, and none was closed wrongly. Jev also credits follow-ups that settle a
+  question ("Agreed.", "Confirmed for Wednesday"), which the labels didn't; that's
+  harmless, because a question closes either way.
+- **Languages:** Hindi and English were strongest. The single Bengali call was the
+  weakest (precision 0.54, recall 0.58 over 12 messages), too small to tune on.
+- **Cost and speed:** about 110 ms per tagging batch and 55 ms per recall; the whole set
+  used about 230,000 input tokens, about 10 credits.
+
 ### 8.3 The memory bundle
 
 Built by code from the tags, at most 16 KiB:
