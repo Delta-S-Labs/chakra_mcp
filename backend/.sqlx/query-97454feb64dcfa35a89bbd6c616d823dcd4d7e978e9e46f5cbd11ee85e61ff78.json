@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n                     EXISTS(SELECT 1 FROM oauth_device_codes WHERE minted_jti = $1) AS \"device!\",\n                     EXISTS(SELECT 1 FROM oauth_authorizations WHERE minted_jti = $1)\n                       OR EXISTS(SELECT 1 FROM credential_scopes\n                                  WHERE cred_kind = 'jwt' AND cred_ref = $1::text\n                                    AND client_id IS NOT NULL) AS \"oauth!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "device!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "oauth!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "97454feb64dcfa35a89bbd6c616d823dcd4d7e978e9e46f5cbd11ee85e61ff78"
+}

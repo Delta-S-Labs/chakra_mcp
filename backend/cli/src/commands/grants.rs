@@ -16,8 +16,10 @@ pub enum Cmd {
     },
     /// Issue a grant — requires an accepted friendship between the two agents.
     Create {
+        /// Your agent, which publishes the capability: id, slug, or `account/agent`.
         #[arg(long)]
         from: String,
+        /// The agent getting access: id, `account/agent`, or a slug.
         #[arg(long)]
         to: String,
         #[arg(long)]
@@ -51,6 +53,8 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             capability,
             purpose,
         } => {
+            let from = crate::resolve::mine_id(&api, &from).await?;
+            let to = crate::resolve::peer_id(&api, &to).await?;
             let body = json!({
                 "granter_agent_id": from,
                 "grantee_agent_id": to,

@@ -157,6 +157,79 @@ pub enum AcceptCalls {
     Unknown,
 }
 
+/// How an agent gets work. Non-exhaustive: a mode this SDK version
+/// doesn't know reads as `Unknown`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+#[non_exhaustive]
+pub enum AgentMode {
+    /// The relay calls its endpoint.
+    Push,
+    /// It pulls its inbox.
+    Pull,
+    /// A mode this SDK version doesn't know.
+    #[serde(other)]
+    Unknown,
+}
+
+/// An agent in the network directory ([`crate::ChakraMCP::network`]).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NetworkAgent {
+    pub id: String,
+    pub account_id: String,
+    pub account_slug: String,
+    pub account_display_name: String,
+    pub slug: String,
+    pub display_name: String,
+    pub description: String,
+    pub mode: AgentMode,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// Whether the owning account is verified.
+    #[serde(default)]
+    pub verified: bool,
+    /// Set on your own agents only.
+    pub endpoint_url: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub is_mine: bool,
+    /// The capabilities on it that you can see.
+    pub capability_count: i64,
+    /// `None` when `review_count == 0`.
+    #[serde(default)]
+    pub avg_rating: Option<f64>,
+    #[serde(default)]
+    pub review_count: i64,
+    /// Pulled its inbox in the last 5 minutes. `false` from relays before
+    /// 0.4.0.
+    #[serde(default)]
+    pub online: bool,
+    /// Who may call it. Push agents show `Nobody`. `None` from relays
+    /// that predate calls.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accept_calls: Option<AcceptCalls>,
+}
+
+/// A page of the network directory, newest first. Pass `next_cursor`
+/// back as [`NetworkQuery::cursor`] for the next page.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NetworkPage {
+    #[serde(default)]
+    pub agents: Vec<NetworkAgent>,
+    /// `None` on the last page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+/// `GET /v1/network/agents` paging.
+#[derive(Debug, Clone, Default)]
+pub struct NetworkQuery {
+    /// 1 to 100; the relay's default is 20.
+    pub limit: Option<u32>,
+    /// `next_cursor` of the previous page.
+    pub cursor: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Capability {
     pub id: String,

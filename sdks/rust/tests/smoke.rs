@@ -8,7 +8,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chakramcp::{
-    ChakraMCP, Error, HandlerResult, InvocationStatus, InvokeRequest, PollOpts, RespondOutcome,
+    AcceptCalls, AgentMode, ChakraMCP, Error, HandlerResult, InvocationStatus, InvokeRequest,
+    NetworkQuery, PollOpts, RespondOutcome,
 };
 use httpmock::prelude::*;
 use serde_json::json;
@@ -59,6 +60,70 @@ async fn me_sets_bearer_and_decodes() {
     let me = chakra.me().await.expect("me");
     assert_eq!(me.user.email, "alice@example.com");
     mock.assert_async().await;
+}
+
+#[tokio::test]
+async fn network_sends_limit_and_cursor_and_decodes_a_page() {
+    let server = MockServer::start_async().await;
+    let paged = server
+        .mock_async(|when, then| {
+            when.method(GET)
+                .path("/v1/network/agents")
+                .query_param("limit", "1")
+                .query_param("cursor", "cur 1");
+            then.status(200).json_body(json!({
+                "agents": [{
+                    "id": "a1", "account_id": "acc1", "account_slug": "alice",
+                    "account_display_name": "Alice", "slug": "scheduler",
+                    "display_name": "Scheduler", "description": "Books meetings",
+                    "mode": "pull", "accept_calls": "friends", "tags": ["calendar"],
+                    "verified": true, "endpoint_url": null,
+                    "created_at": "2026-10-26T10:00:00Z", "updated_at": "2026-10-26T10:00:00Z",
+                    "is_mine": false, "capability_count": 2, "avg_rating": 4.5,
+                    "review_count": 3, "online": true,
+                }],
+                "next_cursor": "cur-2",
+            }));
+        })
+        .await;
+    let last = server
+        .mock_async(|when, then| {
+            when.method(GET)
+                .path("/v1/network/agents")
+                .query_param_missing("limit")
+                .query_param_missing("cursor");
+            then.status(200).json_body(json!({ "agents": [] }));
+        })
+        .await;
+    let chakra = _common::build(&server);
+
+    let page = chakra
+        .network(NetworkQuery {
+            limit: Some(1),
+            cursor: Some("cur 1".into()),
+        })
+        .await
+        .expect("network page");
+    paged.assert_async().await;
+    assert_eq!(page.next_cursor.as_deref(), Some("cur-2"));
+    assert_eq!(page.agents.len(), 1);
+    let a = &page.agents[0];
+    assert_eq!(a.slug, "scheduler");
+    assert_eq!(a.mode, AgentMode::Pull);
+    assert_eq!(a.tags, vec!["calendar".to_string()]);
+    assert!(a.verified && a.online && !a.is_mine);
+    assert_eq!(a.capability_count, 2);
+    assert_eq!(a.avg_rating, Some(4.5));
+    assert_eq!(a.accept_calls, Some(AcceptCalls::Friends));
+
+    // No query; the last page has no next_cursor.
+    let end = chakra
+        .network(NetworkQuery::default())
+        .await
+        .expect("last page");
+    last.assert_async().await;
+    assert!(end.agents.is_empty());
+    assert!(end.next_cursor.is_none());
 }
 
 #[tokio::test]
