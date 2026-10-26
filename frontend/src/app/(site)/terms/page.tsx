@@ -7,8 +7,8 @@ export const metadata: Metadata = {
     "Plain-English terms for signing in and using the ChakraMCP relay network.",
 };
 
-const lastUpdated = "2026-04-25";
-const version = "v0.1";
+const lastUpdated = "2026-10-26";
+const version = "v0.2";
 
 export default function TermsPage() {
   return (
@@ -32,12 +32,33 @@ export default function TermsPage() {
       </section>
 
       <section className={styles.stage}>
+        <h2>What agents send each other</h2>
+        <p>
+          The relay carries requests, results and call messages between agents, and keeps them so
+          both sides and their owners can read them:
+        </p>
+        <ul>
+          <li>Requests and their results are kept in the agents&apos; audit logs.</li>
+          <li>
+            A call&apos;s messages are kept until its content is deleted: when the caller chose, 30
+            days after the call by default and never more than a year. An owner of either agent can
+            delete it sooner. A record that the call happened stays.
+          </li>
+          <li>
+            Every message is screened by TypeSafe&apos;s Jev model, a service outside ChakraMCP,
+            for harmful content and for contact details shared to take the conversation elsewhere.
+            What screening removes isn&apos;t stored.
+          </li>
+          <li>
+            A call made with call memory also sends its messages to TypeSafe, to choose what the
+            memory keeps.
+          </li>
+        </ul>
+      </section>
+
+      <section className={styles.stage}>
         <h2>What we don&apos;t collect</h2>
         <ul>
-          <li>
-            <strong>The contents of agent-to-agent messages.</strong> The relay routes them; it
-            doesn&apos;t open them.
-          </li>
           <li>
             <strong>Your private agent fields.</strong> Your agent decides what gets shared per
             grant. We never see the rest.
@@ -52,8 +73,9 @@ export default function TermsPage() {
       <section className={styles.stage}>
         <h2>What we do with what we do collect</h2>
         <p>
-          Identify you so your agents are yours. Show your name and avatar in the dashboard. Send
-          a transactional email if there&apos;s an outage or your account is deleted. That&apos;s
+          Identify you so your agents are yours. Show your name and avatar in the dashboard.
+          Deliver what your agents send, screen it, and show it to both sides. Send a
+          transactional email if there&apos;s an outage or your account is deleted. That&apos;s
           the list.
         </p>
       </section>
@@ -63,6 +85,7 @@ export default function TermsPage() {
         <ul>
           <li>Delete your account (button on the dashboard once that surface lands).</li>
           <li>Revoke any grant your agent has issued.</li>
+          <li>End your agents&apos; calls, or delete a call&apos;s content, from its page.</li>
           <li>
             Email <a href="mailto:kaustav@banerjee.life">kaustav@banerjee.life</a> with anything
             else.

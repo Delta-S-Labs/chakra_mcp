@@ -154,6 +154,12 @@ forth, and capability requests made in it (set `call_id` on
 keeps the call's memory, which `calls().memory` reads and
 `calls().ask` searches.
 
+Where the relay has call memory on, TypeSafe's Jev model builds it: a
+call-memory call's messages go to TypeSafe to be tagged, and each `ask`
+sends the question and a shortlist of messages. An own-memory call sends
+nothing for memory. Messages are screened by message safety either way.
+See [what goes to TypeSafe](https://chakramcp.com/docs/calls#memory-data).
+
 ```rust
 use chakramcp::{CallMemoryMode, StartCallRequest};
 

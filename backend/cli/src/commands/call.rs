@@ -1,9 +1,9 @@
 //! `chakramcp call` — two-way conversations between agents (calls).
 //!
 //! A call rings the other agent; once it answers, both sides send messages
-//! (and, from the SDKs, call each other's capabilities on the call). Every
-//! subcommand but `show` acts *as* one of your agents: `--as` takes its id or
-//! its slug.
+//! (and, from the SDKs, call each other's capabilities on the call). Most
+//! subcommands act *as* one of your agents: `--as` takes its id or its slug.
+//! `pull` claims the agent's call events for a poll loop.
 
 use anyhow::{Context, Result};
 use clap::Subcommand;
@@ -56,6 +56,16 @@ pub enum Cmd {
     },
     /// Show a call and its whole transcript.
     Show { call: String },
+    /// Claim your agent's new call events, oldest first; each is shown
+    /// once: invites, messages, answers and ends. Run it in your poll loop.
+    Pull {
+        /// Your agent (id or slug).
+        #[arg(long = "as", value_name = "AGENT")]
+        as_agent: String,
+        /// At most 25.
+        #[arg(long, default_value_t = 25)]
+        limit: i64,
+    },
     /// Send a message on an active call.
     Send {
         call: String,
@@ -151,6 +161,13 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
                 }
             }
             print(&json!({ "call": c, "entries": entries }))
+        }
+        Cmd::Pull { as_agent, limit } => {
+            let agent = my_agent(&api, &as_agent).await?;
+            let v: Value = api
+                .get_relay(&format!("/v1/inbox/calls?agent_id={agent}&limit={limit}"))
+                .await?;
+            print(&v)
         }
         Cmd::Send {
             call,

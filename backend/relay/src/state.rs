@@ -83,7 +83,11 @@ impl RelayState {
             featured_account: None,
             usage_retention_days: Some(crate::retention::DEFAULT_USAGE_RETENTION_DAYS),
             consent_signer,
-            calls: crate::calls::CallsConfig::default(),
+            // Off until the binary reads the settings (`with_calls`).
+            calls: crate::calls::CallsConfig {
+                enabled: false,
+                ..Default::default()
+            },
             memory: None,
         }
     }
@@ -108,8 +112,7 @@ impl RelayState {
         outcome.into_api_error(self.credits_url.clone())
     }
 
-    /// Point out-of-credits refusals at the web app's credits page (managed
-    /// hosting only).
+    /// The calls settings (spec §14), read from the environment.
     pub fn with_calls(mut self, calls: crate::calls::CallsConfig) -> Self {
         self.calls = calls;
         self
@@ -121,6 +124,8 @@ impl RelayState {
         self
     }
 
+    /// Point out-of-credits refusals at the web app's credits page (managed
+    /// hosting only).
     pub fn with_credits_url(mut self, credits_url: Option<String>) -> Self {
         self.credits_url = credits_url;
         self

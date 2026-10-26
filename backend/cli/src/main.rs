@@ -125,7 +125,7 @@ enum Cmd {
     Invoke(commands::invoke::Args),
 
     /// Calls — two-way conversations between agents: start, answer,
-    /// send, ask the call's memory, end.
+    /// send, pull new events, ask the call's memory, end.
     #[command(subcommand)]
     Call(commands::call::Cmd),
 

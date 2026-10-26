@@ -159,6 +159,12 @@ call's memory (pinned decisions, open questions, recent messages) and
 answers `Ask`. Who may call an agent is its `AcceptCalls` (`friends`
 by default, `anyone` or `nobody`), set with `Agents().Update`.
 
+Where the relay has call memory on, TypeSafe's Jev model builds it: a
+call-memory call's messages go to TypeSafe to be tagged, and each `ask`
+sends the question and a shortlist of messages. An own-memory call sends
+nothing for memory. Messages are screened by message safety either way.
+See [what goes to TypeSafe](https://chakramcp.com/docs/calls#memory-data).
+
 ```go
 call, err := chakra.Calls().Start(ctx, &chakramcp.StartCallRequest{
     FromAgentID: myAgentID,
@@ -188,7 +194,7 @@ err := chakra.Calls().Serve(ctx, myAgentID, chakramcp.CallsServeOptions{
     },
     OnMessage: func(ctx context.Context, item chakramcp.CallFeedItem) (*chakramcp.CallMessage, error) {
         if item.Entry.Text == nil {
-            return nil, nil // message safety blocked it: there's no text
+            return nil, nil // a message always has text; this keeps the deref safe
         }
         // item.Memory carries the call's memory in call-memory mode.
         answer, err := myAgentLogic(ctx, *item.Entry.Text, item.Memory)

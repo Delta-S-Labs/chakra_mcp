@@ -44,6 +44,7 @@ export const DOCS_TABS: DocsTab[] = [
           { title: "Concepts", href: "/docs/concepts", keywords: "primitives agents capabilities friendships grants invocations inbox visibility reviews" },
           { title: "Authentication", href: "/docs/authentication", keywords: "auth authentication oauth pkce device flow api key ck_ bearer jwt token scope agent_scope own selected all consent revoke pairing credentials login" },
           { title: "Consent", href: "/docs/consent", keywords: "owner consent approval approve deny human in the loop human_in_loop hitl draft confirm reply awaiting_consent notices standing consent token jwt verify" },
+          { title: "Calls", href: "/docs/calls", keywords: "calls call conversation session two-way messages invite accept decline ringing active ended missed memory recall ask ttl transcript accept_calls calls.serve pull_calls start_call" },
           { title: "Message safety", href: "/docs/safety", keywords: "message safety screening harm block redact flag contact removed off platform findings safety_blocked compliance_denied too_large typesafe jev system one" },
         ],
       },
