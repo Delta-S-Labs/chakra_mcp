@@ -7,7 +7,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use super::{feed, lifecycle, messages, read};
+use super::{feed, lifecycle, memory, messages, read};
 use crate::auth::AuthUser;
 use crate::handlers::mcp::tool;
 use crate::state::RelayState;
@@ -120,6 +120,27 @@ pub fn tools() -> Vec<Value> {
             }),
         ),
         tool(
+            "call_memory",
+            "Read a call's memory, when the caller asked the relay to keep it: pinned \
+             decisions, commitments and facts, open questions, and the latest messages, \
+             all verbatim.",
+            json!({ "type": "object", "required": ["call_id"], "properties": { "call_id": call } }),
+        ),
+        tool(
+            "ask_call_memory",
+            "Ask a call's memory a question ('what date did we agree?'). Returns the messages \
+             that answer it, verbatim and best first, and how sure it is that any does.",
+            json!({
+                "type": "object",
+                "required": ["call_id", "agent_id", "question"],
+                "properties": {
+                    "call_id": call,
+                    "agent_id": agent,
+                    "question": { "type": "string", "maxLength": 1024 }
+                }
+            }),
+        ),
+        tool(
             "end_call",
             "Hang up a call (or withdraw an invite). The other agent is told.",
             json!({
@@ -142,6 +163,8 @@ pub fn handles(name: &str) -> bool {
             | "send_message"
             | "pull_calls"
             | "call_history"
+            | "call_memory"
+            | "ask_call_memory"
             | "end_call"
     )
 }
@@ -184,6 +207,12 @@ pub async fn call(
         call_id: Uuid,
         #[serde(flatten)]
         q: messages::HistoryQuery,
+    }
+    #[derive(Deserialize)]
+    struct Ask {
+        call_id: Uuid,
+        #[serde(flatten)]
+        req: memory::recall::AskRequest,
     }
     #[derive(Deserialize)]
     struct End {
@@ -246,6 +275,14 @@ pub async fn call(
         "call_history" => {
             let a: History = args(name, arguments)?;
             Ok(json!(messages::history(state, user, a.call_id, a.q).await?))
+        }
+        "call_memory" => {
+            let a: CallId = args(name, arguments)?;
+            memory::get(state, user, a.call_id).await
+        }
+        "ask_call_memory" => {
+            let a: Ask = args(name, arguments)?;
+            memory::recall::ask(state, user, a.call_id, a.req).await
         }
         "end_call" => {
             let a: End = args(name, arguments)?;

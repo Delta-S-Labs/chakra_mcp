@@ -57,6 +57,9 @@ pub struct RelayState {
     pub consent_signer: Arc<crate::consent::signer::ConsentSigner>,
     /// Calls settings (`CALLS_*`); off by default.
     pub calls: crate::calls::CallsConfig,
+    /// The TypeSafe client for call memory (calls spec §8): set when
+    /// `CALLS_MEMORY_ENABLED` is on and a key is configured.
+    pub memory: Option<Arc<ComplianceChecker>>,
 }
 
 impl RelayState {
@@ -81,6 +84,7 @@ impl RelayState {
             usage_retention_days: Some(crate::retention::DEFAULT_USAGE_RETENTION_DAYS),
             consent_signer,
             calls: crate::calls::CallsConfig::default(),
+            memory: None,
         }
     }
 
@@ -108,6 +112,12 @@ impl RelayState {
     /// hosting only).
     pub fn with_calls(mut self, calls: crate::calls::CallsConfig) -> Self {
         self.calls = calls;
+        self
+    }
+
+    /// Call memory's client: from the environment when memory is on.
+    pub fn with_memory(mut self, memory: Option<ComplianceChecker>) -> Self {
+        self.memory = memory.map(Arc::new);
         self
     }
 

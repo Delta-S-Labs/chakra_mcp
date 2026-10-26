@@ -12,7 +12,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::auth::AuthUser;
-use crate::calls::{feed, lifecycle, messages, read};
+use crate::calls::{feed, lifecycle, memory, messages, read};
 use crate::state::RelayState;
 
 pub fn routes() -> Router<RelayState> {
@@ -25,6 +25,8 @@ pub fn routes() -> Router<RelayState> {
         .route("/v1/calls/{id}/owner-end", post(owner_end))
         .route("/v1/calls/{id}/content", delete(delete_content))
         .route("/v1/calls/{id}/messages", post(send).get(history))
+        .route("/v1/calls/{id}/memory", get(call_memory))
+        .route("/v1/calls/{id}/memory/ask", post(ask_memory))
         .route("/v1/inbox/calls", get(inbox))
 }
 
@@ -116,6 +118,23 @@ async fn history(
     Query(q): Query<messages::HistoryQuery>,
 ) -> ApiResult<Json<Vec<Value>>> {
     Ok(Json(messages::history(&state, &user, id, q).await?))
+}
+
+async fn call_memory(
+    State(state): State<RelayState>,
+    user: AuthUser,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(memory::get(&state, &user, id).await?))
+}
+
+async fn ask_memory(
+    State(state): State<RelayState>,
+    user: AuthUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<memory::recall::AskRequest>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(memory::recall::ask(&state, &user, id, req).await?))
 }
 
 async fn inbox(

@@ -202,6 +202,7 @@ pub async fn send(
             size_bytes: size,
             safety: screened.findings,
             invocation_id: None,
+            tag: call.tags_on(),
         },
         &to,
     )

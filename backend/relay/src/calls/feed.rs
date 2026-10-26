@@ -76,16 +76,28 @@ pub async fn claim(
     .await?;
     let mut calls = HashMap::new();
     let mut items = Vec::with_capacity(entries.len());
+    // The newest message item per call, for its memory bundle.
+    let mut newest: HashMap<Uuid, usize> = HashMap::new();
     for entry in entries {
         if let std::collections::hash_map::Entry::Vacant(slot) = calls.entry(entry.call_id) {
             if let Some(call) = load_call(&state.db, entry.call_id).await? {
-                slot.insert(call.dto());
+                slot.insert(call);
             }
         }
         let Some(call) = calls.get(&entry.call_id) else {
             continue;
         };
-        items.push(json!({ "call": call, "entry": entry.dto() }));
+        if entry.kind == "message" {
+            newest.insert(entry.call_id, items.len());
+        }
+        items.push(json!({ "call": call.dto(), "entry": entry.dto() }));
+    }
+    // One bundle per memory call per pull, on its newest message (spec §6.1).
+    for (call_id, i) in newest {
+        let call = &calls[&call_id];
+        if call.memory == "call" {
+            items[i]["memory"] = super::memory::load_bundle(state, call).await?;
+        }
     }
     Ok(items)
 }

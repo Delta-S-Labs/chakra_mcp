@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        INSERT INTO call_entries\n            (id, call_id, seq, kind, from_agent_id, text, data, blocked, size_bytes, safety,\n             invocation_id)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)\n        RETURNING created_at\n        ",
+  "query": "\n        INSERT INTO call_entries\n            (id, call_id, seq, kind, from_agent_id, text, data, blocked, size_bytes, safety,\n             invocation_id, tag_state)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,\n                CASE WHEN $12 THEN 'pending' END)\n        RETURNING created_at\n        ",
   "describe": {
     "columns": [
       {
@@ -27,12 +27,13 @@
         "Bool",
         "Int4",
         "Jsonb",
-        "Uuid"
+        "Uuid",
+        "Bool"
       ]
     },
     "nullable": [
       false
     ]
   },
-  "hash": "86511c17919c985f275bd93061d7720934ba8e3f73af4b72751dbe28ffa422cc"
+  "hash": "4eb1211b18e9af2c52d4c3be0303eee8fbeb06dc8c49cf86648c42ce2ff1a596"
 }

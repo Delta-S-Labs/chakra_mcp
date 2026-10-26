@@ -1,0 +1,72 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE call_entries\n               SET tagged_at = now(),\n                   tags = jsonb_build_object(\n                       'attempts', COALESCE((tags->>'attempts')::int, 0) + 1)\n             WHERE id IN (\n                   SELECT id FROM call_entries\n                    WHERE call_id = $1 AND tag_state = 'pending'\n                      AND (tagged_at IS NULL OR tagged_at < now() - interval '5 minutes')\n                    ORDER BY seq\n                    LIMIT $2\n                      FOR UPDATE SKIP LOCKED)\n            RETURNING id, seq, from_agent_id, text,\n                      (tags->>'attempts')::int AS \"attempts!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "call_entries",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "seq",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "call_entries",
+            "name": "seq"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "from_agent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "call_entries",
+            "name": "from_agent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "text",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "call_entries",
+            "name": "text"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "attempts!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "87236d059c3d4abae478749fd4ad579afade045edbcdd907b273a70ec4d79fa1"
+}

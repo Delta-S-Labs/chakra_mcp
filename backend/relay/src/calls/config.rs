@@ -9,8 +9,12 @@ const DEFAULT_MAX_TTL_DAYS: u32 = 365;
 const DEFAULT_TTL_DAYS: u32 = 30;
 const DEFAULT_MAX_ACTIVE_PER_AGENT: i64 = 20;
 const DEFAULT_MAX_MESSAGES: i32 = 2000;
+const DEFAULT_TAG_THRESHOLD: f64 = 0.7;
+/// TypeSafe's listed input price ($0.0645 for 1.54M tokens, its reranking
+/// cookbook) at $1 = 1,000 credits: about 42 milli-credits per 1,000 tokens.
+const DEFAULT_MEMORY_MC_PER_1K_TOKENS: i64 = 42;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CallsConfig {
     /// The whole feature. Off: no calls routes (404) and no workers.
     pub enabled: bool,
@@ -22,6 +26,13 @@ pub struct CallsConfig {
     pub max_active_per_agent: i64,
     /// Messages one call may hold (spec §3.4).
     pub max_messages: i32,
+    /// Call memory's Jev work (spec §8): tagging and recall. Off until the
+    /// memory eval has run; without a TypeSafe key it stays off.
+    pub memory_enabled: bool,
+    /// A tag counts at or above this probability.
+    pub tag_threshold: f64,
+    /// Memory's cost, charged to the caller, per 1,000 input tokens.
+    pub memory_mc_per_1k_tokens: i64,
 }
 
 impl Default for CallsConfig {
@@ -32,6 +43,9 @@ impl Default for CallsConfig {
             default_ttl_secs: days(DEFAULT_TTL_DAYS),
             max_active_per_agent: DEFAULT_MAX_ACTIVE_PER_AGENT,
             max_messages: DEFAULT_MAX_MESSAGES,
+            memory_enabled: false,
+            tag_threshold: DEFAULT_TAG_THRESHOLD,
+            memory_mc_per_1k_tokens: DEFAULT_MEMORY_MC_PER_1K_TOKENS,
         }
     }
 }
@@ -74,7 +88,35 @@ impl CallsConfig {
                 1,
                 1_000_000,
             )? as i32,
+            memory_enabled: match env_value(&get, "CALLS_MEMORY_ENABLED") {
+                Some(raw) => parse_bool("CALLS_MEMORY_ENABLED", &raw)?,
+                None => false,
+            },
+            tag_threshold: match env_value(&get, "CALLS_TAG_THRESHOLD") {
+                Some(raw) => {
+                    let t: f64 = raw
+                        .parse()
+                        .with_context(|| format!("CALLS_TAG_THRESHOLD={raw:?} is not a number"))?;
+                    if !(0.0..=1.0).contains(&t) {
+                        bail!("CALLS_TAG_THRESHOLD must be between 0 and 1 (got {t})");
+                    }
+                    t
+                }
+                None => DEFAULT_TAG_THRESHOLD,
+            },
+            memory_mc_per_1k_tokens: i64::from(number(
+                &get,
+                "CALLS_MEMORY_MC_PER_1K_TOKENS",
+                DEFAULT_MEMORY_MC_PER_1K_TOKENS as u32,
+                0,
+                1_000_000,
+            )?),
         })
+    }
+
+    /// What memory work of `input_tokens` costs (milli-credits, rounded up).
+    pub fn memory_cost_mc(&self, input_tokens: i64) -> i64 {
+        (input_tokens.max(0) * self.memory_mc_per_1k_tokens + 999) / 1000
     }
 }
 
@@ -152,5 +194,25 @@ mod tests {
             ("CALLS_DEFAULT_TTL_DAYS", "30")
         ])
         .is_err());
+    }
+
+    #[test]
+    fn memory_settings() {
+        let d = CallsConfig::default();
+        assert!(!d.memory_enabled);
+        assert_eq!(d.tag_threshold, 0.7);
+        assert_eq!(d.memory_cost_mc(1000), 42);
+        assert_eq!(d.memory_cost_mc(1), 1, "rounded up");
+        assert_eq!(d.memory_cost_mc(0), 0);
+        let c = from(&[
+            ("CALLS_MEMORY_ENABLED", "on"),
+            ("CALLS_TAG_THRESHOLD", "0.8"),
+            ("CALLS_MEMORY_MC_PER_1K_TOKENS", "10"),
+        ])
+        .unwrap();
+        assert!(c.memory_enabled);
+        assert_eq!(c.tag_threshold, 0.8);
+        assert_eq!(c.memory_cost_mc(5000), 50);
+        assert!(from(&[("CALLS_TAG_THRESHOLD", "1.5")]).is_err());
     }
 }

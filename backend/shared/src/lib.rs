@@ -13,9 +13,12 @@
 //!   opaque-content detection, language, the Jev budget and redaction
 //! * The System One (TypeSafe Jev) client and its questions (`system_one`),
 //!   for the relay's compliance checks and safety screening
+//! * Call memory's Jev requests and bundle (`calls_memory`), for the relay
+//!   and the memory eval
 //! * Telemetry: tracing init (text/JSON logs), Prometheus metrics, request IDs
 
 pub mod auto_friendship;
+pub mod calls_memory;
 pub mod config;
 pub mod consent;
 pub mod credits;

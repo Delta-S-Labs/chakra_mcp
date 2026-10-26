@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT text AS \"text!\" FROM call_entries\n                 WHERE call_id = $1 AND kind = 'message' AND seq < $2 AND text IS NOT NULL\n                 ORDER BY seq DESC LIMIT 1\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "text!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "call_entries",
+            "name": "text"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "da7143a4082e714c617b7f624af6ed7de7d48986dfc6a782b119dbad52d8c8b5"
+}

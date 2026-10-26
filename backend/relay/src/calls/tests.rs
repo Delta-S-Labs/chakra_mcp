@@ -1333,3 +1333,376 @@ async fn agents_hold_calls_over_mcp(pool: PgPool) {
         "{body}"
     );
 }
+
+// ─── C3: call memory ─────────────────────────────────────
+
+/// Jev's answers for the memory tests: seq 2 asks which venue, seq 4
+/// decides it ("Hall A works, agreed.") and answers seq 2; recall picks 4.
+fn memory_fake() -> Fake {
+    Fake {
+        nouls: [("answered", 0.93)].into_iter().collect::<HashMap<_, _>>(),
+        answer: Some(std::sync::Arc::new(|id: &str, _q: &Value| match id {
+            "m2_open_question" => Some(json!({ "type": "noul", "noul": 0.9 })),
+            "m4_decision" => Some(json!({ "type": "noul", "noul": 0.95 })),
+            "m4_weight" => Some(json!({ "type": "score", "score": 3.0 })),
+            "m4_resolves" => Some(json!({
+                "type": "choice", "choice": "m2", "probabilities": { "m2": 0.9, "none": 0.1 }
+            })),
+            "best" => Some(json!({
+                "type": "choice", "choice": "m4",
+                "probabilities": { "m4": 0.8, "m2": 0.1, "none": 0.1 }
+            })),
+            _ => None,
+        })),
+        ..Fake::default()
+    }
+}
+
+async fn memory_on(pool: &PgPool, fake: Fake) -> RelayState {
+    let url = serve(fake).await;
+    calls_on(pool).with_memory(Some(checker(&url)))
+}
+
+/// A memory call: Alice asks which venue (seq 2), Bob accepts (3) and
+/// decides (4), then eight long messages push the start out of `recent`.
+async fn memory_call(s: &RelayState, w: &World) -> Uuid {
+    let id = ring(
+        s,
+        w,
+        json!({ "memory": "call", "topic": "Offsite", "message": "Which venue should we book?" }),
+    )
+    .await;
+    post(
+        s,
+        &w.bob.key,
+        &format!("/v1/calls/{id}/accept"),
+        json!({ "agent_id": w.b, "message": "Hall A works, agreed." }),
+    )
+    .await;
+    let filler = "We talked through the agenda in detail. ".repeat(40);
+    for i in 0..8 {
+        let (token, agent) = if i % 2 == 0 {
+            (&w.alice.key, w.a)
+        } else {
+            (&w.bob.key, w.b)
+        };
+        let (status, _) = say(s, token, id, agent, &filler).await;
+        assert_eq!(status, StatusCode::CREATED);
+    }
+    id
+}
+
+#[sqlx::test(migrations = "../migrations")]
+async fn memory_tags_messages_and_builds_the_bundle(pool: PgPool) {
+    let w = world(&pool).await;
+    let s = memory_on(&pool, memory_fake()).await;
+    let id = memory_call(&s, &w).await;
+    let (_, call) = get(&s, &w.alice.key, &format!("/v1/calls/{id}")).await;
+    assert_eq!(
+        call["memory_features"],
+        json!({ "tags": true, "recall": true })
+    );
+    let pending: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM call_entries WHERE call_id = $1 AND tag_state = 'pending'",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(pending, 10);
+
+    let tagged = super::memory::tagger::tag_once(&s).await.unwrap();
+    assert_eq!(tagged, 10);
+    let tags: Value =
+        sqlx::query_scalar("SELECT tags FROM call_entries WHERE call_id = $1 AND seq = 4")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(tags["decision"], 0.95);
+    assert_eq!(tags["resolves"], 2);
+    // Metered and charged to the caller.
+    let (kind, cost): (String, i64) =
+        sqlx::query_as("SELECT kind, cost_mc FROM call_memory_requests WHERE call_id = $1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!((kind.as_str(), cost), ("tag", 42));
+    let payer: Uuid = sqlx::query_scalar(
+        "SELECT account_id FROM call_charge_queue WHERE call_id = $1 AND kind = 'memory'",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(payer, w.alice.account);
+    // Nothing left to tag, nothing tagged twice.
+    assert_eq!(super::memory::tagger::tag_once(&s).await.unwrap(), 0);
+
+    // The bundle: the decision pinned with what it answers; the question
+    // answered, so not open; the latest messages recent.
+    let (status, memory) = get(&s, &w.bob.key, &format!("/v1/calls/{id}/memory")).await;
+    assert_eq!(status, StatusCode::OK, "{memory}");
+    assert_eq!(memory["pinned"][0]["seq"], 4);
+    assert_eq!(memory["pinned"][0]["text"], "Hall A works, agreed.");
+    assert_eq!(
+        memory["pinned"][0]["context"],
+        "Which venue should we book?"
+    );
+    assert!(memory["open"].as_array().unwrap().is_empty());
+    let recent = memory["recent"].as_array().unwrap();
+    assert_eq!(recent.last().unwrap()["seq"], 12);
+
+    // The feed carries one bundle per call, on the newest message.
+    let (_, items) = get(
+        &s,
+        &w.alice.key,
+        &format!("/v1/inbox/calls?agent_id={}", w.a),
+    )
+    .await;
+    let with_memory: Vec<&Value> = items
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|i| i.get("memory").is_some())
+        .collect();
+    assert_eq!(with_memory.len(), 1);
+    assert_eq!(with_memory[0]["entry"]["seq"], 12);
+    assert_eq!(with_memory[0]["memory"]["pinned"][0]["seq"], 4);
+}
+
+#[sqlx::test(migrations = "../migrations")]
+async fn recall_finds_the_message_that_answers(pool: PgPool) {
+    let w = world(&pool).await;
+    let s = memory_on(&pool, memory_fake()).await;
+    let id = memory_call(&s, &w).await;
+    super::memory::tagger::tag_once(&s).await.unwrap();
+    let ask = |token: String, agent: Uuid| {
+        let s = s.clone();
+        async move {
+            post(
+                &s,
+                &token,
+                &format!("/v1/calls/{id}/memory/ask"),
+                json!({
+                    "agent_id": agent, "question": "Which venue did we agree on?",
+                }),
+            )
+            .await
+        }
+    };
+    let (status, answer) = ask(w.bob.key.clone(), w.b).await;
+    assert_eq!(status, StatusCode::OK, "{answer}");
+    assert_eq!(answer["answered"], 0.93);
+    assert_eq!(answer["messages"][0]["seq"], 4);
+    assert_eq!(answer["messages"][0]["text"], "Hall A works, agreed.");
+    assert_eq!(answer["messages"][0]["from"], json!(w.b));
+    // Logged against Bob's agent, paid for by the caller.
+    let asker: Uuid = sqlx::query_scalar(
+        "SELECT agent_id FROM call_memory_requests WHERE call_id = $1 AND kind = 'recall'",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(asker, w.b);
+    let payers: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT DISTINCT account_id FROM call_charge_queue WHERE call_id = $1 AND kind = 'memory'",
+    )
+    .bind(id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(payers, [w.alice.account]);
+
+    // 30 an hour per agent.
+    for _ in 0..30 {
+        sqlx::query("INSERT INTO call_memory_requests (id, call_id, agent_id, kind) VALUES ($1, $2, $3, 'recall')")
+            .bind(Uuid::now_v7())
+            .bind(id)
+            .bind(w.b)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    let (status, body) = ask(w.bob.key.clone(), w.b).await;
+    assert_eq!(
+        (status, code(&body)),
+        (StatusCode::TOO_MANY_REQUESTS, "chk.calls.slow_down")
+    );
+    let (status, _) = ask(w.alice.key.clone(), w.a).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "Alice's agent has its own allowance"
+    );
+
+    // Over MCP too.
+    let found = tool(
+        &s,
+        &w.alice.key,
+        "ask_call_memory",
+        json!({
+            "call_id": id, "agent_id": w.a, "question": "Which venue?",
+        }),
+    )
+    .await;
+    assert_eq!(found["messages"][0]["seq"], 4);
+    let bundle = tool(&s, &w.alice.key, "call_memory", json!({ "call_id": id })).await;
+    assert_eq!(bundle["pinned"][0]["seq"], 4);
+
+    // Deleted content can't be asked.
+    http(
+        &s,
+        Method::DELETE,
+        &w.alice.web,
+        &format!("/v1/calls/{id}/content"),
+        None,
+    )
+    .await;
+    let (status, body) = ask(w.alice.key.clone(), w.a).await;
+    assert_eq!(
+        (status, code(&body)),
+        (StatusCode::CONFLICT, "chk.calls.not_active")
+    );
+}
+
+#[sqlx::test(migrations = "../migrations")]
+async fn calls_without_memory_have_none(pool: PgPool) {
+    let w = world(&pool).await;
+    let on = memory_on(&pool, memory_fake()).await;
+    // memory: own.
+    let id = ring(&on, &w, json!({ "message": "Hi" })).await;
+    let (status, body) = get(&on, &w.alice.key, &format!("/v1/calls/{id}/memory")).await;
+    assert_eq!(
+        (status, code(&body)),
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "chk.calls.memory_unavailable"
+        )
+    );
+    post(
+        &on,
+        &w.alice.key,
+        &format!("/v1/calls/{id}/end"),
+        json!({ "agent_id": w.a }),
+    )
+    .await;
+    // memory: call, placed with memory off: recent only, nothing pending,
+    // and no recall.
+    let off = calls_on(&pool);
+    let id = ring(&off, &w, json!({ "memory": "call", "message": "Hi there" })).await;
+    let (_, call) = get(&off, &w.alice.key, &format!("/v1/calls/{id}")).await;
+    assert_eq!(
+        call["memory_features"],
+        json!({ "tags": false, "recall": false })
+    );
+    let pending: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM call_entries WHERE call_id = $1 AND tag_state IS NOT NULL",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(pending, 0);
+    let (status, memory) = get(&off, &w.alice.key, &format!("/v1/calls/{id}/memory")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(memory["recent"][0]["text"], "Hi there");
+    post(
+        &off,
+        &w.bob.key,
+        &format!("/v1/calls/{id}/accept"),
+        json!({ "agent_id": w.b }),
+    )
+    .await;
+    let (status, body) = post(
+        &on,
+        &w.bob.key,
+        &format!("/v1/calls/{id}/memory/ask"),
+        json!({ "agent_id": w.b, "question": "Hi?" }),
+    )
+    .await;
+    assert_eq!(
+        (status, code(&body)),
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "chk.calls.memory_unavailable"
+        )
+    );
+}
+
+#[sqlx::test(migrations = "../migrations")]
+async fn tagging_retries_gives_up_and_waits_for_credits(pool: PgPool) {
+    let w = world(&pool).await;
+    let failing = Fake {
+        status: Some(500),
+        ..Fake::default()
+    };
+    let s = memory_on(&pool, failing).await;
+    let id = ring(
+        &s,
+        &w,
+        json!({ "memory": "call", "message": "Which venue?" }),
+    )
+    .await;
+    // Fails: the attempt is counted and the lease holds it for 5 minutes.
+    assert_eq!(super::memory::tagger::tag_once(&s).await.unwrap(), 0);
+    let (state, tags): (String, Value) = sqlx::query_as(
+        "SELECT tag_state, tags FROM call_entries WHERE call_id = $1 AND kind = 'message'",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        (state.as_str(), tags["attempts"].as_i64()),
+        ("pending", Some(1))
+    );
+    assert_eq!(
+        super::memory::tagger::tag_once(&s).await.unwrap(),
+        0,
+        "leased"
+    );
+    // The third failure gives up.
+    sqlx::query("UPDATE call_entries SET tagged_at = now() - interval '6 minutes', tags = '{\"attempts\": 2}' WHERE call_id = $1 AND kind = 'message'")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    super::memory::tagger::tag_once(&s).await.unwrap();
+    let state: String = sqlx::query_scalar(
+        "SELECT tag_state FROM call_entries WHERE call_id = $1 AND kind = 'message'",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(state, "error");
+
+    // A caller out of credits waits.
+    let s = memory_on(&pool, memory_fake()).await;
+    post(
+        &s,
+        &w.alice.key,
+        &format!("/v1/calls/{id}/end"),
+        json!({ "agent_id": w.a }),
+    )
+    .await;
+    ring(
+        &s,
+        &w,
+        json!({ "memory": "call", "message": "Which venue?" }),
+    )
+    .await;
+    sqlx::query(
+        "INSERT INTO credit_wallets (account_id, balance_mc, free_grant_period)
+         VALUES ($1, -100, date_trunc('month', now() AT TIME ZONE 'UTC')::date)",
+    )
+    .bind(w.alice.account)
+    .execute(&pool)
+    .await
+    .unwrap();
+    s.credit_cache.refresh(&pool, &s.credits).await.unwrap();
+    assert_eq!(super::memory::tagger::tag_once(&s).await.unwrap(), 0);
+}
