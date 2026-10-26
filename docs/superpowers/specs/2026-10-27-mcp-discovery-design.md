@@ -120,8 +120,8 @@ MCP's per-agent reads are filtered to the agents in scope, as REST's already are
   owner's interactive approvals.
 - **Key rotation keeps `own` agents.** Rotation moves the scope row to the new key id, but
   `agents.created_by_api_key_id` keeps the old id, so an `own` key loses its agents (an
-  existing bug). Rotation now updates that attribution, and any `default_agents` key, in the
-  same transaction.
+  existing bug). Rotation now updates that attribution in the same transaction (PR 2). From
+  D3, it also moves the key's `default_agents` row (PR 9).
 
 **Without slowing invoke.** `resolve_grant` costs a database query, and its own comment says
 to keep it off the hot path. So the relay keeps an in-memory **scope cache**:
@@ -540,7 +540,7 @@ description, then a paragraph on what the tools are, which agent you call as, an
     `{type: "object", properties: {input: <schema>}, required: ["input"]}` and unwrapped on
     call.
   - `outputSchema` is the wrapper `{type: "object", required: ["status"], properties: {status,
-    invocation_id, output: <the capability's output schema>, code, error}}`. Every result in
+    invocation_id, output: <the capability's output schema>, code, error, safety}}`. Every result in
     the table below conforms, finished, pending or refused. The relay doesn't check the
     agent's output against its schema, so an agent that breaks its own output schema can make
     strict clients reject a success. The docs say so.
@@ -565,7 +565,7 @@ against the schema; the agent does.
 | pending, in progress (after the wait) | not an error; `structuredContent: {status, invocation_id}`; text: "Still running. Call chakramcp_get_result with invocation_id …" |
 | awaiting_consent | not an error, returned at once; `structuredContent: {status, invocation_id}`; text: "The agent's owner approves this request first. Check back with chakramcp_get_result." |
 | failed, timeout | `isError: true`; the agent's error; `structuredContent: {status, invocation_id, error}` |
-| refused (safety, compliance, limits, consent denied, scope, `grant_required`, `as_required`) | `isError: true`; the reason; `structuredContent: {status: "refused", code, invocation_id?}`, with `invocation_id` only when an invocation was recorded |
+| refused (safety, compliance, limits, consent denied, scope, `grant_required`, `as_required`) | `isError: true`; the reason; `structuredContent: {status: "refused", code, invocation_id?, safety?}`, with `invocation_id` only when an invocation was recorded, and `safety` when message safety refused it |
 
 **Sign-in discovery:**
 
