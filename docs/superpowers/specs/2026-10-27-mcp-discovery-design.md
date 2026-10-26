@@ -88,10 +88,14 @@ spec review:
   recorded for each.
 - **Existing tombstones:** migration 0050 revokes the active grants of agents already deleted,
   touching only those rows.
-- **Defence in depth:** the trusted-invoke grant lookup, the public invoke path
-  (`capability_id`), the inbox, the friendship agent lookup and MCP `list_network_agents` all
-  skip tombstoned agents (and agents of tombstoned accounts). `GET /v1/agents/{id}` already
-  404s them.
+- **Defence in depth:** these all skip tombstoned agents, and agents of tombstoned accounts:
+  - the trusted-invoke grant lookup;
+  - the public invoke path (`capability_id`);
+  - the inbox;
+  - the friendship agent lookup;
+  - `GET /v1/agents/{id}/capabilities`, which returns them today;
+  - MCP `list_network_agents` and `list_capabilities`.
+  `GET /v1/agents/{id}` already 404s them.
 - **MCP `delete_agent`:** its description becomes true.
 
 ### 4.2 Credential scope on every action as an agent
@@ -114,19 +118,34 @@ MCP's per-agent reads are filtered to the agents in scope, as REST's already are
   0.5.0 notes list the change.
 - **Unaffected:** web sessions and unscoped API keys (no scope row means all agents), and the
   owner's interactive approvals.
+- **Key rotation keeps `own` agents.** Rotation moves the scope row to the new key id, but
+  `agents.created_by_api_key_id` keeps the old id, so an `own` key loses its agents (an
+  existing bug). Rotation now updates that attribution, and any `default_agents` key, in the
+  same transaction.
 
 **Without slowing invoke.** `resolve_grant` costs a database query, and its own comment says
-to keep it off the hot path. So the relay keeps an in-memory **scope cache**, keyed by
-credential:
+to keep it off the hot path. So the relay keeps an in-memory **scope cache**:
 
-- **Key:** the API key id, or the OAuth client and user.
-- **Value:** the scope mode and, for `own` and `selected`, the set of agent ids in scope.
-- **Negative entries:** "no scope row, so all agents" is cached too.
-- **Freshness:** entries live 30 seconds. The relay drops a credential's entry itself when that
-  credential creates an agent (`own` grows), and when a `selected` list or a credential is
-  changed through the relay. Changes made by the app service apply within 30 seconds.
-- **Cost:** a cache hit costs no query. A miss costs one, which fetches the mode and the agent
-  set together. The invoke path does no other new database work.
+- **Key:** what `resolve_grant` already looks up. That's the token's `jti` for a JWT (taken
+  from the claims the relay has already decoded) and the key id for an API key. Each token has
+  its own scope row, written when it's minted or refreshed, so two credentials never share an
+  entry.
+- **Value:** the scope mode and, for `own` and `selected`, the agent ids in scope.
+  - Those ids are limited to accounts the user belongs to. `manageable_agent_ids` matches
+    `own` by `created_by_client_id` across every user of a client, so the user filter is
+    needed.
+  - Credentials with no scope row are cached as "all agents".
+- **Freshness:**
+  - Entries live 30 seconds.
+  - Scope rows are written only when a credential is minted. Rotating a key moves its row to
+    the new key id, a new key and a new entry. The relay's one in-place change is adding an
+    agent the credential created to its `selected` list or `own` set, and it drops that
+    credential's entry when it does.
+  - With several relay replicas, another replica's entry can be stale. So a refusal from a
+    cached `own` or `selected` set is re-checked against the database before it's returned.
+    Refusals are rare, so allowed calls never query.
+- **Cost:** a cache hit makes no query. A miss makes one, fetching the mode and the agent set
+  together. The invoke path does no other new database work.
 
 ### 4.3 Addressing by name
 
@@ -190,8 +209,9 @@ continuations and cutting pipes, `$(…)` and comments, then parses it with the 
   password stored hashed).
 - **Timeouts:** the docs say how long a pending invocation waits, and how the SDK wait
   timeouts relate.
-- **Surfaces:** the docs say how the network list (everything you can see, including your
-  own) differs from the directory (public, network-visible agents).
+- **Surfaces:** the docs say how the network list differs from the directory. The network
+  list is signed in, with org-shared agents and no dormancy filter. The directory is public,
+  network-visible only, and ranked.
 
 ### 4.8 Release 0.5.0
 
@@ -275,9 +295,9 @@ field names and computed values:
 - **`access`:** `public` (callable by anyone signed in, within its monthly quota) or `friends`
   (needs a friendship and a grant).
 - **Each endpoint keeps its own audience and extra fields:**
-  - **`/v1/network/agents`:** everything visible to you, including your own private agents; no
-    dormancy filter; its current fields (`is_mine`, `account_id`, `account_display_name`,
-    `capability_count`, `endpoint_url`, `updated_at`) stay.
+  - **`/v1/network/agents`:** as today, network-visible agents plus org-visible agents of orgs
+    you share; no dormancy filter. Its current fields (`is_mine`, `account_id`,
+    `account_display_name`, `capability_count`, `endpoint_url`, `updated_at`) stay.
   - **Discovery:** the public directory. It keeps `agent_slug` beside `slug`, and
     `has_public_capabilities` beside `capabilities`, both documented as deprecated for one
     release.
@@ -318,7 +338,8 @@ field names and computed values:
 
 ### 5.4 Signed in: standing and your agents
 
-`GET /v1/discovery/agents/{ref}/standing` (signed in) returns `you` alone. Search and profile
+`GET /v1/discovery/standing?agent=<ref>` (signed in) returns `you` alone. It takes a query
+parameter, so it can't collide with an agent slug. Search and profile
 responses include it when called with a token:
 
 ```json
@@ -341,7 +362,7 @@ own private agents and your orgs' org-visible agents, with `visibility`, and acc
 | Surface | Off | On |
 |---|---|---|
 | `GET /v1/discovery/agents`, `/featured` (search) | 404 | served |
-| Profiles and `/standing` | signed in only | public, and `you` when signed in |
+| Profiles and `/v1/discovery/standing` | signed in only | public, and `you` when signed in |
 | `/mcp` `search_agents`, `featured_agents` | not listed | listed |
 | `/mcp` `get_agent_profile` | listed | listed |
 | `/mcp/directory`, agent endpoints | 404 | served if `MCP_AGENTS_ENABLED` |
@@ -418,8 +439,9 @@ credential's scope count. The resolution is **per capability**:
 2. **Else, an agent of yours holding an active grant** for that capability. With several, the
    oldest grant wins.
 3. **Else, for a public capability, your default agent:**
-   - the one agent in scope, when the scope holds exactly one;
-   - for an unscoped credential, your **personal agent** (§6.4);
+   - for a scoped credential (`own` or `selected`), the one agent in scope when exactly one.
+     Agents in scope are counted only in accounts you belong to, as in §4.2;
+   - for an unscoped credential, your **personal agent** (§6.4), whatever agents you have;
    - for an `own` scope with no agents yet, a **client agent** made for this credential
      (§6.4), which is then in its scope;
    - otherwise, a `selected` scope with zero or several agents, or an `own` scope with several:
@@ -517,9 +539,11 @@ description, then a paragraph on what the tools are, which agent you call as, an
   - `inputSchema` is the capability's input schema. A non-object schema is wrapped as
     `{type: "object", properties: {input: <schema>}, required: ["input"]}` and unwrapped on
     call.
-  - `outputSchema` is the wrapper `{type: "object", required: ["status", "invocation_id"],
-    properties: {status, invocation_id, output: <the capability's output schema>}}`, so every
-    non-error result conforms, finished or not.
+  - `outputSchema` is the wrapper `{type: "object", required: ["status"], properties: {status,
+    invocation_id, output: <the capability's output schema>, code, error}}`. Every result in
+    the table below conforms, finished, pending or refused. The relay doesn't check the
+    agent's output against its schema, so an agent that breaks its own output schema can make
+    strict clients reject a success. The docs say so.
 - **Helper tools, always present:**
   - `chakramcp_about {}`: the agent's profile (§5.3) with your standing. It lists the
     capabilities you can't call yet and how to get access (befriend through `/mcp`
@@ -531,8 +555,9 @@ description, then a paragraph on what the tools are, which agent you call as, an
   next time the client lists tools.
 
 **`tools/call`:** runs invoke's code path (§7.1) as the caller of §6.1, then waits up to
-`MCP_TOOL_WAIT_SECS` (default 25). Arguments go in as `input` unchanged. Like REST invoke, the
-relay doesn't validate them against the schema; the agent does.
+`MCP_TOOL_WAIT_SECS` (default 25). The arguments are the invocation's `input`, unwrapped
+first for a wrapped non-object schema. Like REST invoke, the relay doesn't validate them
+against the schema; the agent does.
 
 | Invocation | Tool result |
 |---|---|
@@ -540,7 +565,7 @@ relay doesn't validate them against the schema; the agent does.
 | pending, in progress (after the wait) | not an error; `structuredContent: {status, invocation_id}`; text: "Still running. Call chakramcp_get_result with invocation_id …" |
 | awaiting_consent | not an error, returned at once; `structuredContent: {status, invocation_id}`; text: "The agent's owner approves this request first. Check back with chakramcp_get_result." |
 | failed, timeout | `isError: true`; the agent's error; `structuredContent: {status, invocation_id, error}` |
-| refused (safety, compliance, limits, consent denied, scope, `grant_required`, `as_required`) | `isError: true`; the reason; `structuredContent: {status, code, invocation_id?, safety?}` |
+| refused (safety, compliance, limits, consent denied, scope, `grant_required`, `as_required`) | `isError: true`; the reason; `structuredContent: {status: "refused", code, invocation_id?}`, with `invocation_id` only when an invocation was recorded |
 
 **Sign-in discovery:**
 
@@ -599,7 +624,8 @@ used by REST discovery, the network list, featured agents, profiles and the MCP 
 
 ## 8. Data model and migrations
 
-All migrations run in sqlx's transaction, except where noted.
+All migrations run in sqlx's transaction, except where noted. The numbers are provisional:
+the friendships index may take one, shifting the rest.
 
 - **0050_revoke_grants_of_deleted_agents.sql** (D1): revokes active grants whose granter or
   grantee agent, or that agent's account, is tombstoned. It touches only those rows.
@@ -643,8 +669,8 @@ New codes:
 
 | Code | Where it comes back | When |
 |---|---|---|
-| `chk.auth.out_of_scope` | REST 403; MCP tool error, or JSON-RPC error on `initialize` | acting as an agent outside the credential's scope (§4.2, §6.1) |
-| `chk.mcp.as_required` | MCP tool error | no agent to call as, and a scope that doesn't settle it (§6.1) |
+| `chk.auth.out_of_scope` | REST 403; on `/mcp` a JSON-RPC error with `data.code` (as `/mcp` refusals are today); on an agent endpoint a tool error, or a JSON-RPC error on `initialize` | acting as an agent outside the credential's scope (§4.2, §6.1) |
+| `chk.mcp.as_required` | on `/mcp` `invoke` a JSON-RPC error; on an agent endpoint a tool error | no agent to call as, and a scope that doesn't settle it (§6.1) |
 | `chk.mcp.push_agent` | JSON-RPC error on `initialize` | an agent endpoint for a push-mode agent |
 | `directory_rate_limited` | HTTP 429 | the directory's per-IP limit |
 
@@ -675,8 +701,14 @@ other `chk.policy.*` codes, `account_rate_limited`, `account_credits_exhausted`,
   - every path in §4.1 skips deleted agents;
   - an `own` token gets 403 `chk.auth.out_of_scope` on invoke, result posting, MCP `respond`
     and A2A for a second agent in its account, and MCP reads are filtered;
-  - the scope cache: a hit makes no query, an `own` credential's new agent is in scope at once,
-    and an entry expires;
+  - the scope cache:
+    - a hit makes no query;
+    - two tokens of one client keep separate entries;
+    - an `own` credential's new agent is in scope at once, including through a cached refusal
+      re-checked against the database;
+    - `own` counts only your accounts;
+    - an entry expires;
+  - key rotation keeps an `own` key's agents;
   - the CLI resolver in both modes, with paging;
   - the SDKs' `network()`;
   - live friend counts;
@@ -704,7 +736,8 @@ other `chk.policy.*` codes, `account_rate_limited`, `account_credits_exhausted`,
   - the directory without sign-in, and its IP limit with and without `TRUST_FORWARDED_FOR`;
   - `tools/list` with a grant, with public access only, and with nothing;
   - each row of the tool-result table, and that `structuredContent` matches `outputSchema` in
-    each;
+    each, refusals included;
+  - an `own`-scoped client shared by two users gives each their own client agent;
   - `chakramcp_get_result`'s ownership check;
   - dotted, long and colliding names;
   - private, deleted and push agents;
