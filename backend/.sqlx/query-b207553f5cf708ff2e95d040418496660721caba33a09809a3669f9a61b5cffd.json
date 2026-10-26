@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, call_id, seq, kind, from_agent_id, text, data, blocked, safety, created_at\n          FROM call_entries\n         WHERE id = ANY($1)\n         ORDER BY created_at, call_id, seq\n        ",
+  "query": "\n        SELECT e.id, e.call_id, e.seq, e.kind, e.from_agent_id, e.text, e.data,\n               e.blocked, e.safety, e.created_at, e.invocation_id,\n               i.capability_name AS \"invocation_capability?\",\n               i.status AS \"invocation_status?\"\n          FROM call_entries e\n          LEFT JOIN relay_invocations i ON i.id = e.invocation_id\n         WHERE e.call_id = $1\n           AND e.seq > $2\n           AND ($3::text IS NULL OR e.search @@ calls_or_query($3))\n         ORDER BY CASE WHEN $3::text IS NULL THEN 0\n                       ELSE ts_rank_cd(e.search, calls_or_query($3)) END DESC,\n                  e.seq ASC\n         LIMIT $4\n        ",
   "describe": {
     "columns": [
       {
@@ -112,11 +112,47 @@
             "name": "created_at"
           }
         }
+      },
+      {
+        "ordinal": 10,
+        "name": "invocation_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "call_entries",
+            "name": "invocation_id"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "invocation_capability?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "capability_name"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "invocation_status?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "status"
+          }
+        }
       }
     ],
     "parameters": {
       "Left": [
-        "UuidArray"
+        "Uuid",
+        "Int4",
+        "Text",
+        "Int8"
       ]
     },
     "nullable": [
@@ -129,8 +165,11 @@
       true,
       false,
       true,
+      false,
+      true,
+      false,
       false
     ]
   },
-  "hash": "9590487e1458bb5e76a86116e3f145c4334dfd30a7a7eab49fcfc6214a897a9f"
+  "hash": "b207553f5cf708ff2e95d040418496660721caba33a09809a3669f9a61b5cffd"
 }

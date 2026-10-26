@@ -278,6 +278,7 @@ async fn opening_message(
             blocked: false,
             size_bytes: size,
             safety: s.findings.clone(),
+            invocation_id: None,
         },
         &[to],
     )

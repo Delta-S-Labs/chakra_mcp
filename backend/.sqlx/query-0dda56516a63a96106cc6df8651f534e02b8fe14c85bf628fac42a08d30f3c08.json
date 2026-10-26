@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO relay_invocations\n            (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,\n             capability_name, invoked_by_user_id, status, elapsed_ms,\n             error_message, input_preview, api_key_id, minted_jti, call_id)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Uuid",
+        "Text",
+        "Int4",
+        "Text",
+        "Jsonb",
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0dda56516a63a96106cc6df8651f534e02b8fe14c85bf628fac42a08d30f3c08"
+}

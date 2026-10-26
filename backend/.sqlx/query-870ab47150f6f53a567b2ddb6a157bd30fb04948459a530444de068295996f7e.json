@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT i.id, i.capability_name, i.input_preview, i.status, i.trust_snapshot,\n               i.created_at, i.claimed_at,\n               i.grantee_agent_id, ea.display_name as \"grantee_display_name?\"\n        FROM relay_invocations i\n        LEFT JOIN agents ea ON ea.id = i.grantee_agent_id\n        WHERE i.id = ANY($1)\n        ORDER BY i.created_at ASC\n        ",
+  "query": "\n        SELECT i.id, i.capability_name, i.input_preview, i.status, i.trust_snapshot,\n               i.created_at, i.claimed_at, i.call_id,\n               i.grantee_agent_id, ea.display_name as \"grantee_display_name?\"\n        FROM relay_invocations i\n        LEFT JOIN agents ea ON ea.id = i.grantee_agent_id\n        WHERE i.id = ANY($1)\n        ORDER BY i.created_at ASC\n        ",
   "describe": {
     "columns": [
       {
@@ -82,6 +82,17 @@
       },
       {
         "ordinal": 7,
+        "name": "call_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "call_id"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
         "name": "grantee_agent_id",
         "type_info": "Uuid",
         "origin": {
@@ -92,7 +103,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "grantee_display_name?",
         "type_info": "Text",
         "origin": {
@@ -117,8 +128,9 @@
       false,
       true,
       true,
+      true,
       false
     ]
   },
-  "hash": "d01ca8ae943c2e2c73c40c3e96f5715dfd56043a405c83f6bbdf7786ee78bc07"
+  "hash": "870ab47150f6f53a567b2ddb6a157bd30fb04948459a530444de068295996f7e"
 }

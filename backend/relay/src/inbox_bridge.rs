@@ -195,6 +195,8 @@ pub async fn park(
                 minted_jti: authz.minted_jti,
                 trust_snapshot: trust_snapshot.as_ref(),
                 charge_account_id: authz.caller_account_id,
+                // A2A requests aren't made in calls (push agents are deferred).
+                call_id: None,
             },
             &gate,
         )

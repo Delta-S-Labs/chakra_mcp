@@ -54,6 +54,8 @@ pub struct NewInvocation<'a> {
     pub trust_snapshot: Option<&'a Value>,
     /// The caller's account: charged, and recorded on the consent request.
     pub charge_account_id: Uuid,
+    /// The call it's made in, if any (calls spec §7).
+    pub call_id: Option<Uuid>,
 }
 
 /// What the capability's settings and the caller's terms add.
@@ -136,11 +138,11 @@ pub async fn enqueue_consent_required(
             INSERT INTO relay_invocations
                 (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
                  capability_name, invoked_by_user_id, status, input_preview,
-                 api_key_id, minted_jti, trust_snapshot)
+                 api_key_id, minted_jti, trust_snapshot, call_id)
             SELECT $1, $2, $3, $4, $5, $6, $7,
                    CASE WHEN EXISTS (SELECT 1 FROM used) THEN 'pending'
                         ELSE 'awaiting_consent' END,
-                   $8, $9, $10, $11
+                   $8, $9, $10, $11, $17
             RETURNING id
         ),
         charge AS (
@@ -183,9 +185,11 @@ pub async fn enqueue_consent_required(
         terms,
         gate.wait_secs,
         notice_id,
+        inv.call_id,
     )
     .fetch_one(db)
     .await?;
+    crate::calls::link::note(db, inv.call_id, inv.id, inv.grantee_agent_id).await;
 
     Ok(if covering_consent.is_some() {
         super::metrics::record("covered", 1);

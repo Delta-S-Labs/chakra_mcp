@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        INSERT INTO call_entries\n            (id, call_id, seq, kind, from_agent_id, text, data, blocked, size_bytes, safety)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)\n        RETURNING created_at\n        ",
+  "query": "\n        INSERT INTO call_entries\n            (id, call_id, seq, kind, from_agent_id, text, data, blocked, size_bytes, safety,\n             invocation_id)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)\n        RETURNING created_at\n        ",
   "describe": {
     "columns": [
       {
@@ -26,12 +26,13 @@
         "Jsonb",
         "Bool",
         "Int4",
-        "Jsonb"
+        "Jsonb",
+        "Uuid"
       ]
     },
     "nullable": [
       false
     ]
   },
-  "hash": "641e2ca5804346d2ffb77bf54dc2bb157f7897c0d5ed719c32aeedbad28ab666"
+  "hash": "86511c17919c985f275bd93061d7720934ba8e3f73af4b72751dbe28ffa422cc"
 }

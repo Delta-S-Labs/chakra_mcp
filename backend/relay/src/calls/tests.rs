@@ -1064,3 +1064,272 @@ async fn concurrent_messages_get_distinct_ordered_seqs(pool: PgPool) {
     let (_, call) = get(&s, &w.alice.key, &format!("/v1/calls/{id}")).await;
     assert_eq!(call["message_count"], 12);
 }
+
+// ─── C2: capabilities in a call, and the MCP tools ───────
+
+/// A capability on `granter`, granted to `grantee`; the grant's id.
+async fn grant(pool: &PgPool, granter: Uuid, grantee: Uuid, name: &str) -> Uuid {
+    let cap = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO agent_capabilities (id, agent_id, name, description, input_schema, output_schema, visibility)
+         VALUES ($1, $2, $3, 'Book a venue for an event.', '{\"type\":\"object\"}', '{\"type\":\"object\"}', 'network')",
+    )
+    .bind(cap)
+    .bind(granter)
+    .bind(name)
+    .execute(pool)
+    .await
+    .unwrap();
+    let grant = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO grants (id, granter_agent_id, grantee_agent_id, capability_id, status)
+         VALUES ($1, $2, $3, $4, 'active')",
+    )
+    .bind(grant)
+    .bind(granter)
+    .bind(grantee)
+    .bind(cap)
+    .execute(pool)
+    .await
+    .unwrap();
+    grant
+}
+
+async fn invoke_in(
+    state: &RelayState,
+    token: &str,
+    grant_id: Uuid,
+    grantee: Uuid,
+    call: Uuid,
+) -> (StatusCode, Value) {
+    post(
+        state,
+        token,
+        "/v1/invoke",
+        json!({
+            "grant_id": grant_id, "grantee_agent_id": grantee,
+            "input": { "venue": "Hall A", "date": "2026-11-14" },
+            "call_id": call,
+        }),
+    )
+    .await
+}
+
+#[sqlx::test(migrations = "../migrations")]
+async fn capabilities_are_requested_inside_a_call(pool: PgPool) {
+    let w = world(&pool).await;
+    let s = calls_on(&pool);
+    let book = grant(&pool, w.b, w.a, "book_venue").await;
+    let id = active(&s, &w).await;
+
+    let (status, body) = invoke_in(&s, &w.alice.key, book, w.a, id).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+    let inv = body["invocation_id"].as_str().unwrap().to_owned();
+    let (_, row) = get(&s, &w.alice.key, &format!("/v1/invocations/{inv}")).await;
+    assert_eq!(row["call_id"], json!(id));
+    // Bob's agent gets it through its inbox, with the call it's part of.
+    let (_, inbox) = get(&s, &w.bob.key, &format!("/v1/inbox?agent_id={}", w.b)).await;
+    assert_eq!(inbox[0]["call_id"], json!(id), "{inbox}");
+    // The transcript shows it, with its status as it is now.
+    let (_, history) = get(&s, &w.alice.key, &format!("/v1/calls/{id}/messages")).await;
+    let entry = history.as_array().unwrap().last().unwrap();
+    assert_eq!(entry["kind"], "invocation");
+    assert_eq!(entry["from_agent_id"], json!(w.a));
+    assert_eq!(entry["invocation"]["capability"], "book_venue");
+    assert_eq!(entry["invocation"]["status"], "in_progress");
+    // Not delivered on the calls feed: it went through the inbox.
+    assert!(pull(&s, &w.bob.key, w.b)
+        .await
+        .iter()
+        .all(|(k, _)| k != "invocation"));
+
+    // Only between the call's two parties, on an active call, by the agent.
+    let a2 = agent(&pool, w.alice.account, "alice-second").await;
+    befriend(&pool, w.b, a2).await;
+    let other_grantee = grant(&pool, w.b, a2, "book_room").await;
+    let (status, body) = invoke_in(&s, &w.alice.key, other_grantee, a2, id).await;
+    assert_eq!(
+        (status, code(&body)),
+        (StatusCode::FORBIDDEN, "chk.calls.not_a_party")
+    );
+    let carol = person(&pool, "Carol").await;
+    let c = agent(&pool, carol.account, "carol-agent").await;
+    befriend(&pool, c, w.a).await;
+    let third = grant(&pool, c, w.a, "cater").await;
+    let (status, body) = invoke_in(&s, &w.alice.key, third, w.a, id).await;
+    assert_eq!(
+        (status, code(&body)),
+        (StatusCode::FORBIDDEN, "chk.calls.not_a_party")
+    );
+    let (status, body) = invoke_in(&s, &w.alice.web, book, w.a, id).await;
+    assert_eq!(
+        (status, code(&body)),
+        (StatusCode::FORBIDDEN, "chk.calls.owner_session")
+    );
+    let (status, _) = invoke_in(&s, &carol.key, book, w.a, id).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let off = RelayState::new(pool.clone(), config());
+    let (status, body) = invoke_in(&off, &w.alice.key, book, w.a, id).await;
+    assert_eq!(
+        (status, code(&body)),
+        (StatusCode::BAD_REQUEST, "chk.calls.bad_terms")
+    );
+    post(
+        &s,
+        &w.alice.key,
+        &format!("/v1/calls/{id}/end"),
+        json!({ "agent_id": w.a }),
+    )
+    .await;
+    let (status, body) = invoke_in(&s, &w.alice.key, book, w.a, id).await;
+    assert_eq!(
+        (status, code(&body)),
+        (StatusCode::CONFLICT, "chk.calls.not_active")
+    );
+}
+
+#[sqlx::test(migrations = "../migrations")]
+async fn a_refused_request_still_joins_its_call(pool: PgPool) {
+    let w = world(&pool).await;
+    let book = grant(&pool, w.b, w.a, "book_venue").await;
+    let id = active(&calls_on(&pool), &w).await;
+    let fake = Fake {
+        nouls: [("off_capability", 0.95)]
+            .into_iter()
+            .collect::<HashMap<_, _>>(),
+        ..Fake::default()
+    };
+    let url = serve(fake).await;
+    let s = calls_on(&pool).with_compliance(Some(checker(&url)));
+    let (status, body) = invoke_in(&s, &w.alice.key, book, w.a, id).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    let (_, history) = get(&s, &w.alice.key, &format!("/v1/calls/{id}/messages")).await;
+    let entry = history.as_array().unwrap().last().unwrap();
+    assert_eq!(entry["kind"], "invocation");
+    assert_eq!(entry["invocation"]["status"], "rejected");
+}
+
+async fn mcp(state: &RelayState, token: &str, method: &str, params: Value) -> Value {
+    let (status, body) = post(
+        state,
+        token,
+        "/mcp",
+        json!({ "jsonrpc": "2.0", "id": 1, "method": method, "params": params }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    body["result"].clone()
+}
+
+/// A tool's result as JSON (`structuredContent`, or the text for arrays).
+async fn tool(state: &RelayState, token: &str, name: &str, arguments: Value) -> Value {
+    let result = mcp(
+        state,
+        token,
+        "tools/call",
+        json!({ "name": name, "arguments": arguments }),
+    )
+    .await;
+    assert_eq!(result["isError"], false, "{result}");
+    serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap()
+}
+
+#[sqlx::test(migrations = "../migrations")]
+async fn agents_hold_calls_over_mcp(pool: PgPool) {
+    let w = world(&pool).await;
+    let s = calls_on(&pool);
+    let listed = mcp(&s, &w.alice.key, "tools/list", json!({})).await;
+    let names: Vec<&str> = listed["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
+    for name in [
+        "start_call",
+        "answer_call",
+        "send_message",
+        "pull_calls",
+        "call_history",
+        "end_call",
+    ] {
+        assert!(names.contains(&name), "{name} missing");
+    }
+
+    let call = tool(&s, &w.alice.key, "start_call", json!({
+        "from_agent_id": w.a, "to_agent_id": w.b, "topic": "Venue", "message": "Shall we pick a venue?",
+    }))
+    .await;
+    let id = call["id"].as_str().unwrap().to_owned();
+    let items = tool(&s, &w.bob.key, "pull_calls", json!({ "agent_id": w.b })).await;
+    assert_eq!(items.as_array().unwrap().len(), 2);
+    let call = tool(
+        &s,
+        &w.bob.key,
+        "answer_call",
+        json!({
+            "call_id": id, "agent_id": w.b, "answer": "accept", "message": "Yes, Hall A?",
+        }),
+    )
+    .await;
+    assert_eq!(call["state"], "active");
+    let entry = tool(
+        &s,
+        &w.alice.key,
+        "send_message",
+        json!({
+            "call_id": id, "agent_id": w.a, "text": "Hall A it is.",
+        }),
+    )
+    .await;
+    assert_eq!(entry["kind"], "message");
+    let found = tool(
+        &s,
+        &w.bob.key,
+        "call_history",
+        json!({ "call_id": id, "q": "hall" }),
+    )
+    .await;
+    assert_eq!(found.as_array().unwrap().len(), 2, "{found}");
+    let got = tool(&s, &w.alice.key, "get_call", json!({ "call_id": id })).await;
+    assert_eq!(got["message_count"], 3);
+    let call = tool(
+        &s,
+        &w.bob.key,
+        "end_call",
+        json!({ "call_id": id, "agent_id": w.b }),
+    )
+    .await;
+    assert_eq!(call["state"], "ended");
+    let list = tool(&s, &w.alice.key, "list_calls", json!({})).await;
+    assert_eq!(list["calls"].as_array().unwrap().len(), 1);
+
+    // Refusals come back as tool errors with the code.
+    let result = mcp(&s, &w.alice.key, "tools/call", json!({
+        "name": "send_message", "arguments": { "call_id": id, "agent_id": w.a, "text": "Hello?" },
+    }))
+    .await;
+    assert_eq!(result["isError"], true);
+    assert_eq!(result["structuredContent"]["code"], "chk.calls.not_active");
+
+    // With calls off, the tools aren't there.
+    let off = RelayState::new(pool.clone(), config());
+    let listed = mcp(&off, &w.alice.key, "tools/list", json!({})).await;
+    assert!(!listed["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|t| t["name"] == "start_call"));
+    let (_, body) = post(&off, &w.alice.key, "/mcp", json!({
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": { "name": "start_call", "arguments": { "from_agent_id": w.a, "to_agent_id": w.b } },
+    }))
+    .await;
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("unknown tool"),
+        "{body}"
+    );
+}
