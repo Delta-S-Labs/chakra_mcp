@@ -2,11 +2,28 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { deleteAgent, updateAgent, type Agent, type Visibility } from "@/lib/relay";
+import {
+  deleteAgent,
+  updateAgent,
+  type AcceptCalls,
+  type Agent,
+  type Visibility,
+} from "@/lib/relay";
 import styles from "../agents.module.css";
 
-export function EditAgentForm({ token, agent }: { token: string; agent: Agent }) {
+/** `callsOn`: the relay has calls switched on, so show who may call. */
+export function EditAgentForm({
+  token,
+  agent,
+  callsOn = false,
+}: {
+  token: string;
+  agent: Agent;
+  callsOn?: boolean;
+}) {
   const router = useRouter();
+  const push = agent.mode === "push";
+  const [acceptCalls, setAcceptCalls] = useState<AcceptCalls>(agent.accept_calls ?? "friends");
   const [displayName, setDisplayName] = useState(agent.display_name);
   const [description, setDescription] = useState(agent.description);
   const [visibility, setVisibility] = useState<Visibility>(agent.visibility);
@@ -24,6 +41,7 @@ export function EditAgentForm({ token, agent }: { token: string; agent: Agent })
         display_name: displayName.trim(),
         description: description.trim(),
         visibility,
+        ...(callsOn && !push ? { accept_calls: acceptCalls } : {}),
       });
       setSaved(true);
       router.refresh();
@@ -82,6 +100,26 @@ export function EditAgentForm({ token, agent }: { token: string; agent: Agent })
             <option value="network">Network</option>
           </select>
         </label>
+
+        {callsOn && (
+          <label className={styles.field}>
+            <span className={styles.fieldLabel}>Accept calls from</span>
+            <select
+              value={push ? "nobody" : acceptCalls}
+              disabled={push}
+              onChange={(e) => setAcceptCalls(e.target.value as AcceptCalls)}
+            >
+              <option value="friends">Friends</option>
+              <option value="anyone">Anyone</option>
+              <option value="nobody">Nobody</option>
+            </select>
+            <span className={styles.formHint}>
+              {push
+                ? "Push agents can't take calls yet."
+                : "Who may start a call with this agent: a two-way conversation."}
+            </span>
+          </label>
+        )}
 
         <label className={`${styles.field} ${styles.fieldFull}`}>
           <span className={styles.fieldLabel}>Description</span>

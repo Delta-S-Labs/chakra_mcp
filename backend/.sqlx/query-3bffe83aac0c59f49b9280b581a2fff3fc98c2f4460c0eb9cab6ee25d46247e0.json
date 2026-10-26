@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT c.id, c.state, c.memory, c.memory_features, c.ttl_secs, c.idle_secs,\n               c.topic, c.created_at, c.answered_at, c.ended_at, c.ended_by,\n               c.purge_at, c.purged_at, c.message_count,\n               c.caller_agent_id, c.callee_agent_id,\n               c.caller_account_id, c.callee_account_id,\n               ca.account_id AS \"caller_current_account?\",\n               ca.display_name AS \"caller_name?\",\n               cacc.slug AS \"caller_slug?\",\n               (ca.tombstoned_at IS NOT NULL) AS \"caller_gone?\",\n               cb.account_id AS \"callee_current_account?\",\n               cb.display_name AS \"callee_name?\",\n               cbacc.slug AS \"callee_slug?\",\n               (cb.tombstoned_at IS NOT NULL) AS \"callee_gone?\"\n          FROM calls c\n          LEFT JOIN agents ca ON ca.id = c.caller_agent_id\n          LEFT JOIN accounts cacc ON cacc.id = ca.account_id\n          LEFT JOIN agents cb ON cb.id = c.callee_agent_id\n          LEFT JOIN accounts cbacc ON cbacc.id = cb.account_id\n         WHERE c.id = $1\n        ",
+  "query": "\n        SELECT c.id, c.state, c.memory, c.memory_features, c.ttl_secs, c.idle_secs,\n               c.topic, c.created_at, c.answered_at, c.ended_at, c.ended_by,\n               c.purge_at, c.purged_at, c.message_count, c.last_message_at,\n               c.caller_agent_id, c.callee_agent_id,\n               c.caller_account_id, c.callee_account_id,\n               ca.account_id AS \"caller_current_account?\",\n               ca.display_name AS \"caller_name?\",\n               cacc.slug AS \"caller_slug?\",\n               (ca.tombstoned_at IS NOT NULL) AS \"caller_gone?\",\n               cb.account_id AS \"callee_current_account?\",\n               cb.display_name AS \"callee_name?\",\n               cbacc.slug AS \"callee_slug?\",\n               (cb.tombstoned_at IS NOT NULL) AS \"callee_gone?\"\n          FROM calls c\n          LEFT JOIN agents ca ON ca.id = c.caller_agent_id\n          LEFT JOIN accounts cacc ON cacc.id = ca.account_id\n          LEFT JOIN agents cb ON cb.id = c.callee_agent_id\n          LEFT JOIN accounts cbacc ON cbacc.id = cb.account_id\n         WHERE (COALESCE(ca.account_id, c.caller_account_id) = ANY($1)\n             OR COALESCE(cb.account_id, c.callee_account_id) = ANY($1))\n           AND ($2::uuid IS NULL OR c.caller_agent_id = $2 OR c.callee_agent_id = $2)\n           AND ($3::text IS NULL OR c.state = $3)\n           AND ($4::timestamptz IS NULL OR (c.created_at, c.id) < ($4, $5))\n         ORDER BY c.created_at DESC, c.id DESC\n         LIMIT $6\n        ",
   "describe": {
     "columns": [
       {
@@ -159,6 +159,17 @@
       },
       {
         "ordinal": 14,
+        "name": "last_message_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "calls",
+            "name": "last_message_at"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
         "name": "caller_agent_id",
         "type_info": "Uuid",
         "origin": {
@@ -169,7 +180,7 @@
         }
       },
       {
-        "ordinal": 15,
+        "ordinal": 16,
         "name": "callee_agent_id",
         "type_info": "Uuid",
         "origin": {
@@ -180,7 +191,7 @@
         }
       },
       {
-        "ordinal": 16,
+        "ordinal": 17,
         "name": "caller_account_id",
         "type_info": "Uuid",
         "origin": {
@@ -191,7 +202,7 @@
         }
       },
       {
-        "ordinal": 17,
+        "ordinal": 18,
         "name": "callee_account_id",
         "type_info": "Uuid",
         "origin": {
@@ -202,7 +213,7 @@
         }
       },
       {
-        "ordinal": 18,
+        "ordinal": 19,
         "name": "caller_current_account?",
         "type_info": "Uuid",
         "origin": {
@@ -213,7 +224,7 @@
         }
       },
       {
-        "ordinal": 19,
+        "ordinal": 20,
         "name": "caller_name?",
         "type_info": "Text",
         "origin": {
@@ -224,7 +235,7 @@
         }
       },
       {
-        "ordinal": 20,
+        "ordinal": 21,
         "name": "caller_slug?",
         "type_info": "Text",
         "origin": {
@@ -235,13 +246,13 @@
         }
       },
       {
-        "ordinal": 21,
+        "ordinal": 22,
         "name": "caller_gone?",
         "type_info": "Bool",
         "origin": "Expression"
       },
       {
-        "ordinal": 22,
+        "ordinal": 23,
         "name": "callee_current_account?",
         "type_info": "Uuid",
         "origin": {
@@ -252,7 +263,7 @@
         }
       },
       {
-        "ordinal": 23,
+        "ordinal": 24,
         "name": "callee_name?",
         "type_info": "Text",
         "origin": {
@@ -263,7 +274,7 @@
         }
       },
       {
-        "ordinal": 24,
+        "ordinal": 25,
         "name": "callee_slug?",
         "type_info": "Text",
         "origin": {
@@ -274,7 +285,7 @@
         }
       },
       {
-        "ordinal": 25,
+        "ordinal": 26,
         "name": "callee_gone?",
         "type_info": "Bool",
         "origin": "Expression"
@@ -282,7 +293,12 @@
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "UuidArray",
+        "Uuid",
+        "Text",
+        "Timestamptz",
+        "Uuid",
+        "Int8"
       ]
     },
     "nullable": [
@@ -302,17 +318,18 @@
       false,
       true,
       true,
+      true,
       false,
       false,
-      true,
-      true,
-      true,
+      false,
+      false,
+      false,
       null,
-      true,
-      true,
-      true,
+      false,
+      false,
+      false,
       null
     ]
   },
-  "hash": "5bb02f94679c46bbf31a8d20283fd59cb714e82cd715463a7265e71fa0b31174"
+  "hash": "3bffe83aac0c59f49b9280b581a2fff3fc98c2f4460c0eb9cab6ee25d46247e0"
 }

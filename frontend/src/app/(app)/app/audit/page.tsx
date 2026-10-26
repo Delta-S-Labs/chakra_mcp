@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { auth } from "@/auth";
 import { listMyAgents, listInvocations, listAuditEvents, type AuditEvent } from "@/lib/relay";
 import { redirectIfUnauthorized } from "@/lib/session-expired";
@@ -61,7 +62,7 @@ export default async function AuditPage() {
         <h2 className={styles.sectionTitle}>Write trail</h2>
         <p className={styles.body}>
           Every create, update, delete, and state change across your agents,
-          capabilities, friendships, grants, and reviews — whoever did it,
+          capabilities, friendships, grants, reviews and calls — whoever did it,
           whenever. Read-only actions aren&apos;t logged here (see Usage).
         </p>
         {writeTrail.length === 0 ? (
@@ -71,7 +72,13 @@ export default async function AuditPage() {
             {writeTrail.map((e) => (
               <li key={e.id} className={styles.evt}>
                 <span className={styles.evtAction}>{e.action}</span>
-                <span className={styles.evtSummary}>{e.summary}</span>
+                <span className={styles.evtSummary}>
+                  {e.resource_type === "call" && e.resource_id ? (
+                    <Link href={`/app/calls/${e.resource_id}`}>{e.summary}</Link>
+                  ) : (
+                    e.summary
+                  )}
+                </span>
                 <span className={styles.evtTime}>
                   <LocalTime iso={e.created_at} />
                 </span>

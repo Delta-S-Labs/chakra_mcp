@@ -120,6 +120,7 @@ pub struct Call {
     pub purge_at: Option<DateTime<Utc>>,
     pub purged_at: Option<DateTime<Utc>>,
     pub message_count: i32,
+    pub last_message_at: Option<DateTime<Utc>>,
     pub caller: Party,
     pub callee: Party,
 }
@@ -180,6 +181,7 @@ impl Call {
             "purge_at": self.purge_at,
             "purged_at": self.purged_at,
             "message_count": self.message_count,
+            "last_message_at": self.last_message_at,
         })
     }
 }
@@ -200,6 +202,7 @@ pub(crate) struct CallRow {
     pub purge_at: Option<DateTime<Utc>>,
     pub purged_at: Option<DateTime<Utc>>,
     pub message_count: i32,
+    pub last_message_at: Option<DateTime<Utc>>,
     pub caller_agent_id: Option<Uuid>,
     pub callee_agent_id: Option<Uuid>,
     pub caller_account_id: Uuid,
@@ -259,6 +262,7 @@ impl From<CallRow> for Call {
             purge_at: r.purge_at,
             purged_at: r.purged_at,
             message_count: r.message_count,
+            last_message_at: r.last_message_at,
         }
     }
 }
@@ -270,7 +274,7 @@ pub async fn load_call(db: &PgPool, id: Uuid) -> Result<Option<Call>, ApiError> 
         r#"
         SELECT c.id, c.state, c.memory, c.memory_features, c.ttl_secs, c.idle_secs,
                c.topic, c.created_at, c.answered_at, c.ended_at, c.ended_by,
-               c.purge_at, c.purged_at, c.message_count,
+               c.purge_at, c.purged_at, c.message_count, c.last_message_at,
                c.caller_agent_id, c.callee_agent_id,
                c.caller_account_id, c.callee_account_id,
                ca.account_id AS "caller_current_account?",

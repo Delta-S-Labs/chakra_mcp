@@ -1,0 +1,346 @@
+.page { display: grid; gap: 1.6rem; }
+
+.head {
+  display: grid;
+  gap: 0.7rem;
+  max-width: 62ch;
+  padding: 0 0.5rem;
+}
+
+.title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 1;
+  letter-spacing: -0.04em;
+  margin: 0;
+  color: var(--ink);
+}
+
+.body {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  margin: 0;
+}
+
+.error {
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--accent-coral);
+  background: color-mix(in oklab, var(--accent-coral) 14%, var(--paper-soft));
+  border-radius: 0.55rem;
+  font-size: 0.88rem;
+  color: oklch(38% 0.14 28);
+}
+
+.empty {
+  font-family: var(--font-body);
+  font-size: 0.94rem;
+  color: var(--ink-muted);
+  margin: 0;
+  padding: 0 0.5rem;
+}
+
+/* ─── Filters ─── */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: flex-end;
+  padding: 0 0.4rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.25rem;
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+}
+
+.field select {
+  min-width: 10rem;
+  max-width: 100%;
+  padding: 0.45rem 0.6rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--line);
+  background: var(--paper-soft);
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+
+/* ─── The list ─── */
+.list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+/* Rows span the list; the global `li { max-width: 68ch }` is for prose. */
+.list > li { max-width: none; }
+
+.row {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  background: var(--paper-soft);
+  color: inherit;
+  text-decoration: none;
+}
+
+.row:hover {
+  border-color: color-mix(in oklab, var(--accent-coral) 40%, var(--line));
+}
+
+.rowName {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.98rem;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
+}
+
+.rowMeta {
+  font-family: var(--font-body);
+  font-size: 0.84rem;
+  color: var(--ink-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.8rem;
+}
+
+.topic {
+  font-family: var(--font-body);
+  font-size: 0.92rem;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.badge {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.18rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--ink-muted);
+  background: color-mix(in oklab, var(--paper-warm) 36%, var(--paper-soft));
+}
+.badgeActive {
+  background: color-mix(in oklab, oklch(75% 0.18 145) 28%, var(--paper-soft));
+  border-color: color-mix(in oklab, oklch(75% 0.18 145) 60%, var(--line));
+  color: oklch(35% 0.13 145);
+}
+.badgeRinging {
+  background: color-mix(in oklab, var(--accent-butter) 60%, var(--paper-soft));
+  border-color: color-mix(in oklab, var(--accent-butter) 70%, var(--line));
+  color: oklch(36% 0.07 70);
+}
+
+.more {
+  justify-self: start;
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  color: var(--ink);
+  padding: 0 0.5rem;
+}
+
+/* ─── One call ─── */
+.back {
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  color: var(--ink-muted);
+  text-decoration: none;
+  padding: 0 0.5rem;
+}
+
+.terms {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  background: var(--paper-soft);
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+
+.layout {
+  display: grid;
+  gap: 1.2rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 900px) {
+  .layout { grid-template-columns: minmax(0, 1fr) 18rem; align-items: start; }
+}
+
+.thread {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.msg {
+  display: grid;
+  gap: 0.35rem;
+  max-width: min(36rem, 92%);
+  padding: 0.65rem 0.85rem;
+  border-radius: 0.85rem;
+  border: 1px solid var(--line);
+  background: var(--paper-soft);
+  justify-self: start;
+}
+
+.msgMine {
+  justify-self: end;
+  background: color-mix(in oklab, var(--accent-butter) 30%, var(--paper-soft));
+}
+
+.msgFrom {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.msgText {
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+}
+
+.msgGone {
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  font-style: italic;
+  color: var(--ink-muted);
+  margin: 0;
+}
+
+.msgTime {
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+}
+
+.event {
+  justify-self: center;
+  text-align: center;
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  color: var(--ink-muted);
+  padding: 0.2rem 0.6rem;
+  overflow-wrap: anywhere;
+}
+
+/* ─── Memory panel ─── */
+.panel {
+  display: grid;
+  gap: 0.8rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  background: var(--paper-soft);
+}
+
+.panelTitle {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+  margin: 0;
+}
+
+.panelList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+}
+
+.panelList li { overflow-wrap: anywhere; }
+
+.context {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+}
+
+/* ─── Owner actions ─── */
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.btnPrimary,
+.btnSecondary {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.92rem;
+  padding: 0.6rem 1.2rem;
+  border-radius: 0.6rem;
+  cursor: pointer;
+}
+
+.btnPrimary {
+  border: none;
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.btnPrimary:hover { background: var(--accent-coral); }
+
+.btnSecondary {
+  background: transparent;
+  color: var(--ink-soft);
+  border: 1px solid var(--line);
+}
+
+.btnSecondary:hover {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.btnPrimary:disabled,
+.btnSecondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.actionError {
+  color: #b3261e;
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  margin: 0;
+  flex-basis: 100%;
+}

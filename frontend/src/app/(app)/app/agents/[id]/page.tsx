@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@/auth";
 import {
+  callsEnabled,
   getAgent,
   listCapabilities,
   listReviews,
@@ -129,7 +130,7 @@ export default async function AgentDetailPage({
       </header>
 
       {agent.is_mine ? (
-        <EditAgentForm token={token} agent={agent} />
+        <EditAgentForm token={token} agent={agent} callsOn={await callsEnabled(token)} />
       ) : (
         <div className={styles.notice}>
           You&apos;re viewing this agent as a network visitor. Editing is
