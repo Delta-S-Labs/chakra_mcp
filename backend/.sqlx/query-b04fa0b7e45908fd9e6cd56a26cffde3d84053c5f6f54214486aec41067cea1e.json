@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO call_charge_queue (id, account_id, call_id, kind, cost_mc)\n            VALUES ($1, $2, $3, 'memory', $4)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b04fa0b7e45908fd9e6cd56a26cffde3d84053c5f6f54214486aec41067cea1e"
+}

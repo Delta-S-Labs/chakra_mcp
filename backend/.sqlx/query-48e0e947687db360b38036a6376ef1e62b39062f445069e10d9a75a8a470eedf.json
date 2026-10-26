@@ -1,0 +1,49 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT seq, from_agent_id,\n               ts_headline('simple', text, calls_or_query($2),\n                           'MaxFragments=1, MaxWords=45, MinWords=15, StartSel=\"\", StopSel=\"\"')\n                   AS \"snippet!\"\n          FROM call_entries\n         WHERE call_id = $1 AND kind = 'message' AND NOT blocked AND text IS NOT NULL\n           AND search @@ calls_or_query($2)\n         ORDER BY ts_rank_cd(search, calls_or_query($2)) DESC, seq DESC\n         LIMIT $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "seq",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "call_entries",
+            "name": "seq"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "from_agent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "call_entries",
+            "name": "from_agent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "snippet!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "48e0e947687db360b38036a6376ef1e62b39062f445069e10d9a75a8a470eedf"
+}

@@ -12,6 +12,7 @@ pub mod feed;
 pub mod lifecycle;
 pub mod link;
 pub mod mcp;
+pub mod memory;
 pub mod messages;
 pub mod purge;
 pub mod read;
@@ -144,6 +145,11 @@ impl Call {
 
     pub fn is_open(&self) -> bool {
         matches!(self.state.as_str(), "ringing" | "active")
+    }
+
+    /// Whether the relay keeps this call's memory with Jev tags (spec §8).
+    pub fn tags_on(&self) -> bool {
+        self.memory == "call" && self.memory_features["tags"] == true
     }
 
     /// The parties still there to deliver to.
@@ -386,6 +392,8 @@ pub struct NewEntry<'a> {
     pub size_bytes: i32,
     pub safety: Option<Value>,
     pub invocation_id: Option<Uuid>,
+    /// Queue it for tagging (a message in a call whose memory has tags).
+    pub tag: bool,
 }
 
 impl<'a> NewEntry<'a> {
@@ -400,6 +408,7 @@ impl<'a> NewEntry<'a> {
             size_bytes: 0,
             safety: None,
             invocation_id: None,
+            tag: false,
         }
     }
 }
@@ -424,8 +433,9 @@ pub async fn append(
         r#"
         INSERT INTO call_entries
             (id, call_id, seq, kind, from_agent_id, text, data, blocked, size_bytes, safety,
-             invocation_id)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             invocation_id, tag_state)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                CASE WHEN $12 THEN 'pending' END)
         RETURNING created_at
         "#,
         id,
@@ -439,6 +449,7 @@ pub async fn append(
         entry.size_bytes,
         entry.safety,
         entry.invocation_id,
+        entry.tag,
     )
     .fetch_one(&mut *conn)
     .await?;

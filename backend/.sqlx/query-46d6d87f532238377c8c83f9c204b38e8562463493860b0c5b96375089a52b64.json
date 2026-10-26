@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT count(*) AS \"n!\" FROM call_memory_requests\n         WHERE call_id = $1 AND agent_id = $2 AND kind = 'recall'\n           AND created_at > now() - interval '1 hour'\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "46d6d87f532238377c8c83f9c204b38e8562463493860b0c5b96375089a52b64"
+}

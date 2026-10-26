@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT q.seq, q.text AS \"text!\"\n          FROM call_entries q\n         WHERE q.call_id = $1 AND q.tag_state = 'done' AND q.text IS NOT NULL\n           AND (q.tags->>'open_question')::float8 >= $2\n           AND NOT EXISTS (\n               SELECT 1 FROM call_entries a\n                WHERE a.call_id = q.call_id AND a.tag_state = 'done'\n                  AND (a.tags->>'resolves')::int = q.seq\n                  AND (a.tags->>'resolves_p')::float8 >= $2)\n         ORDER BY q.seq DESC\n         LIMIT $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "seq",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "call_entries",
+            "name": "seq"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "text!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "call_entries",
+            "name": "text"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Float8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "37431e93a164a161c42143b0ed205252968c452d33aaabde73a9cbedb5eb09d7"
+}

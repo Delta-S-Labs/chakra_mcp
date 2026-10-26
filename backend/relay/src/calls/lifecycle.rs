@@ -187,6 +187,8 @@ pub async fn invite(
         None => None,
     };
 
+    // What call memory can do here, fixed for the call (spec §8.6).
+    let tags = state.memory.is_some();
     let id = Uuid::now_v7();
     let mut tx = state.db.begin().await?;
     let inserted = sqlx::query!(
@@ -203,8 +205,7 @@ pub async fn invite(
         callee.account_id,
         user.user_id,
         memory,
-        // Call memory arrives in C3.
-        json!({ "tags": false, "recall": false }),
+        json!({ "tags": tags, "recall": tags }),
         ttl_secs as i32,
         idle_secs as i32,
         topic,
@@ -234,6 +235,7 @@ pub async fn invite(
             callee.id,
             s,
             opening_size,
+            memory == "call" && tags,
         )
         .await?;
     }
@@ -266,6 +268,7 @@ async fn opening_message(
     to: Uuid,
     s: &messages::Screened,
     size: i32,
+    tag: bool,
 ) -> Result<(), ApiError> {
     let entry = append(
         &mut *conn,
@@ -279,6 +282,7 @@ async fn opening_message(
             size_bytes: size,
             safety: s.findings.clone(),
             invocation_id: None,
+            tag,
         },
         &[to],
     )
@@ -419,6 +423,7 @@ pub async fn accept(
             caller,
             s,
             reply_size,
+            call.tags_on(),
         )
         .await?;
     }

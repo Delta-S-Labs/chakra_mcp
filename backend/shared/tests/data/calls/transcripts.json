@@ -1,0 +1,2280 @@
+[
+  {
+    "id": "venue-en",
+    "lang": "en",
+    "topic": "Offsite venue for the design team",
+    "note": "A booked room is switched later: the later messages are the decision; also a restated price and a 'Done.' confirmation.",
+    "messages": [
+      {
+        "seq": 1,
+        "from": "caller",
+        "text": "Hi, I'm Mira's scheduling agent. She asked me to sort out the venue for the design team offsite.",
+        "tags": [],
+        "resolves": null
+      },
+      {
+        "seq": 2,
+        "from": "callee",
+        "text": "Hello. I handle bookings for the conference centre on behalf of its manager. What dates do you need, and for how many people?",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 3,
+        "from": "caller",
+        "text": "It's 14 people for two days, Thursday 12 and Friday 13 November. My owner needs a room with natural light and wall space to pin up printed boards.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 2
+      },
+      {
+        "seq": 4,
+        "from": "callee",
+        "text": "We have two options on those days: Hall A, which seats 20 and has a whiteboard wall, at 900 a day, and the Glasshouse room by the river, which seats 16, has floor-to-ceiling windows and costs 1,150 a day. Both include coffee and Wi-Fi.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 5,
+        "from": "caller",
+        "text": "Hall A fits the budget better. Let's book Hall A for both days.",
+        "tags": [
+          "decision"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 6,
+        "from": "callee",
+        "text": "Done. Hall A is held for 12 and 13 November. I'll send the booking confirmation and the invoice by end of day tomorrow.",
+        "tags": [
+          "decision",
+          "commitment"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 7,
+        "from": "caller",
+        "text": "Thanks. Does Hall A have blackout blinds? Some of the review sessions use a projector.",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 8,
+        "from": "callee",
+        "text": "It doesn't, unfortunately. The windows face south and the afternoon glare is strong. The Glasshouse room has motorised blinds.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 7
+      },
+      {
+        "seq": 9,
+        "from": "caller",
+        "text": "My owner just replied: the projector sessions are the main point of day two, so she'd rather pay more. Please switch the booking to the Glasshouse room for both days and release Hall A.",
+        "tags": [
+          "decision"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 10,
+        "from": "callee",
+        "text": "Switched. You now have the Glasshouse room on 12 and 13 November at 1,150 a day, and Hall A is released. The confirmation I send tomorrow will show the new room.",
+        "tags": [
+          "decision",
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 11,
+        "from": "caller",
+        "text": "Perfect. Is lunch something you can arrange, or should I find a caterer?",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 12,
+        "from": "callee",
+        "text": "We can do a set lunch at 28 per person, vegetarian by default. I'll need final numbers 48 hours before.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 11
+      },
+      {
+        "seq": 13,
+        "from": "caller",
+        "text": "Please add lunch for 14 on both days. I'll confirm final numbers by Tuesday 10 November.",
+        "tags": [
+          "decision",
+          "commitment"
+        ],
+        "resolves": null
+      }
+    ],
+    "recall": [
+      {
+        "question": "Which room did we end up booking for the offsite?",
+        "expect": [
+          9,
+          10
+        ]
+      },
+      {
+        "question": "How much does lunch cost per person?",
+        "expect": [
+          12
+        ]
+      },
+      {
+        "question": "Is there parking at the venue?",
+        "expect": []
+      }
+    ]
+  },
+  {
+    "id": "contract-renewal-en",
+    "lang": "en",
+    "topic": "Renewal terms for an analytics licence",
+    "note": "Two questions in one long message, answered by two different later messages; 'Agreed.'; commitments without a date.",
+    "messages": [
+      {
+        "seq": 1,
+        "from": "caller",
+        "text": "Good morning. I'm the procurement agent for Tomas Verhoek. His company's analytics licence ends on 31 December and he wants to renew, but with a few changes.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 2,
+        "from": "callee",
+        "text": "Happy to help. I'm the account agent on the vendor side. What changes does he have in mind?",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 3,
+        "from": "caller",
+        "text": "Three things. First, he wants to go from 40 seats to 55, because the finance team is joining in January. Second, he wants a two-year term instead of one, if the per-seat price drops accordingly. Third, the current contract lets either side terminate with 30 days' notice, and his legal team wants that extended to 90 days for the vendor side only, so they're not left without the tool mid-quarter. What price could you offer for 55 seats on two years, and is the 90-day clause acceptable?",
+        "tags": [
+          "fact",
+          "open_question"
+        ],
+        "resolves": 2
+      },
+      {
+        "seq": 4,
+        "from": "callee",
+        "text": "Let me take those one at a time. On price: the current rate is 42 per seat per month. For 55 seats on a two-year term I can offer 36 per seat per month, fixed for both years.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 3
+      },
+      {
+        "seq": 5,
+        "from": "caller",
+        "text": "That works for my owner on price.",
+        "tags": [
+          "decision"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 6,
+        "from": "callee",
+        "text": "On the notice period, I need to check with our legal team. I'll come back to you on the 90-day clause by Thursday.",
+        "tags": [
+          "commitment"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 7,
+        "from": "caller",
+        "text": "Fine. Meanwhile, can the extra 15 seats start on 5 January rather than at renewal, so the finance team can onboard early?",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 8,
+        "from": "callee",
+        "text": "Yes, we can prorate them from 5 January at the new rate.",
+        "tags": [
+          "decision"
+        ],
+        "resolves": 7
+      },
+      {
+        "seq": 9,
+        "from": "callee",
+        "text": "Update from legal: we can accept 90 days' notice for vendor termination, provided your side's notice stays at 30 days and payment terms remain net 30.",
+        "tags": [
+          "decision",
+          "fact"
+        ],
+        "resolves": 3
+      },
+      {
+        "seq": 10,
+        "from": "caller",
+        "text": "Agreed.",
+        "tags": [
+          "decision"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 11,
+        "from": "callee",
+        "text": "Great. I'll draft the renewal on those terms and send it over for signature.",
+        "tags": [
+          "commitment"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 12,
+        "from": "caller",
+        "text": "Thanks. My owner will sign as soon as it arrives.",
+        "tags": [
+          "commitment"
+        ],
+        "resolves": null
+      }
+    ],
+    "recall": [
+      {
+        "question": "What per-seat price did we agree for the renewal?",
+        "expect": [
+          4
+        ]
+      },
+      {
+        "question": "Did the vendor accept the 90-day notice clause?",
+        "expect": [
+          9
+        ]
+      },
+      {
+        "question": "When do the extra seats start?",
+        "expect": [
+          8
+        ]
+      }
+    ]
+  },
+  {
+    "id": "hiring-interview-en",
+    "lang": "en",
+    "topic": "Final-round interview for a backend candidate",
+    "note": "A two-part question answered seven messages later; a very short answer; two caller messages in a row.",
+    "messages": [
+      {
+        "seq": 1,
+        "from": "caller",
+        "text": "Hello, I'm the recruiting agent for Ana Lindqvist's team. We'd like to invite your owner, Rafael, to a final-round interview for the senior backend role.",
+        "tags": [],
+        "resolves": null
+      },
+      {
+        "seq": 2,
+        "from": "callee",
+        "text": "Thanks, he's pleased to hear it. What does the final round involve, and how long is it?",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 3,
+        "from": "caller",
+        "text": "I'll come to the format. First, what's his availability in the week of 16 November?",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 4,
+        "from": "callee",
+        "text": "He's free Monday 16 and Wednesday 18 November, any time after 10:00. Tuesday and Thursday are out because of his notice-period handover.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 3
+      },
+      {
+        "seq": 5,
+        "from": "caller",
+        "text": "Wednesday 18 November at 10:30, then.",
+        "tags": [
+          "decision"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 6,
+        "from": "callee",
+        "text": "Confirmed for Wednesday 18 November at 10:30.",
+        "tags": [
+          "decision"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 7,
+        "from": "caller",
+        "text": "One question from our side: will he need visa sponsorship for the role?",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 8,
+        "from": "callee",
+        "text": "No, he already has the right to work here.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 7
+      },
+      {
+        "seq": 9,
+        "from": "caller",
+        "text": "Good. On your earlier question about the format: it's three hours in total, a 90-minute system design session, a 60-minute pairing exercise and 30 minutes with the hiring manager. It's on site, in Hall B of the Eastgate building.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 2
+      },
+      {
+        "seq": 10,
+        "from": "callee",
+        "text": "Does he need to bring a laptop for the pairing exercise?",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 11,
+        "from": "caller",
+        "text": "No, we provide one.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 10
+      },
+      {
+        "seq": 12,
+        "from": "caller",
+        "text": "I'll send the interviewers' names and a building map the day before.",
+        "tags": [
+          "commitment"
+        ],
+        "resolves": null
+      }
+    ],
+    "recall": [
+      {
+        "question": "What time is Rafael's final interview?",
+        "expect": [
+          5,
+          6
+        ]
+      },
+      {
+        "question": "How long is the final round and what does it involve?",
+        "expect": [
+          9
+        ]
+      },
+      {
+        "question": "What salary range was discussed for the role?",
+        "expect": []
+      }
+    ]
+  },
+  {
+    "id": "desks-procurement-en",
+    "lang": "en",
+    "topic": "Bulk order of standing desks for a new office",
+    "note": "A delivery date clashes with a constraint stated earlier and is moved; a message that is both a commitment and a fact; 'Yes, do that.'",
+    "messages": [
+      {
+        "seq": 1,
+        "from": "caller",
+        "text": "Hi, I'm buying for Priya Raman's operations team. We need 60 standing desks for the new office on the fourth floor.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 2,
+        "from": "callee",
+        "text": "Hello, I'm the sales agent for the furniture supplier. Our electric desk lists at 410 per unit; at 50 units or more it's 365. Do you need assembly?",
+        "tags": [
+          "fact",
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 3,
+        "from": "caller",
+        "text": "Yes, assembly please. What's the delivery lead time?",
+        "tags": [
+          "decision",
+          "open_question"
+        ],
+        "resolves": 2
+      },
+      {
+        "seq": 4,
+        "from": "callee",
+        "text": "Assembly is 25 per desk. Lead time is three weeks from the purchase order, and we normally deliver on weekdays between 08:00 and 16:00.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 3
+      },
+      {
+        "seq": 5,
+        "from": "caller",
+        "text": "The building's freight lift is only available to us on Saturdays, and only until 28 November, because of other tenants' move-ins. Could you deliver on a Saturday?",
+        "tags": [
+          "fact",
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 6,
+        "from": "callee",
+        "text": "Saturday delivery is possible for a 300 surcharge.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 5
+      },
+      {
+        "seq": 7,
+        "from": "caller",
+        "text": "My owner approves the surcharge. Please go ahead: 60 desks at 365, assembly at 25 each, Saturday delivery.",
+        "tags": [
+          "decision"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 8,
+        "from": "callee",
+        "text": "I'll raise the order today. 40 desks ship on Saturday 21 November; the other 20 are back-ordered and will follow on Saturday 5 December.",
+        "tags": [
+          "commitment",
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 9,
+        "from": "caller",
+        "text": "5 December is after the lift window closes on the 28th.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 10,
+        "from": "callee",
+        "text": "Good catch. I can move the second batch to Saturday 28 November if we send it from the northern warehouse instead, at no extra cost.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 11,
+        "from": "caller",
+        "text": "Yes, do that.",
+        "tags": [
+          "decision"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 12,
+        "from": "callee",
+        "text": "Done. The second batch now ships on Saturday 28 November.",
+        "tags": [
+          "decision"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 13,
+        "from": "caller",
+        "text": "Thanks. We'll pay within 30 days of the invoice once both batches have landed.",
+        "tags": [
+          "commitment"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 14,
+        "from": "callee",
+        "text": "Understood. Thank you for the order.",
+        "tags": [],
+        "resolves": null
+      }
+    ],
+    "recall": [
+      {
+        "question": "When does the second batch of desks arrive?",
+        "expect": [
+          10,
+          12
+        ]
+      },
+      {
+        "question": "How much is the Saturday delivery surcharge?",
+        "expect": [
+          6
+        ]
+      },
+      {
+        "question": "What's the per-desk price for our order?",
+        "expect": [
+          2,
+          7
+        ]
+      }
+    ]
+  },
+  {
+    "id": "support-escalation-en",
+    "lang": "en",
+    "topic": "Escalation of a shipping-label outage",
+    "note": "A long opening with two questions answered across messages; a one-word answer; a restated deadline; a commitment without a date.",
+    "messages": [
+      {
+        "seq": 1,
+        "from": "caller",
+        "text": "Hello, I'm the operations agent for Lena Fischer's logistics team. Since about 06:40 this morning, every shipping label we request through your labelling service comes back with error 502, and our warehouse has stopped dispatching. We've retried with backoff, rotated our test credentials and checked our own network, and the failures are the same at both of our depots. My owner needs to know whether this is on your side and, if so, roughly when it will be fixed, because the evening collection is at 17:00.",
+        "tags": [
+          "fact",
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 2,
+        "from": "callee",
+        "text": "Thanks for the detail. I'm the support agent for the labelling service. Which account region are you on?",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 3,
+        "from": "caller",
+        "text": "EU-West.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 2
+      },
+      {
+        "seq": 4,
+        "from": "callee",
+        "text": "Confirmed: there's an incident affecting EU-West label generation since 06:35. Engineering has traced it to a faulty deployment and is rolling it back.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 1
+      },
+      {
+        "seq": 5,
+        "from": "caller",
+        "text": "When will it be fixed? The 17:00 collection is a hard deadline for us.",
+        "tags": [
+          "open_question",
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 6,
+        "from": "callee",
+        "text": "The rollback should complete within the hour. I'll message you here as soon as label generation is healthy again.",
+        "tags": [
+          "fact",
+          "commitment"
+        ],
+        "resolves": 5
+      },
+      {
+        "seq": 7,
+        "from": "caller",
+        "text": "Is there a manual workaround in the meantime? Even a slow one would help.",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 8,
+        "from": "callee",
+        "text": "Not one that scales. You could print labels from the web console one at a time, but at your volume I wouldn't recommend it.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 7
+      },
+      {
+        "seq": 9,
+        "from": "caller",
+        "text": "Understood, thanks.",
+        "tags": [],
+        "resolves": null
+      },
+      {
+        "seq": 10,
+        "from": "callee",
+        "text": "Label generation is healthy again as of 08:12. Can you retry the failed requests and confirm they go through?",
+        "tags": [
+          "fact",
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 11,
+        "from": "caller",
+        "text": "Retried 214 labels, all succeeded.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 10
+      },
+      {
+        "seq": 12,
+        "from": "caller",
+        "text": "Will there be a written incident report? My owner needs one for her records.",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 13,
+        "from": "callee",
+        "text": "Yes. I'll send the incident report once engineering finishes the review.",
+        "tags": [
+          "commitment"
+        ],
+        "resolves": 12
+      },
+      {
+        "seq": 14,
+        "from": "caller",
+        "text": "Thank you.",
+        "tags": [],
+        "resolves": null
+      }
+    ],
+    "recall": [
+      {
+        "question": "What caused the label outage?",
+        "expect": [
+          4
+        ]
+      },
+      {
+        "question": "When did label generation recover?",
+        "expect": [
+          10
+        ]
+      },
+      {
+        "question": "Did they offer a service credit for the outage?",
+        "expect": []
+      }
+    ]
+  },
+  {
+    "id": "speaker-travel-en",
+    "lang": "en",
+    "topic": "Flights and hotel for a summit speaker",
+    "note": "Two questions in one message twice; 'Please do.' confirming an offer; the landing time restated in a confirmation.",
+    "messages": [
+      {
+        "seq": 1,
+        "from": "caller",
+        "text": "Hi, I'm the travel agent for Joon-ho Park. He's speaking at the summit in Port Calder on 3 December and needs flights and a hotel.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 2,
+        "from": "callee",
+        "text": "Hello, I'm the event's travel desk agent. Speakers get two hotel nights covered. Which nights does he need, and is he flying from the capital?",
+        "tags": [
+          "fact",
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 3,
+        "from": "caller",
+        "text": "Yes, from the capital. He'd like the nights of 2 and 3 December, arriving on the afternoon of the 2nd.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 2
+      },
+      {
+        "seq": 4,
+        "from": "callee",
+        "text": "There's a 13:15 flight on 2 December landing at 15:05, and a return on 4 December at 09:40. Economy is covered; business class would be at his own cost.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 5,
+        "from": "caller",
+        "text": "Economy is fine. Please book those two flights.",
+        "tags": [
+          "decision"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 6,
+        "from": "callee",
+        "text": "Booked. I'll attach the itineraries to his speaker profile within the hour.",
+        "tags": [
+          "decision",
+          "commitment"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 7,
+        "from": "caller",
+        "text": "Which hotel is it, and how far is it from the venue?",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 8,
+        "from": "callee",
+        "text": "It's the speakers' hotel on the harbour front, a ten-minute walk from the main hall.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 7
+      },
+      {
+        "seq": 9,
+        "from": "caller",
+        "text": "He's bringing demo equipment in two heavy cases, so walking ten minutes with them is hard. Is there a transfer?",
+        "tags": [
+          "fact",
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 10,
+        "from": "callee",
+        "text": "We can arrange a car from the airport to the hotel, and from the hotel to the venue on the morning of the 3rd.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 9
+      },
+      {
+        "seq": 11,
+        "from": "caller",
+        "text": "Please do.",
+        "tags": [
+          "decision"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 12,
+        "from": "callee",
+        "text": "Arranged. The driver will meet him at arrivals on 2 December; the flight lands at 15:05.",
+        "tags": [
+          "decision",
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 13,
+        "from": "caller",
+        "text": "Thanks, that's all for now.",
+        "tags": [],
+        "resolves": null
+      }
+    ],
+    "recall": [
+      {
+        "question": "What time does Joon-ho's flight land?",
+        "expect": [
+          4,
+          12
+        ]
+      },
+      {
+        "question": "Where is he staying during the summit?",
+        "expect": [
+          8
+        ]
+      },
+      {
+        "question": "Who pays if he wants business class?",
+        "expect": [
+          4
+        ]
+      }
+    ]
+  },
+  {
+    "id": "data-sharing-en",
+    "lang": "en",
+    "topic": "Data sharing agreement for a sleep study",
+    "note": "A long answer that sets the terms; a commitment that also states a derived deadline (commitment and fact).",
+    "messages": [
+      {
+        "seq": 1,
+        "from": "caller",
+        "text": "Hello. I represent Dr. Ines Moretti's lab. We'd like to use your anonymised sleep-tracking dataset for a study on shift workers.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 2,
+        "from": "callee",
+        "text": "I act for the data steward of the cohort study. Before anything else: which fields do you need, and will the data leave your secure environment?",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 3,
+        "from": "caller",
+        "text": "We need sleep onset, wake time, total sleep duration and the shift-pattern field, for adults aged 18 to 65, for the years 2022 to 2025. We don't need age at better than five-year bands, and we don't need location at all. The data would stay inside our secure research environment, which is on-premises, access-controlled and audited quarterly; nothing would be copied to laptops or to any cloud storage. Only three named analysts would have access.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 2
+      },
+      {
+        "seq": 4,
+        "from": "callee",
+        "text": "That's compatible with our policy. Two conditions: results may only be reported in aggregates of at least 20 people, and the data must be deleted within 30 days of the study ending.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 5,
+        "from": "caller",
+        "text": "Both conditions are fine.",
+        "tags": [
+          "decision"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 6,
+        "from": "callee",
+        "text": "Then we can proceed. How long is the study?",
+        "tags": [
+          "decision",
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 7,
+        "from": "caller",
+        "text": "Eighteen months, ending on 30 June 2028.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 6
+      },
+      {
+        "seq": 8,
+        "from": "callee",
+        "text": "I'll prepare the agreement with those terms and a deletion deadline of 30 July 2028, and send it to your owner for review next week.",
+        "tags": [
+          "commitment",
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 9,
+        "from": "caller",
+        "text": "Will she need to sign anything individually, or is the lab's signature enough?",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 10,
+        "from": "callee",
+        "text": "The lab director's signature is enough, plus a one-page confidentiality undertaking from each of the three analysts.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 9
+      },
+      {
+        "seq": 11,
+        "from": "caller",
+        "text": "Understood. I'll collect the three undertakings by the end of the month.",
+        "tags": [
+          "commitment"
+        ],
+        "resolves": null
+      }
+    ],
+    "recall": [
+      {
+        "question": "When must the shared data be deleted?",
+        "expect": [
+          4,
+          8
+        ]
+      },
+      {
+        "question": "Which fields did we ask for?",
+        "expect": [
+          3
+        ]
+      },
+      {
+        "question": "What's the minimum group size for reporting results?",
+        "expect": [
+          4
+        ]
+      }
+    ]
+  },
+  {
+    "id": "launch-catering-en",
+    "lang": "en",
+    "topic": "Catering for a product launch reception",
+    "note": "A headcount restated with a new value; 'Done.' confirming a swap; a decision combined with a constraint.",
+    "messages": [
+      {
+        "seq": 1,
+        "from": "caller",
+        "text": "Hi, I'm arranging catering for Oskar Lind's product launch on Friday 20 November. We expect 120 guests, standing reception from 18:00 to 21:00.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 2,
+        "from": "callee",
+        "text": "Hello, I'm the booking agent for the caterer. For a standing reception we suggest eight canapés per person plus two bowl dishes. Any dietary requirements?",
+        "tags": [
+          "fact",
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 3,
+        "from": "caller",
+        "text": "About a third of the guests are vegetarian, and at least six need gluten-free food. Nothing else we know of yet.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 2
+      },
+      {
+        "seq": 4,
+        "from": "callee",
+        "text": "Our standard reception menu is 38 per head, drinks not included. A three-hour drinks package with wine, beer and soft drinks is 22 per head.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 5,
+        "from": "caller",
+        "text": "Food only, please. The venue supplies its own drinks.",
+        "tags": [
+          "decision",
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 6,
+        "from": "callee",
+        "text": "Understood. We'd need a 30% deposit to hold the date.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 7,
+        "from": "caller",
+        "text": "Fine. My owner will pay the deposit this week.",
+        "tags": [
+          "decision",
+          "commitment"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 8,
+        "from": "callee",
+        "text": "Deposit received, thanks. The date is held.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 9,
+        "from": "caller",
+        "text": "Update: the guest list has grown. It's now 135, not 120.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 10,
+        "from": "callee",
+        "text": "No problem. At 135 guests the food total is 5,130 before tax. Do you still want two bowl dishes, or would you rather swap one for a dessert station?",
+        "tags": [
+          "fact",
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 11,
+        "from": "caller",
+        "text": "Swap one for the dessert station.",
+        "tags": [
+          "decision"
+        ],
+        "resolves": 10
+      },
+      {
+        "seq": 12,
+        "from": "callee",
+        "text": "Done.",
+        "tags": [
+          "decision"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 13,
+        "from": "callee",
+        "text": "I'll send the final menu and the balance invoice by Monday 16 November.",
+        "tags": [
+          "commitment"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 14,
+        "from": "caller",
+        "text": "Great, thank you.",
+        "tags": [],
+        "resolves": null
+      }
+    ],
+    "recall": [
+      {
+        "question": "How many guests is the catering for now?",
+        "expect": [
+          9
+        ]
+      },
+      {
+        "question": "What's the catering price per head?",
+        "expect": [
+          4
+        ]
+      },
+      {
+        "question": "Are we having a dessert station?",
+        "expect": [
+          11
+        ]
+      }
+    ]
+  },
+  {
+    "id": "invoice-dispute-en",
+    "lang": "en",
+    "topic": "Disputed line on the October invoice",
+    "note": "The first question is answered five messages later, after two clarifying questions; 'That seems fair. Agreed.'; a commitment that is also a fact.",
+    "messages": [
+      {
+        "seq": 1,
+        "from": "caller",
+        "text": "Hello, I'm the accounts agent for Ruth Adeyemi's studio. We received invoice 2026-1043 for October and there's a line we don't recognise: 'priority support, 450'. Can you explain it?",
+        "tags": [
+          "fact",
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 2,
+        "from": "callee",
+        "text": "I'm the billing agent for the vendor. Let me check. In the meantime, can you confirm the invoice total you see?",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 3,
+        "from": "caller",
+        "text": "2,890, including the 450 line.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 2
+      },
+      {
+        "seq": 4,
+        "from": "callee",
+        "text": "Thanks. Is your owner's studio still on the standard plan?",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 5,
+        "from": "caller",
+        "text": "As far as I know, yes. She hasn't changed anything.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 4
+      },
+      {
+        "seq": 6,
+        "from": "callee",
+        "text": "Found it. Priority support was switched on during the 9 October incident by someone on your team, and it stayed on after the incident ended. That's where the 450 comes from.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 1
+      },
+      {
+        "seq": 7,
+        "from": "caller",
+        "text": "My owner says nobody on her side asked for it to stay on. Can you remove the charge and turn priority support off?",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 8,
+        "from": "callee",
+        "text": "I've turned priority support off as of today. I can credit half of the charge, 225, since it was used during the incident itself.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 7
+      },
+      {
+        "seq": 9,
+        "from": "caller",
+        "text": "That seems fair. Agreed.",
+        "tags": [
+          "decision"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 10,
+        "from": "callee",
+        "text": "I'll issue a credit note for 225 by Friday, and it will be applied to the November invoice.",
+        "tags": [
+          "commitment",
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 11,
+        "from": "caller",
+        "text": "So the October invoice stays payable at 2,890?",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 12,
+        "from": "callee",
+        "text": "Yes, please pay October in full; the credit comes off November.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 11
+      },
+      {
+        "seq": 13,
+        "from": "caller",
+        "text": "Understood. We'll pay October by the due date.",
+        "tags": [
+          "commitment"
+        ],
+        "resolves": null
+      }
+    ],
+    "recall": [
+      {
+        "question": "Why was there a 450 priority support charge?",
+        "expect": [
+          6
+        ]
+      },
+      {
+        "question": "How much credit are we getting?",
+        "expect": [
+          8,
+          10
+        ]
+      },
+      {
+        "question": "When is the October invoice due?",
+        "expect": []
+      }
+    ]
+  },
+  {
+    "id": "lab-move-en",
+    "lang": "en",
+    "topic": "Moving lab equipment between campuses",
+    "note": "Two callee messages in a row and two caller messages in a row; a decision stated as a fact ('standard cover is enough').",
+    "messages": [
+      {
+        "seq": 1,
+        "from": "caller",
+        "text": "Hi, I coordinate facilities for Dr. Kwame Mensah's lab. We need to move a freezer, two centrifuges and about 40 boxes from the north campus to the new building on the south campus.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 2,
+        "from": "callee",
+        "text": "Hello, I'm the scheduling agent for the moving company. Does the freezer need to stay powered during the move?",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 3,
+        "from": "caller",
+        "text": "Yes, it holds samples at minus 80. It can be unpowered for 45 minutes at most.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 2
+      },
+      {
+        "seq": 4,
+        "from": "callee",
+        "text": "Then we'll use our van with a generator. The earliest slot is Tuesday 1 December, starting at 07:00.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 5,
+        "from": "caller",
+        "text": "Tuesday 1 December works.",
+        "tags": [
+          "decision"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 6,
+        "from": "callee",
+        "text": "Booked. The crew lead will message you here the day before to confirm access.",
+        "tags": [
+          "decision",
+          "commitment"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 7,
+        "from": "caller",
+        "text": "Is the loading dock at the south campus wide enough for your van? It's 2.4 metres.",
+        "tags": [
+          "fact",
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 8,
+        "from": "callee",
+        "text": "Our van is 2.2 metres wide, so it fits.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 7
+      },
+      {
+        "seq": 9,
+        "from": "caller",
+        "text": "Good. One more: who is liable if a centrifuge is damaged in transit?",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 10,
+        "from": "callee",
+        "text": "We are, up to 50,000 per item, under our standard cover.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 9
+      },
+      {
+        "seq": 11,
+        "from": "callee",
+        "text": "If either centrifuge is worth more than that, you can add extra cover for 1% of the declared value.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 12,
+        "from": "caller",
+        "text": "Each is worth about 38,000, so standard cover is enough.",
+        "tags": [
+          "fact",
+          "decision"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 13,
+        "from": "caller",
+        "text": "I'll have the boxes packed and labelled before the crew arrives.",
+        "tags": [
+          "commitment"
+        ],
+        "resolves": null
+      }
+    ],
+    "recall": [
+      {
+        "question": "When is the lab move scheduled?",
+        "expect": [
+          4,
+          5
+        ]
+      },
+      {
+        "question": "How long can the freezer be without power?",
+        "expect": [
+          3
+        ]
+      },
+      {
+        "question": "Do we need extra insurance for the centrifuges?",
+        "expect": [
+          12
+        ]
+      }
+    ]
+  },
+  {
+    "id": "partner-review-en",
+    "lang": "en",
+    "topic": "Scheduling the Q4 partner review",
+    "note": "Mostly short messages: a bare 'Agreed.' answering a proposed slot, 'Fine by us.', and a decision with its reason.",
+    "messages": [
+      {
+        "seq": 1,
+        "from": "caller",
+        "text": "Hi. My owner, Sofia Brandt, wants to set up the Q4 partner review with yours. Could he do 60 minutes in the first week of December?",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 2,
+        "from": "callee",
+        "text": "He could. Tuesday 1 or Thursday 3 December, mornings only.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 1
+      },
+      {
+        "seq": 3,
+        "from": "caller",
+        "text": "Thursday 3 December, 09:30 to 10:30?",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 4,
+        "from": "callee",
+        "text": "Agreed.",
+        "tags": [
+          "decision"
+        ],
+        "resolves": 3
+      },
+      {
+        "seq": 5,
+        "from": "caller",
+        "text": "I'll send the agenda by Monday.",
+        "tags": [
+          "commitment"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 6,
+        "from": "callee",
+        "text": "Should we include the pricing review, or keep that for January?",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 7,
+        "from": "caller",
+        "text": "Keep pricing for January. This one is delivery metrics only.",
+        "tags": [
+          "decision"
+        ],
+        "resolves": 6
+      },
+      {
+        "seq": 8,
+        "from": "callee",
+        "text": "Fine by us.",
+        "tags": [
+          "decision"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 9,
+        "from": "caller",
+        "text": "Video call or in person?",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 10,
+        "from": "callee",
+        "text": "Video, please. He's travelling that week.",
+        "tags": [
+          "decision",
+          "fact"
+        ],
+        "resolves": 9
+      }
+    ],
+    "recall": [
+      {
+        "question": "When is the Q4 partner review?",
+        "expect": [
+          3
+        ]
+      },
+      {
+        "question": "Is pricing on the agenda for the review?",
+        "expect": [
+          7
+        ]
+      },
+      {
+        "question": "Is the review in person or on video?",
+        "expect": [
+          10
+        ]
+      }
+    ]
+  },
+  {
+    "id": "joint-paper-en",
+    "lang": "en",
+    "topic": "Authorship and deadlines for a joint benchmark paper",
+    "note": "An agreed author order is replaced later by joint first authorship (a long proposal, then the new decision); 'Done.' after a request.",
+    "messages": [
+      {
+        "seq": 1,
+        "from": "caller",
+        "text": "Hello, I'm the research assistant agent for Prof. Elena Castell. She's keen to write up the joint benchmark results with your owner's group.",
+        "tags": [],
+        "resolves": null
+      },
+      {
+        "seq": 2,
+        "from": "callee",
+        "text": "Likewise. I work for Dr. Mateo Ruiz. Which venue is she targeting, and what's the submission deadline?",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 3,
+        "from": "caller",
+        "text": "The workshop track at the spring conference. Abstracts are due on 15 January and full papers on 29 January.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 2
+      },
+      {
+        "seq": 4,
+        "from": "callee",
+        "text": "Tight but doable. My owner proposes that his student, Yara Haddad, is first author, since she ran most of the experiments.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 5,
+        "from": "caller",
+        "text": "My owner agrees: Yara first, then Elena's postdoc Luca Ferri, then the two PIs.",
+        "tags": [
+          "decision"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 6,
+        "from": "callee",
+        "text": "I'll draft the methods section by 20 December.",
+        "tags": [
+          "commitment"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 7,
+        "from": "caller",
+        "text": "Elena will write the introduction and related work by the same date.",
+        "tags": [
+          "commitment"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 8,
+        "from": "callee",
+        "text": "Where should the shared draft live? Our group uses a self-hosted document server.",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 9,
+        "from": "caller",
+        "text": "Yours is fine. Please add Elena and Luca as editors.",
+        "tags": [
+          "decision"
+        ],
+        "resolves": 8
+      },
+      {
+        "seq": 10,
+        "from": "callee",
+        "text": "Done.",
+        "tags": [
+          "decision"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 11,
+        "from": "caller",
+        "text": "A change of plan from Elena's side, sorry. Luca has just told her that he ran the ablation study and wrote the evaluation harness, which is more than she realised, and Yara agrees his contribution is roughly equal to hers. Elena would like to propose joint first authorship for Yara and Luca, with a footnote saying they contributed equally, and the PIs last as before. She's asked me to check whether Mateo is comfortable with that.",
+        "tags": [
+          "fact",
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 12,
+        "from": "callee",
+        "text": "Mateo has spoken with Yara and is happy with joint first authorship for her and Luca. Let's go with that.",
+        "tags": [
+          "decision"
+        ],
+        "resolves": 11
+      },
+      {
+        "seq": 13,
+        "from": "caller",
+        "text": "Thank you, Elena will be pleased.",
+        "tags": [],
+        "resolves": null
+      }
+    ],
+    "recall": [
+      {
+        "question": "What's the author order on the benchmark paper?",
+        "expect": [
+          11,
+          12
+        ]
+      },
+      {
+        "question": "When are full papers due?",
+        "expect": [
+          3
+        ]
+      },
+      {
+        "question": "Who is drafting the methods section, and by when?",
+        "expect": [
+          6
+        ]
+      }
+    ]
+  },
+  {
+    "id": "fabric-order-hi",
+    "lang": "hi",
+    "topic": "दुकान के लिए सूती कपड़े का थोक ऑर्डर",
+    "note": "Hindi (Devanagari): a deadline constraint, a conditional delivery date, a commitment that is also a fact.",
+    "messages": [
+      {
+        "seq": 1,
+        "from": "caller",
+        "text": "नमस्ते, मैं सुनीता वर्मा की ख़रीद एजेंट हूँ। उनकी कपड़ों की दुकान के लिए सूती कपड़े का थोक ऑर्डर देना है।",
+        "tags": [],
+        "resolves": null
+      },
+      {
+        "seq": 2,
+        "from": "callee",
+        "text": "नमस्ते। मैं मिल की बिक्री एजेंट हूँ। कितने मीटर चाहिए, और कौन-कौन से रंग?",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 3,
+        "from": "caller",
+        "text": "कुल 800 मीटर: 500 मीटर सफ़ेद और 300 मीटर नीला।",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 2
+      },
+      {
+        "seq": 4,
+        "from": "callee",
+        "text": "सफ़ेद कपड़ा 120 रुपये प्रति मीटर है और नीला 135 रुपये प्रति मीटर। 500 मीटर से ज़्यादा के ऑर्डर पर 5% छूट मिलती है।",
+        "tags": [
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 5,
+        "from": "caller",
+        "text": "डिलीवरी में कितने दिन लगेंगे?",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 6,
+        "from": "callee",
+        "text": "सफ़ेद कपड़ा स्टॉक में है, तीन दिन में पहुँच जाएगा। नीला अभी रंगाई में है, उसमें दस दिन लगेंगे।",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 5
+      },
+      {
+        "seq": 7,
+        "from": "caller",
+        "text": "मेरी मालकिन को पूरा माल 7 नवंबर तक चाहिए, उसके बाद त्योहार की सेल शुरू हो जाती है।",
+        "tags": [
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 8,
+        "from": "callee",
+        "text": "अगर ऑर्डर आज पक्का हो जाए तो नीला कपड़ा 5 नवंबर तक पहुँच जाएगा।",
+        "tags": [
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 9,
+        "from": "caller",
+        "text": "ठीक है, ऑर्डर पक्का। दोनों रंग, कुल 800 मीटर।",
+        "tags": [
+          "decision"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 10,
+        "from": "callee",
+        "text": "मैं आज शाम तक बिल भेज दूँगा। 50% अग्रिम भुगतान मिलते ही सफ़ेद कपड़ा रवाना कर दिया जाएगा।",
+        "tags": [
+          "commitment",
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 11,
+        "from": "caller",
+        "text": "अग्रिम भुगतान कल सुबह तक हो जाएगा।",
+        "tags": [
+          "commitment"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 12,
+        "from": "callee",
+        "text": "धन्यवाद।",
+        "tags": [],
+        "resolves": null
+      }
+    ],
+    "recall": [
+      {
+        "question": "नीला कपड़ा कब तक पहुँचेगा?",
+        "expect": [
+          8
+        ]
+      },
+      {
+        "question": "सफ़ेद कपड़े का भाव क्या है?",
+        "expect": [
+          4
+        ]
+      },
+      {
+        "question": "अग्रिम भुगतान कितने प्रतिशत देना है?",
+        "expect": [
+          10
+        ]
+      }
+    ]
+  },
+  {
+    "id": "book-fair-stall-bn",
+    "lang": "bn",
+    "topic": "বইমেলায় স্টল বুকিং",
+    "note": "Bengali: a choice between two stalls, a confirmation that adds a deposit condition, two caller messages in a row.",
+    "messages": [
+      {
+        "seq": 1,
+        "from": "caller",
+        "text": "নমস্কার, আমি অনিন্দিতা সেনের প্রকাশনা সংস্থার এজেন্ট। এবারের বইমেলায় আমরা একটা স্টল নিতে চাই।",
+        "tags": [],
+        "resolves": null
+      },
+      {
+        "seq": 2,
+        "from": "callee",
+        "text": "নমস্কার। আমি মেলা কমিটির বুকিং এজেন্ট। কত বড় স্টল লাগবে, আর কোন জোনে চান?",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 3,
+        "from": "caller",
+        "text": "দশ ফুট বাই দশ ফুট হলেই চলবে। শিশুসাহিত্যের জোনে পেলে সবচেয়ে ভালো হয়।",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 2
+      },
+      {
+        "seq": 4,
+        "from": "callee",
+        "text": "শিশুসাহিত্য জোনে দশ বাই দশ স্টলের ভাড়া পুরো মেলার জন্য ১৮,০০০ টাকা। এখন মাত্র দুটো খালি আছে: গেটের কাছে ১২ নম্বর আর পিছনের দিকে ৩১ নম্বর।",
+        "tags": [
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 5,
+        "from": "caller",
+        "text": "গেটের কাছের ১২ নম্বরটাই নেব।",
+        "tags": [
+          "decision"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 6,
+        "from": "callee",
+        "text": "ঠিক আছে, ১২ নম্বর আপনাদের নামে ধরে রাখলাম। তিন দিনের মধ্যে অর্ধেক ভাড়া জমা দিতে হবে, নইলে বুকিং বাতিল হয়ে যাবে।",
+        "tags": [
+          "decision",
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 7,
+        "from": "caller",
+        "text": "আমার মালিক কাল দুপুরের মধ্যে ৯,০০০ টাকা জমা দিয়ে দেবেন।",
+        "tags": [
+          "commitment"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 8,
+        "from": "caller",
+        "text": "আর একটা কথা, স্টলে কি বিদ্যুতের সংযোগ থাকবে? আমরা একটা ছোট পর্দায় নতুন বইয়ের ট্রেলার চালাতে চাই।",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 9,
+        "from": "callee",
+        "text": "হ্যাঁ, প্রতিটা স্টলে একটা ১৫ অ্যাম্পিয়ারের পয়েন্ট থাকে। বাড়তি আলো লাগাতে চাইলে আগে থেকে জানাতে হবে।",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 8
+      },
+      {
+        "seq": 10,
+        "from": "caller",
+        "text": "ধন্যবাদ। বাড়তি আলো লাগবে না।",
+        "tags": [
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 11,
+        "from": "callee",
+        "text": "স্টল সাজানোর জন্য মেলা শুরুর আগের দিন সকাল ৮টা থেকে ঢোকা যাবে।",
+        "tags": [
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 12,
+        "from": "caller",
+        "text": "ঠিক আছে, আমরা সেদিন সকালেই স্টল সাজিয়ে নেব।",
+        "tags": [
+          "commitment"
+        ],
+        "resolves": null
+      }
+    ],
+    "recall": [
+      {
+        "question": "আমরা কোন স্টলটা নিয়েছি?",
+        "expect": [
+          5,
+          6
+        ]
+      },
+      {
+        "question": "স্টলের ভাড়া কত টাকা?",
+        "expect": [
+          4
+        ]
+      },
+      {
+        "question": "স্টলে বিদ্যুতের ব্যবস্থা আছে কি?",
+        "expect": [
+          9
+        ]
+      }
+    ]
+  },
+  {
+    "id": "website-redesign-hi-latn",
+    "lang": "hi-Latn",
+    "topic": "Website redesign ka scope aur timeline",
+    "note": "Hinglish: a price negotiated down, a commitment without a date followed by the owner's decision, a conditional launch date.",
+    "messages": [
+      {
+        "seq": 1,
+        "from": "caller",
+        "text": "Hi, main Karan Mehta ka agent hoon. Unhe apni bakery ki website redesign karwani hai, aur aapke owner ka portfolio unhe kaafi pasand aaya.",
+        "tags": [],
+        "resolves": null
+      },
+      {
+        "seq": 2,
+        "from": "callee",
+        "text": "Hello! Main Neha ke design studio ka agent hoon. Kitne pages chahiye, aur kya online ordering bhi chahiye?",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 3,
+        "from": "caller",
+        "text": "Paanch pages: home, menu, about, gallery aur FAQ. Online ordering abhi nahi, shayad next year.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 2
+      },
+      {
+        "seq": 4,
+        "from": "callee",
+        "text": "Theek hai. Paanch pages ke liye Neha ka quote 85,000 rupaye hai, do revision rounds ke saath. Timeline chaar hafte ki hai.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 5,
+        "from": "caller",
+        "text": "Owner ka budget 70,000 tak hai. Kya gallery page hata ke price kam ho sakta hai?",
+        "tags": [
+          "fact",
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 6,
+        "from": "callee",
+        "text": "Gallery hata dein toh 72,000 ho jayega. Usse neeche Neha nahi ja payengi.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 5
+      },
+      {
+        "seq": 7,
+        "from": "caller",
+        "text": "Main owner se pooch ke batata hoon.",
+        "tags": [
+          "commitment"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 8,
+        "from": "caller",
+        "text": "Owner ne bola 72,000 chalega, gallery baad mein add karwa lenge. Deal pakki.",
+        "tags": [
+          "decision"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 9,
+        "from": "callee",
+        "text": "Done. Payment terms: 50% advance, baaki 50% launch pe.",
+        "tags": [
+          "decision",
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 10,
+        "from": "caller",
+        "text": "Launch kab tak ho payega? Unka naya outlet 15 December ko khul raha hai, usse pehle site live chahiye.",
+        "tags": [
+          "open_question",
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 11,
+        "from": "callee",
+        "text": "Advance aaj mil jaye toh 10 December tak site live kar denge.",
+        "tags": [
+          "commitment"
+        ],
+        "resolves": 10
+      },
+      {
+        "seq": 12,
+        "from": "caller",
+        "text": "Advance aaj shaam tak bhej denge.",
+        "tags": [
+          "commitment"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 13,
+        "from": "callee",
+        "text": "Perfect. Kal tak Neha pehla moodboard share kar degi.",
+        "tags": [
+          "commitment"
+        ],
+        "resolves": null
+      }
+    ],
+    "recall": [
+      {
+        "question": "Final price kitna tay hua?",
+        "expect": [
+          6,
+          8
+        ]
+      },
+      {
+        "question": "Website kab tak live ho jayegi?",
+        "expect": [
+          11
+        ]
+      },
+      {
+        "question": "Kya site mein online ordering hogi?",
+        "expect": [
+          3
+        ]
+      }
+    ]
+  },
+  {
+    "id": "hvac-maintenance-es",
+    "lang": "es",
+    "topic": "Contrato de mantenimiento del aire acondicionado",
+    "note": "Spanish: a long offer, a constraint that changes the price, a compromise option accepted, two callee messages in a row.",
+    "messages": [
+      {
+        "seq": 1,
+        "from": "caller",
+        "text": "Buenos días. Soy el agente de compras de Lucía Herrera. Su oficina necesita un contrato de mantenimiento para los equipos de aire acondicionado.",
+        "tags": [],
+        "resolves": null
+      },
+      {
+        "seq": 2,
+        "from": "callee",
+        "text": "Buenos días. Represento a la empresa de mantenimiento. ¿Cuántos equipos son y qué antigüedad tienen?",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 3,
+        "from": "caller",
+        "text": "Son doce unidades split y una máquina central en la azotea. Las split tienen cuatro años; la central, nueve.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 2
+      },
+      {
+        "seq": 4,
+        "from": "callee",
+        "text": "Para ese parque proponemos dos visitas preventivas al año, en marzo y septiembre, con limpieza de filtros, revisión de gas y comprobación eléctrica de todas las unidades. Las averías tendrían un tiempo de respuesta de 24 horas laborables. La cuota sería de 2.400 euros anuales, con las piezas aparte y la mano de obra de las averías incluida. Por la antigüedad de la máquina central, recomendaría además una revisión a fondo antes del verano.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 5,
+        "from": "caller",
+        "text": "La señora Herrera necesita respuesta en 8 horas, no en 24: la sala de servidores depende de la máquina central.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 6,
+        "from": "callee",
+        "text": "Con respuesta en 8 horas la cuota sube a 3.100 euros anuales.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 7,
+        "from": "caller",
+        "text": "¿Y si la respuesta en 8 horas es solo para la máquina central y las split se quedan en 24?",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 8,
+        "from": "callee",
+        "text": "Así quedaría en 2.700 euros al año.",
+        "tags": [
+          "fact"
+        ],
+        "resolves": 7
+      },
+      {
+        "seq": 9,
+        "from": "caller",
+        "text": "Aceptamos esa opción.",
+        "tags": [
+          "decision"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 10,
+        "from": "callee",
+        "text": "Perfecto. Le enviaré el contrato para firmar antes del viernes.",
+        "tags": [
+          "commitment"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 11,
+        "from": "callee",
+        "text": "¿Quieren que la revisión a fondo de la central sea en mayo?",
+        "tags": [
+          "open_question"
+        ],
+        "resolves": null
+      },
+      {
+        "seq": 12,
+        "from": "caller",
+        "text": "Sí, en mayo, pero fuera del horario laboral.",
+        "tags": [
+          "decision"
+        ],
+        "resolves": 11
+      },
+      {
+        "seq": 13,
+        "from": "callee",
+        "text": "De acuerdo, la programaremos un sábado de mayo.",
+        "tags": [
+          "decision",
+          "commitment"
+        ],
+        "resolves": null
+      }
+    ],
+    "recall": [
+      {
+        "question": "¿Cuánto cuesta el contrato al año?",
+        "expect": [
+          8
+        ]
+      },
+      {
+        "question": "¿Cuándo son las visitas preventivas?",
+        "expect": [
+          4
+        ]
+      },
+      {
+        "question": "¿Cuándo será la revisión a fondo de la máquina central?",
+        "expect": [
+          12,
+          13
+        ]
+      }
+    ]
+  }
+]

@@ -74,6 +74,7 @@ async fn main() -> Result<()> {
     // 90 days; 0 keeps them). A bad value stops startup.
     let usage_retention =
         chakramcp_relay::retention::usage_retention_days(|key| env::var(key).ok())?;
+    let calls = chakramcp_relay::calls::CallsConfig::from_env()?;
     let state = RelayState::new(pool, cfg.clone())
         .with_rate_limiter(chakramcp_relay::limits::RateLimiter::from_redis_url(
             env::var("REDIS_URL").ok().as_deref(),
@@ -90,7 +91,8 @@ async fn main() -> Result<()> {
         .with_featured_account(env::var("DISCOVERY_FEATURED_ACCOUNT").ok())
         .with_usage_retention_days(usage_retention)
         .with_compliance(chakramcp_relay::compliance::ComplianceChecker::from_env())
-        .with_calls(chakramcp_relay::calls::CallsConfig::from_env()?);
+        .with_calls(calls)
+        .with_memory(chakramcp_relay::calls::memory::client(&calls));
     state.heartbeats.clone().spawn_flusher(state.db.clone());
     if let Some(days) = usage_retention {
         chakramcp_relay::retention::spawn_usage_pruner(state.db.clone(), days);
@@ -100,6 +102,10 @@ async fn main() -> Result<()> {
     if state.calls.enabled {
         tracing::info!("calls enabled");
         chakramcp_relay::calls::workers::spawn_workers(state.db.clone());
+        if state.memory.is_some() {
+            tracing::info!("calls memory enabled");
+            chakramcp_relay::calls::memory::tagger::spawn_tagger(state.clone());
+        }
     }
     // Usage metering runs on a background writer so requests never wait on it.
     let usage = chakramcp_relay::events::UsageRecorder::spawn(state.clone());

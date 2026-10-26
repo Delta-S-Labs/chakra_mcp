@@ -40,6 +40,15 @@ use reqwest::StatusCode;
 use serde_json::{json, Value};
 
 pub const DEFAULT_MODEL: &str = "jev-latest";
+
+/// What [`ComplianceChecker::ask_questions`] got back.
+#[derive(Debug, Clone)]
+pub struct Asked {
+    pub answers: serde_json::Map<String, Value>,
+    /// Billable input tokens (output tokens are free).
+    pub input_tokens: i64,
+    pub model: Option<String>,
+}
 pub const DEFAULT_BASE_URL: &str = "https://api.typesafe.ai";
 pub const DEFAULT_TIMEOUT_MS: u64 = 2000;
 
@@ -152,6 +161,52 @@ impl ComplianceChecker {
     pub fn with_safety(mut self, on: bool) -> Self {
         self.safety = on;
         self
+    }
+
+    /// A client from `TYPESAFE_AI_*` alone, whatever `SYSTEM_ONE_CHECKS`
+    /// says: call memory uses Jev without the checks (calls spec §8). `None`
+    /// without a key. Its timeout defaults to 10 s: tagging runs in the
+    /// background, on larger requests than the checks.
+    pub fn client_from_env() -> Option<Self> {
+        let var = |k: &str| std::env::var(k).ok();
+        let key = var("TYPESAFE_AI_KEY");
+        let key = nonempty(key.as_deref())?;
+        let model = var("TYPESAFE_AI_MODEL");
+        let base = var("TYPESAFE_AI_BASE_URL");
+        let timeout = var("TYPESAFE_AI_TIMEOUT_MS")
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(10_000u64);
+        Some(Self::new(
+            key.to_owned(),
+            nonempty(model.as_deref())
+                .unwrap_or(DEFAULT_MODEL)
+                .to_owned(),
+            nonempty(base.as_deref()).unwrap_or(DEFAULT_BASE_URL),
+            Duration::from_millis(timeout),
+        ))
+    }
+
+    /// Ask any questions about `state` (call memory's tagging and recall).
+    /// An error is TypeSafe's failure, as text; a response with no answers
+    /// is one too.
+    pub async fn ask_questions(&self, state: &Value, questions: &Value) -> Result<Asked, String> {
+        let body = json!({ "model": self.model, "state": state, "questions": questions });
+        let resp = post(&self.http, &self.endpoint, &self.api_key, &body)
+            .await
+            .map_err(|e| e.message)?;
+        let answers = resp
+            .get("answers")
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default();
+        if answers.is_empty() {
+            return Err("response carried no answers".into());
+        }
+        Ok(Asked {
+            answers,
+            input_tokens: resp["usage"]["input_tokens"].as_i64().unwrap_or(0),
+            model: resp.get("model").and_then(Value::as_str).map(str::to_owned),
+        })
     }
 
     /// Whether the request paths screen messages (`SYSTEM_ONE_SAFETY`).
@@ -390,6 +445,10 @@ pub mod test_support {
         /// Probabilities for the next calls, in order, before `nouls`
         /// applies (e.g. a clean request, then a harmful reply).
         pub per_call: Arc<Mutex<std::collections::VecDeque<HashMap<&'static str, f64>>>>,
+        /// An answer for a question (id, definition), before the defaults:
+        /// for score and choice questions, or ids made at run time.
+        #[allow(clippy::type_complexity)]
+        pub answer: Option<Arc<dyn Fn(&str, &Value) -> Option<Value> + Send + Sync>>,
     }
 
     async fn handler(State(f): State<Fake>, Json(body): Json<Value>) -> (StatusCode, Json<Value>) {
@@ -411,16 +470,36 @@ pub mod test_support {
         let answers: serde_json::Map<String, Value> = body["questions"]
             .as_object()
             .unwrap()
-            .keys()
-            .map(|k| {
-                let p = nouls.get(k.as_str()).copied().unwrap_or(0.01);
-                (k.clone(), json!({"type": "noul", "noul": p}))
+            .iter()
+            .map(|(k, q)| {
+                if let Some(a) = f.answer.as_ref().and_then(|answer| answer(k, q)) {
+                    return (k.clone(), a);
+                }
+                let a = match q["type"].as_str() {
+                    Some("score") => {
+                        json!({"type": "score", "score": 0.0, "confidence": 0.9, "probabilities": {"0": 0.9}})
+                    }
+                    Some("choice") => {
+                        let options = q["criteria"].as_object().unwrap();
+                        let c = if options.contains_key("none") {
+                            "none".to_owned()
+                        } else {
+                            options.keys().next().unwrap().clone()
+                        };
+                        json!({"type": "choice", "choice": c, "confidence": 0.9, "probabilities": {c: 0.9}})
+                    }
+                    _ => {
+                        let p = nouls.get(k.as_str()).copied().unwrap_or(0.01);
+                        json!({"type": "noul", "noul": p})
+                    }
+                };
+                (k.clone(), a)
             })
             .collect();
         (
             StatusCode::OK,
             Json(
-                json!({"model": "jev-test", "answers": answers, "usage": {"input_tokens": 1, "output_tokens": 1}}),
+                json!({"model": "jev-test", "answers": answers, "usage": {"input_tokens": 1000, "output_tokens": 1}}),
             ),
         )
     }

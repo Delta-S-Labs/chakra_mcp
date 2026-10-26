@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT seq, from_agent_id, text, created_at FROM call_entries\n         WHERE call_id = $1 AND seq = ANY($2)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "seq",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "call_entries",
+            "name": "seq"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "from_agent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "call_entries",
+            "name": "from_agent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "text",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "call_entries",
+            "name": "text"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "call_entries",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4Array"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "5c56821abcd3d69843f11a891be5b4376f26fb1c445359e728a953da25b09174"
+}

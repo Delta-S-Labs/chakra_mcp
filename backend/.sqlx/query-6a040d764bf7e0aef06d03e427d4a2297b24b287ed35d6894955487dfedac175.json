@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                UPDATE call_entries\n                   SET tagged_at = NULL,\n                       tags = jsonb_build_object('attempts', (tags->>'attempts')::int - 1)\n                 WHERE id = ANY($1)\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6a040d764bf7e0aef06d03e427d4a2297b24b287ed35d6894955487dfedac175"
+}
