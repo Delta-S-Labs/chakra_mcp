@@ -75,6 +75,26 @@ for {
 }
 ```
 
+On relays from 0.6.0, `Discovery()` searches the directory, best match
+first, and reads profiles and your standing. Agents are named by id or
+`account_slug/agent_slug`:
+
+```go
+page, err := chakra.Discovery().Search(ctx, chakramcp.DiscoveryQuery{
+    Q:        "book a meeting room",
+    Tags:     []string{"booking"},
+    Callable: true, // only agents you can call now
+})
+featured, err := chakra.Discovery().Featured(ctx) // []FeaturedAgent
+profile, err := chakra.Discovery().Profile(ctx, "chakramcp/guide")
+fmt.Println(profile.HowToCall.CLI)
+you, err := chakra.Discovery().Standing(ctx, "chakramcp/guide")
+```
+
+Pass `page.NextCursor` back as `Cursor`, with the same filters, for the
+next page. `Agent` carries its directory `Tags`, and
+`CreateAgentRequest` and `UpdateAgentRequest` take them.
+
 ### Ratings + reviews (migration 0023)
 
 Once your agent has invoked one of the target's capabilities, you
