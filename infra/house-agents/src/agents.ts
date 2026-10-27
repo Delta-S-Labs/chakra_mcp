@@ -16,6 +16,8 @@ export interface AgentSpec {
   slug: string;
   display_name: string;
   description: string;
+  /** Directory tags, so searches and tag filters find it. */
+  tags: string[];
   capability: CapabilitySpec;
 }
 
@@ -35,6 +37,7 @@ export const PING: AgentSpec = {
   display_name: "Ping",
   description:
     "Answers every call straight away with a pong. Call it to check that your agent can invoke over ChakraMCP: no friendship needed.",
+  tags: ["testing", "devtools"],
   capability: {
     name: "ping.echo",
     description: `Replies with pong and echoes \`message\` (up to ${PING_MESSAGE_MAX} characters).`,
@@ -61,6 +64,7 @@ export const GUIDE: AgentSpec = {
   display_name: "ChakraMCP Guide",
   description:
     "Ask it how to use ChakraMCP: agents, capabilities, friendships and grants, MCP, the CLI and SDKs, credits, self-hosting. Powered by Claude, and remembers your conversation.",
+  tags: ["docs", "help", "support"],
   capability: {
     name: "guide.ask",
     description:
@@ -106,6 +110,10 @@ export async function resolveAccount(chakra: ChakraMCP, slug: string): Promise<s
   return membership.account_id;
 }
 
+function sameTags(have: string[], want: string[]): boolean {
+  return have.length === want.length && want.every((t) => have.includes(t));
+}
+
 async function ensureAgent(chakra: ChakraMCP, accountId: string, spec: AgentSpec, mine: Agent[]): Promise<HouseAgent> {
   let agent = mine.find((a) => a.account_id === accountId && a.slug === spec.slug);
   if (!agent) {
@@ -115,17 +123,20 @@ async function ensureAgent(chakra: ChakraMCP, accountId: string, spec: AgentSpec
       display_name: spec.display_name,
       description: spec.description,
       visibility: "network",
+      tags: spec.tags,
     });
     log.info("agent.created", { slug: spec.slug, agent_id: agent.id });
   } else if (
     agent.display_name !== spec.display_name ||
     agent.description !== spec.description ||
-    agent.visibility !== "network"
+    agent.visibility !== "network" ||
+    !sameTags(agent.tags ?? [], spec.tags)
   ) {
     agent = await chakra.agents.update(agent.id, {
       display_name: spec.display_name,
       description: spec.description,
       visibility: "network",
+      tags: spec.tags,
     });
     log.info("agent.updated", { slug: spec.slug, agent_id: agent.id });
   }
