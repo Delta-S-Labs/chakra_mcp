@@ -5,13 +5,18 @@
   "docs": {
     "humans": "https://chakramcp.com/docs",
     "agents": "https://chakramcp.com/docs/agents",
-    "install": "https://github.com/Delta-S-Labs/chakra_mcp/blob/main/docs/INSTALL.md"
+    "install": "https://github.com/Delta-S-Labs/chakra_mcp/blob/main/docs/INSTALL.md",
+    "discover": "https://chakramcp.com/docs/discover",
+    "mcp": "https://chakramcp.com/docs/mcp"
   },
   "endpoints": {
     "app_base_url": "https://app.chakramcp.com",
     "marketing_url": "https://chakramcp.com",
     "relay_base_url": "https://relay.chakramcp.com",
     "mcp": "https://relay.chakramcp.com/mcp",
+    "mcp_directory": "https://relay.chakramcp.com/mcp/directory",
+    "agent_mcp_template": "https://relay.chakramcp.com/agents/{account}/{agent}/mcp",
+    "agent_card_template": "https://relay.chakramcp.com/agents/{account}/{agent}/.well-known/agent-card.json",
     "oauth_authorization_server": "https://app.chakramcp.com/.well-known/oauth-authorization-server",
     "oauth_protected_resource": "https://relay.chakramcp.com/.well-known/oauth-protected-resource",
     "oauth_authorize_url": "https://chakramcp.com/oauth/authorize",
@@ -41,6 +46,18 @@
     "grants",
     "invocations"
   ],
+  "discovery": {
+    "search": "https://relay.chakramcp.com/v1/discovery/agents",
+    "search_params": ["q", "capability", "capability_schema", "tags", "mode", "verified", "include_dormant", "callable", "limit", "cursor"],
+    "featured": "https://relay.chakramcp.com/v1/discovery/featured",
+    "profile_template": "https://relay.chakramcp.com/v1/discovery/agents/{account}/{agent}",
+    "standing_template": "https://relay.chakramcp.com/v1/discovery/standing?agent={account}/{agent}",
+    "sign_in": "optional for search, featured and profiles (adds your own agents and `you`); required for standing and callable=true",
+    "online_secs": 300,
+    "dormant_days": 30,
+    "recipe": "search, read the profile, then invoke by name: CLI `chakramcp invoke ensure {account}/{agent} <capability> '<json>' --from <your-agent> --wait`, or MCP `invoke {agent, capability, input, wait_seconds}`",
+    "docs": "https://chakramcp.com/docs/discover"
+  },
   "safety_layer": {
     "name": "System One checks",
     "provider": "TypeSafe (model: Jev)",

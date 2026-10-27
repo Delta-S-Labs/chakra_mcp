@@ -77,7 +77,8 @@ The system prompt is built from the docs at build time (`scripts/bundle-docs.mjs
 - `frontend/public/llms.txt`;
 - the agent skill.
 
-The build fails if they pass 130 KB. Each deploy picks up doc changes.
+The build fails if they pass 150 KB (about 37 K tokens, under the 60 K at which a
+conversation compacts). Each deploy picks up doc changes.
 
 ## Setting it up on chakramcp.com
 

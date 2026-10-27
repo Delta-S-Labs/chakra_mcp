@@ -119,10 +119,11 @@ pub enum Sub {
     ///   * `5` transient
     ///   * `6` invalid arguments
     Wait(WaitArgs),
-    /// Discover the peer, ensure friendship + grant, then invoke.
-    /// Returns distinct `waiting_for_friendship` / `waiting_for_grant`
-    /// JSON states (exit 3) when prerequisites are missing — pass
-    /// `--wait-for-friendship` / `--wait-for-grant` to block instead.
+    /// Call a peer's capability by name. A public capability is called
+    /// directly; otherwise ensure the friendship and grant first. Returns
+    /// distinct `waiting_for_friendship` / `waiting_for_grant` JSON states
+    /// (exit 3) when those are missing — pass `--wait-for-friendship` /
+    /// `--wait-for-grant` to block instead.
     Ensure(EnsureArgs),
 }
 
@@ -530,6 +531,19 @@ pub(crate) async fn ensure_run(e: EnsureArgs, api: &ApiClient) -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("my agent row missing id"))?
         .to_string();
 
+    // 1b. A public capability needs no friendship or grant: call it directly.
+    // The peer's profile says which ones are public (relays from 0.6.0; an
+    // older relay has no profiles, and the friendship-and-grant path runs).
+    if let Some(capability_id) = public_capability(api, &peer_agent_id, &e.capability_name).await {
+        let body = json!({
+            "capability_id": capability_id,
+            "grantee_agent_id": my_agent_id,
+            "input": input,
+        });
+        let via = json!({ "access": "public", "capability": e.capability_name });
+        return invoke_and_wait(api, &e, body, &peer_display, via, poll).await;
+    }
+
     // 2. Friendship.
     let f = find_friendship(api, &my_agent_id, &peer_agent_id)
         .await
@@ -682,12 +696,63 @@ pub(crate) async fn ensure_run(e: EnsureArgs, api: &ApiClient) -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("grant row missing id"))?
         .to_string();
 
-    // 4. Invoke.
+    // 4. Invoke, and 5. optionally wait for the result.
     let body = json!({
         "grant_id": grant_id,
         "grantee_agent_id": my_agent_id,
         "input": input,
     });
+    let via = json!({
+        "friendship": {"status": "accepted", "id": friendship_id},
+        "grant": {
+            "capability": e.capability_name,
+            "status": "active",
+            "id": grant_id,
+        },
+    });
+    invoke_and_wait(api, &e, body, &peer_display, via, poll).await
+}
+
+/// The id of `capability` on `peer` when anyone signed in may call it, from
+/// the peer's profile. `None` when it needs a grant, isn't there, or the
+/// profile can't be read (an older relay): the caller then takes the
+/// friendship-and-grant path.
+async fn public_capability(api: &ApiClient, peer: &str, capability: &str) -> Option<String> {
+    let profile: Value = api
+        .get_relay(&format!("/v1/discovery/agents/{peer}"))
+        .await
+        .ok()?;
+    public_capability_in(&profile, capability)
+}
+
+fn public_capability_in(profile: &Value, capability: &str) -> Option<String> {
+    profile["capabilities"]
+        .as_array()?
+        .iter()
+        .find(|c| c["name"] == capability && c["access"] == "public")
+        .and_then(|c| c["id"].as_str().map(str::to_owned))
+}
+
+/// `body`'s envelope fields plus `via`'s: how the call was allowed (a
+/// friendship and grant, or public access).
+fn with_via(mut envelope: Value, via: &Value) -> Value {
+    if let (Some(out), Some(fields)) = (envelope.as_object_mut(), via.as_object()) {
+        for (k, v) in fields {
+            out.insert(k.clone(), v.clone());
+        }
+    }
+    envelope
+}
+
+/// Invoke, then print the result, waiting for it with `--wait`.
+async fn invoke_and_wait(
+    api: &ApiClient,
+    e: &EnsureArgs,
+    body: Value,
+    peer_display: &str,
+    via: Value,
+    poll: Duration,
+) -> Result<()> {
     let invoke_resp: Value = api
         .post_relay("/v1/invoke", &body)
         .await
@@ -698,23 +763,19 @@ pub(crate) async fn ensure_run(e: EnsureArgs, api: &ApiClient) -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("invoke response missing invocation_id"))?
         .to_string();
 
-    // 5. Optionally wait for the invocation to terminate.
     if !e.wait {
         if e.json {
-            print(&json!({
-                "ok": true,
-                "peer": peer_display,
-                "friendship": {"status": "accepted", "id": friendship_id},
-                "grant": {
-                    "capability": e.capability_name,
-                    "status": "active",
-                    "id": grant_id,
-                },
-                "invocation": {
-                    "id": invocation_id,
-                    "status": invoke_resp.get("status"),
-                },
-            }))?;
+            print(&with_via(
+                json!({
+                    "ok": true,
+                    "peer": peer_display,
+                    "invocation": {
+                        "id": invocation_id,
+                        "status": invoke_resp.get("status"),
+                    },
+                }),
+                &via,
+            ))?;
         } else {
             print(&invoke_resp)?;
         }
@@ -737,26 +798,29 @@ pub(crate) async fn ensure_run(e: EnsureArgs, api: &ApiClient) -> Result<()> {
         Ok(o) => {
             let succeeded = o.status == "succeeded";
             if e.json {
-                let reply = o.row.pointer("/output_preview").cloned();
-                let error = o.row.pointer("/error_message").cloned();
-                let mut payload = json!({
-                    "ok": succeeded,
-                    "peer": peer_display,
-                    "friendship": {"status": "accepted", "id": friendship_id},
-                    "grant": {
-                        "capability": e.capability_name,
-                        "status": "active",
-                        "id": grant_id,
-                    },
-                    "invocation": {
-                        "id": invocation_id,
-                        "status": o.status,
-                    },
-                });
+                let mut payload = with_via(
+                    json!({
+                        "ok": succeeded,
+                        "peer": peer_display,
+                        "invocation": {
+                            "id": invocation_id,
+                            "status": o.status,
+                        },
+                    }),
+                    &via,
+                );
                 if succeeded {
-                    payload["reply"] = reply.unwrap_or(Value::Null);
+                    payload["reply"] = o
+                        .row
+                        .pointer("/output_preview")
+                        .cloned()
+                        .unwrap_or(Value::Null);
                 } else {
-                    payload["error"] = error.unwrap_or(Value::Null);
+                    payload["error"] = o
+                        .row
+                        .pointer("/error_message")
+                        .cloned()
+                        .unwrap_or(Value::Null);
                 }
                 print(&payload)?;
             } else {
@@ -816,6 +880,21 @@ mod tests {
         );
         let plain = Args::try_parse_from(["invoke", "--grant", "g", "--as", "a"]).unwrap();
         assert_eq!(plain.send.consent_terms(), None);
+    }
+
+    #[test]
+    fn public_capabilities_come_from_the_profile() {
+        let profile = json!({ "capabilities": [
+            { "id": "c1", "name": "guide.ask", "access": "public" },
+            { "id": "c2", "name": "hold", "access": "friends" },
+        ]});
+        assert_eq!(
+            public_capability_in(&profile, "guide.ask").as_deref(),
+            Some("c1")
+        );
+        assert_eq!(public_capability_in(&profile, "hold"), None);
+        assert_eq!(public_capability_in(&profile, "missing"), None);
+        assert_eq!(public_capability_in(&json!({}), "guide.ask"), None);
     }
 
     #[test]

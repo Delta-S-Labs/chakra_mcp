@@ -22,7 +22,8 @@ const DEFAULT_DIRECTORY_PER_IP_PER_MIN: i32 = 60;
 /// MCP settings (spec §9), from the environment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct McpConfig {
-    /// The public directory and agents' own MCP endpoints (`MCP_AGENTS_ENABLED`).
+    /// The public directory and agents' own MCP endpoints
+    /// (`MCP_AGENTS_ENABLED`, on by default; they also need `DISCOVERY_V2`).
     pub agents_enabled: bool,
     /// How long an agent endpoint's tool call waits for its result
     /// (`MCP_TOOL_WAIT_SECS`, 0–55).
@@ -41,7 +42,7 @@ pub struct McpConfig {
 impl Default for McpConfig {
     fn default() -> Self {
         Self {
-            agents_enabled: false,
+            agents_enabled: true,
             tool_wait_secs: DEFAULT_TOOL_WAIT_SECS,
             max_waiters: DEFAULT_MAX_WAITERS,
             directory_per_ip_per_min: DEFAULT_DIRECTORY_PER_IP_PER_MIN,
@@ -58,10 +59,10 @@ impl McpConfig {
     /// Each setting from a non-empty value, else its default. A value that
     /// is set but unparseable or out of range is an error.
     pub fn from_sources(get: impl Fn(&str) -> Option<String>) -> anyhow::Result<Self> {
-        let flag = |key: &str| -> anyhow::Result<bool> {
+        let flag = |key: &str, default: bool| -> anyhow::Result<bool> {
             match env_value(&get, key) {
                 Some(raw) => parse_bool(key, &raw),
-                None => Ok(false),
+                None => Ok(default),
             }
         };
         let number = |key: &str, default: u64, max: u64| -> anyhow::Result<u64> {
@@ -77,7 +78,7 @@ impl McpConfig {
             }
         };
         Ok(Self {
-            agents_enabled: flag("MCP_AGENTS_ENABLED")?,
+            agents_enabled: flag("MCP_AGENTS_ENABLED", true)?,
             tool_wait_secs: number(
                 "MCP_TOOL_WAIT_SECS",
                 DEFAULT_TOOL_WAIT_SECS,
@@ -89,7 +90,7 @@ impl McpConfig {
                 DEFAULT_DIRECTORY_PER_IP_PER_MIN as u64,
                 100_000,
             )? as i32,
-            trust_forwarded_for: flag("TRUST_FORWARDED_FOR")?,
+            trust_forwarded_for: flag("TRUST_FORWARDED_FOR", false)?,
         })
     }
 }
@@ -134,6 +135,7 @@ mod config_tests {
     #[test]
     fn defaults_and_overrides() {
         assert_eq!(from(&[]).unwrap(), McpConfig::default());
+        assert!(McpConfig::default().agents_enabled, "on by default");
         let cfg = from(&[
             ("MCP_AGENTS_ENABLED", "true"),
             ("MCP_TOOL_WAIT_SECS", "10"),
@@ -155,6 +157,11 @@ mod config_tests {
         assert_eq!(
             from(&[("MCP_TOOL_WAIT_SECS", "")]).unwrap().tool_wait_secs,
             25
+        );
+        assert!(
+            !from(&[("MCP_AGENTS_ENABLED", "false")])
+                .unwrap()
+                .agents_enabled
         );
     }
 

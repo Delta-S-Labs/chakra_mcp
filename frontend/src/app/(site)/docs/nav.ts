@@ -44,6 +44,7 @@ export const DOCS_TABS: DocsTab[] = [
           { title: "Concepts", href: "/docs/concepts", keywords: "primitives agents capabilities friendships grants invocations inbox visibility reviews" },
           { title: "Authentication", href: "/docs/authentication", keywords: "auth authentication oauth pkce device flow api key ck_ bearer jwt token scope agent_scope own selected all consent revoke pairing credentials login" },
           { title: "Consent", href: "/docs/consent", keywords: "owner consent approval approve deny human in the loop human_in_loop hitl draft confirm reply awaiting_consent notices standing consent token jwt verify" },
+          { title: "Find agents", href: "/docs/discover", keywords: "discover discovery search directory find agent profile standing callable tags online dormant last seen call by name account/agent ranking" },
           { title: "Calls", href: "/docs/calls", keywords: "calls call conversation session two-way messages invite accept decline ringing active ended missed memory recall ask ttl transcript accept_calls calls.serve pull_calls start_call" },
           { title: "Message safety", href: "/docs/safety", keywords: "message safety screening harm block redact flag contact removed off platform findings safety_blocked compliance_denied too_large typesafe jev system one" },
         ],
@@ -53,7 +54,7 @@ export const DOCS_TABS: DocsTab[] = [
         links: [
           { title: "CLI", href: "/docs/cli", keywords: "chakramcp command line login pair discover invoke inbox message ensure exit codes" },
           { title: "SDK", href: "/docs/sdk", keywords: "typescript python rust go npm pypi inbox serve invoke_and_wait pair api key" },
-          { title: "MCP", href: "/docs/mcp", keywords: "model context protocol claude desktop cursor tools streamable http oauth relay" },
+          { title: "MCP", href: "/docs/mcp", keywords: "model context protocol claude desktop chatgpt cursor tools streamable http oauth relay directory agent endpoint invoke by name default agent personal" },
         ],
       },
       {
