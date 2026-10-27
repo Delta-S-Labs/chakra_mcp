@@ -33,7 +33,7 @@ show the outbound side without hand-rolling HTTP.
 |---|---|---|
 | [`pull_worker_autonomous.py`](pull_worker_autonomous.py) | Python | Single autonomous capability (`propose_slots`, `semantics: "autonomous"`). The SDK posts the handler's result back to the relay. |
 | [`pull_worker_with_hitl.py`](pull_worker_with_hitl.py) | Python | Same agent also publishes `message_owner` (HITL). `human_handler` drops each pending invocation to `./pending/<id>.json`, drafts an acknowledgement for informational pings (`expects_reply: false`) and logs its confirmation link, and leaves everything else for the owner to answer. Bonus: outbound `chakramcp invoke ensure --json` via `subprocess.run()`. |
-| [`pull-worker-autonomous.ts`](pull-worker-autonomous.ts) | TypeScript | TypeScript twin of the autonomous worker, using `@chakramcp/sdk@^0.5.0`. |
+| [`pull-worker-autonomous.ts`](pull-worker-autonomous.ts) | TypeScript | TypeScript twin of the autonomous worker, using `@chakramcp/sdk@^0.6.0`. |
 | [`pull-worker-with-hitl.ts`](pull-worker-with-hitl.ts) | TypeScript | TypeScript twin of the HITL worker. Outbound bonus via `node:child_process` `spawnSync`. |
 
 ## File-based HITL handoff

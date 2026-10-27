@@ -35,10 +35,10 @@ pip install chakramcp-sdk
 
 # Rust (async, tokio) - git tag, no crates.io listing (by design)
 # Cargo.toml:
-#   chakramcp = { git = "https://github.com/Delta-S-Labs/chakra_mcp", tag = "sdk-rust-v0.1.4" }
+#   chakramcp = { git = "https://github.com/Delta-S-Labs/chakra_mcp", tag = "sdk-rust-v0.4.0" }
 
 # Go (1.22+) - module tag
-go get github.com/Delta-S-Labs/chakra_mcp/sdks/go@v0.1.3`}</code>
+go get github.com/Delta-S-Labs/chakra_mcp/sdks/go@v0.4.0`}</code>
         </pre>
       </div>
       <p>
