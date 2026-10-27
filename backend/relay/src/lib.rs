@@ -15,6 +15,7 @@ pub mod auth;
 pub mod calls;
 pub mod compliance;
 pub mod consent;
+pub mod discovery;
 pub mod events;
 pub mod forwarder;
 pub mod handlers;
@@ -234,6 +235,16 @@ pub fn router(state: RelayState) -> Router {
         // ─── Discovery search (D10a) ──────────────────────────
         .route("/v1/discovery/agents", get(handlers::discovery::search))
         .route("/v1/discovery/featured", get(handlers::discovery::featured))
+        // Profiles and standing (MCP and discovery spec §5.3–5.4).
+        .route(
+            "/v1/discovery/agents/{id}",
+            get(handlers::discovery::profile_by_id),
+        )
+        .route(
+            "/v1/discovery/agents/{account_slug}/{agent_slug}",
+            get(handlers::discovery::profile_by_name),
+        )
+        .route("/v1/discovery/standing", get(handlers::discovery::standing))
         // ─── A2A: published Agent Card per registered agent ────
         .route(
             "/agents/{account_slug}/{agent_slug}/.well-known/agent-card.json",

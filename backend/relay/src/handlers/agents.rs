@@ -15,6 +15,9 @@ use uuid::Uuid;
 use chakramcp_shared::error::{ApiError, ApiResult};
 
 use crate::auth::{user_can_admin_account, user_is_member, AuthUser};
+use crate::discovery::fields::{
+    self as discovery_fields, effective_accept_calls, AgentSummary, CapabilityBrief,
+};
 use crate::state::RelayState;
 
 // ─── Validation helpers ──────────────────────────────────
@@ -172,16 +175,6 @@ pub struct UpdateRequest {
     pub accept_calls: Option<String>,
 }
 
-/// The `accept_calls` an agent shows: push agents can't take calls yet,
-/// whatever is stored.
-fn effective_accept_calls(mode: &str, stored: String) -> String {
-    if mode == "push" {
-        "nobody".into()
-    } else {
-        stored
-    }
-}
-
 // ─── GET /v1/agents — list mine ──────────────────────────
 pub async fn list_mine(
     State(state): State<RelayState>,
@@ -283,32 +276,20 @@ const NETWORK_DEFAULT_PAGE_SIZE: i64 = 20;
 const NETWORK_MAX_PAGE_SIZE: i64 = 100;
 const NETWORK_MAX_Q_LEN: usize = 200;
 
+/// One row of the network list: the shared agent fields (MCP and discovery
+/// spec §5.2) and this list's own.
 #[derive(Debug, Serialize)]
 pub struct NetworkAgentDto {
-    pub id: Uuid,
+    #[serde(flatten)]
+    pub agent: AgentSummary,
+    /// The capabilities you may see, with who can call each.
+    pub capabilities: Vec<CapabilityBrief>,
     pub account_id: Uuid,
-    pub account_slug: String,
     pub account_display_name: String,
-    pub slug: String,
-    pub display_name: String,
-    pub description: String,
-    pub mode: String,
-    /// Who may call it (calls spec §3.1); `nobody` for push agents.
-    pub accept_calls: String,
-    pub tags: Vec<String>,
-    pub verified: bool,
     pub endpoint_url: Option<String>,
-    pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub is_mine: bool,
     pub capability_count: i64,
-    /// Average star rating over un-hidden reviews (migration 0023).
-    /// `None` when this agent has no reviews.
-    pub avg_rating: Option<f64>,
-    /// Count of un-hidden reviews (migration 0023).
-    pub review_count: i64,
-    /// Pulled its inbox in the last 5 minutes (`agent_heartbeats`).
-    pub online: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -373,12 +354,7 @@ pub async fn list_network(
     let rows = sqlx::query!(
         r#"
         SELECT
-            a.id, a.account_id, a.slug, a.display_name, a.description,
-            a.visibility, a.endpoint_url, a.mode, a.accept_calls, a.tags,
-            a.created_at, a.updated_at,
-            acc.slug as account_slug,
-            acc.display_name as account_display_name,
-            (acc.verified_at IS NOT NULL) as "verified!",
+            a.id, a.endpoint_url, a.created_at, a.updated_at,
             -- Capabilities this caller can actually see: 'network' always,
             -- plus 'org' ones when the caller shares an organization with a
             -- member of the owning account (same predicate as the agent
@@ -404,11 +380,6 @@ pub async fn list_network(
                           )
                       )
                   )) as "capability_count!",
-            (SELECT AVG(rating)::float8 FROM agent_reviews r
-                WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS avg_rating,
-            (SELECT COUNT(*)::bigint FROM agent_reviews r
-                WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS "review_count!",
-            COALESCE(h.last_polled_at > now() - interval '5 minutes', false) AS "online!",
             EXISTS(
                 SELECT 1 FROM account_memberships m
                 WHERE m.account_id = a.account_id AND m.user_id = $1
@@ -483,28 +454,24 @@ pub async fn list_network(
         None
     };
 
+    // The shared fields, then this list's own.
+    let ids: Vec<Uuid> = page_rows.iter().map(|r| r.id).collect();
+    let mut loaded = discovery_fields::load(&state, Some(user.user_id), &ids).await?;
     let agents = page_rows
         .into_iter()
-        .map(|r| NetworkAgentDto {
-            id: r.id,
-            account_id: r.account_id,
-            account_slug: r.account_slug,
-            account_display_name: r.account_display_name,
-            slug: r.slug,
-            display_name: r.display_name,
-            description: r.description,
-            accept_calls: effective_accept_calls(&r.mode, r.accept_calls),
-            mode: r.mode,
-            tags: r.tags,
-            verified: r.verified,
-            endpoint_url: if r.is_mine { r.endpoint_url } else { None },
-            created_at: r.created_at,
-            updated_at: r.updated_at,
-            is_mine: r.is_mine,
-            capability_count: r.capability_count,
-            avg_rating: r.avg_rating,
-            review_count: r.review_count,
-            online: r.online,
+        .filter_map(|r| {
+            let at = loaded.iter().position(|l| l.summary.id == r.id)?;
+            let l = loaded.swap_remove(at);
+            Some(NetworkAgentDto {
+                agent: l.summary,
+                capabilities: l.capabilities,
+                account_id: l.account_id,
+                account_display_name: l.account_display_name,
+                endpoint_url: if r.is_mine { r.endpoint_url } else { None },
+                updated_at: r.updated_at,
+                is_mine: r.is_mine,
+                capability_count: r.capability_count,
+            })
         })
         .collect();
 

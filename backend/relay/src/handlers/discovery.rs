@@ -1,387 +1,48 @@
-//! D10a: search the public agent index.
+//! Discovery over REST (MCP and discovery spec §5): ranked search,
+//! featured agents, profiles and the caller's standing. The queries live in
+//! `crate::discovery`, shared with the network list and the MCP tools.
 //!
-//! `GET /v1/discovery/agents` returns a paginated list of agents
-//! filtered by combinations of:
+//! - `GET /v1/discovery/agents`: search (`discovery::search`).
+//! - `GET /v1/discovery/featured`: agents worth trying first.
+//! - `GET /v1/discovery/agents/{account_slug}/{agent_slug}` and
+//!   `GET /v1/discovery/agents/{id}`: a profile.
+//! - `GET /v1/discovery/standing?agent=<ref>`: your standing with one agent.
 //!
-//! - `q` — free-text search against display_name, description,
-//!   account display_name, capability text, and tags. Backed by
-//!   the `agents.search_vec` tsvector + GIN index from migration
-//!   0013.
-//! - `capability_schema` — JSONB containment match against any
-//!   capability's output_schema (e.g.
-//!   `{"properties":{"slots":{"type":"array"}}}`). Backed by
-//!   `idx_agent_capabilities_output_schema_jsonb` from D1.
-//! - `mode` — push | pull.
-//! - `verified` — caller wants verified-account agents only.
-//! - `tags` — comma-separated tag filter.
-//!
-//! Pagination is cursor-based (HMAC-protected). Page size defaults
-//! to 20, max 100. The cursor encodes the last row's
-//! `(created_at, id)` pair, which is the stable secondary sort
-//! key. `total_estimate` is HLL-cheap to compute, returned only on
-//! the first page.
-//!
-//! v1 simplifications (deferred to follow-up commits):
-//! - No edge / Redis caching yet (in-process LRU is also TBD).
-//! - Trending is a SELECT, not a materialized view (small enough
-//!   at v1 scale; revisit at >10k agents).
-//! - Capability-shape match is JSONB containment, not full JSON
-//!   Schema validation.
+//! Signed out, these answer for the public directory and responses are
+//! cacheable. With a token they add your agents, org agents you share and
+//! your standing (`you`), and nothing is cached (`discovery::cache_headers`).
+//! With `DISCOVERY_V2` off, search and featured are 404 and profiles and
+//! standing need sign-in.
 
-use axum::extract::{Query, State};
-use axum::http::{header, StatusCode};
+use axum::extract::{Path, Query, State};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use base64::Engine;
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use chakramcp_shared::error::{ApiError, ApiResult};
+
+use crate::auth::AuthUser;
+use crate::discovery::fields::{self, AgentSummary, CapabilityBrief};
+use crate::discovery::profile::{self, AgentRef};
+use crate::discovery::search::{self, SearchParams};
+use crate::discovery::{cache_headers, standing, MaybeUser};
 use crate::state::RelayState;
 
-const DEFAULT_PAGE_SIZE: i64 = 20;
-const MAX_PAGE_SIZE: i64 = 100;
-
-/// Cap free-text query length. Defends the FTS path from cheap
-/// DoS via 1 MB query strings — a normal user types a handful of
-/// words.
-const MAX_Q_LEN: usize = 500;
-
-/// Cap `capability_schema` JSON length. The JSONB containment
-/// path is index-backed but parsing a 1 MB schema is still
-/// wasted work.
-const MAX_CAP_SCHEMA_LEN: usize = 4096;
-
-/// Cap exact-name capability filter to slug-shaped values; longer
-/// strings are almost certainly a malformed query.
-const MAX_CAP_NAME_LEN: usize = 128;
-
-/// Query string for `GET /v1/discovery/agents`.
-#[derive(Debug, Deserialize)]
-pub struct DiscoveryQuery {
-    pub q: Option<String>,
-    /// JSONB-encoded shape to match against any capability's
-    /// output_schema. Pass as a JSON string: e.g.
-    /// `?capability_schema={"properties":{"slots":{}}}`.
-    pub capability_schema: Option<String>,
-    /// Exact match against `agent_capabilities.name`. Cheaper than
-    /// `q` (which is full-text against vec'd description + tags +
-    /// capability text) and more reliable for the autopilot use
-    /// case where one agent searches for another that publishes a
-    /// specific capability by name. Mutually compatible with
-    /// `capability_schema` — both apply if both supplied.
-    pub capability: Option<String>,
-    pub mode: Option<String>, // "push" | "pull"
-    pub verified: Option<bool>,
-    /// Comma-separated tags. All must match (AND).
-    pub tags: Option<String>,
-    /// Also list dormant agents: pull-mode agents that haven't polled in
-    /// 30 days (or ever) and have nothing publicly callable. Hidden by
-    /// default.
-    pub include_dormant: Option<bool>,
-    pub limit: Option<i64>,
-    pub cursor: Option<String>,
-}
-
-/// Wire shape per row.
-#[derive(Debug, Serialize)]
-pub struct DiscoveryAgent {
-    pub account_slug: String,
-    pub agent_slug: String,
-    pub display_name: String,
-    pub description: String,
-    pub mode: String,
-    pub tags: Vec<String>,
-    pub friend_count: i64,
-    pub created_at: DateTime<Utc>,
-    pub verified: bool,
-    /// True when this agent has at least one `public_invoke=true`
-    /// capability — i.e. non-friends can call something here without
-    /// a friendship/grant. Per-capability detail (which capabilities,
-    /// what quota) lives on `GET /v1/agents/{id}/capabilities`; this
-    /// flag is just the directory-level "publicly callable" signal.
-    /// Migration 0022.
-    pub has_public_capabilities: bool,
-    /// Average star rating over un-hidden reviews. `None` when no
-    /// reviews. Migration 0023.
-    pub avg_rating: Option<f64>,
-    /// Count of un-hidden reviews. Migration 0023.
-    pub review_count: i64,
-    /// Pulled its inbox in the last 5 minutes (`agent_heartbeats`). Push
-    /// agents don't poll, so they never show as online.
-    pub online: bool,
-    /// Belongs to the featured account (`DISCOVERY_FEATURED_ACCOUNT`:
-    /// chakramcp.com's house agents).
-    pub featured: bool,
-}
-
-#[derive(Debug, Serialize)]
-pub struct DiscoveryResponse {
-    pub agents: Vec<DiscoveryAgent>,
-    pub next_cursor: Option<String>,
-    /// Present only on the first page. None on subsequent pages so
-    /// pagination round-trips don't re-count.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub total_estimate: Option<i64>,
-}
+/// Lists and profiles: a short browser cache, a longer edge cache.
+const PUBLIC_CACHE: &str = "public, max-age=30, s-maxage=120";
 
 /// `GET /v1/discovery/agents`
-pub async fn search(State(state): State<RelayState>, Query(q): Query<DiscoveryQuery>) -> Response {
+pub async fn search(
+    State(state): State<RelayState>,
+    MaybeUser(viewer): MaybeUser,
+    Query(params): Query<SearchParams>,
+) -> ApiResult<Response> {
     if !state.config.discovery_v2_enabled {
-        return not_found("discovery not enabled");
+        return Err(ApiError::NotFound);
     }
-    let limit = q.limit.unwrap_or(DEFAULT_PAGE_SIZE).clamp(1, MAX_PAGE_SIZE);
-
-    if q.q.as_deref().map(str::len).unwrap_or(0) > MAX_Q_LEN {
-        return invalid_request("q is too long");
-    }
-    if q.capability_schema.as_deref().map(str::len).unwrap_or(0) > MAX_CAP_SCHEMA_LEN {
-        return invalid_request("capability_schema is too long");
-    }
-    if q.capability.as_deref().map(str::len).unwrap_or(0) > MAX_CAP_NAME_LEN {
-        return invalid_request("capability is too long");
-    }
-    let capability_name = q.capability.as_deref().filter(|s| !s.is_empty());
-
-    let cursor = match q.cursor.as_deref().map(decode_cursor).transpose() {
-        Ok(c) => c,
-        Err(_) => return invalid_request("malformed cursor"),
-    };
-
-    let capability_schema_json = match q.capability_schema.as_deref().map(parse_jsonb).transpose() {
-        Ok(v) => v,
-        Err(_) => return invalid_request("capability_schema must be valid JSON"),
-    };
-
-    let mode = match q.mode.as_deref() {
-        None => None,
-        Some(m) if m == "push" || m == "pull" => Some(m.to_string()),
-        Some(_) => return invalid_request("mode must be push|pull"),
-    };
-
-    let tags: Vec<String> = q
-        .tags
-        .as_deref()
-        .map(|s| {
-            s.split(',')
-                .map(|t| t.trim().to_string())
-                .filter(|t| !t.is_empty())
-                .collect()
-        })
-        .unwrap_or_default();
-
-    let res = sqlx::query!(
-        r#"
-        WITH q AS (
-            SELECT
-                a.id,
-                a.account_id,
-                a.slug         AS agent_slug,
-                a.display_name,
-                a.description,
-                a.mode,
-                a.tags,
-                -- Counted live: the column's refresh job was never built.
-                (SELECT count(*) FROM friendships f
-                  WHERE f.status = 'accepted'
-                    AND (f.proposer_agent_id = a.id OR f.target_agent_id = a.id))::int
-                    AS friend_count,
-                a.created_at,
-                acc.slug       AS account_slug,
-                acc.verified_at IS NOT NULL AS verified,
-                EXISTS(
-                    SELECT 1 FROM agent_capabilities c
-                    WHERE c.agent_id = a.id AND c.public_invoke = true
-                ) AS has_public_capabilities,
-                (SELECT AVG(rating)::float8 FROM agent_reviews r
-                    WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS avg_rating,
-                (SELECT COUNT(*)::bigint FROM agent_reviews r
-                    WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS review_count,
-                COALESCE(h.last_polled_at > now() - interval '5 minutes', false) AS online,
-                ($11::text IS NOT NULL AND acc.slug = $11::text) AS featured
-              FROM agents a
-              JOIN accounts acc ON acc.id = a.account_id
-              LEFT JOIN agent_heartbeats h ON h.agent_id = a.id
-             WHERE a.tombstoned_at  IS NULL
-               AND acc.tombstoned_at IS NULL
-               AND a.visibility = 'network'
-               -- Dormant pull agents are hidden unless asked for.
-               AND ($10::boolean OR NOT (
-                       a.mode = 'pull'
-                       -- A new agent counts as seen when it's created.
-                       AND COALESCE(h.last_polled_at, a.created_at) < now() - interval '30 days'
-                       AND NOT EXISTS (
-                           SELECT 1 FROM agent_capabilities c
-                            WHERE c.agent_id = a.id AND c.public_invoke = true)))
-               AND ($1::text IS NULL OR a.search_vec @@ to_tsquery('simple', $1::text))
-               AND ($2::jsonb   IS NULL OR EXISTS (
-                       SELECT 1 FROM agent_capabilities c
-                        WHERE c.agent_id = a.id AND c.output_schema @> $2::jsonb))
-               AND ($3::text    IS NULL OR a.mode = $3::text)
-               AND ($4::boolean IS NULL OR (acc.verified_at IS NOT NULL) = $4::boolean)
-               AND ($5::text[]  IS NULL OR a.tags @> $5::text[])
-               AND ($9::text    IS NULL OR EXISTS (
-                       SELECT 1 FROM agent_capabilities c
-                        WHERE c.agent_id = a.id AND c.name = $9::text))
-               -- Cursor: rows strictly after the previous page's last
-               -- (created_at, id). Tuple ordering is the stable sort.
-               AND ($6::timestamptz IS NULL OR
-                    (a.created_at, a.id) < ($6::timestamptz, $7::uuid))
-             ORDER BY a.created_at DESC, a.id DESC
-             LIMIT $8 + 1
-        )
-        SELECT
-            id          AS "id!",
-            account_id  AS "account_id!",
-            agent_slug  AS "agent_slug!",
-            account_slug AS "account_slug!",
-            display_name AS "display_name!",
-            description AS "description!",
-            mode        AS "mode!",
-            tags        AS "tags!",
-            friend_count AS "friend_count!",
-            created_at  AS "created_at!",
-            verified    AS "verified!",
-            has_public_capabilities AS "has_public_capabilities!",
-            avg_rating,
-            review_count AS "review_count!",
-            online      AS "online!",
-            featured    AS "featured!"
-          FROM q
-        "#,
-        q.q.as_deref().and_then(to_tsquery),
-        capability_schema_json,
-        mode,
-        q.verified,
-        if tags.is_empty() {
-            None
-        } else {
-            Some(tags.as_slice())
-        },
-        cursor.as_ref().map(|c| c.created_at),
-        cursor.as_ref().map(|c| c.id),
-        limit as i32,
-        capability_name,
-        q.include_dormant.unwrap_or(false),
-        state.featured_account.as_deref(),
-    )
-    .fetch_all(&state.db)
-    .await;
-
-    let mut rows = match res {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::error!(error = %e, "discovery search query failed");
-            return internal_error();
-        }
-    };
-
-    // The query SELECTed `LIMIT + 1` to know if there's a next page.
-    let next_cursor = if rows.len() as i64 > limit {
-        let last = rows.pop().unwrap();
-        // The popped row was the lookahead — cursor points at the
-        // previous-to-last (which is now the last row in `rows`).
-        let _ = last;
-        rows.last().map(|r| {
-            encode_cursor(&CursorState {
-                created_at: r.created_at,
-                id: r.id,
-            })
-        })
-    } else {
-        None
-    };
-
-    // total_estimate only on the first page (no cursor).
-    let total_estimate = if cursor.is_none() {
-        match sqlx::query_scalar!(
-            r#"
-            SELECT COUNT(*)::bigint AS "n!"
-              FROM agents a
-              JOIN accounts acc ON acc.id = a.account_id
-              LEFT JOIN agent_heartbeats h ON h.agent_id = a.id
-             WHERE a.tombstoned_at  IS NULL
-               AND acc.tombstoned_at IS NULL
-               AND a.visibility = 'network'
-               AND ($7::boolean OR NOT (
-                       a.mode = 'pull'
-                       -- A new agent counts as seen when it's created.
-                       AND COALESCE(h.last_polled_at, a.created_at) < now() - interval '30 days'
-                       AND NOT EXISTS (
-                           SELECT 1 FROM agent_capabilities c
-                            WHERE c.agent_id = a.id AND c.public_invoke = true)))
-               AND ($1::text IS NULL OR a.search_vec @@ to_tsquery('simple', $1::text))
-               AND ($2::jsonb   IS NULL OR EXISTS (
-                       SELECT 1 FROM agent_capabilities c
-                        WHERE c.agent_id = a.id AND c.output_schema @> $2::jsonb))
-               AND ($3::text    IS NULL OR a.mode = $3::text)
-               AND ($4::boolean IS NULL OR (acc.verified_at IS NOT NULL) = $4::boolean)
-               AND ($5::text[]  IS NULL OR a.tags @> $5::text[])
-               AND ($6::text    IS NULL OR EXISTS (
-                       SELECT 1 FROM agent_capabilities c
-                        WHERE c.agent_id = a.id AND c.name = $6::text))
-            "#,
-            q.q.as_deref().and_then(to_tsquery),
-            capability_schema_json,
-            mode,
-            q.verified,
-            if tags.is_empty() {
-                None
-            } else {
-                Some(tags.as_slice())
-            },
-            capability_name,
-            q.include_dormant.unwrap_or(false),
-        )
-        .fetch_one(&state.db)
-        .await
-        {
-            Ok(n) => Some(n),
-            Err(e) => {
-                tracing::warn!(error = %e, "discovery total_estimate query failed");
-                None
-            }
-        }
-    } else {
-        None
-    };
-
-    let agents = rows
-        .into_iter()
-        .map(|r| DiscoveryAgent {
-            account_slug: r.account_slug,
-            agent_slug: r.agent_slug,
-            display_name: r.display_name,
-            description: r.description,
-            mode: r.mode,
-            tags: r.tags,
-            friend_count: r.friend_count.into(),
-            created_at: r.created_at,
-            verified: r.verified,
-            has_public_capabilities: r.has_public_capabilities,
-            avg_rating: r.avg_rating,
-            review_count: r.review_count,
-            online: r.online,
-            featured: r.featured,
-        })
-        .collect();
-
-    (
-        StatusCode::OK,
-        [
-            (header::CONTENT_TYPE, "application/json"),
-            // Public discovery is cacheable at the edge for short
-            // intervals so trending pages don't hammer the DB.
-            (header::CACHE_CONTROL, "public, max-age=30, s-maxage=120"),
-        ],
-        Json(DiscoveryResponse {
-            agents,
-            next_cursor,
-            total_estimate,
-        }),
-    )
-        .into_response()
+    let page = search::search(&state, viewer.as_ref(), params).await?;
+    Ok((cache_headers(viewer.is_some(), PUBLIC_CACHE), Json(page)).into_response())
 }
 
 // ─── Featured ──────────────────────────────────────────────
@@ -399,15 +60,12 @@ pub struct FeaturedCapability {
 
 #[derive(Debug, Serialize)]
 pub struct FeaturedAgent {
-    pub id: Uuid,
-    pub account_slug: String,
+    #[serde(flatten)]
+    pub agent: AgentSummary,
+    pub capabilities: Vec<CapabilityBrief>,
+    /// Deprecated, the same as `slug`. Kept for one release.
     pub agent_slug: String,
-    pub display_name: String,
-    pub description: String,
-    pub mode: String,
-    pub verified: bool,
-    pub online: bool,
-    pub featured: bool,
+    /// Deprecated: see `capabilities[].access`. Kept for one release.
     pub public_capabilities: Vec<FeaturedCapability>,
 }
 
@@ -420,17 +78,16 @@ pub struct FeaturedResponse {
 /// account's agents (the house agents), then online agents with something
 /// publicly callable, up to 12. A short list apart from the main one, so
 /// its cursor stays stable.
-pub async fn featured(State(state): State<RelayState>) -> Response {
+pub async fn featured(
+    State(state): State<RelayState>,
+    MaybeUser(viewer): MaybeUser,
+) -> ApiResult<Response> {
     if !state.config.discovery_v2_enabled {
-        return not_found("discovery not enabled");
+        return Err(ApiError::NotFound);
     }
-    let rows = match sqlx::query!(
+    let ids: Vec<Uuid> = sqlx::query_scalar!(
         r#"
-        SELECT a.id, acc.slug AS account_slug, a.slug AS agent_slug,
-               a.display_name, a.description, a.mode,
-               acc.verified_at IS NOT NULL AS "verified!",
-               COALESCE(h.last_polled_at > now() - interval '5 minutes', false) AS "online!",
-               ($1::text IS NOT NULL AND acc.slug = $1::text) AS "featured!"
+        SELECT a.id
           FROM agents a
           JOIN accounts acc ON acc.id = a.account_id
           LEFT JOIN agent_heartbeats h ON h.agent_id = a.id
@@ -441,23 +98,17 @@ pub async fn featured(State(state): State<RelayState>) -> Response {
                 OR (h.last_polled_at > now() - interval '5 minutes'
                     AND EXISTS (SELECT 1 FROM agent_capabilities c
                                  WHERE c.agent_id = a.id AND c.public_invoke = true)))
-         ORDER BY 9 DESC, h.last_polled_at DESC NULLS LAST, a.created_at
+         ORDER BY ($1::text IS NOT NULL AND acc.slug = $1::text) DESC,
+                  h.last_polled_at DESC NULLS LAST, a.created_at
          LIMIT $2
         "#,
         state.featured_account.as_deref(),
         FEATURED_LIMIT,
     )
     .fetch_all(&state.db)
-    .await
-    {
-        Ok(rows) => rows,
-        Err(e) => {
-            tracing::error!(error = %e, "featured discovery query failed");
-            return internal_error();
-        }
-    };
-    let ids: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
-    let caps = match sqlx::query!(
+    .await?;
+    let loaded = fields::load(&state, viewer.as_ref().map(|u| u.user_id), &ids).await?;
+    let public = sqlx::query!(
         r#"
         SELECT id, agent_id, name, description
           FROM agent_capabilities
@@ -467,128 +118,103 @@ pub async fn featured(State(state): State<RelayState>) -> Response {
         &ids,
     )
     .fetch_all(&state.db)
-    .await
-    {
-        Ok(caps) => caps,
-        Err(e) => {
-            tracing::error!(error = %e, "featured capabilities query failed");
-            return internal_error();
-        }
-    };
-    let agents = rows
+    .await?;
+    let agents = loaded
         .into_iter()
-        .map(|r| FeaturedAgent {
-            public_capabilities: caps
+        .map(|l| FeaturedAgent {
+            public_capabilities: public
                 .iter()
-                .filter(|c| c.agent_id == r.id)
+                .filter(|c| c.agent_id == l.summary.id)
                 .map(|c| FeaturedCapability {
                     id: c.id,
                     name: c.name.clone(),
                     description: c.description.clone(),
                 })
                 .collect(),
-            id: r.id,
-            account_slug: r.account_slug,
-            agent_slug: r.agent_slug,
-            display_name: r.display_name,
-            description: r.description,
-            mode: r.mode,
-            verified: r.verified,
-            online: r.online,
-            featured: r.featured,
+            agent_slug: l.summary.slug.clone(),
+            capabilities: l.capabilities,
+            agent: l.summary,
         })
         .collect();
-    (
-        StatusCode::OK,
-        [
-            (header::CONTENT_TYPE, "application/json"),
-            (header::CACHE_CONTROL, "public, max-age=30, s-maxage=60"),
-        ],
+    Ok((
+        cache_headers(viewer.is_some(), "public, max-age=30, s-maxage=60"),
         Json(FeaturedResponse { agents }),
     )
-        .into_response()
+        .into_response())
 }
 
-// ─── Helpers ───────────────────────────────────────────────
+// ─── Profiles and standing ─────────────────────────────────
 
-#[derive(Debug, Serialize, Deserialize)]
-struct CursorState {
-    created_at: DateTime<Utc>,
-    id: Uuid,
+/// `GET /v1/discovery/agents/{account_slug}/{agent_slug}`
+pub async fn profile_by_name(
+    State(state): State<RelayState>,
+    MaybeUser(viewer): MaybeUser,
+    Path((account_slug, agent_slug)): Path<(String, String)>,
+) -> ApiResult<Response> {
+    let r = AgentRef::Name {
+        account: account_slug.to_lowercase(),
+        slug: agent_slug.to_lowercase(),
+    };
+    profile_response(&state, viewer, r).await
 }
 
-fn encode_cursor(c: &CursorState) -> String {
-    URL_SAFE_NO_PAD.encode(serde_json::to_vec(c).expect("cursor serialize"))
+/// `GET /v1/discovery/agents/{id}`
+pub async fn profile_by_id(
+    State(state): State<RelayState>,
+    MaybeUser(viewer): MaybeUser,
+    Path(id): Path<String>,
+) -> ApiResult<Response> {
+    let id = Uuid::parse_str(&id).map_err(|_| ApiError::NotFound)?;
+    profile_response(&state, viewer, AgentRef::Id(id)).await
 }
 
-fn decode_cursor(s: &str) -> Result<CursorState, ()> {
-    let bytes = URL_SAFE_NO_PAD.decode(s).map_err(|_| ())?;
-    serde_json::from_slice(&bytes).map_err(|_| ())
-}
-
-/// Convert a free-text query into a Postgres tsquery, or None if
-/// nothing useful survives sanitization. Splits on whitespace,
-/// strips non-alphanumeric (except `-` and `_`), suffixes each
-/// surviving token with `:*` for prefix match, AND-combines.
-/// Returning None here is important: passing an empty string to
-/// `to_tsquery('simple', '')` errors at the database, so the SQL
-/// parameter must be NULL when there's nothing to match.
-fn to_tsquery(q: &str) -> Option<String> {
-    let sanitized = q
-        .split_whitespace()
-        .filter(|t| !t.is_empty())
-        .map(|t| {
-            t.chars()
-                .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
-                .collect::<String>()
-        })
-        .filter(|t| !t.is_empty())
-        .map(|t| format!("{t}:*"))
-        .collect::<Vec<_>>()
-        .join(" & ");
-    if sanitized.is_empty() {
-        None
-    } else {
-        Some(sanitized)
+async fn profile_response(
+    state: &RelayState,
+    viewer: Option<AuthUser>,
+    r: AgentRef,
+) -> ApiResult<Response> {
+    if !state.config.discovery_v2_enabled && viewer.is_none() {
+        return Err(ApiError::Unauthorized);
     }
+    let loaded = profile::resolve(state, viewer.as_ref().map(|u| u.user_id), &r)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    let body = profile::profile(state, viewer.as_ref(), loaded).await?;
+    Ok((cache_headers(viewer.is_some(), PUBLIC_CACHE), Json(body)).into_response())
 }
 
-fn parse_jsonb(s: &str) -> Result<serde_json::Value, serde_json::Error> {
-    serde_json::from_str(s)
+#[derive(Debug, Deserialize)]
+pub struct StandingQuery {
+    /// The agent: its id or `account_slug/agent_slug`.
+    pub agent: String,
 }
 
-fn not_found(msg: &'static str) -> Response {
-    (
-        StatusCode::NOT_FOUND,
-        [(header::CONTENT_TYPE, "application/json")],
-        Json(serde_json::json!({"error": msg})),
-    )
-        .into_response()
-}
-
-fn invalid_request(msg: &'static str) -> Response {
-    (
-        StatusCode::BAD_REQUEST,
-        [(header::CONTENT_TYPE, "application/json")],
-        Json(serde_json::json!({"error": msg})),
-    )
-        .into_response()
-}
-
-fn internal_error() -> Response {
-    (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        [(header::CONTENT_TYPE, "application/json")],
-        Json(serde_json::json!({"error": "internal error"})),
-    )
-        .into_response()
+/// `GET /v1/discovery/standing?agent=<ref>`: your standing with one agent.
+pub async fn standing(
+    State(state): State<RelayState>,
+    user: AuthUser,
+    Query(q): Query<StandingQuery>,
+) -> ApiResult<Response> {
+    let r = AgentRef::parse(&q.agent).ok_or_else(|| {
+        ApiError::InvalidRequest("agent must be an id or account_slug/agent_slug".into())
+    })?;
+    let loaded = profile::resolve(&state, Some(user.user_id), &r)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    let mine = standing::my_agents(&state, &user).await?;
+    let id = loaded.summary.id;
+    let you = standing::standing(&state, &mine, &[loaded])
+        .await?
+        .remove(&id)
+        .unwrap_or_default();
+    Ok((cache_headers(true, PUBLIC_CACHE), Json(you)).into_response())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use axum::body::Body;
-    use axum::http::Request;
+    use axum::http::{Request, StatusCode};
     use chakramcp_shared::config::SharedConfig;
     use http_body_util::BodyExt;
     use sqlx::PgPool;
