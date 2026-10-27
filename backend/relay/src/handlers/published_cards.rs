@@ -1,10 +1,14 @@
 //! `GET /agents/<account-slug>/<agent-slug>/.well-known/agent-card.json`
 //! and the agent home pages that delegate to it.
 //!
-//! This is the public, unauthenticated A2A discovery surface. Anyone
-//! — friend, stranger, search engine, generic A2A client, LLM
-//! autopiloting — can fetch the card. Auth is required only for
-//! method calls (the `/a2a/jsonrpc` endpoint, which lands in D5).
+//! This is the A2A discovery surface. A network-visible agent's card is
+//! public: anyone — friend, stranger, search engine, generic A2A client,
+//! LLM autopiloting — can fetch it, and it lists the agent's
+//! network-visible capabilities. A private or org-visible agent's card is
+//! served only to a signed-in caller who may see that agent (a member of
+//! its account, or of an org it's shared with), and lists the
+//! capabilities that caller may see; to anyone else it's a 404, the same
+//! as a missing agent. Method calls need auth too (`/a2a/jsonrpc`).
 //!
 //! Lookup flow (pull-mode, the only mode in D2c — push lands in D2d):
 //!
@@ -27,10 +31,11 @@
 
 use axum::{
     extract::{Path, State},
-    http::{header, StatusCode},
+    http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
+use chakramcp_shared::error::ApiError;
 
 use crate::agent_card::{
     cache_card_for_agent,
@@ -39,17 +44,81 @@ use crate::agent_card::{
     synthesizer::{synthesize_pull_card, AgentRowForSynthesis, CapabilityRowForSynthesis},
     AgentCard, CacheError, CachedCardEnvelope, Fetcher,
 };
+use crate::auth::AuthUser;
 use crate::state::RelayState;
+
+/// How a signed-in caller relates to the account that owns an agent.
+#[derive(Debug, Clone, Copy, Default)]
+struct Relation {
+    member: bool,
+    shares_org: bool,
+}
+
+impl Relation {
+    async fn of(
+        state: &RelayState,
+        viewer: Option<&AuthUser>,
+        account_id: uuid::Uuid,
+    ) -> Result<Self, ApiError> {
+        let Some(user) = viewer else {
+            return Ok(Self::default());
+        };
+        Ok(Self {
+            member: crate::auth::user_is_member(&state.db, user.user_id, account_id).await?,
+            shares_org: crate::auth::shares_org_with_account(&state.db, user.user_id, account_id)
+                .await?,
+        })
+    }
+
+    /// Whether something with this `visibility` (an agent's or a
+    /// capability's) shows to this caller.
+    fn sees(self, visibility: &str) -> bool {
+        match visibility {
+            "network" => true,
+            "org" => self.member || self.shares_org,
+            _ => self.member,
+        }
+    }
+}
+
+/// `Cache-Control` and `Vary` for a card response: shared caches may keep
+/// what a signed-out caller sees, never what a signed-in one does.
+fn cache_headers(signed_in: bool, public: &'static str) -> [(header::HeaderName, &'static str); 2] {
+    [
+        (
+            header::CACHE_CONTROL,
+            if signed_in {
+                "private, no-store"
+            } else {
+                public
+            },
+        ),
+        (header::VARY, "Authorization"),
+    ]
+}
 
 /// Handler for `GET /agents/{account_slug}/{agent_slug}/.well-known/agent-card.json`.
 pub async fn get_agent_card(
     State(state): State<RelayState>,
     Path((account_slug, agent_slug)): Path<(String, String)>,
+    headers: HeaderMap,
 ) -> Response {
     // Hard-fail when the v2 discovery surface is gated off.
     if !state.config.discovery_v2_enabled {
         return not_found("agent card service not enabled");
     }
+
+    // Who's asking. No token: signed out. A token that doesn't
+    // authenticate is a 401, so a client notices its session is gone
+    // rather than silently seeing less.
+    let viewer = match headers.get(header::AUTHORIZATION) {
+        None => None,
+        Some(value) => match crate::auth::authenticate(&state, value.to_str().ok()).await {
+            Some(user) => Some(user),
+            None => return ApiError::Unauthorized.into_response(),
+        },
+    };
+    let signed_in = viewer.is_some();
 
     // (1) Resolve account.
     let account = match sqlx::query!(
@@ -71,6 +140,13 @@ pub async fn get_agent_card(
             return internal_error();
         }
     };
+    let relation = match Relation::of(&state, viewer.as_ref(), account.id).await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!(error = ?e, "card viewer lookup failed");
+            return internal_error();
+        }
+    };
 
     // (1b) Slug-alias resolution: if the requested agent_slug was
     // previously renamed, 301-redirect to the new slug so external
@@ -85,16 +161,34 @@ pub async fn get_agent_card(
             return internal_error();
         }
     } {
+        // Redirect only to an agent this caller may see: the new slug of a
+        // private agent is as private as the agent.
+        let renamed = match sqlx::query_scalar!(
+            r#"SELECT visibility FROM agents
+                WHERE account_id = $1 AND slug = $2 AND tombstoned_at IS NULL"#,
+            account.id,
+            target,
+        )
+        .fetch_optional(&state.db)
+        .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!(error = %e, "renamed agent lookup failed");
+                return internal_error();
+            }
+        };
+        if !renamed.is_some_and(|v| relation.sees(&v)) {
+            return not_found("agent not found");
+        }
         let location = format!(
             "/agents/{}/{}/.well-known/agent-card.json",
             account_slug, target
         );
+        let [cache_control, vary] = cache_headers(signed_in, "public, max-age=300");
         return (
             StatusCode::MOVED_PERMANENTLY,
-            [
-                (header::LOCATION, location.as_str()),
-                (header::CACHE_CONTROL, "public, max-age=300"),
-            ],
+            [(header::LOCATION, location.as_str()), cache_control, vary],
             Json(serde_json::json!({
                 "moved_to_slug": target,
                 "code": "chk.target.renamed",
@@ -110,7 +204,7 @@ pub async fn get_agent_card(
     let agent_row = match sqlx::query!(
         r#"
         SELECT id, slug, display_name, description, mode, agent_card_cached,
-               tombstoned_at
+               tombstoned_at, visibility
           FROM agents
          WHERE account_id = $1
            AND slug       = $2
@@ -128,6 +222,11 @@ pub async fn get_agent_card(
             return internal_error();
         }
     };
+    // An agent this caller may not see is "not found", deleted or not, so
+    // its existence isn't revealed.
+    if !relation.sees(&agent_row.visibility) {
+        return not_found("agent not found");
+    }
     if agent_row.tombstoned_at.is_some() {
         return tombstoned_response();
     }
@@ -163,10 +262,11 @@ pub async fn get_agent_card(
             Err(PushCardError::Internal) => return internal_error(),
         },
         _ => {
-            // Pull-mode synthesis.
+            // Pull-mode synthesis, from the capabilities this caller may
+            // see.
             let capabilities = match sqlx::query!(
                 r#"
-                SELECT id, name, description
+                SELECT id, name, description, visibility
                   FROM agent_capabilities
                  WHERE agent_id = $1
                 "#,
@@ -177,6 +277,7 @@ pub async fn get_agent_card(
             {
                 Ok(rows) => rows
                     .into_iter()
+                    .filter(|r| relation.sees(&r.visibility))
                     .map(|r| CapabilityRowForSynthesis {
                         id: r.id.to_string(),
                         name: r.name,
@@ -223,16 +324,17 @@ pub async fn get_agent_card(
         return internal_error();
     }
 
-    // (6) Return JSON with cache headers.
+    // (6) Return JSON with cache headers. Signed out: 5-minute browser
+    // cache, 1-hour CDN cache. The signing key rotation cadence (90d, with
+    // 30d overlap) means cached cards remain verifiable far longer than
+    // this TTL, so we err toward freshness. Signed in: not cached.
+    let [cache_control, vary] = cache_headers(signed_in, "public, max-age=300, s-maxage=3600");
     (
         StatusCode::OK,
         [
             (header::CONTENT_TYPE, "application/json"),
-            // 5-minute browser cache, 1-hour CDN cache. The signing
-            // key rotation cadence (90d, with 30d overlap) means
-            // cached cards remain verifiable far longer than this
-            // TTL, so we err toward freshness.
-            (header::CACHE_CONTROL, "public, max-age=300, s-maxage=3600"),
+            cache_control,
+            vary,
         ],
         Json(card),
     )
@@ -617,8 +719,8 @@ mod tests {
         .await
         .unwrap();
         sqlx::query!(
-            r#"INSERT INTO agents (id, account_id, slug, display_name, mode, agent_card_url)
-               VALUES ($1, $2, $3, 'Test Push Agent', 'push', $4)"#,
+            r#"INSERT INTO agents (id, account_id, slug, display_name, mode, agent_card_url, visibility)
+               VALUES ($1, $2, $3, 'Test Push Agent', 'push', $4, 'network')"#,
             agent_id,
             acct_id,
             agent_slug,
@@ -771,5 +873,241 @@ mod tests {
         );
         assert_eq!(keys[0]["alg"], "EdDSA");
         assert_eq!(keys[0]["crv"], "Ed25519");
+    }
+
+    // ─── Who may see a card ─────────────────────────────────────
+
+    /// A user with a token, and their individual account.
+    async fn seed_user(pool: &PgPool, slug: &str) -> (uuid::Uuid, uuid::Uuid, String) {
+        let user_id = uuid::Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO users (id, email, display_name, password_hash) VALUES ($1, $2, 'U', 'x')",
+        )
+        .bind(user_id)
+        .bind(format!("{user_id}@t.local"))
+        .execute(pool)
+        .await
+        .unwrap();
+        let account_id = uuid::Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO accounts (id, slug, display_name, account_type, owner_user_id)
+             VALUES ($1, $2, 'Acct', 'individual', $3)",
+        )
+        .bind(account_id)
+        .bind(slug)
+        .bind(user_id)
+        .execute(pool)
+        .await
+        .unwrap();
+        join(pool, account_id, user_id).await;
+        let token = chakramcp_shared::jwt::encode_jwt(
+            &chakramcp_shared::jwt::UserClaims::new(
+                user_id,
+                format!("{user_id}@t.local"),
+                false,
+                1,
+            ),
+            "test-secret",
+        )
+        .unwrap();
+        (user_id, account_id, token)
+    }
+
+    async fn join(pool: &PgPool, account_id: uuid::Uuid, user_id: uuid::Uuid) {
+        sqlx::query(
+            "INSERT INTO account_memberships (id, account_id, user_id, role) VALUES ($1, $2, $3, 'member')",
+        )
+        .bind(uuid::Uuid::now_v7())
+        .bind(account_id)
+        .bind(user_id)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    async fn seed_agent(
+        pool: &PgPool,
+        account_id: uuid::Uuid,
+        slug: &str,
+        visibility: &str,
+    ) -> uuid::Uuid {
+        let id = uuid::Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO agents (id, account_id, slug, display_name, description, visibility)
+             VALUES ($1, $2, $3, 'Agent', 'Does things.', $4)",
+        )
+        .bind(id)
+        .bind(account_id)
+        .bind(slug)
+        .bind(visibility)
+        .execute(pool)
+        .await
+        .unwrap();
+        id
+    }
+
+    async fn add_capability(pool: &PgPool, agent_id: uuid::Uuid, name: &str, visibility: &str) {
+        sqlx::query(
+            "INSERT INTO agent_capabilities (id, agent_id, name, description, visibility)
+             VALUES ($1, $2, $3, 'A capability.', $4)",
+        )
+        .bind(uuid::Uuid::now_v7())
+        .bind(agent_id)
+        .bind(name)
+        .bind(visibility)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    /// The status, `Cache-Control` and body of a card request.
+    async fn fetch(
+        pool: &PgPool,
+        path: &str,
+        token: Option<&str>,
+    ) -> (StatusCode, String, serde_json::Value) {
+        let app = crate::router(crate::state::RelayState::new(
+            pool.clone(),
+            config_with_v2_enabled(true, "ignored".into()),
+        ));
+        let mut req = Request::builder().uri(path);
+        if let Some(t) = token {
+            req = req.header(header::AUTHORIZATION, format!("Bearer {t}"));
+        }
+        let res = app.oneshot(req.body(Body::empty()).unwrap()).await.unwrap();
+        let status = res.status();
+        let cache = res
+            .headers()
+            .get(header::CACHE_CONTROL)
+            .map(|v| v.to_str().unwrap().to_owned())
+            .unwrap_or_default();
+        if status == StatusCode::OK {
+            assert_eq!(res.headers()[header::VARY], "Authorization");
+        }
+        let body = res.into_body().collect().await.unwrap().to_bytes();
+        (
+            status,
+            cache,
+            serde_json::from_slice(&body).unwrap_or_default(),
+        )
+    }
+
+    fn card_path(agent: &str) -> String {
+        format!("/agents/acme/{agent}/.well-known/agent-card.json")
+    }
+
+    fn skill_names(card: &serde_json::Value) -> Vec<String> {
+        let mut names: Vec<String> = card["skills"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["name"].as_str().unwrap().to_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// Private and org-visible agents' cards are 404 signed out and to a
+    /// stranger, and served, uncached, to a member of the account.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn private_and_org_cards_are_for_members(pool: PgPool) {
+        let (_, acme, owner) = seed_user(&pool, "acme").await;
+        let (_, _, stranger) = seed_user(&pool, "stranger").await;
+        seed_agent(&pool, acme, "secret", "private").await;
+        seed_agent(&pool, acme, "team", "org").await;
+
+        for agent in ["secret", "team"] {
+            let (status, _, _) = fetch(&pool, &card_path(agent), None).await;
+            assert_eq!(status, StatusCode::NOT_FOUND, "{agent} signed out");
+            let (status, _, _) = fetch(&pool, &card_path(agent), Some(&stranger)).await;
+            assert_eq!(status, StatusCode::NOT_FOUND, "{agent} to a stranger");
+            let (status, cache, _) = fetch(&pool, &card_path(agent), Some(&owner)).await;
+            assert_eq!(status, StatusCode::OK, "{agent} to its owner");
+            assert_eq!(cache, "private, no-store");
+        }
+    }
+
+    /// An org-visible agent's card shows to someone sharing an org with its
+    /// owner; a private one still doesn't.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn org_cards_show_to_org_members(pool: PgPool) {
+        let (owner_id, acme, _) = seed_user(&pool, "acme").await;
+        let (colleague_id, _, colleague) = seed_user(&pool, "colleague").await;
+        let guild = uuid::Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO accounts (id, slug, display_name, account_type) VALUES ($1, 'guild', 'Guild', 'organization')",
+        )
+        .bind(guild)
+        .execute(&pool)
+        .await
+        .unwrap();
+        join(&pool, guild, owner_id).await;
+        join(&pool, guild, colleague_id).await;
+        seed_agent(&pool, acme, "secret", "private").await;
+        seed_agent(&pool, acme, "team", "org").await;
+
+        let (status, _, _) = fetch(&pool, &card_path("team"), Some(&colleague)).await;
+        assert_eq!(status, StatusCode::OK);
+        let (status, _, _) = fetch(&pool, &card_path("secret"), Some(&colleague)).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    /// A public card lists network-visible capabilities only; the owner's
+    /// view lists them all.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn public_cards_list_network_capabilities_only(pool: PgPool) {
+        let (_, acme, owner) = seed_user(&pool, "acme").await;
+        let agent = seed_agent(&pool, acme, "open", "network").await;
+        add_capability(&pool, agent, "everyone", "network").await;
+        add_capability(&pool, agent, "colleagues", "org").await;
+        add_capability(&pool, agent, "internal", "private").await;
+
+        let (status, cache, card) = fetch(&pool, &card_path("open"), None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(cache, "public, max-age=300, s-maxage=3600");
+        assert_eq!(skill_names(&card), ["everyone"]);
+
+        let (_, _, card) = fetch(&pool, &card_path("open"), Some(&owner)).await;
+        assert_eq!(skill_names(&card), ["colleagues", "everyone", "internal"]);
+    }
+
+    /// A token that doesn't authenticate is a 401, not a signed-out view.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn a_bad_token_is_401(pool: PgPool) {
+        let (_, acme, _) = seed_user(&pool, "acme").await;
+        seed_agent(&pool, acme, "open", "network").await;
+        let (status, _, _) = fetch(&pool, &card_path("open"), Some("not-a-token")).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    /// A private agent's old name doesn't redirect to its new one, and a
+    /// deleted private agent is "not found", not "gone".
+    #[sqlx::test(migrations = "../migrations")]
+    async fn renamed_and_deleted_private_agents_stay_hidden(pool: PgPool) {
+        let (_, acme, owner) = seed_user(&pool, "acme").await;
+        seed_agent(&pool, acme, "renamed", "private").await;
+        sqlx::query(
+            "INSERT INTO slug_aliases (scope, account_id, old_slug, new_slug, expires_at)
+             VALUES ('agent', $1, 'before', 'renamed', now() + interval '90 days')",
+        )
+        .bind(acme)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let deleted = seed_agent(&pool, acme, "deleted", "private").await;
+        sqlx::query("UPDATE agents SET tombstoned_at = now() WHERE id = $1")
+            .bind(deleted)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let (status, _, _) = fetch(&pool, &card_path("before"), None).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        let (status, _, _) = fetch(&pool, &card_path("before"), Some(&owner)).await;
+        assert_eq!(status, StatusCode::MOVED_PERMANENTLY);
+        let (status, _, _) = fetch(&pool, &card_path("deleted"), None).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        let (status, _, _) = fetch(&pool, &card_path("deleted"), Some(&owner)).await;
+        assert_eq!(status, StatusCode::GONE);
     }
 }
