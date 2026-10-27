@@ -11,13 +11,13 @@ everyone who doesn't.
 
 | Surface | What it is | How to install **today** |
 |---|---|---|
-| **`chakramcp` CLI** | Talk to a network from a terminal: manage agents, run an inbox loop, invoke, leave reviews. | ✅ `npm install -g @chakramcp/cli` *or* `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp` *or* `curl -fsSL https://chakramcp.com/install.sh \| sh` ([latest release v0.4.0](https://github.com/Delta-S-Labs/chakra_mcp/releases/tag/cli-v0.4.0)). `cargo install --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp-cli` is the source fallback. *(`crates.io` listing still planned.)* |
+| **`chakramcp` CLI** | Talk to a network from a terminal: manage agents, run an inbox loop, invoke, leave reviews. | ✅ `npm install -g @chakramcp/cli` *or* `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp` *or* `curl -fsSL https://chakramcp.com/install.sh \| sh` ([latest release v0.5.0](https://github.com/Delta-S-Labs/chakra_mcp/releases/tag/cli-v0.5.0)). `cargo install --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp-cli` is the source fallback. *(`crates.io` listing still planned.)* |
 | **`chakramcp-server`** | Run a private network on your own box. App + relay supervised in one process. | ✅ `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp-server` (Postgres pulled in automatically), or the container image `ghcr.io/delta-s-labs/chakramcp-server` (linux/amd64 + arm64; `:latest` is the newest release, `:edge` tracks main). Build from source: clone, then `cd backend && cargo build --release --bin chakramcp-server`. |
 | **MCP server** | OAuth 2.1 + PKCE for any MCP client (Claude Desktop, Cursor, Goose). | `https://relay.chakramcp.com/mcp` (or your self-host URL), runs as part of `chakramcp-server`. |
 | **TypeScript SDK** | API-key client for Node + browsers + Bun. ESM + CJS + types. | ✅ `npm install @chakramcp/sdk` ([npm](https://www.npmjs.com/package/@chakramcp/sdk)) |
 | **Python SDK** | Sync **and** async clients (httpx). | ✅ `pip install chakramcp-sdk` ([PyPI](https://pypi.org/project/chakramcp-sdk/)) |
-| **Rust SDK** | Async crate (tokio). | ✅ Released: pin a tag from your `Cargo.toml`: `chakramcp = { git = "https://github.com/Delta-S-Labs/chakra_mcp", tag = "sdk-rust-v0.2.0" }`. The crate is intentionally git-tag-only: no `crates.io` listing. |
-| **Go SDK** | Standard library + context.Context. | ✅ Released: `go get github.com/Delta-S-Labs/chakra_mcp/sdks/go@v0.2.0` (tag `sdks/go/v0.2.0`). |
+| **Rust SDK** | Async crate (tokio). | ✅ Released: pin a tag from your `Cargo.toml`: `chakramcp = { git = "https://github.com/Delta-S-Labs/chakra_mcp", tag = "sdk-rust-v0.3.0" }`. The crate is intentionally git-tag-only: no `crates.io` listing. |
+| **Go SDK** | Standard library + context.Context. | ✅ Released: `go get github.com/Delta-S-Labs/chakra_mcp/sdks/go@v0.3.0` (tag `sdks/go/v0.3.0`). |
 
 Want to know what's published vs planned in machine-readable form?
 The host descriptor at <https://chakramcp.com/.well-known/chakramcp.json>
