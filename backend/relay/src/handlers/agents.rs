@@ -42,12 +42,17 @@ fn is_valid_slug(s: &str) -> bool {
 }
 
 /// Parse + normalize an Agent Card URL. Rejects non-http(s) schemes,
-/// missing host, fragments. Returns the canonicalized form (URL with
-/// fragment stripped, trailing whitespace gone) the caller should
-/// store. The fetcher (D2d) further validates at fetch time, but
-/// catching the obvious garbage here gives users a clean error
-/// instead of a "fetch failed" surprise an hour later.
-fn validate_agent_card_url(raw: &str) -> Result<String, ApiError> {
+/// missing host, fragments, and an IP address or `localhost` this server
+/// doesn't call (`crate::outbound`). Returns the canonicalized form (URL
+/// with fragment stripped, trailing whitespace gone) the caller should
+/// store. The fetcher (D2d) further validates at fetch time, including
+/// where a host name resolves, but catching the obvious garbage here
+/// gives users a clean error instead of a "fetch failed" surprise an
+/// hour later.
+fn validate_agent_card_url(
+    raw: &str,
+    outbound: crate::outbound::OutboundPolicy,
+) -> Result<String, ApiError> {
     // url::Url::parse is lenient toward malformed authorities: e.g.
     // `https:///path` parses with `host_str = Some("path")` because
     // the parser swallows one extra `/` to recover. We catch that
@@ -73,6 +78,15 @@ fn validate_agent_card_url(raw: &str) -> Result<String, ApiError> {
                 "agent_card_url must include a non-empty host".into(),
             ))
         }
+    }
+    if let Err(crate::outbound::OutboundError::Blocked(_)) =
+        crate::outbound::check_url(parsed.as_str(), outbound)
+    {
+        return Err(ApiError::InvalidRequest(
+            "agent_card_url points to a private or reserved address, which this server \
+             doesn't call"
+                .into(),
+        ));
     }
     parsed.set_fragment(None);
     Ok(parsed.to_string())
@@ -691,7 +705,9 @@ pub async fn create(
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty());
-    let agent_card_url = agent_card_url.map(validate_agent_card_url).transpose()?;
+    let agent_card_url = agent_card_url
+        .map(|raw| validate_agent_card_url(raw, state.outbound))
+        .transpose()?;
     let mode = if agent_card_url.is_some() {
         "push"
     } else {
@@ -950,7 +966,7 @@ pub async fn update(
     let card_change = match req.agent_card_url.as_deref().map(str::trim) {
         None => CardChange::Unchanged,
         Some("") => CardChange::ClearToPull,
-        Some(raw) => CardChange::SetToPush(validate_agent_card_url(raw)?),
+        Some(raw) => CardChange::SetToPush(validate_agent_card_url(raw, state.outbound)?),
     };
 
     // The relay forwards calls to a push agent at once, so it can't hold
@@ -1755,6 +1771,64 @@ mod create_push_mode_tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn rejects_card_urls_this_server_does_not_call(pool: PgPool) {
+        let (_, account_id, token) = seed_user_with_jwt(&pool).await;
+        let create = |state: crate::state::RelayState, slug: &str, url: &str| {
+            let body = serde_json::json!({
+                "account_id": account_id,
+                "slug": slug,
+                "display_name": "Push",
+                "agent_card_url": url,
+            });
+            let token = token.clone();
+            async move {
+                crate::router(state)
+                    .oneshot(
+                        Request::builder()
+                            .method("POST")
+                            .uri("/v1/agents")
+                            .header(header::CONTENT_TYPE, "application/json")
+                            .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                            .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap()
+                    .status()
+            }
+        };
+        let managed = crate::state::RelayState::new(pool.clone(), config()).with_outbound(
+            crate::outbound::OutboundPolicy {
+                allow_private: false,
+            },
+        );
+        for (slug, url) in [
+            ("loopback", "http://127.0.0.1:8090/card.json"),
+            ("named", "http://localhost/card.json"),
+            ("private", "http://10.0.0.5/card.json"),
+            ("metadata", "http://169.254.169.254/latest/meta-data/"),
+        ] {
+            assert_eq!(
+                create(managed.clone(), slug, url).await,
+                StatusCode::BAD_REQUEST,
+                "{url}"
+            );
+        }
+        // A self-hosted server (the default) reaches its LAN, never the
+        // metadata address.
+        let self_hosted = crate::state::RelayState::new(pool.clone(), config());
+        assert!(
+            create(self_hosted.clone(), "lan", "http://10.0.0.5/card.json")
+                .await
+                .is_success()
+        );
+        assert_eq!(
+            create(self_hosted, "metadata-2", "http://169.254.169.254/").await,
+            StatusCode::BAD_REQUEST
+        );
     }
 
     #[sqlx::test(migrations = "../migrations")]

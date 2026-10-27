@@ -37,6 +37,12 @@ async fn main() -> Result<()> {
     // discovery v2 surface is enabled — otherwise it'd hammer
     // upstream URLs that can't be served. SKIP LOCKED makes
     // multi-replica spawn safe.
+    let hosting = chakramcp_shared::hosting::HostingSettings::from_env()?;
+    tracing::info!("{}", hosting.summary());
+    // Which addresses requests to agent-supplied URLs may reach.
+    let outbound = chakramcp_relay::outbound::OutboundPolicy::from_env(hosting.mode)?;
+    tracing::info!("{}", outbound.summary());
+
     let refresh_shutdown = if cfg.discovery_v2_enabled {
         tracing::info!("DISCOVERY_V2 enabled — spawning Agent Card refresh job");
         Some(spawn_refresh_job(
@@ -44,6 +50,7 @@ async fn main() -> Result<()> {
             cfg.relay_base_url.clone(),
             DEFAULT_TICK_INTERVAL_SECONDS,
             DEFAULT_STALENESS_SECONDS,
+            outbound,
         ))
     } else {
         None
@@ -52,8 +59,6 @@ async fn main() -> Result<()> {
     // Credits: validated settings (bad values stop startup), one refresh of
     // the switches before serving so a deploy never lets an out-of-credits
     // account through, then the worker that keeps them current.
-    let hosting = chakramcp_shared::hosting::HostingSettings::from_env()?;
-    tracing::info!("{}", hosting.summary());
     let credits = chakramcp_relay::limits::CreditsConfig::from_env(hosting.credits_enabled)?;
     let credit_cache = std::sync::Arc::new(chakramcp_relay::limits::CreditCache::new(
         credits.stale_after(),
@@ -93,7 +98,8 @@ async fn main() -> Result<()> {
         .with_compliance(chakramcp_relay::compliance::ComplianceChecker::from_env())
         .with_calls(calls)
         .with_memory(chakramcp_relay::calls::memory::client(&calls))
-        .with_mcp(chakramcp_relay::mcp::McpConfig::from_env()?);
+        .with_mcp(chakramcp_relay::mcp::McpConfig::from_env()?)
+        .with_outbound(outbound);
     state.heartbeats.clone().spawn_flusher(state.db.clone());
     if let Some(days) = usage_retention {
         chakramcp_relay::retention::spawn_usage_pruner(state.db.clone(), days);

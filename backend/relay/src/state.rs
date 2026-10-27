@@ -68,6 +68,13 @@ pub struct RelayState {
     pub mcp: crate::mcp::McpConfig,
     /// Slots for MCP tool calls that wait for a result (`MCP_MAX_WAITERS`).
     pub waiters: Arc<tokio::sync::Semaphore>,
+    /// Which addresses requests to agent-supplied URLs may reach
+    /// (`OUTBOUND_ALLOW_PRIVATE`; the hosting mode's default until the
+    /// binary reads it with [`RelayState::with_outbound`]).
+    pub outbound: crate::outbound::OutboundPolicy,
+    /// The client that forwards calls to push agents, built under
+    /// `outbound`. Shared so connections are reused.
+    pub forward_http: reqwest::Client,
 }
 
 impl RelayState {
@@ -102,7 +109,17 @@ impl RelayState {
             waiters: Arc::new(tokio::sync::Semaphore::new(
                 crate::mcp::McpConfig::default().max_waiters,
             )),
+            outbound: crate::outbound::OutboundPolicy::default(),
+            forward_http: forward_client(crate::outbound::OutboundPolicy::default()),
         }
+    }
+
+    /// Which addresses requests to agents may reach, and the forwarding
+    /// client built under that policy.
+    pub fn with_outbound(mut self, policy: crate::outbound::OutboundPolicy) -> Self {
+        self.outbound = policy;
+        self.forward_http = forward_client(policy);
+        self
     }
 
     /// The usage-limit gate for `account_id` on `surface`: a refusal, or the
@@ -212,4 +229,14 @@ impl RelayState {
     pub fn jwt_secret(&self) -> &str {
         &self.config.jwt_secret
     }
+}
+
+/// The client for forwarding calls to push agents.
+fn forward_client(policy: crate::outbound::OutboundPolicy) -> reqwest::Client {
+    crate::outbound::client_builder(policy)
+        .timeout(std::time::Duration::from_secs(
+            crate::forwarder::FORWARD_TIMEOUT_SECONDS,
+        ))
+        .build()
+        .expect("reqwest client builds with default options")
 }

@@ -225,6 +225,12 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
     // so it picks up any push-mode rows immediately on startup. Only
     // active when DISCOVERY_V2 is on; otherwise the job idles and
     // wastes a connection.
+    // Which addresses requests to agent-supplied URLs may reach.
+    let outbound = chakramcp_relay::outbound::OutboundPolicy::from_sources(
+        |key| std::env::var(key).ok(),
+        cfg.hosting.mode,
+    )?;
+    tracing::info!("{}", outbound.summary());
     let refresh_shutdown = if cfg.shared.discovery_v2_enabled {
         use chakramcp_relay::agent_card::refresh_job::{
             spawn as spawn_refresh_job, DEFAULT_STALENESS_SECONDS, DEFAULT_TICK_INTERVAL_SECONDS,
@@ -235,6 +241,7 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
             cfg.shared.relay_base_url.clone(),
             DEFAULT_TICK_INTERVAL_SECONDS,
             DEFAULT_STALENESS_SECONDS,
+            outbound,
         ))
     } else {
         None
@@ -307,7 +314,8 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
         .with_compliance_shared(system_one)
         .with_calls(calls)
         .with_memory(chakramcp_relay::calls::memory::client(&calls))
-        .with_mcp(chakramcp_relay::mcp::McpConfig::from_env()?);
+        .with_mcp(chakramcp_relay::mcp::McpConfig::from_env()?)
+        .with_outbound(outbound);
     relay_state
         .heartbeats
         .clone()

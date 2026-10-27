@@ -123,10 +123,11 @@ pub fn spawn(
     relay_base_url: String,
     tick_interval_seconds: u64,
     staleness_seconds: u64,
+    outbound: crate::outbound::OutboundPolicy,
 ) -> watch::Sender<bool> {
     let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
     tokio::spawn(async move {
-        let fetcher = Fetcher::new();
+        let fetcher = Fetcher::new(outbound);
         let mut interval = tokio::time::interval(Duration::from_secs(tick_interval_seconds));
         // If a tick is delayed by a long handler, don't try to "catch
         // up" — just resume the cadence from now.
@@ -294,7 +295,7 @@ mod tests {
     async fn tick_idle_when_no_push_agents(pool: PgPool) {
         let acct = seed_account(&pool, "acme").await;
         seed_pull_agent(&pool, acct, "puller").await;
-        let f = Fetcher::new();
+        let f = Fetcher::new(crate::outbound::OutboundPolicy::default());
         assert_eq!(
             tick(&pool, &f, "https://r", DEFAULT_STALENESS_SECONDS).await,
             TickOutcome::Idle
@@ -307,7 +308,7 @@ mod tests {
         let acct = seed_account(&pool, "acme").await;
         let agent_id = seed_push_agent(&pool, acct, "pusher", &upstream.url).await;
 
-        let f = Fetcher::new();
+        let f = Fetcher::new(crate::outbound::OutboundPolicy::default());
         let outcome = tick(
             &pool,
             &f,
@@ -349,7 +350,7 @@ mod tests {
         .await
         .unwrap();
 
-        let f = Fetcher::new();
+        let f = Fetcher::new(crate::outbound::OutboundPolicy::default());
         // Use a 60s staleness window — last_attempted_at is < 1s ago,
         // so the row is too fresh.
         let outcome = tick(&pool, &f, "https://r", 60).await;
@@ -384,7 +385,7 @@ mod tests {
         .await
         .unwrap();
 
-        let f = Fetcher::new();
+        let f = Fetcher::new(crate::outbound::OutboundPolicy::default());
         let staleness = 60; // 60 seconds — both rows are stale relative to this
         let first = tick(&pool, &f, "https://r", staleness).await;
         assert_eq!(first, TickOutcome::Refreshed { agent_id: agent_a });
@@ -403,7 +404,7 @@ mod tests {
         let acct = seed_account(&pool, "acme").await;
         let agent_id = seed_push_agent(&pool, acct, "broken", unreachable).await;
 
-        let f = Fetcher::new();
+        let f = Fetcher::new(crate::outbound::OutboundPolicy::default());
         let outcome = tick(&pool, &f, "https://r", DEFAULT_STALENESS_SECONDS).await;
         match outcome {
             TickOutcome::FetchFailed {
@@ -444,7 +445,7 @@ mod tests {
         .await
         .unwrap();
 
-        let f = Fetcher::new();
+        let f = Fetcher::new(crate::outbound::OutboundPolicy::default());
         let outcome = tick(&pool, &f, "https://r", DEFAULT_STALENESS_SECONDS).await;
         assert_eq!(outcome, TickOutcome::Idle);
         assert_eq!(upstream.hits.load(Ordering::SeqCst), 0);
@@ -454,7 +455,7 @@ mod tests {
     async fn tick_skips_pull_agents(pool: PgPool) {
         let acct = seed_account(&pool, "acme").await;
         let _pull = seed_pull_agent(&pool, acct, "puller").await;
-        let f = Fetcher::new();
+        let f = Fetcher::new(crate::outbound::OutboundPolicy::default());
         let outcome = tick(&pool, &f, "https://r", DEFAULT_STALENESS_SECONDS).await;
         assert_eq!(outcome, TickOutcome::Idle);
     }
@@ -470,8 +471,8 @@ mod tests {
         let a = seed_push_agent(&pool, acct, "a", &up_a.url).await;
         let b = seed_push_agent(&pool, acct, "b", &up_b.url).await;
 
-        let f1 = Fetcher::new();
-        let f2 = Fetcher::new();
+        let f1 = Fetcher::new(crate::outbound::OutboundPolicy::default());
+        let f2 = Fetcher::new(crate::outbound::OutboundPolicy::default());
         let pool1 = pool.clone();
         let pool2 = pool.clone();
         let staleness = DEFAULT_STALENESS_SECONDS;
