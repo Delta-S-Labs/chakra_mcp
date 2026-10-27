@@ -813,3 +813,35 @@
   align-items: center;
   gap: 0.9rem;
 }
+
+/* Common tags offered under the tags field. */
+.tagSuggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  list-style: none;
+  padding: 0;
+  margin: 0.2rem 0 0;
+}
+
+.tagSuggestion {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.72rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 0.3rem;
+  border: 1px dashed var(--line, #e6decd);
+  background: transparent;
+  color: var(--ink-soft, #6b6258);
+  cursor: pointer;
+}
+
+.tagSuggestion:hover {
+  border-style: solid;
+  color: var(--ink, #2a2620);
+}
+
+.rowLinks {
+  display: flex;
+  gap: 0.9rem;
+  align-items: center;
+}

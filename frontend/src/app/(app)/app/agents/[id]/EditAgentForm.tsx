@@ -9,7 +9,9 @@ import {
   type Agent,
   type Visibility,
 } from "@/lib/relay";
+import { parseTags } from "@/lib/discovery";
 import styles from "../agents.module.css";
+import { TagsField } from "../TagsField";
 
 /** `callsOn`: the relay has calls switched on, so show who may call. */
 export function EditAgentForm({
@@ -27,6 +29,7 @@ export function EditAgentForm({
   const [displayName, setDisplayName] = useState(agent.display_name);
   const [description, setDescription] = useState(agent.description);
   const [visibility, setVisibility] = useState<Visibility>(agent.visibility);
+  const [tagsText, setTagsText] = useState((agent.tags ?? []).join(", "));
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -35,12 +38,18 @@ export function EditAgentForm({
     e.preventDefault();
     setError(null);
     setSaved(false);
+    const { tags, problem } = parseTags(tagsText);
+    if (problem) {
+      setError(problem);
+      return;
+    }
     setPending(true);
     try {
       await updateAgent(token, agent.id, {
         display_name: displayName.trim(),
         description: description.trim(),
         visibility,
+        tags,
         ...(callsOn && !push ? { accept_calls: acceptCalls } : {}),
       });
       setSaved(true);
@@ -135,6 +144,8 @@ export function EditAgentForm({
             </span>
           )}
         </label>
+
+        <TagsField value={tagsText} onChange={setTagsText} />
 
         <button type="submit" className={styles.create} disabled={pending}>
           {pending ? "Saving…" : "Save"}
