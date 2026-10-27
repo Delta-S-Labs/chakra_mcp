@@ -1,0 +1,49 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH qry AS (SELECT discovery_query($1::text) AS tsq)\n        SELECT a.id AS \"id!\", (count(*) OVER ())::bigint AS \"total!\"\n          FROM agents a\n          JOIN accounts acc ON acc.id = a.account_id\n          LEFT JOIN agent_heartbeats h ON h.agent_id = a.id\n         WHERE a.tombstoned_at IS NULL\n           AND acc.tombstoned_at IS NULL\n           -- Signed out: network-visible agents. Signed in: also your\n           -- accounts' agents, and org agents of orgs you share.\n           AND (a.visibility = 'network'\n                OR ($11::uuid IS NOT NULL AND (\n                    EXISTS (SELECT 1 FROM account_memberships m\n                             WHERE m.account_id = a.account_id AND m.user_id = $11)\n                    OR (a.visibility = 'org' AND EXISTS (\n                        SELECT 1\n                          FROM account_memberships caller_m\n                          JOIN accounts shared_org ON shared_org.id = caller_m.account_id\n                          JOIN account_memberships owner_m ON owner_m.account_id = shared_org.id\n                          JOIN account_memberships owner_acc_m\n                            ON owner_acc_m.user_id = owner_m.user_id\n                           AND owner_acc_m.account_id = a.account_id\n                         WHERE caller_m.user_id = $11\n                           AND shared_org.account_type = 'organization')))))\n           -- Dormant pull agents are hidden unless asked for. A new agent\n           -- counts as seen when it's created.\n           AND ($10::boolean OR NOT (\n                   a.mode = 'pull'\n                   AND COALESCE(h.last_polled_at, a.created_at) < now() - interval '30 days'\n                   AND NOT EXISTS (\n                       SELECT 1 FROM agent_capabilities c\n                        WHERE c.agent_id = a.id AND c.public_invoke = true)))\n           AND ((SELECT tsq FROM qry) IS NULL OR a.search_vec @@ (SELECT tsq FROM qry))\n           AND ($2::jsonb IS NULL OR EXISTS (\n                   SELECT 1 FROM agent_capabilities c\n                    WHERE c.agent_id = a.id\n                      AND c.visibility = 'network'\n                      AND c.output_schema @> $2::jsonb))\n           AND ($3::text IS NULL OR a.mode = $3::text)\n           AND ($4::boolean IS NULL OR (acc.verified_at IS NOT NULL) = $4::boolean)\n           AND ($5::text[] IS NULL OR a.tags @> $5::text[])\n           -- A capability whose name contains the text: network-visible\n           -- ones, or any of your own agents'.\n           AND ($9::text IS NULL OR EXISTS (\n                   SELECT 1 FROM agent_capabilities c\n                    WHERE c.agent_id = a.id\n                      AND strpos(lower(c.name), lower($9::text)) > 0\n                      AND (c.visibility = 'network' OR ($11::uuid IS NOT NULL AND EXISTS (\n                          SELECT 1 FROM account_memberships m\n                           WHERE m.account_id = a.account_id AND m.user_id = $11)))))\n           -- Callable now: something public, or a grant to one of yours.\n           AND (NOT $13::boolean\n                OR (a.visibility = 'network' AND EXISTS (\n                       SELECT 1 FROM agent_capabilities c\n                        WHERE c.agent_id = a.id AND c.public_invoke = true))\n                OR EXISTS (\n                       SELECT 1 FROM grants g\n                        WHERE g.granter_agent_id = a.id\n                          AND g.status = 'active'\n                          AND (g.expires_at IS NULL OR g.expires_at > now())\n                          AND g.grantee_agent_id = ANY($14::uuid[])))\n           -- Unranked pages: rows strictly after the previous page's last.\n           AND ($15::boolean OR $6::timestamptz IS NULL\n                OR (a.created_at, a.id) < ($6::timestamptz, $7::uuid))\n         ORDER BY\n           -- 1. `q` is the agent's slug, display name or `account/slug`.\n           (CASE WHEN $15::boolean\n                 THEN lower(btrim($1::text)) IN (a.slug, lower(a.display_name), acc.slug || '/' || a.slug)\n                 ELSE false END) DESC,\n           -- 2. More words, in better places (default weights).\n           (CASE WHEN $15::boolean\n                 THEN ts_rank_cd(a.search_vec, (SELECT tsq FROM qry))\n                 ELSE 0 END) DESC,\n           -- 3. Seen in the last 5 minutes.\n           (CASE WHEN $15::boolean\n                 THEN COALESCE(h.last_polled_at > now() - interval '5 minutes', false)\n                 ELSE false END) DESC,\n           -- 4. Newest.\n           a.created_at DESC, a.id DESC\n         OFFSET $12\n         LIMIT $8\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "total!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Jsonb",
+        "Text",
+        "Bool",
+        "TextArray",
+        "Timestamptz",
+        "Uuid",
+        "Int8",
+        "Text",
+        "Bool",
+        "Uuid",
+        "Int8",
+        "Bool",
+        "UuidArray",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "7061c94c551bf277de8b019b97575ba396c47aeed528eea6b1cf7ede71106b4e"
+}

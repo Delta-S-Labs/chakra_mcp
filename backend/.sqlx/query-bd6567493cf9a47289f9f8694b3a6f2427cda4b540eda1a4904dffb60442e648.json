@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT acc.id AS account_id,\n                   (SELECT a.id FROM agents a\n                     WHERE a.account_id = acc.id AND a.slug = $2 AND a.tombstoned_at IS NULL) AS agent_id,\n                   (SELECT sa.new_slug FROM slug_aliases sa\n                     WHERE sa.scope = 'agent' AND sa.account_id = acc.id\n                       AND sa.old_slug = $2 AND sa.expires_at > now()) AS renamed_to\n              FROM accounts acc\n             WHERE acc.slug = $1 AND acc.tombstoned_at IS NULL\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "agent_id",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "renamed_to",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "bd6567493cf9a47289f9f8694b3a6f2427cda4b540eda1a4904dffb60442e648"
+}

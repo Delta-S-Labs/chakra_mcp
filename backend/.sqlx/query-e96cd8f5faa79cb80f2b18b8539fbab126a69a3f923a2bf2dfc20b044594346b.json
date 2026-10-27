@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, proposer_agent_id, target_agent_id, status\n          FROM friendships\n         WHERE status IN ('proposed', 'accepted')\n           AND ((proposer_agent_id = ANY($1) AND target_agent_id = ANY($2))\n             OR (target_agent_id = ANY($1) AND proposer_agent_id = ANY($2)))\n         ORDER BY created_at, id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "friendships",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "proposer_agent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "friendships",
+            "name": "proposer_agent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "target_agent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "friendships",
+            "name": "target_agent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "friendships",
+            "name": "status"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "e96cd8f5faa79cb80f2b18b8539fbab126a69a3f923a2bf2dfc20b044594346b"
+}
