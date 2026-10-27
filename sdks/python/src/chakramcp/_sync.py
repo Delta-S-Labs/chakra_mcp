@@ -6,12 +6,13 @@ workers see :mod:`._async`.
 from __future__ import annotations
 
 import builtins
+import json
 import logging
 import threading
 import time
 from collections.abc import Callable
 from typing import Any, TypeGuard
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 import httpx
 
@@ -19,6 +20,8 @@ from ._errors import ChakraMCPError, raise_for_response
 from ._types import (
     TERMINAL_STATUSES,
     Agent,
+    AgentMode,
+    AgentProfile,
     Call,
     CallEntry,
     CallFeedItem,
@@ -31,8 +34,10 @@ from ._types import (
     CreateAgentRequest,
     CreateCapabilityRequest,
     CreateGrantRequest,
+    DiscoveryPage,
     DraftedReply,
     EligibilityResponse,
+    FeaturedAgent,
     Friendship,
     FriendshipStatus,
     Grant,
@@ -50,6 +55,7 @@ from ._types import (
     Review,
     ReviewListResponse,
     ReviewTier,
+    Standing,
     StartCallRequest,
     UpdateAgentRequest,
     WriteReviewRequest,
@@ -121,6 +127,7 @@ class ChakraMCP:
         self.inbox = InboxClient(self)
         self.reviews = ReviewsClient(self)
         self.calls = CallsClient(self)
+        self.discovery = DiscoveryClient(self)
 
     def close(self) -> None:
         if self._owns_client:
@@ -885,3 +892,96 @@ class CallsClient:
                     raise
         elif kind in _EVENT_KINDS and on_event is not None:
             on_event(item)
+
+
+# ─── Discovery ───────────────────────────────────────────
+
+
+def _agent_ref_path(ref: str) -> str:
+    """An agent's id, or ``account_slug/agent_slug``, as a URL path."""
+    account, slash, agent = ref.partition("/")
+    if not slash:
+        return quote(ref, safe="")
+    return f"{quote(account, safe='')}/{quote(agent, safe='')}"
+
+
+def _search_query(filters: dict[str, Any]) -> str:
+    """The search filters as a query string: booleans as ``true`` /
+    ``false``, ``tags`` comma-joined and ``capability_schema`` as JSON.
+    Filters that are ``None``, or an empty string or list, are left out."""
+    params: dict[str, Any] = {}
+    for key, value in filters.items():
+        if value is None or (isinstance(value, str | list) and not value):
+            continue
+        if isinstance(value, bool):
+            value = "true" if value else "false"
+        elif key == "tags":
+            value = ",".join(value)
+        elif key == "capability_schema":
+            value = json.dumps(value, separators=(",", ":"))
+        params[key] = value
+    return _query(params)
+
+
+class DiscoveryClient:
+    """The public directory (relays from 0.6.0): ranked search, featured
+    agents, profiles and your standing. Results include your own and your
+    orgs' agents, and your standing with each (``you``)."""
+
+    def __init__(self, chakra: ChakraMCP) -> None:
+        self._c = chakra
+
+    def search(
+        self,
+        *,
+        q: str | None = None,
+        capability: str | None = None,
+        capability_schema: dict[str, Any] | None = None,
+        mode: AgentMode | None = None,
+        verified: bool | None = None,
+        tags: list[str] | None = None,
+        include_dormant: bool | None = None,
+        callable: bool | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+    ) -> DiscoveryPage:
+        """Search the directory, best matches first.
+
+        ``q`` is free text: any word matches, and better matches rank
+        higher. ``capability`` is part of a capability's name,
+        ``capability_schema`` a shape to match against any capability's
+        output schema, and an agent must have all of ``tags``.
+        ``include_dormant`` also lists pull agents not seen in 30 days with
+        nothing public; ``callable`` lists only agents you can call now.
+        ``limit`` is 1-100 (default 20). Pass ``next_cursor`` back as
+        ``cursor``, with the same filters, for the next page."""
+        query = _search_query(
+            {
+                "q": q,
+                "capability": capability,
+                "capability_schema": capability_schema,
+                "mode": mode,
+                "verified": verified,
+                "tags": tags,
+                "include_dormant": include_dormant,
+                "callable": callable,
+                "limit": limit,
+                "cursor": cursor,
+            }
+        )
+        return self._c._relay("GET", f"/v1/discovery/agents{query}")
+
+    def featured(self) -> list[FeaturedAgent]:
+        """Agents worth trying first: the relay's house agents, then online
+        ones with something public."""
+        return self._c._relay("GET", "/v1/discovery/featured")["agents"]
+
+    def profile(self, ref: str) -> AgentProfile:
+        """One agent's profile, by id or ``account_slug/agent_slug``."""
+        return self._c._relay("GET", f"/v1/discovery/agents/{_agent_ref_path(ref)}")
+
+    def standing(self, ref: str) -> Standing:
+        """Your standing with one agent, by id or
+        ``account_slug/agent_slug``: what you can call, your friendships
+        with it, and which of your agents could start a call with it."""
+        return self._c._relay("GET", f"/v1/discovery/standing{_query({'agent': ref})}")

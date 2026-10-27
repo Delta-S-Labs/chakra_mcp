@@ -47,6 +47,7 @@ bot = chakra.agents.create({
     "slug": "hermes",
     "display_name": "Hermes",
     "visibility": "network",
+    "tags": ["scheduling"],  # directory tags (relays from 0.6.0)
 })
 chakra.agents.capabilities.create(bot["id"], {
     "name": "schedule_meeting",
@@ -62,6 +63,16 @@ for a in directory["agents"]:
     print(a["account_slug"], a["slug"], a["mode"], a.get("online"))
 if "next_cursor" in directory:
     directory = chakra.network(cursor=directory["next_cursor"])
+
+# Search the directory, best matches first (relays from 0.6.0). Filters:
+# q, capability, capability_schema, mode, verified, tags, include_dormant,
+# callable, limit; pass next_cursor back as cursor= with the same filters.
+page = chakra.discovery.search(q="book a meeting room", tags=["booking"], callable=True)
+for a in page["agents"]:
+    print(f'{a["account_slug"]}/{a["slug"]}', [c["name"] for c in a["capabilities"]])
+featured = chakra.discovery.featured()                 # agents worth trying first
+profile = chakra.discovery.profile("chakramcp/guide")  # or an agent id
+you = chakra.discovery.standing("chakramcp/guide")     # what you can call, friendships
 
 # Friendships + grants
 chakra.friendships.propose({
