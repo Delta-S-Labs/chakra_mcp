@@ -3,8 +3,14 @@
 //! (`caller`), and waiting for a result (`wait`).
 
 pub mod caller;
+pub mod directory;
+pub mod discovery;
+pub mod rpc;
 pub mod wait;
 
+use std::net::{IpAddr, SocketAddr};
+
+use axum::extract::{ConnectInfo, Request};
 use chakramcp_shared::hosting::{env_value, parse_bool};
 
 const DEFAULT_TOOL_WAIT_SECS: u64 = 25;
@@ -85,6 +91,27 @@ impl McpConfig {
             trust_forwarded_for: flag("TRUST_FORWARDED_FOR")?,
         })
     }
+}
+
+/// The client's IP. With `trust_forwarded_for`, the last `X-Forwarded-For`
+/// entry: the one the proxy in front appended, which a client can't forge
+/// (it can only add entries before it). Otherwise, or without the header,
+/// the socket peer. `None` when neither is known (a shared bucket).
+pub fn client_ip(req: &Request, trust_forwarded_for: bool) -> Option<IpAddr> {
+    if trust_forwarded_for {
+        let forwarded = req
+            .headers()
+            .get("x-forwarded-for")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.rsplit(',').next())
+            .and_then(|ip| ip.trim().parse().ok());
+        if forwarded.is_some() {
+            return forwarded;
+        }
+    }
+    req.extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ConnectInfo(addr)| addr.ip())
 }
 
 #[cfg(test)]

@@ -151,6 +151,39 @@ async fn by_name(state: &RelayState, account: &str, slug: &str) -> Result<Option
     Ok(None)
 }
 
+/// An agent's newest un-hidden reviews, up to `limit`. A reviewer agent is
+/// named only when it's live and network-visible; otherwise "An agent".
+pub async fn reviews(
+    state: &RelayState,
+    agent_id: Uuid,
+    limit: i64,
+) -> Result<Vec<Review>, ApiError> {
+    Ok(sqlx::query!(
+        r#"
+        SELECT r.rating, r.comment, r.created_at,
+               CASE WHEN ra.visibility = 'network' AND ra.tombstoned_at IS NULL
+                    THEN ra.display_name END AS reviewer
+          FROM agent_reviews r
+          JOIN agents ra ON ra.id = r.reviewer_agent_id
+         WHERE r.target_agent_id = $1 AND r.hidden_at IS NULL
+         ORDER BY r.created_at DESC
+         LIMIT $2
+        "#,
+        agent_id,
+        limit,
+    )
+    .fetch_all(&state.db)
+    .await?
+    .into_iter()
+    .map(|r| Review {
+        rating: r.rating,
+        text: r.comment,
+        at: r.created_at,
+        by: r.reviewer.unwrap_or_else(|| "An agent".to_owned()),
+    })
+    .collect())
+}
+
 /// `loaded`'s profile for `viewer`. Two queries, and standing's when signed
 /// in.
 pub async fn profile(
@@ -189,30 +222,7 @@ pub async fn profile(
     })
     .collect();
 
-    let latest = sqlx::query!(
-        r#"
-        SELECT r.rating, r.comment, r.created_at,
-               CASE WHEN ra.visibility = 'network' AND ra.tombstoned_at IS NULL
-                    THEN ra.display_name END AS reviewer
-          FROM agent_reviews r
-          JOIN agents ra ON ra.id = r.reviewer_agent_id
-         WHERE r.target_agent_id = $1 AND r.hidden_at IS NULL
-         ORDER BY r.created_at DESC
-         LIMIT $2
-        "#,
-        agent.id,
-        LATEST_REVIEWS,
-    )
-    .fetch_all(&state.db)
-    .await?
-    .into_iter()
-    .map(|r| Review {
-        rating: r.rating,
-        text: r.comment,
-        at: r.created_at,
-        by: r.reviewer.unwrap_or_else(|| "An agent".to_owned()),
-    })
-    .collect();
+    let latest = reviews(state, agent.id, LATEST_REVIEWS).await?;
 
     let name = format!("{}/{}", agent.account_slug, agent.slug);
     let public = agent.visibility == "network";

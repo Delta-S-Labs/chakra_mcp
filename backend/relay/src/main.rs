@@ -120,7 +120,13 @@ async fn main() -> Result<()> {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     tracing::info!(%addr, "chakramcp-relay starting");
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    let serve_result = axum::serve(listener, app).await;
+    // The socket peer is the client's IP for the public directory's per-IP
+    // limit when no trusted proxy says otherwise.
+    let serve_result = axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await;
 
     // On shutdown signal the refresh loop to exit cleanly so its
     // current tick (if any) finishes before DB pool closes.

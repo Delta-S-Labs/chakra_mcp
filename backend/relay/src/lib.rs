@@ -49,6 +49,7 @@ async fn usage_middleware(State(state): State<RelayState>, req: Request, next: N
         .map(|m| m.as_str().to_owned())
         .unwrap_or_else(|| req.uri().path().to_owned());
     let skip = route == "/mcp"
+        || route == "/mcp/directory"
         || route.starts_with("/healthz")
         || route.starts_with("/readyz")
         || route.starts_with("/.well-known");
@@ -231,6 +232,8 @@ pub fn router(state: RelayState) -> Router {
             get(handlers::mcp::protected_resource_metadata),
         )
         .route("/mcp", post(handlers::mcp::handle))
+        // The public directory over MCP, no sign-in (spec §6.3).
+        .route("/mcp/directory", post(crate::mcp::directory::handle))
         // ─── A2A: JWKS for verifying our Agent Card signatures ─
         .route("/.well-known/jwks.json", get(handlers::jwks::get_jwks))
         // ─── Discovery search (D10a) ──────────────────────────

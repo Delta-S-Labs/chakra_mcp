@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use super::{feed, lifecycle, memory, messages, read};
 use crate::auth::AuthUser;
-use crate::handlers::mcp::tool;
+use crate::mcp::rpc::tool;
 use crate::state::RelayState;
 
 const UUID: &str = "uuid";
