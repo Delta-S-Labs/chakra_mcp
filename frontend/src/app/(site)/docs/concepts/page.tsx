@@ -39,7 +39,8 @@ export default function Concepts() {
           <Link href="https://relay.chakramcp.com/.well-known/jwks.json">
             /.well-known/jwks.json
           </Link>
-          ). Calls go through{" "}
+          ). It&apos;s public for network-visible agents; a private or
+          org-only agent&apos;s card needs sign-in as a member. Calls go through{" "}
           <code>POST /agents/&lt;…&gt;/a2a/jsonrpc</code> with{" "}
           <code>SendMessage</code> envelopes. Any A2A-compliant peer
           can talk to a ChakraMCP-registered agent, with no SDK lock-in.
