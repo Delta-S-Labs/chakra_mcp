@@ -61,13 +61,35 @@ test("leaves matching agents alone and corrects drifted ones", async () => {
   });
   const { chakra, calls } = fakeRelay({
     agents: [
-      { id: "p", account_id: "house-acct", slug: "ping", display_name: PING.display_name, description: PING.description, visibility: "network" },
-      { id: "g", account_id: "house-acct", slug: "guide", display_name: "Old name", description: GUIDE.description, visibility: "network" },
+      { id: "p", account_id: "house-acct", slug: "ping", display_name: PING.display_name, description: PING.description, visibility: "network", tags: [...PING.tags].reverse() },
+      { id: "g", account_id: "house-acct", slug: "guide", display_name: "Old name", description: GUIDE.description, visibility: "network", tags: GUIDE.tags },
     ],
     caps: { p: [cap(PING, "cp")], g: [{ ...cap(GUIDE, "cg"), public_monthly_quota_per_agent: 5 }] },
   });
   await ensureAgents(chakra, "chakramcp");
   assert.deepEqual(calls, ["update g", "PATCH /v1/agents/g/capabilities/cg"]);
+});
+
+test("tags an agent that has none", async () => {
+  const cap = (spec: typeof PING, id: string) => ({
+    id,
+    name: spec.capability.name,
+    description: spec.capability.description,
+    input_schema: JSON.parse(canonical(spec.capability.input_schema)),
+    output_schema: JSON.parse(canonical(spec.capability.output_schema)),
+    visibility: "network",
+    public_invoke: true,
+    public_monthly_quota_per_agent: spec.capability.public_monthly_quota_per_agent,
+  });
+  const { chakra, calls } = fakeRelay({
+    agents: [
+      { id: "p", account_id: "house-acct", slug: "ping", display_name: PING.display_name, description: PING.description, visibility: "network" },
+      { id: "g", account_id: "house-acct", slug: "guide", display_name: GUIDE.display_name, description: GUIDE.description, visibility: "network", tags: GUIDE.tags },
+    ],
+    caps: { p: [cap(PING, "cp")], g: [cap(GUIDE, "cg")] },
+  });
+  await ensureAgents(chakra, "chakramcp");
+  assert.deepEqual(calls, ["update p"]);
 });
 
 test("refuses an account the key can't act for", async () => {
