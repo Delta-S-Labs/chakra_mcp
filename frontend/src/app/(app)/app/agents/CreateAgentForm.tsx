@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { createAgent, type Agent, type Visibility } from "@/lib/relay";
 import type { Org } from "@/lib/api";
 import styles from "./agents.module.css";
+import { parseTags } from "@/lib/discovery";
+import { TagsField } from "./TagsField";
 
 export function CreateAgentForm({
   token,
@@ -40,6 +42,7 @@ export function CreateAgentForm({
     ? visibility
     : accountDefault;
 
+  const [tagsText, setTagsText] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // After a successful create we keep the user on the page so they can
@@ -57,6 +60,11 @@ export function CreateAgentForm({
       setError("Pick an account first.");
       return;
     }
+    const { tags, problem } = parseTags(tagsText);
+    if (problem) {
+      setError(problem);
+      return;
+    }
     setError(null);
     setPending(true);
     try {
@@ -66,6 +74,7 @@ export function CreateAgentForm({
         display_name: displayName.trim(),
         description: description.trim(),
         visibility: effectiveVisibility,
+        ...(tags.length > 0 ? { tags } : {}),
       });
       setCreated(agent);
       // Reset per-agent fields so a repeat registration in the same
@@ -74,6 +83,7 @@ export function CreateAgentForm({
       setSlug("");
       setDisplayName("");
       setDescription("");
+      setTagsText("");
       setVisibility(accountDefault);
       setVisibilityTouched(false);
       // Refresh the "Mine" list below without leaving the page.
@@ -167,6 +177,8 @@ export function CreateAgentForm({
             </span>
           )}
         </label>
+
+        <TagsField value={tagsText} onChange={setTagsText} />
 
         <label className={styles.field}>
           <span className={styles.fieldLabel}>Visibility</span>

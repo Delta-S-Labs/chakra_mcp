@@ -1,5 +1,11 @@
 .main {
   max-width: 880px;
+  /* A centred grid item sizes to fit its content: without a set width, a
+   * long command line in a <pre> widens the page instead of scrolling
+   * inside its box. */
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   margin: 0 auto;
   padding: 3rem 1.5rem 6rem;
 }
@@ -164,5 +170,75 @@
   background: white;
   border: 1px solid var(--line, #e6decd);
   padding: 0.15rem 0.45rem;
+  border-radius: 0.3rem;
+}
+
+.command {
+  margin: 0 0 0.6rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--line, #e6decd);
+  border-radius: 0.6rem;
+  background: white;
+  overflow-x: auto;
+  font-size: 0.82rem;
+}
+
+.command code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+.schema {
+  margin-top: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.schema summary {
+  cursor: pointer;
+  color: var(--ink-soft, #6b6258);
+}
+
+.schema pre {
+  margin: 0.2rem 0 0.5rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.5rem;
+  background: var(--paper-soft, #fdf9ee);
+  overflow-x: auto;
+  font-size: 0.78rem;
+}
+
+.reviews,
+.standing {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.reviews li {
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--line, #e6decd);
+  border-radius: 0.6rem;
+  background: white;
+}
+
+.reviews p {
+  margin: 0.2rem 0;
+  font-size: 0.92rem;
+}
+
+.reviewHead {
+  color: var(--ink-soft, #6b6258);
+  font-size: 0.85rem;
+}
+
+.standing li {
+  font-size: 0.95rem;
+}
+
+.standing code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  background: var(--paper-soft, #fdf9ee);
+  padding: 0.05rem 0.35rem;
   border-radius: 0.3rem;
 }

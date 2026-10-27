@@ -1,140 +1,54 @@
-// Per-agent detail page. Server-rendered against the relay's
-// published Agent Card endpoint (A2A v0.3 canonical shape) plus
-// the discovery row for ChakraMCP-side metadata (mode, tags,
-// friend_count, verified).
+// An agent's profile page, from the relay's profile endpoint
+// (GET /v1/discovery/agents/{account}/{agent}, MCP and discovery spec §5.3):
+// what it does, its capabilities with their schemas, reviews, and how to
+// call it. A signed-in viewer's request carries their token, so it also
+// shows their standing, and members see their own private agents.
 //
-// Routes that don't resolve to a live agent fall through to
-// Next.js's `notFound()` which renders the standard 404 page.
-//
-// Both upstream fetches are wrapped in try/catch so a relay outage
-// degrades to 404 (the right answer for a missing agent) rather
-// than 500.
+// An agent the viewer may not see, or a relay that can't be reached, is a
+// 404 (Next.js's `notFound()`), not a 500.
 
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { auth } from "@/auth";
+import {
+  fetchProfile,
+  formatAgo,
+  type CapabilityDetail,
+  type Standing,
+} from "@/lib/discovery";
+import { listMyAgents } from "@/lib/relay";
+
 import styles from "../../agents.module.css";
 import detailStyles from "./detail.module.css";
 
-const RELAY_BASE =
-  process.env.NEXT_PUBLIC_RELAY_URL ?? "http://localhost:8090";
-
-interface AgentCard {
-  name: string;
-  description?: string;
-  supported_interfaces: Array<{
-    url: string;
-    protocol_binding: string;
-    protocol_version: string;
-  }>;
-  version: string;
-  capabilities: {
-    streaming?: boolean;
-    push_notifications?: boolean;
-  };
-  security_schemes?: Record<string, unknown>;
-  security_requirements?: Array<Record<string, string[]>>;
-  default_input_modes?: string[];
-  default_output_modes?: string[];
-  skills?: Array<{
-    id: string;
-    name: string;
-    description?: string;
-    tags?: string[];
-    examples?: string[];
-  }>;
-  signatures?: Array<{ protected: string; signature: string }>;
-}
-
-interface DiscoveryAgent {
-  account_slug: string;
-  agent_slug: string;
-  display_name: string;
-  description: string;
-  mode: "push" | "pull";
-  tags: string[];
-  friend_count: number;
-  created_at: string;
-  verified: boolean;
-}
-
-async function fetchAgentCard(
-  accountSlug: string,
-  agentSlug: string,
-): Promise<AgentCard | null> {
-  const url = `${RELAY_BASE}/agents/${encodeURIComponent(
-    accountSlug,
-  )}/${encodeURIComponent(agentSlug)}/.well-known/agent-card.json`;
-  try {
-    const res = await fetch(url, { next: { revalidate: 30 } });
-    if (!res.ok) return null;
-    return (await res.json()) as AgentCard;
-  } catch (err) {
-    console.error(`[agent detail] card fetch failed: ${url}`, err);
-    return null;
-  }
-}
-
-async function fetchDiscoveryRow(
-  accountSlug: string,
-  agentSlug: string,
-): Promise<DiscoveryAgent | null> {
-  // Discovery search has no per-agent endpoint yet — query by name
-  // and filter client-side. Cheap because the index uses tsvector.
-  // If/when D10a-2 ships a /v1/discovery/agents/{account}/{slug}
-  // endpoint, swap this for that.
-  const url = `${RELAY_BASE}/v1/discovery/agents?q=${encodeURIComponent(
-    agentSlug,
-  )}&limit=20`;
-  try {
-    const res = await fetch(url, { next: { revalidate: 30 } });
-    if (!res.ok) return null;
-    const body = (await res.json()) as { agents: DiscoveryAgent[] };
-    return (
-      body.agents.find(
-        (a) => a.account_slug === accountSlug && a.agent_slug === agentSlug,
-      ) ?? null
-    );
-  } catch {
-    return null;
-  }
-}
-
 type Params = Promise<{ account_slug: string; agent_slug: string }>;
 
-export async function generateMetadata({
-  params,
-}: {
-  params: Params;
-}): Promise<Metadata> {
+export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
   const { account_slug, agent_slug } = await params;
-  const card = await fetchAgentCard(account_slug, agent_slug);
-  if (!card) {
+  const profile = await fetchProfile(account_slug, agent_slug);
+  if (!profile) {
     return { title: "Agent not found - ChakraMCP" };
   }
   return {
-    title: `${card.name} - ChakraMCP`,
+    title: `${profile.display_name} - ChakraMCP`,
     description:
-      card.description ??
-      `Public Agent Card for ${account_slug}/${agent_slug} on the ChakraMCP relay.`,
+      profile.description ||
+      `${account_slug}/${agent_slug}, an agent on the ChakraMCP network.`,
     alternates: { canonical: `/agents/${account_slug}/${agent_slug}` },
   };
 }
 
-export default async function AgentDetailPage({ params }: { params: Params }) {
+export default async function AgentProfilePage({ params }: { params: Params }) {
   const { account_slug, agent_slug } = await params;
-  const [card, row] = await Promise.all([
-    fetchAgentCard(account_slug, agent_slug),
-    fetchDiscoveryRow(account_slug, agent_slug),
-  ]);
-  if (!card) notFound();
+  const session = await auth();
+  const token = session?.backendToken ?? null;
+  const profile = await fetchProfile(account_slug, agent_slug, token);
+  if (!profile) notFound();
 
-  const slug = `${account_slug}/${agent_slug}`;
-  const a2a = card.supported_interfaces[0];
-  const cardUrl = `${RELAY_BASE}/agents/${encodeURIComponent(
-    account_slug,
-  )}/${encodeURIComponent(agent_slug)}/.well-known/agent-card.json`;
+  const name = `${profile.account_slug}/${profile.slug}`;
+  const publicCount = profile.capabilities.filter((c) => c.access === "public").length;
 
   return (
     <main className={detailStyles.main}>
@@ -143,166 +57,209 @@ export default async function AgentDetailPage({ params }: { params: Params }) {
       </p>
 
       <header className={detailStyles.header}>
-        <h1>{card.name}</h1>
+        <h1>{profile.display_name}</h1>
         <p className={detailStyles.slug}>
-          <code>{slug}</code>
-          {row?.verified && (
+          <code>{name}</code>
+          {profile.verified && (
             <span className={styles.verified} title="Verified account">
               verified
             </span>
           )}
-          {row && (
-            <span
-              className={
-                row.mode === "push" ? styles.modePush : styles.modePull
-              }
-            >
-              {row.mode}
+          <span className={profile.mode === "push" ? styles.modePush : styles.modePull}>
+            {profile.mode}
+          </span>
+          {profile.online ? (
+            <span className={styles.online} title="Pulled its inbox in the last 5 minutes">
+              online
+            </span>
+          ) : (
+            <span className={styles.seen} title={new Date(profile.last_seen_at).toUTCString()}>
+              seen {formatAgo(profile.last_seen_at)}
             </span>
           )}
-          <span className={detailStyles.version}>v{card.version}</span>
+          {profile.visibility !== "network" && (
+            <span className={styles.seen}>
+              {profile.visibility === "org" ? "your organizations only" : "private to your account"}
+            </span>
+          )}
         </p>
-        {card.description && (
-          <p className={detailStyles.lede}>{card.description}</p>
+        {profile.description && <p className={detailStyles.lede}>{profile.description}</p>}
+        {profile.tags.length > 0 && (
+          <ul className={styles.cardTags}>
+            {profile.tags.map((t) => (
+              <li key={t}>
+                <Link href={`/agents?tags=${encodeURIComponent(t)}`}>#{t}</Link>
+              </li>
+            ))}
+          </ul>
         )}
       </header>
 
       <section className={detailStyles.section}>
-        <h2>A2A endpoint</h2>
-        <dl className={detailStyles.kv}>
-          <div>
-            <dt>Protocol</dt>
-            <dd>
-              {a2a?.protocol_binding ?? "—"} v{a2a?.protocol_version ?? "—"}
-            </dd>
-          </div>
-          <div>
-            <dt>URL</dt>
-            <dd>
-              <code className={detailStyles.urlCode}>{a2a?.url ?? "—"}</code>
-            </dd>
-          </div>
-          <div>
-            <dt>Capabilities</dt>
-            <dd>
-              {card.capabilities.streaming ? "streaming · " : ""}
-              {card.capabilities.push_notifications
-                ? "push-notifications"
-                : "request/response"}
-            </dd>
-          </div>
-        </dl>
-      </section>
-
-      <section className={detailStyles.section}>
-        <h2>Skills{card.skills ? ` (${card.skills.length})` : ""}</h2>
-        {card.skills && card.skills.length > 0 ? (
-          <ul className={detailStyles.skillList}>
-            {card.skills.map((s) => (
-              <li key={s.id} className={detailStyles.skill}>
-                <h3>{s.name}</h3>
-                <p className={detailStyles.skillId}>
-                  <code>{s.id}</code>
-                </p>
-                {s.description && <p>{s.description}</p>}
-                {s.tags && s.tags.length > 0 && (
-                  <ul className={styles.cardTags}>
-                    {s.tags.map((t) => (
-                      <li key={t}>
-                        <Link href={`/agents?tags=${encodeURIComponent(t)}`}>
-                          #{t}
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </li>
-            ))}
-          </ul>
-        ) : (
+        <h2>How to call it</h2>
+        <p className={detailStyles.muted}>
+          {publicCount > 0
+            ? publicCount === 1
+              ? "Anyone signed in can call its public capability, within its monthly quota."
+              : `Anyone signed in can call its ${publicCount} public capabilities, within each one's monthly quota.`
+            : "Its capabilities need a friendship: one of your agents proposes it, the owner accepts, then grants access."}{" "}
+          {profile.capabilities.length > publicCount &&
+            publicCount > 0 &&
+            "The rest need a friendship and a grant."}
+        </p>
+        <pre className={detailStyles.command}>
+          <code>{profile.how_to_call.cli}</code>
+        </pre>
+        {profile.how_to_call.a2a_card && (
           <p className={detailStyles.muted}>
-            No skills published. The agent owner can add capabilities via{" "}
-            <code>POST /v1/agents/{"{id}"}/capabilities</code>.
+            A2A clients:{" "}
+            <a href={profile.how_to_call.a2a_card} className={detailStyles.cardLink}>
+              its signed Agent Card
+            </a>
+            .
           </p>
         )}
       </section>
 
+      {profile.you && <YourStanding you={profile.you} token={token} />}
+
       <section className={detailStyles.section}>
-        <h2>Security</h2>
-        <dl className={detailStyles.kv}>
-          <div>
-            <dt>Schemes</dt>
-            <dd>
-              {card.security_schemes
-                ? Object.keys(card.security_schemes).join(", ")
-                : "—"}
-            </dd>
-          </div>
-          <div>
-            <dt>Required</dt>
-            <dd>
-              {card.security_requirements?.length
-                ? card.security_requirements
-                    .flatMap((r) => Object.keys(r))
-                    .join(" + ")
-                : "none"}
-            </dd>
-          </div>
-          <div>
-            <dt>Signatures</dt>
-            <dd>
-              {card.signatures?.length
-                ? `${card.signatures.length} JWS-shaped`
-                : "unsigned"}
-            </dd>
-          </div>
-        </dl>
+        <h2>Capabilities ({profile.capabilities.length})</h2>
+        {profile.capabilities.length > 0 ? (
+          <ul className={detailStyles.skillList}>
+            {profile.capabilities.map((c) => (
+              <CapabilityItem key={c.id} capability={c} />
+            ))}
+          </ul>
+        ) : (
+          <p className={detailStyles.muted}>It hasn&apos;t published any capabilities you can see.</p>
+        )}
       </section>
 
-      {row && (
-        <section className={detailStyles.section}>
-          <h2>Network</h2>
-          <dl className={detailStyles.kv}>
-            <div>
-              <dt>Friends</dt>
-              <dd>{row.friend_count.toLocaleString()}</dd>
-            </div>
-            <div>
-              <dt>Registered</dt>
-              <dd>{new Date(row.created_at).toLocaleDateString()}</dd>
-            </div>
-            {row.tags.length > 0 && (
-              <div>
-                <dt>Tags</dt>
-                <dd>
-                  <ul className={styles.cardTags}>
-                    {row.tags.map((t) => (
-                      <li key={t}>
-                        <Link href={`/agents?tags=${encodeURIComponent(t)}`}>
-                          #{t}
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                </dd>
-              </div>
-            )}
-          </dl>
-        </section>
-      )}
+      <section className={detailStyles.section}>
+        <h2>Reviews</h2>
+        {profile.reviews.count === 0 ? (
+          <p className={detailStyles.muted}>No reviews yet.</p>
+        ) : (
+          <>
+            <p className={detailStyles.muted}>
+              {profile.reviews.avg_rating?.toFixed(1)} out of 5 from {profile.reviews.count}{" "}
+              review{profile.reviews.count === 1 ? "" : "s"}.
+            </p>
+            <ul className={detailStyles.reviews}>
+              {profile.reviews.latest.map((r) => (
+                <li key={`${r.at}-${r.by}`}>
+                  <p className={detailStyles.reviewHead}>
+                    <span aria-label={`${r.rating} out of 5`}>
+                      {"★".repeat(r.rating)}
+                      {"☆".repeat(5 - r.rating)}
+                    </span>{" "}
+                    {r.by} · {new Date(r.at).toLocaleDateString()}
+                  </p>
+                  {r.text && <p>{r.text}</p>}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </section>
 
       <section className={detailStyles.section}>
-        <h2>Raw Agent Card</h2>
-        <p className={detailStyles.muted}>
-          Canonical A2A v0.3, served and signed by the relay. Stable URL
-          for any A2A client to fetch:
-        </p>
-        <p>
-          <a href={cardUrl} className={detailStyles.cardLink}>
-            <code>{cardUrl}</code>
-          </a>
-        </p>
+        <h2>About</h2>
+        <dl className={detailStyles.kv}>
+          <div>
+            <dt>Owner</dt>
+            <dd>
+              {profile.owner.display_name} <code>{profile.owner.account_slug}</code>
+            </dd>
+          </div>
+          <div>
+            <dt>Friends</dt>
+            <dd>{profile.friend_count.toLocaleString()}</dd>
+          </div>
+          <div>
+            <dt>Takes calls from</dt>
+            <dd>{profile.accept_calls}</dd>
+          </div>
+          <div>
+            <dt>Registered</dt>
+            <dd>{new Date(profile.created_at).toLocaleDateString()}</dd>
+          </div>
+        </dl>
       </section>
     </main>
   );
 }
+
+function CapabilityItem({ capability: c }: { capability: CapabilityDetail }) {
+  return (
+    <li className={detailStyles.skill}>
+      <h3>
+        {c.name}{" "}
+        <span className={c.access === "public" ? styles.publicInvoke : styles.modePull}>
+          {c.access === "public" ? "public" : "friends"}
+        </span>
+      </h3>
+      {c.description && <p>{c.description}</p>}
+      <p className={detailStyles.skillId}>
+        {c.access === "public" && c.public_monthly_quota_per_agent !== null
+          ? `${c.public_monthly_quota_per_agent.toLocaleString()} calls a month per calling agent. `
+          : ""}
+        {c.consent_required ? "Asks its owner before running. " : ""}
+        {c.semantics === "human_in_loop" ? "A person answers. " : ""}
+      </p>
+      <details className={detailStyles.schema}>
+        <summary>Input and output schemas</summary>
+        <p className={detailStyles.skillId}>Input</p>
+        <pre>
+          <code>{JSON.stringify(c.input_schema, null, 2)}</code>
+        </pre>
+        <p className={detailStyles.skillId}>Output</p>
+        <pre>
+          <code>{JSON.stringify(c.output_schema, null, 2)}</code>
+        </pre>
+      </details>
+    </li>
+  );
+}
+
+/** The viewer's standing, with their agents named. */
+async function YourStanding({ you, token }: { you: Standing; token: string | null }) {
+  const mine = token ? await listMyAgents(token).catch(() => []) : [];
+  const named = (id: string | null) => mine.find((a) => a.id === id)?.slug ?? "one of your agents";
+  const nothing =
+    you.callable.length === 0 && you.friendships.length === 0 && you.can_start_call_as.length === 0;
+  return (
+    <section className={detailStyles.section}>
+      <h2>You and this agent</h2>
+      {nothing ? (
+        <p className={detailStyles.muted}>
+          None of your agents can call it yet.{" "}
+          <Link href="/app/friendships">Propose a friendship</Link> from one of them, then ask its
+          owner for access.
+        </p>
+      ) : (
+        <ul className={detailStyles.standing}>
+          {you.callable.map((c) => (
+            <li key={c.capability_id}>
+              You can call <code>{c.capability}</code>
+              {c.via === "grant" ? <> as {named(c.as_agent_id)} (granted)</> : " (public)"}.
+            </li>
+          ))}
+          {you.friendships.map((f) => (
+            <li key={f.id}>
+              {named(f.your_agent_id)}{" "}
+              {f.status === "accepted" ? "is friends with it." : "has proposed a friendship."}
+            </li>
+          ))}
+          {you.can_start_call_as.length > 0 && (
+            <li>
+              You can start a call as {you.can_start_call_as.map(named).join(", ")}.
+            </li>
+          )}
+        </ul>
+      )}
+    </section>
+  );
+}
+

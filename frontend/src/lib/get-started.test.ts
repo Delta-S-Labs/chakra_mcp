@@ -30,7 +30,7 @@ const invocation = (over: Partial<Invocation>) => ({ i_invoked: false, i_served:
 const guide: FeaturedAgent = {
   id: "guide-id",
   account_slug: "chakramcp",
-  agent_slug: "guide",
+  slug: "guide",
   display_name: "ChakraMCP Guide",
   description: "",
   online: true,
