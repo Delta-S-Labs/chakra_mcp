@@ -7,7 +7,9 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(process.env.DOCS_ROOT ?? join(here, "../../.."));
-const MAX_BYTES = 130_000;
+// About 37 K tokens of system prompt: the Guide compacts a conversation at
+// 60 K input tokens (COMPACT_AT_INPUT_TOKENS), so this leaves it ~23 K.
+const MAX_BYTES = 150_000;
 
 // observability.md (running the Grafana stack) is for operators, not the
 // Guide's questions; it's left out to keep the bundle under MAX_BYTES.

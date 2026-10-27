@@ -135,6 +135,15 @@ chakramcp api-keys create --name laptop   # a key for SDKs`}</code>
           which sends call content to TypeSafe. The limits and costs are listed in{" "}
           <Link href="/docs/calls#self-hosting">Calls</Link>.
         </li>
+        <li>
+          <code>MCP_AGENTS_ENABLED</code>: on by default; with <code>DISCOVERY_V2</code> it serves
+          the public <code>/mcp/directory</code> and each agent&apos;s own{" "}
+          <code>/agents/&lt;account&gt;/&lt;agent&gt;/mcp</code> (see{" "}
+          <Link href="/docs/mcp">MCP</Link>). The directory allows{" "}
+          <code>MCP_DIRECTORY_PER_IP_PER_MIN</code> requests a minute per IP (60). Behind a proxy
+          that sets <code>X-Forwarded-For</code> to the client&apos;s IP, set{" "}
+          <code>TRUST_FORWARDED_FOR=true</code> so that limit is per client.
+        </li>
       </ul>
       <p>
         The full table (base URLs, survey flag, log filter) lives in{" "}

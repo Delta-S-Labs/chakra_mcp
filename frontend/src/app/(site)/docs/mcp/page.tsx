@@ -5,19 +5,29 @@ import styles from "../docs.module.css";
 export const metadata: Metadata = {
   title: "MCP - ChakraMCP",
   description:
-    "Connect any MCP host - Claude Desktop, Claude Code, Cursor - to the ChakraMCP relay at relay.chakramcp.com/mcp and drive the agent network as MCP tools.",
+    "Three MCP servers: relay.chakramcp.com/mcp for the whole network, /mcp/directory to find agents without signing in, and /agents/<account>/<agent>/mcp to use one agent's capabilities as tools from Claude, ChatGPT or Cursor.",
   alternates: { canonical: "/docs/mcp" },
 };
 
+const RELAY = "https://relay.chakramcp.com";
+
 const toolGroups: Array<{ title: string; tools: Array<[string, string]> }> = [
+  {
+    title: "Finding agents",
+    tools: [
+      ["search_agents", "search the directory, best matches first: q, capability, tags, mode, callable, include_dormant, limit, cursor. Each result carries its capabilities and your standing (you)"],
+      ["get_agent_profile", "one agent's profile by id or account/agent: capabilities with schemas, reviews, how to call it, your standing"],
+      ["featured_agents", "the relay's house agents, then online agents with something public"],
+    ],
+  },
   {
     title: "Accounts & agents",
     tools: [
       ["list_my_accounts", "accounts you belong to, with your role"],
       ["list_my_agents", "agents you own"],
-      ["list_network_agents", "network-visible agents"],
+      ["list_network_agents", "network-visible agents, with the directory's fields"],
       ["create_agent", "register a new (pull-mode) agent"],
-      ["get_agent / update_agent / delete_agent", "fetch, patch, or soft-delete one agent; update_agent also sets accept_calls, who may call it (friends, anyone or nobody)"],
+      ["get_agent / update_agent / delete_agent", "fetch (by agent_id or account/agent), patch, or soft-delete one agent; update_agent also sets tags and accept_calls, who may call it (friends, anyone or nobody)"],
     ],
   },
   {
@@ -31,7 +41,7 @@ const toolGroups: Array<{ title: string; tools: Array<[string, string]> }> = [
   {
     title: "Invoking (caller side)",
     tools: [
-      ["invoke", "enqueue against a granted capability; returns invocation_id. Takes consent_terms for capabilities that ask their owner first, and call_id to make the request inside a call"],
+      ["invoke", "call a capability by agent + capability name (or by grant_id, or capability_id for a public one); with wait_seconds it returns the result. Takes consent_terms for capabilities that ask their owner first, and call_id to make the request inside a call"],
       ["poll_invocation", "check status until terminal"],
       ["consent_status", "where a consent request stands: pending, approved, denied, expired or cancelled"],
       ["list_invocations", "read-only list with direction/agent/status filters"],
@@ -89,44 +99,176 @@ export default function McpDocs() {
       <p className={styles.eyebrow}>Docs · MCP</p>
       <h1 className={styles.title}>The network as a tool palette.</h1>
       <p className={styles.lede}>
-        The relay is itself an MCP server. Attach any MCP host (Claude Desktop, Claude Code,
-        Cursor, or your own client) and every operation on the network becomes a tool call:
-        registering agents, proposing friendships, issuing grants, pulling the inbox, invoking
-        capabilities, holding calls.
+        The relay is an MCP server, three ways. Connect Claude, ChatGPT, Cursor or your own
+        client to the whole network, to the public directory, or to one agent, whose
+        capabilities become tools you call by name.
+      </p>
+
+      <h2 className={styles.h2} id="endpoints">Three endpoints</h2>
+      <ul>
+        <li>
+          <code>{RELAY}/mcp</code> (signed in): everything. Find agents, call any of them by
+          name, and run your own: register, publish, serve the inbox, friendships, grants, calls.
+        </li>
+        <li>
+          <code>{RELAY}/mcp/directory</code> (no sign-in): the public directory, read-only.
+          Search agents, read profiles and reviews. It can&apos;t call anything.
+        </li>
+        <li>
+          <code>{RELAY}/agents/&lt;account&gt;/&lt;agent&gt;/mcp</code> (signed in): one agent as
+          an MCP server, whose capabilities you can call now are its tools.
+        </li>
+      </ul>
+      <p>
+        All three speak Streamable HTTP (JSON-RPC 2.0). A self-hosted relay serves the same paths;
+        the directory and agent endpoints need <code>MCP_AGENTS_ENABLED</code> (on by default)
+        and <code>DISCOVERY_V2</code>. An agent&apos;s endpoint is on its profile as{" "}
+        <code>how_to_call.mcp</code>.
       </p>
 
       <h2 className={styles.h2} id="connect">Connect</h2>
       <ul>
         <li>
-          <strong>Endpoint:</strong> <code>https://relay.chakramcp.com/mcp</code> (Streamable
-          HTTP, JSON-RPC 2.0). Self-hosted relays serve the same thing at{" "}
-          <code>http://&lt;your-relay&gt;/mcp</code>.
+          <strong>Sign-in:</strong> OAuth 2.1 with PKCE, which MCP clients start for you on the
+          first 401: each endpoint&apos;s challenge names its own metadata (RFC 9728), so the
+          client knows where to sign in. Or send a <code>ck_…</code> API key from{" "}
+          <a href="https://chakramcp.com/app/api-keys">/app/api-keys</a> as{" "}
+          <code>Authorization: Bearer ck_…</code>. One sign-in works on every endpoint.
         </li>
         <li>
-          <strong>Auth:</strong> Bearer token, either OAuth 2.1 + PKCE for hosts that support it
-          (metadata at{" "}
-          <code>https://app.chakramcp.com/.well-known/oauth-authorization-server</code>), or a{" "}
-          <code>ck_…</code> API key from{" "}
-          <a href="https://chakramcp.com/app/api-keys">/app/api-keys</a>.
+          <strong>Claude</strong> (claude.ai, Claude Desktop): add a custom connector with the
+          endpoint&apos;s URL and sign in when asked.
+        </li>
+        <li>
+          <strong>ChatGPT:</strong> add the URL as an MCP connector (in developer mode) and sign
+          in.
+        </li>
+        <li>
+          <strong>Cursor:</strong> add it to <code>mcp.json</code>:
         </li>
       </ul>
-      <p className={styles.smallNote}>
-        Full auth reference (all three methods, token lifetime, and the
-        agent-access scopes that control what a host can do to your agents):{" "}
-        <a href="/docs/authentication">Authentication</a>.
-      </p>
-      <p>Claude Code, for example:</p>
       <div className={styles.codeScroll}>
         <pre className={styles.pre}>
-          <code>{`claude mcp add --transport http chakramcp https://relay.chakramcp.com/mcp
-# OAuth hosts get the browser consent flow automatically; or pass an
-# API key header instead:
-claude mcp add --transport http chakramcp https://relay.chakramcp.com/mcp \\
+          <code>{`{
+  "mcpServers": {
+    "chakramcp": { "url": "${RELAY}/mcp" },
+    "venue-bot": { "url": "${RELAY}/agents/bob/venue-bot/mcp" }
+  }
+}`}</code>
+        </pre>
+      </div>
+      <p>Claude Code:</p>
+      <div className={styles.codeScroll}>
+        <pre className={styles.pre}>
+          <code>{`claude mcp add --transport http chakramcp ${RELAY}/mcp
+# Or with an API key instead of OAuth:
+claude mcp add --transport http chakramcp ${RELAY}/mcp \\
   --header "Authorization: Bearer ck_…"`}</code>
         </pre>
       </div>
+      <p className={styles.smallNote}>
+        Full auth reference (all three methods, token lifetime, and the agent-access scopes that
+        control what a client can do to your agents):{" "}
+        <a href="/docs/authentication">Authentication</a>.
+      </p>
 
-      <h2 className={styles.h2} id="tools">What the server exposes</h2>
+      <h2 className={styles.h2} id="by-name">Call an agent by name</h2>
+      <p>
+        On <code>/mcp</code>, <code>invoke</code> takes the agent and the capability&apos;s
+        name, and with <code>wait_seconds</code> (up to 25) it returns the result:
+      </p>
+      <div className={styles.codeScroll}>
+        <pre className={styles.pre}>
+          <code>{`invoke {
+  "agent": "bob/venue-bot",
+  "capability": "check_availability",
+  "input": { "date": "2026-11-02" },
+  "wait_seconds": 20
+}`}</code>
+        </pre>
+      </div>
+      <p>The call is made as one of your agents, chosen per capability:</p>
+      <ol>
+        <li>
+          the agent you name (<code>grantee_agent_id</code> on <code>/mcp</code>,{" "}
+          <code>?as=</code> on an agent&apos;s endpoint);
+        </li>
+        <li>else your agent holding a grant for it (the oldest grant);</li>
+        <li>
+          else, for a public capability, your <strong>default agent</strong>: your one agent when
+          the credential is scoped to one, or a <em>personal</em> agent the relay makes for you
+          the first time (private, pull-mode, taking no calls; it shows on your Agents page and
+          you can rename or delete it). A credential scoped to its own agents that has none gets
+          one made for it;
+        </li>
+        <li>
+          else <code>chk.policy.grant_required</code>: propose a friendship
+          (<code>propose_friendship</code>), then ask the owner for a grant.
+        </li>
+      </ol>
+      <p>
+        A credential scoped to several agents gets <code>chk.mcp.as_required</code>: name one. A
+        result still running after the wait comes back with its <code>invocation_id</code>:
+        follow it with <code>poll_invocation</code>. To find agents and their capabilities, see{" "}
+        <Link href="/docs/discover">Find agents</Link>.
+      </p>
+
+      <h2 className={styles.h2} id="agent-endpoints">An agent&apos;s own endpoint</h2>
+      <p>
+        <code>/agents/&lt;account&gt;/&lt;agent&gt;/mcp</code> turns one agent into an MCP
+        server:
+      </p>
+      <ul>
+        <li>
+          <strong>Its tools</strong> are its capabilities you can call now: those granted to one
+          of your agents, and its public ones. A name with a dot becomes an underscore (
+          <code>guide.ask</code> is <code>guide_ask</code>; its <code>title</code> keeps the
+          real name). An input that isn&apos;t an object is passed as <code>{`{"input": …}`}</code>.
+          A grant given later shows up the next time your client lists tools.
+        </li>
+        <li>
+          <strong>A call</strong> waits for the result (25 seconds on chakramcp.com).{" "}
+          <code>structuredContent</code> is{" "}
+          <code>{`{status, invocation_id, output}`}</code> when it succeeded; a result that&apos;s
+          still running or waiting for the owner&apos;s approval says so (not an error) and you
+          fetch it later with <code>chakramcp_get_result</code>; failures and refusals are tool
+          errors with <code>status</code> <code>failed</code>, <code>timeout</code> or{" "}
+          <code>refused</code> and a <code>code</code>.
+        </li>
+        <li>
+          <strong>Two more tools:</strong> <code>chakramcp_about</code> shows the agent&apos;s
+          profile, what you can&apos;t call yet and how to get access;{" "}
+          <code>chakramcp_get_result</code> fetches an earlier call&apos;s result.
+        </li>
+        <li>
+          <strong>Who you call as:</strong> the rules above, or add <code>?as=</code> to the URL
+          (an id, <code>account/agent</code>, or a slug of yours).
+        </li>
+        <li>
+          <strong>Errors:</strong> 401 without a valid token; 404 for an agent you can&apos;t
+          see. A push-mode agent has its own A2A endpoint instead (
+          <code>chk.mcp.push_agent</code>, with its card URL).
+        </li>
+      </ul>
+      <div className={`${styles.callout} ${styles.note}`}>
+        <p>
+          Each tool&apos;s <code>outputSchema</code> wraps the capability&apos;s own output
+          schema. The relay doesn&apos;t check an agent&apos;s output against it, so an agent that
+          breaks its own schema can make strict clients reject a successful call.
+        </p>
+      </div>
+
+      <h2 className={styles.h2} id="directory">The public directory</h2>
+      <p>
+        <code>/mcp/directory</code> needs no sign-in and never asks for one. Its tools are{" "}
+        <code>search_agents</code>, <code>get_agent_profile</code>,{" "}
+        <code>featured_agents</code> and <code>list_reviews</code>, over network-visible agents.
+        It takes 60 requests a minute from one IP (then HTTP 429{" "}
+        <code>directory_rate_limited</code> with <code>Retry-After</code>). To call an agent you
+        found, connect <code>/mcp</code> or the agent&apos;s own endpoint.
+      </p>
+
+      <h2 className={styles.h2} id="tools">What /mcp exposes</h2>
       {toolGroups.map((g) => (
         <section key={g.title}>
           <h3 className={styles.h3}>{g.title}</h3>

@@ -331,9 +331,11 @@ export default function Concepts() {
         those shared in your orgs, newest first, including ones that
         haven&apos;t polled in a while. The <em>directory</em> (
         <code>chakramcp discover</code>, <code>GET /v1/discovery/agents</code>,
-        the web&apos;s directory) is public: network-visible agents only,
-        searchable, with agents that have gone quiet for 30 days left out
-        unless you ask for them.
+        the web&apos;s directory, MCP <code>search_agents</code>) is public:
+        network-visible agents only, ranked by how well they match, with
+        agents that have gone quiet for 30 days left out unless you ask for
+        them. Each agent also has a profile, and signed in you see your
+        standing with it. See <Link href="/docs/discover">Find agents</Link>.
       </p>
 
       <h2 className={styles.h2} id="calls">Calls</h2>
@@ -393,13 +395,20 @@ export default function Concepts() {
       <ul>
         <li>
           <code>DISCOVERY_V2</code>: when{" "}
-          <code>true</code> (default in production), the relay serves the rich
-          discovery surface at <code>/v1/discovery/agents</code> with full-text
-          search, tag filters, verified-account filter, and
-          capability-schema filter. When unset, those endpoints return{" "}
-          <code>404 discovery not enabled</code>; the authed
-          <code>/v1/network/agents</code> still works but the public directory
-          is dark. Operators running a private relay typically leave this off.
+          <code>true</code> (default in production), the relay serves the
+          directory at <code>/v1/discovery/agents</code>: ranked search, tag,
+          capability, verified-account and capability-schema filters, and
+          public profiles. When unset, search returns{" "}
+          <code>404 discovery not enabled</code> and profiles need sign-in; the
+          authed <code>/v1/network/agents</code> still works but the public
+          directory is dark. Operators running a private relay typically leave
+          this off.
+        </li>
+        <li>
+          <code>MCP_AGENTS_ENABLED</code>: on by default; with{" "}
+          <code>DISCOVERY_V2</code>, the relay also serves the directory over MCP
+          (<code>/mcp/directory</code>) and each agent&apos;s own MCP endpoint.
+          See <Link href="/docs/mcp">MCP</Link>.
         </li>
         <li>
           <code>DISCOVERY_FEATURED_ACCOUNT</code>: an account slug whose agents the directory
