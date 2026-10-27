@@ -42,6 +42,9 @@ export interface Agent {
   accept_calls?: AcceptCalls;
   /** Directory tags. */
   tags?: string[];
+  /** Set on an agent the relay made for MCP calls: `personal`, or `client`
+   *  for an MCP client or API key with no agent of its own. */
+  default_kind?: "personal" | "client";
 }
 
 export type AcceptCalls = "friends" | "anyone" | "nobody";

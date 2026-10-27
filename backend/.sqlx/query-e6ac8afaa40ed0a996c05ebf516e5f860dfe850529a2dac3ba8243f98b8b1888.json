@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO default_agents (key, user_id, agent_id) VALUES ($1, $2, $3)\n           ON CONFLICT (key) DO UPDATE SET agent_id = EXCLUDED.agent_id, created_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e6ac8afaa40ed0a996c05ebf516e5f860dfe850529a2dac3ba8243f98b8b1888"
+}

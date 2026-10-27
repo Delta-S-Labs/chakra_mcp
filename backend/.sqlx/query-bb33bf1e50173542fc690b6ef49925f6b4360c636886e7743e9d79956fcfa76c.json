@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n            a.id, a.account_id, a.slug, a.display_name, a.description,\n            a.visibility, a.endpoint_url, a.mode, a.accept_calls, a.created_at, a.updated_at, a.tags,\n            acc.slug as account_slug, acc.display_name as account_display_name,\n            (SELECT COUNT(*)::bigint FROM agent_capabilities c WHERE c.agent_id = a.id) as \"capability_count!\",\n            (SELECT AVG(rating)::float8 FROM agent_reviews r\n                WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS avg_rating,\n            (SELECT COUNT(*)::bigint FROM agent_reviews r\n                WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS \"review_count!\"\n        FROM agents a\n        JOIN accounts acc ON acc.id = a.account_id\n        WHERE a.id = $1\n        ",
+  "query": "\n        SELECT\n            a.id, a.account_id, a.slug, a.display_name, a.description,\n            a.visibility, a.endpoint_url, a.mode, a.accept_calls, a.created_at, a.updated_at, a.tags,\n            (SELECT CASE WHEN d.key LIKE 'user:%' THEN 'personal' ELSE 'client' END\n               FROM default_agents d WHERE d.agent_id = a.id LIMIT 1) AS default_kind,\n            acc.slug as account_slug, acc.display_name as account_display_name,\n            (SELECT COUNT(*)::bigint FROM agent_capabilities c WHERE c.agent_id = a.id) as \"capability_count!\",\n            (SELECT COUNT(*)::bigint FROM agent_capabilities c\n                WHERE c.agent_id = a.id AND c.visibility = 'network') as \"network_capability_count!\",\n            (SELECT AVG(rating)::float8 FROM agent_reviews r\n                WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS avg_rating,\n            (SELECT COUNT(*)::bigint FROM agent_reviews r\n                WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS \"review_count!\",\n            h.last_polled_at as \"last_polled_at?\"\n        FROM agents a\n        JOIN accounts acc ON acc.id = a.account_id\n        LEFT JOIN agent_heartbeats h ON h.agent_id = a.id\n        WHERE a.account_id IN (\n            SELECT account_id FROM account_memberships WHERE user_id = $1\n        )\n          AND a.tombstoned_at IS NULL\n          AND acc.tombstoned_at IS NULL\n          AND (\n            $2 = 'all'\n            OR ($2 = 'own'\n                AND (a.created_by_client_id = $3 OR a.created_by_api_key_id = $4))\n            OR ($2 = 'selected'\n                AND a.id IN (SELECT agent_id FROM credential_scope_agents\n                             WHERE credential_scope_id = $5))\n          )\n        ORDER BY a.created_at DESC\n        ",
   "describe": {
     "columns": [
       {
@@ -137,6 +137,12 @@
       },
       {
         "ordinal": 12,
+        "name": "default_kind",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 13,
         "name": "account_slug",
         "type_info": "Text",
         "origin": {
@@ -147,7 +153,7 @@
         }
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "account_display_name",
         "type_info": "Text",
         "origin": {
@@ -158,26 +164,47 @@
         }
       },
       {
-        "ordinal": 14,
+        "ordinal": 15,
         "name": "capability_count!",
         "type_info": "Int8",
         "origin": "Expression"
       },
       {
-        "ordinal": 15,
+        "ordinal": 16,
+        "name": "network_capability_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 17,
         "name": "avg_rating",
         "type_info": "Float8",
         "origin": "Expression"
       },
       {
-        "ordinal": 16,
+        "ordinal": 18,
         "name": "review_count!",
         "type_info": "Int8",
         "origin": "Expression"
+      },
+      {
+        "ordinal": 19,
+        "name": "last_polled_at?",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "agent_heartbeats",
+            "name": "last_polled_at"
+          }
+        }
       }
     ],
     "parameters": {
       "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Uuid",
         "Uuid"
       ]
     },
@@ -194,12 +221,15 @@
       false,
       false,
       false,
+      null,
       false,
       false,
       null,
       null,
-      null
+      null,
+      null,
+      false
     ]
   },
-  "hash": "37ffae5d0d63b7051a1c85bef85d4def345225803f441754e21d3708e9c52a9c"
+  "hash": "bb33bf1e50173542fc690b6ef49925f6b4360c636886e7743e9d79956fcfa76c"
 }

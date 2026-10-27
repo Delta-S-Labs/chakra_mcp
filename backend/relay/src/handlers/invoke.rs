@@ -452,7 +452,7 @@ pub async fn invoke(
     user: AuthUser,
     Json(req): Json<InvokeRequest>,
 ) -> Result<axum::response::Response, ApiError> {
-    let grant_id = match (req.grant_id, req.capability_id) {
+    let (target, limits_source) = match (req.grant_id, req.capability_id) {
         (Some(_), Some(_)) => {
             return Err(ApiError::InvalidRequest(
                 "specify exactly one of grant_id or capability_id, not both".into(),
@@ -463,44 +463,32 @@ pub async fn invoke(
                 "one of grant_id (trusted) or capability_id (public) is required".into(),
             ));
         }
-        (None, Some(capability_id)) => {
-            return invoke_public(
-                &state,
-                &user,
-                capability_id,
-                req.grantee_agent_id,
-                &req.input,
-                req.consent_terms.as_ref(),
-                req.call_id,
-            )
-            .await;
-        }
-        (Some(grant_id), None) => grant_id,
+        (Some(grant_id), None) => (Target::Grant(grant_id), "v1_invoke"),
+        (None, Some(capability_id)) => (Target::Public(capability_id), "v1_invoke_public"),
     };
-
-    invoke_trusted(state, user, grant_id, req).await
-}
-
-async fn invoke_trusted(
-    state: RelayState,
-    user: AuthUser,
-    grant_id: Uuid,
-    req: InvokeRequest,
-) -> Result<axum::response::Response, ApiError> {
-    use axum::response::IntoResponse;
-    let outcome = authorize_and_enqueue_trusted(
+    let outcome = start(
         &state,
         &user,
-        grant_id,
-        req.grantee_agent_id,
+        target,
         &req.input,
-        req.consent_terms.as_ref(),
-        "v1_invoke",
-        req.call_id,
+        StartOptions {
+            as_agent: Some(req.grantee_agent_id),
+            consent_terms: req.consent_terms.as_ref(),
+            call: req.call_id,
+            limits_source,
+        },
     )
     .await?;
-    Ok(match outcome {
-        TrustedOutcome::Enqueued {
+    Ok(respond(outcome))
+}
+
+/// REST's answer for an outcome: 202 with the invocation when it's queued
+/// or held, its refusal's status otherwise, and 429 with the quota for an
+/// exhausted public capability.
+fn respond(outcome: Outcome) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    match outcome {
+        Outcome::Enqueued {
             invocation_id,
             consent_request_id,
             signals,
@@ -521,7 +509,7 @@ async fn invoke_trusted(
             signals.apply(response.headers_mut());
             response
         }
-        TrustedOutcome::Held {
+        Outcome::Held {
             invocation_id,
             consent_request_id,
             signals,
@@ -542,7 +530,7 @@ async fn invoke_trusted(
             signals.apply(response.headers_mut());
             response
         }
-        TrustedOutcome::Rejected {
+        Outcome::Rejected {
             invocation_id,
             status,
             error,
@@ -560,7 +548,115 @@ async fn invoke_trusted(
             }),
         )
             .into_response(),
-    })
+        Outcome::QuotaExhausted { quota, resets_at } => {
+            let mut response = (
+                StatusCode::TOO_MANY_REQUESTS,
+                Json(serde_json::json!({
+                    "error": {
+                        "code": "monthly_quota_exhausted",
+                        "message": quota_message(quota, resets_at),
+                        "retryable": false,
+                    },
+                    "quota": quota,
+                    "resets_at": resets_at,
+                })),
+            )
+                .into_response();
+            let retry_after = (resets_at - Utc::now()).num_seconds().max(1) as u64;
+            response
+                .headers_mut()
+                .insert(axum::http::header::RETRY_AFTER, retry_after.into());
+            response
+        }
+    }
+}
+
+/// What an exhausted public capability's refusal says.
+pub(crate) fn quota_message(quota: i32, resets_at: DateTime<Utc>) -> String {
+    format!(
+        "monthly quota of {quota} public invocations on this capability exhausted; resets at {resets_at}"
+    )
+}
+
+// ─── One invoke path (MCP and discovery spec §7.1) ────────
+
+/// What to invoke.
+#[derive(Debug, Clone)]
+pub(crate) enum Target {
+    /// Through a grant (the trusted path).
+    Grant(Uuid),
+    /// A public capability, by id.
+    Public(Uuid),
+    /// A capability by name on an agent named by id or `account/agent`:
+    /// the caller and the path are resolved by the caller rules
+    /// (`mcp::caller`, spec §6.1).
+    Named {
+        agent: crate::discovery::profile::AgentRef,
+        capability: String,
+    },
+}
+
+/// How to invoke.
+pub(crate) struct StartOptions<'a> {
+    /// The agent to call as. Required for `Grant` and `Public`; for `Named`
+    /// it overrides the caller rules.
+    pub as_agent: Option<Uuid>,
+    pub consent_terms: Option<&'a ConsentTerms>,
+    pub call: Option<Uuid>,
+    /// Labels the usage-limit check with the surface.
+    pub limits_source: &'static str,
+}
+
+/// Start an invocation: REST `POST /v1/invoke`, MCP `invoke` and the agent
+/// endpoints' tool calls all come through here, so their checks can't
+/// drift apart.
+pub(crate) async fn start(
+    state: &RelayState,
+    user: &AuthUser,
+    target: Target,
+    input: &Value,
+    opts: StartOptions<'_>,
+) -> Result<Outcome, ApiError> {
+    let (target, as_agent) = match target {
+        Target::Named { agent, capability } => {
+            let resolved =
+                crate::mcp::caller::resolve(state, user, &agent, &capability, opts.as_agent)
+                    .await?;
+            (resolved.target, Some(resolved.as_agent))
+        }
+        other => (other, opts.as_agent),
+    };
+    let as_agent =
+        as_agent.ok_or_else(|| ApiError::InvalidRequest("grantee_agent_id is required".into()))?;
+    match target {
+        Target::Grant(grant_id) => {
+            authorize_and_enqueue_trusted(
+                state,
+                user,
+                grant_id,
+                as_agent,
+                input,
+                opts.consent_terms,
+                opts.limits_source,
+                opts.call,
+            )
+            .await
+        }
+        Target::Public(capability_id) => {
+            authorize_and_enqueue_public(
+                state,
+                user,
+                capability_id,
+                as_agent,
+                input,
+                opts.consent_terms,
+                opts.limits_source,
+                opts.call,
+            )
+            .await
+        }
+        Target::Named { .. } => unreachable!("named targets resolve to a grant or a capability"),
+    }
 }
 
 // ─── Trusted (grant-backed) authorization ────────────────
@@ -570,11 +666,11 @@ async fn invoke_trusted(
 // (`policy::evaluate`) because it addresses agents by slug + capability
 // header rather than by grant id, but it enforces the same invariants.
 
-/// Result of a trusted-path invoke that got as far as writing a
-/// `relay_invocations` row. Errors that write no row (unknown grant,
-/// caller not a member of the grantee account, usage limits, DB
-/// failures) come back as `Err(ApiError)` instead.
-pub(crate) enum TrustedOutcome {
+/// Result of an invoke that got as far as writing a `relay_invocations`
+/// row, or a public capability's exhausted quota. Errors that write no row
+/// (unknown grant, caller not a member of the grantee account, usage
+/// limits, DB failures) come back as `Err(ApiError)` instead.
+pub(crate) enum Outcome {
     /// Queued as `pending` for the granter to pull from its inbox. `signals`
     /// are what the caller is told about its limits (credits P6).
     /// `consent_request_id` is set when a standing consent covered it.
@@ -601,6 +697,12 @@ pub(crate) enum TrustedOutcome {
         /// Set when message safety's screening refused it.
         code: Option<&'static str>,
         safety: Option<Safety>,
+    },
+    /// A public capability's monthly quota for this caller is used up (no
+    /// row written).
+    QuotaExhausted {
+        quota: i32,
+        resets_at: DateTime<Utc>,
     },
 }
 
@@ -633,7 +735,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
     consent_terms: Option<&ConsentTerms>,
     limits_source: &'static str,
     call: Option<Uuid>,
-) -> Result<TrustedOutcome, ApiError> {
+) -> Result<Outcome, ApiError> {
     consent_enqueue::validate_terms(consent_terms)?;
     let input_preview = truncate_for_audit(input);
 
@@ -718,7 +820,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
                 call,
             )
             .await?;
-            Ok::<_, ApiError>(TrustedOutcome::Rejected {
+            Ok::<_, ApiError>(Outcome::Rejected {
                 invocation_id,
                 status,
                 error,
@@ -880,7 +982,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
                 )
                 .execute(&state.db)
                 .await?;
-                return Ok(TrustedOutcome::Rejected {
+                return Ok(Outcome::Rejected {
                     invocation_id,
                     status: StatusCode::FORBIDDEN,
                     error: block.reason,
@@ -902,7 +1004,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
             Ok(Some(report)) => compliance::attach_report(&mut trust_snapshot, report),
             Err((reason, report)) => {
                 let outcome = reject(StatusCode::FORBIDDEN, reason).await?;
-                if let TrustedOutcome::Rejected { invocation_id, .. } = &outcome {
+                if let Outcome::Rejected { invocation_id, .. } = &outcome {
                     compliance::attach_report(&mut trust_snapshot, report);
                     sqlx::query!(
                         "UPDATE relay_invocations SET trust_snapshot = $2 WHERE id = $1",
@@ -960,13 +1062,13 @@ pub(crate) async fn authorize_and_enqueue_trusted(
         )
         .await?;
         return Ok(match enqueued {
-            Enqueued::Covered { consent_request_id } => TrustedOutcome::Enqueued {
+            Enqueued::Covered { consent_request_id } => Outcome::Enqueued {
                 invocation_id: id,
                 consent_request_id: Some(consent_request_id),
                 signals,
                 safety,
             },
-            Enqueued::Held { consent_request_id } => TrustedOutcome::Held {
+            Enqueued::Held { consent_request_id } => Outcome::Held {
                 invocation_id: id,
                 consent_request_id,
                 signals,
@@ -1004,7 +1106,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
     .await?;
     crate::calls::link::note(&state.db, call, id, row.grantee_agent_id).await;
 
-    Ok(TrustedOutcome::Enqueued {
+    Ok(Outcome::Enqueued {
         invocation_id: id,
         consent_request_id: None,
         signals,
@@ -1017,16 +1119,23 @@ pub(crate) async fn authorize_and_enqueue_trusted(
 /// the invoker agent. Enforces a per-invoker monthly quota counted
 /// against `relay_invocations`. Writes the invocation with
 /// `grant_id = NULL`.
-async fn invoke_public(
+/// Run every public-path check and enqueue: the capability is public and
+/// network-visible, the caller is a member of the invoking agent's account
+/// and the agent is in the credential's scope, not a self-invoke or a push
+/// target, within the capability's monthly quota per caller and the
+/// account's usage limits, then compliance or message safety and owner
+/// consent, as on the trusted path.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn authorize_and_enqueue_public(
     state: &RelayState,
     user: &AuthUser,
     capability_id: Uuid,
     grantee_agent_id: Uuid,
     input: &Value,
     consent_terms: Option<&ConsentTerms>,
+    limits_source: &'static str,
     call: Option<Uuid>,
-) -> Result<axum::response::Response, ApiError> {
-    use axum::response::IntoResponse;
+) -> Result<Outcome, ApiError> {
     consent_enqueue::validate_terms(consent_terms)?;
     let input_preview = truncate_for_audit(input);
 
@@ -1117,28 +1226,10 @@ async fn invoke_public(
     .fetch_one(&state.db)
     .await?;
     if used >= i64::from(quota) {
-        let now = Utc::now();
-        let resets_at = crate::limits::next_month_start(now);
-        let mut response = (
-            StatusCode::TOO_MANY_REQUESTS,
-            Json(serde_json::json!({
-                "error": {
-                    "code": "monthly_quota_exhausted",
-                    "message": format!(
-                        "monthly quota of {quota} public invocations on this capability exhausted; resets at {resets_at}"
-                    ),
-                    "retryable": false,
-                },
-                "quota": quota,
-                "resets_at": resets_at,
-            })),
-        )
-            .into_response();
-        let retry_after = (resets_at - now).num_seconds().max(1) as u64;
-        response
-            .headers_mut()
-            .insert(axum::http::header::RETRY_AFTER, retry_after.into());
-        return Ok(response);
+        return Ok(Outcome::QuotaExhausted {
+            quota,
+            resets_at: crate::limits::next_month_start(Utc::now()),
+        });
     }
 
     // Per-account usage limits (rate + credits), keyed on the invoker's
@@ -1146,7 +1237,7 @@ async fn invoke_public(
     // invoke must pass both. In-memory only. Shadow mode logs a would-block
     // and proceeds; enforcing returns 429 with an `account_*` code.
     let decision = state
-        .enforce_limits(invoker.account_id, "v1_invoke_public")
+        .enforce_limits(invoker.account_id, limits_source)
         .await;
     if let Some(refusal) = decision.refusal {
         return Err(state.refusal_error(refusal));
@@ -1205,18 +1296,13 @@ async fn invoke_public(
             )
             .execute(&state.db)
             .await?;
-            return Ok((
-                StatusCode::FORBIDDEN,
-                Json(InvokeResponse {
-                    invocation_id: id,
-                    status: "rejected".into(),
-                    error: Some(block.reason),
-                    code: Some(block.code),
-                    safety: found,
-                    ..Default::default()
-                }),
-            )
-                .into_response());
+            return Ok(Outcome::Rejected {
+                invocation_id: id,
+                status: StatusCode::FORBIDDEN,
+                error: block.reason,
+                code: Some(block.code),
+                safety: found,
+            });
         }
         input_preview = screened.value["input"].clone();
         if let (Some(t), Some(p)) = (
@@ -1249,16 +1335,13 @@ async fn invoke_public(
                 )
                 .await?;
                 store_rejection_report(&state.db, id, report).await?;
-                return Ok((
-                    StatusCode::FORBIDDEN,
-                    Json(InvokeResponse {
-                        invocation_id: id,
-                        status: "rejected".into(),
-                        error: Some(reason),
-                        ..Default::default()
-                    }),
-                )
-                    .into_response());
+                return Ok(Outcome::Rejected {
+                    invocation_id: id,
+                    status: StatusCode::FORBIDDEN,
+                    error: reason,
+                    code: None,
+                    safety: None,
+                });
             }
         }
     };
@@ -1296,23 +1379,20 @@ async fn invoke_public(
             gate,
         )
         .await?;
-        let status = match enqueued {
-            Enqueued::Covered { .. } => "pending",
-            Enqueued::Held { .. } => "awaiting_consent",
-        };
-        let mut response = (
-            StatusCode::ACCEPTED,
-            Json(InvokeResponse {
+        return Ok(match enqueued {
+            Enqueued::Covered { consent_request_id } => Outcome::Enqueued {
                 invocation_id: id,
-                status: status.into(),
-                consent_request_id: Some(enqueued.consent_request_id()),
+                consent_request_id: Some(consent_request_id),
+                signals: decision.signals,
                 safety,
-                ..Default::default()
-            }),
-        )
-            .into_response();
-        decision.signals.apply(response.headers_mut());
-        return Ok(response);
+            },
+            Enqueued::Held { consent_request_id } => Outcome::Held {
+                invocation_id: id,
+                consent_request_id,
+                signals: decision.signals,
+                safety,
+            },
+        });
     }
     sqlx::query!(
         r#"
@@ -1343,18 +1423,12 @@ async fn invoke_public(
     .await?;
     crate::calls::link::note(&state.db, call, id, grantee_agent_id).await;
 
-    let mut response = (
-        StatusCode::ACCEPTED,
-        Json(InvokeResponse {
-            invocation_id: id,
-            status: "pending".into(),
-            safety,
-            ..Default::default()
-        }),
-    )
-        .into_response();
-    decision.signals.apply(response.headers_mut());
-    Ok(response)
+    Ok(Outcome::Enqueued {
+        invocation_id: id,
+        consent_request_id: None,
+        signals: decision.signals,
+        safety,
+    })
 }
 
 // ─── GET /v1/inbox?agent_id=X[&limit=N] ──────────────────

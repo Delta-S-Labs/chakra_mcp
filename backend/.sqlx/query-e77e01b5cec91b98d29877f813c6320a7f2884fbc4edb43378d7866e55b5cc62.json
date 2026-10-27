@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n               SELECT 1 FROM agents a\n                 JOIN account_memberships m ON m.account_id = a.account_id AND m.user_id = $2\n                WHERE a.id = $1 AND a.tombstoned_at IS NULL\n           ) AS \"member!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "member!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "e77e01b5cec91b98d29877f813c6320a7f2884fbc4edb43378d7866e55b5cc62"
+}

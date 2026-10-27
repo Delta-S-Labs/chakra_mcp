@@ -23,6 +23,7 @@ pub mod heartbeats;
 pub mod inbox_bridge;
 pub mod jwt_mint;
 pub mod limits;
+pub mod mcp;
 pub mod policy;
 pub mod retention;
 pub mod scope_cache;

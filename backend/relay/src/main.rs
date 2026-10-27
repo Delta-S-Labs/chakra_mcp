@@ -92,7 +92,8 @@ async fn main() -> Result<()> {
         .with_usage_retention_days(usage_retention)
         .with_compliance(chakramcp_relay::compliance::ComplianceChecker::from_env())
         .with_calls(calls)
-        .with_memory(chakramcp_relay::calls::memory::client(&calls));
+        .with_memory(chakramcp_relay::calls::memory::client(&calls))
+        .with_mcp(chakramcp_relay::mcp::McpConfig::from_env()?);
     state.heartbeats.clone().spawn_flusher(state.db.clone());
     if let Some(days) = usage_retention {
         chakramcp_relay::retention::spawn_usage_pruner(state.db.clone(), days);

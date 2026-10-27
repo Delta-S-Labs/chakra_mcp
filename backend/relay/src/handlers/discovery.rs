@@ -23,7 +23,7 @@ use uuid::Uuid;
 use chakramcp_shared::error::{ApiError, ApiResult};
 
 use crate::auth::AuthUser;
-use crate::discovery::fields::{self, AgentSummary, CapabilityBrief};
+use crate::discovery::featured::{self, FeaturedAgent};
 use crate::discovery::profile::{self, AgentRef};
 use crate::discovery::search::{self, SearchParams};
 use crate::discovery::{cache_headers, standing, MaybeUser};
@@ -47,37 +47,13 @@ pub async fn search(
 
 // ─── Featured ──────────────────────────────────────────────
 
-/// How many agents `GET /v1/discovery/featured` returns at most.
-const FEATURED_LIMIT: i64 = 12;
-
-/// A publicly callable capability, so a page can show a working call.
-#[derive(Debug, Serialize)]
-pub struct FeaturedCapability {
-    pub id: Uuid,
-    pub name: String,
-    pub description: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct FeaturedAgent {
-    #[serde(flatten)]
-    pub agent: AgentSummary,
-    pub capabilities: Vec<CapabilityBrief>,
-    /// Deprecated, the same as `slug`. Kept for one release.
-    pub agent_slug: String,
-    /// Deprecated: see `capabilities[].access`. Kept for one release.
-    pub public_capabilities: Vec<FeaturedCapability>,
-}
-
 #[derive(Debug, Serialize)]
 pub struct FeaturedResponse {
     pub agents: Vec<FeaturedAgent>,
 }
 
-/// `GET /v1/discovery/featured`: agents worth trying first. The featured
-/// account's agents (the house agents), then online agents with something
-/// publicly callable, up to 12. A short list apart from the main one, so
-/// its cursor stays stable.
+/// `GET /v1/discovery/featured`: agents worth trying first
+/// (`discovery::featured`).
 pub async fn featured(
     State(state): State<RelayState>,
     MaybeUser(viewer): MaybeUser,
@@ -85,57 +61,7 @@ pub async fn featured(
     if !state.config.discovery_v2_enabled {
         return Err(ApiError::NotFound);
     }
-    let ids: Vec<Uuid> = sqlx::query_scalar!(
-        r#"
-        SELECT a.id
-          FROM agents a
-          JOIN accounts acc ON acc.id = a.account_id
-          LEFT JOIN agent_heartbeats h ON h.agent_id = a.id
-         WHERE a.tombstoned_at IS NULL
-           AND acc.tombstoned_at IS NULL
-           AND a.visibility = 'network'
-           AND (($1::text IS NOT NULL AND acc.slug = $1::text)
-                OR (h.last_polled_at > now() - interval '5 minutes'
-                    AND EXISTS (SELECT 1 FROM agent_capabilities c
-                                 WHERE c.agent_id = a.id AND c.public_invoke = true)))
-         ORDER BY ($1::text IS NOT NULL AND acc.slug = $1::text) DESC,
-                  h.last_polled_at DESC NULLS LAST, a.created_at
-         LIMIT $2
-        "#,
-        state.featured_account.as_deref(),
-        FEATURED_LIMIT,
-    )
-    .fetch_all(&state.db)
-    .await?;
-    let loaded = fields::load(&state, viewer.as_ref().map(|u| u.user_id), &ids).await?;
-    let public = sqlx::query!(
-        r#"
-        SELECT id, agent_id, name, description
-          FROM agent_capabilities
-         WHERE agent_id = ANY($1) AND public_invoke = true AND visibility = 'network'
-         ORDER BY name
-        "#,
-        &ids,
-    )
-    .fetch_all(&state.db)
-    .await?;
-    let agents = loaded
-        .into_iter()
-        .map(|l| FeaturedAgent {
-            public_capabilities: public
-                .iter()
-                .filter(|c| c.agent_id == l.summary.id)
-                .map(|c| FeaturedCapability {
-                    id: c.id,
-                    name: c.name.clone(),
-                    description: c.description.clone(),
-                })
-                .collect(),
-            agent_slug: l.summary.slug.clone(),
-            capabilities: l.capabilities,
-            agent: l.summary,
-        })
-        .collect();
+    let agents = featured::featured(&state, viewer.as_ref().map(|u| u.user_id)).await?;
     Ok((
         cache_headers(viewer.is_some(), "public, max-age=30, s-maxage=60"),
         Json(FeaturedResponse { agents }),

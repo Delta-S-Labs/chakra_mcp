@@ -90,6 +90,13 @@ export default async function AgentsPage() {
                     {a.capability_count}{" "}
                     {a.capability_count === 1 ? "capability" : "capabilities"}
                   </div>
+                  {a.default_kind && (
+                    <div className={styles.rowMeta}>
+                      {a.default_kind === "personal"
+                        ? "Personal: used when you call agents from an MCP client without naming one of yours."
+                        : "Made for an MCP client or API key with no agent of its own, to call agents as."}
+                    </div>
+                  )}
                 </div>
                 <Link className={styles.openLink} href={`/app/agents/${a.id}`}>
                   Open →

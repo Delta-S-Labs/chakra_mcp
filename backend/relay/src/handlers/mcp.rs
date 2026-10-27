@@ -28,7 +28,7 @@ use chakramcp_shared::error::ApiError;
 
 use crate::auth::{user_is_member, AuthUser};
 use crate::consent::visibility::shown_input;
-use crate::handlers::invoke::TrustedOutcome;
+use crate::handlers::invoke::{Outcome, StartOptions, Target};
 use crate::state::RelayState;
 
 const PROTOCOL_VERSION: &str = "2025-06-18";
@@ -95,7 +95,10 @@ pub async fn handle(
             // Spec: notifications get no response body.
             return StatusCode::NO_CONTENT.into_response();
         }
-        "tools/list" => Ok(tools_list_result(state.calls.enabled)),
+        "tools/list" => Ok(tools_list_result(
+            state.calls.enabled,
+            state.config.discovery_v2_enabled,
+        )),
         "tools/call" => match call_tool(&state, &user, req.params).await {
             Ok((value, tool_signals)) => {
                 signals = tool_signals;
@@ -252,19 +255,32 @@ fn initialize_result() -> Value {
             "version": SERVER_VERSION,
         },
         "instructions":
-            "ChakraMCP relay. Use create_agent + publish_capability to register \
-             yourself and the RPCs you expose. Use list_my_agents to see your \
-             agents, list_grants to see what you can call, invoke + poll_invocation \
-             to call a friend's capability, and pull_inbox + respond to serve \
-             requests directed at your own agents."
+            "ChakraMCP relay: a network of agents. Find agents with search_agents \
+             (or featured_agents), and read one with get_agent_profile: what it \
+             does, its capabilities and their input schemas, and what you can \
+             call. Call one by name with invoke {agent: \"account/agent\", \
+             capability, input, wait_seconds}: public capabilities need nothing \
+             more, others need a friendship (propose_friendship) and a grant \
+             from the owner. Use create_agent + publish_capability to register \
+             your own agent and what it offers, and pull_inbox + respond to \
+             serve requests sent to it."
     })
 }
 
 // ─── tools/list ──────────────────────────────────────────
 
-fn tools_list_result(calls: bool) -> Value {
+fn tools_list_result(calls: bool, discovery: bool) -> Value {
     let mut result = json!({
         "tools": [
+            tool("get_agent_profile",
+                "Read one agent's profile: what it does, its owner, its capabilities with their input and output schemas and who can call each, reviews, how to call it, and your standing with it (what you can call now, and as which of your agents).",
+                json!({
+                    "type": "object",
+                    "required": ["agent"],
+                    "properties": {
+                        "agent": { "type": "string", "description": "The agent's id, or account/agent (e.g. bob/venue-bot)." }
+                    }
+                })),
             tool("list_my_accounts",
                 "List the accounts you belong to (with your role). Use an account's id as the account_id for create_agent.",
                 json!({ "type": "object", "properties": {} })),
@@ -292,14 +308,18 @@ fn tools_list_result(calls: bool) -> Value {
                     }
                 })),
             tool("invoke",
-                "Enqueue an invocation against a granted capability. Returns immediately with invocation_id; poll with poll_invocation. If the capability asks its owner first, status is 'awaiting_consent' until one of the owner's approvers decides, unless a standing consent covers it.",
+                "Call another agent's capability. Name it with agent (id or account/agent) + capability (its name): the relay calls as your agent holding a grant for it, or, for a public capability, your default agent; or pass grant_id, or capability_id for a public one, with grantee_agent_id. With wait_seconds it waits for the result and returns it; otherwise, or if it's still running, poll with poll_invocation. If the capability asks its owner first, status is 'awaiting_consent' until one of the owner's approvers decides, unless a standing consent covers it.",
                 json!({
                     "type": "object",
-                    "required": ["grant_id", "grantee_agent_id", "input"],
+                    "required": ["input"],
                     "properties": {
+                        "agent": { "type": "string", "description": "The agent to call: its id, or account/agent (e.g. bob/venue-bot). Use with capability." },
+                        "capability": { "type": "string", "description": "The capability's name on that agent." },
                         "grant_id": { "type": "string", "format": "uuid" },
-                        "grantee_agent_id": { "type": "string", "format": "uuid", "description": "One of your agents — the caller side." },
+                        "capability_id": { "type": "string", "format": "uuid", "description": "A public capability, by id." },
+                        "grantee_agent_id": { "type": "string", "format": "uuid", "description": "One of your agents to call as. Required with grant_id or capability_id; optional with agent + capability." },
                         "input": { "type": "object" },
+                        "wait_seconds": { "type": "integer", "minimum": 0, "maximum": 25, "description": "Wait up to this long for the result (default 0: return at once)." },
                         "call_id": { "type": "string", "format": "uuid", "description": "Make the request inside this call; the capability must be the other party's." },
                         "consent_terms": {
                             "type": "object",
@@ -424,11 +444,13 @@ fn tools_list_result(calls: bool) -> Value {
                     }
                 })),
             tool("get_agent",
-                "Fetch one agent by id (yours, or any network-visible agent).",
+                "Fetch one agent (yours, or any network-visible agent) by agent_id, or by agent: its id or account/agent.",
                 json!({
                     "type": "object",
-                    "required": ["agent_id"],
-                    "properties": { "agent_id": { "type": "string", "format": "uuid" } }
+                    "properties": {
+                        "agent_id": { "type": "string", "format": "uuid" },
+                        "agent": { "type": "string", "description": "The agent's id, or account/agent." }
+                    }
                 })),
             tool("update_agent",
                 "Patch one of your agents' metadata (display_name, description, visibility, endpoint_url, agent_card_url, tags) or who may call it (accept_calls).",
@@ -589,12 +611,41 @@ fn tools_list_result(calls: bool) -> Value {
         ]
     });
     // Calls (spec 2026-10-25), only with CALLS_ENABLED.
-    if calls {
-        if let Some(tools) = result["tools"].as_array_mut() {
+    if let Some(tools) = result["tools"].as_array_mut() {
+        // Search and featured agents are the public directory: only when it's
+        // on (DISCOVERY_V2), so an operator who hasn't enabled it doesn't get
+        // one through MCP.
+        if discovery {
+            tools.extend(discovery_tools());
+        }
+        if calls {
             tools.extend(crate::calls::mcp::tools());
         }
     }
     result
+}
+
+fn discovery_tools() -> Vec<Value> {
+    vec![
+        tool("search_agents",
+            "Search the agent directory, best matches first: any word of q matches, and a name or slug match ranks highest. Results include your own private agents, what each offers (capabilities, with access 'public' or 'friends'), whether it's online, and your standing (you.callable lists what you can call now). Pass next_cursor back as cursor, with the same filters, for more.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "q": { "type": "string", "description": "Free text, e.g. 'book a meeting room'." },
+                    "capability": { "type": "string", "description": "Part of a capability's name." },
+                    "tags": { "type": "array", "items": { "type": "string" }, "description": "Agents with all of these tags." },
+                    "mode": { "type": "string", "enum": ["push", "pull"] },
+                    "callable": { "type": "boolean", "description": "Only agents you can call now." },
+                    "include_dormant": { "type": "boolean", "description": "Also agents not seen in 30 days with nothing public." },
+                    "limit": { "type": "integer", "minimum": 1, "maximum": 100 },
+                    "cursor": { "type": "string" }
+                }
+            })),
+        tool("featured_agents",
+            "Agents worth trying first: the relay's own house agents, then online agents with something anyone can call.",
+            json!({ "type": "object", "properties": {} })),
+    ]
 }
 
 pub(crate) fn tool(name: &str, description: &str, input_schema: Value) -> Value {
@@ -629,7 +680,16 @@ async fn call_tool(
     let result = match p.name.as_str() {
         "list_my_accounts" => list_my_accounts(&state.db, user).await,
         "list_my_agents" => list_my_agents(&state.db, user).await,
-        "list_network_agents" => list_network_agents(&state.db, user).await,
+        "list_network_agents" => list_network_agents(state, user).await,
+        "get_agent_profile" => get_agent_profile(state, user, p.arguments).await,
+        "search_agents" if state.config.discovery_v2_enabled => {
+            search_agents(state, user, p.arguments).await
+        }
+        "featured_agents" if state.config.discovery_v2_enabled => {
+            crate::discovery::featured::featured(state, Some(user.user_id))
+                .await
+                .map(|agents| json!({ "agents": agents }))
+        }
         "list_grants" => list_grants(state, user, p.arguments).await,
         "list_friendships" => list_friendships(state, user, p.arguments).await,
         "invoke" => invoke(state, user, p.arguments).await.map(|(value, sig)| {
@@ -814,11 +874,10 @@ async fn list_my_agents(db: &PgPool, user: &AuthUser) -> Result<Value, ApiError>
         .collect::<Vec<_>>()))
 }
 
-async fn list_network_agents(db: &PgPool, user: &AuthUser) -> Result<Value, ApiError> {
+async fn list_network_agents(state: &RelayState, user: &AuthUser) -> Result<Value, ApiError> {
     let rows = sqlx::query!(
         r#"
-        SELECT a.id, a.account_id, a.slug, a.display_name, a.description,
-               acc.slug as account_slug, acc.display_name as account_display_name,
+        SELECT a.id,
                (SELECT COUNT(*)::bigint FROM agent_capabilities c
                   WHERE c.agent_id = a.id AND c.visibility = 'network') as "capability_count!",
                EXISTS(
@@ -834,23 +893,90 @@ async fn list_network_agents(db: &PgPool, user: &AuthUser) -> Result<Value, ApiE
         "#,
         user.user_id,
     )
-    .fetch_all(db)
+    .fetch_all(&state.db)
     .await?;
 
-    Ok(json!(rows
+    // The shared agent fields (MCP and discovery spec §5.2), then this list's
+    // own.
+    let ids: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
+    let loaded = crate::discovery::fields::load(state, Some(user.user_id), &ids).await?;
+    Ok(json!(loaded
         .into_iter()
-        .map(|r| json!({
-            "id": r.id,
-            "account_id": r.account_id,
-            "account_slug": r.account_slug,
-            "account_display_name": r.account_display_name,
-            "slug": r.slug,
-            "display_name": r.display_name,
-            "description": r.description,
-            "capability_count": r.capability_count,
-            "is_mine": r.is_mine,
-        }))
+        .zip(rows)
+        .map(|(l, r)| {
+            let mut row = json!(l.summary);
+            row["capabilities"] = json!(l.capabilities);
+            row["account_id"] = json!(l.account_id);
+            row["account_display_name"] = json!(l.account_display_name);
+            row["capability_count"] = json!(r.capability_count);
+            row["is_mine"] = json!(r.is_mine);
+            row
+        })
         .collect::<Vec<_>>()))
+}
+
+/// `get_agent_profile`: one agent's profile with your standing.
+async fn get_agent_profile(
+    state: &RelayState,
+    user: &AuthUser,
+    args: Value,
+) -> Result<Value, ApiError> {
+    let reference = agent_ref_arg(&args, "agent")?;
+    let loaded = crate::discovery::profile::resolve(state, Some(user.user_id), &reference)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    Ok(json!(
+        crate::discovery::profile::profile(state, Some(user), loaded).await?
+    ))
+}
+
+/// `search_agents`: the directory search, signed in.
+async fn search_agents(
+    state: &RelayState,
+    user: &AuthUser,
+    args: Value,
+) -> Result<Value, ApiError> {
+    #[derive(Deserialize)]
+    struct A {
+        q: Option<String>,
+        capability: Option<String>,
+        #[serde(default)]
+        tags: Vec<String>,
+        mode: Option<String>,
+        callable: Option<bool>,
+        include_dormant: Option<bool>,
+        limit: Option<i64>,
+        cursor: Option<String>,
+    }
+    let a: A = serde_json::from_value(args)
+        .map_err(|e| ApiError::InvalidRequest(format!("bad search_agents args: {e}")))?;
+    let page = crate::discovery::search::search(
+        state,
+        Some(user),
+        crate::discovery::search::SearchParams {
+            q: a.q,
+            capability: a.capability,
+            tags: (!a.tags.is_empty()).then(|| a.tags.join(",")),
+            mode: a.mode,
+            callable: a.callable,
+            include_dormant: a.include_dormant,
+            limit: a.limit,
+            cursor: a.cursor,
+            ..Default::default()
+        },
+    )
+    .await?;
+    Ok(json!(page))
+}
+
+/// An agent named by id or `account/agent` in `args[key]`.
+fn agent_ref_arg(args: &Value, key: &str) -> Result<crate::discovery::profile::AgentRef, ApiError> {
+    args.get(key)
+        .and_then(Value::as_str)
+        .and_then(crate::discovery::profile::AgentRef::parse)
+        .ok_or_else(|| {
+            ApiError::InvalidRequest(format!("{key} must be an agent id or account/agent"))
+        })
 }
 
 async fn list_invocations(
@@ -1088,6 +1214,9 @@ async fn list_friendships(
         .collect::<Vec<_>>()))
 }
 
+/// The most `invoke`'s `wait_seconds` waits.
+const MAX_INVOKE_WAIT_SECS: u64 = 25;
+
 async fn invoke(
     state: &RelayState,
     user: &AuthUser,
@@ -1095,38 +1224,73 @@ async fn invoke(
 ) -> Result<(Value, crate::limits::LimitSignals), ApiError> {
     #[derive(Deserialize)]
     struct A {
-        grant_id: Uuid,
-        grantee_agent_id: Uuid,
+        grant_id: Option<Uuid>,
+        capability_id: Option<Uuid>,
+        agent: Option<String>,
+        capability: Option<String>,
+        grantee_agent_id: Option<Uuid>,
         input: Value,
         #[serde(default)]
         consent_terms: Option<crate::consent::terms::ConsentTerms>,
         #[serde(default)]
         call_id: Option<Uuid>,
+        #[serde(default)]
+        wait_seconds: u64,
     }
     let a: A = serde_json::from_value(args)
         .map_err(|e| ApiError::InvalidRequest(format!("bad invoke args: {e}")))?;
+    let target = match (
+        a.grant_id,
+        a.capability_id,
+        a.agent.as_deref(),
+        a.capability,
+    ) {
+        (Some(grant), None, None, None) => Target::Grant(grant),
+        (None, Some(capability), None, None) => Target::Public(capability),
+        (None, None, Some(agent), Some(capability)) => Target::Named {
+            agent: crate::discovery::profile::AgentRef::parse(agent).ok_or_else(|| {
+                ApiError::InvalidRequest("agent must be an agent id or account/agent".into())
+            })?,
+            capability,
+        },
+        _ => {
+            return Err(ApiError::InvalidRequest(
+                "name the capability one way: agent + capability, grant_id, or capability_id"
+                    .into(),
+            ))
+        }
+    };
 
-    // Same authorization + enqueue path as REST `POST /v1/invoke`
-    // (grantee match, membership, grant state, accepted friendship,
-    // usage limits, audit truncation, trust snapshot).
-    match crate::handlers::invoke::authorize_and_enqueue_trusted(
+    // The same path as REST `POST /v1/invoke` (grantee match, membership,
+    // scope, grant state, accepted friendship, usage limits, consent,
+    // safety), with the caller resolved by name when it isn't given.
+    let outcome = crate::handlers::invoke::start(
         state,
         user,
-        a.grant_id,
-        a.grantee_agent_id,
+        target,
         &a.input,
-        a.consent_terms.as_ref(),
-        "mcp",
-        a.call_id,
+        StartOptions {
+            as_agent: a.grantee_agent_id,
+            consent_terms: a.consent_terms.as_ref(),
+            call: a.call_id,
+            limits_source: "mcp",
+        },
     )
-    .await?
-    {
-        TrustedOutcome::Enqueued {
+    .await?;
+    match outcome {
+        Outcome::Enqueued {
             invocation_id,
             consent_request_id,
             signals,
             safety,
         } => {
+            let wait = std::time::Duration::from_secs(a.wait_seconds.min(MAX_INVOKE_WAIT_SECS));
+            if !wait.is_zero() {
+                let status = crate::mcp::wait::wait_for(state, invocation_id, wait).await?;
+                if crate::mcp::wait::settled(&status) {
+                    return Ok((invocation_view(state, user, invocation_id).await?, signals));
+                }
+            }
             let mut out = json!({ "invocation_id": invocation_id, "status": "pending" });
             if let Some(id) = consent_request_id {
                 out["consent_request_id"] = json!(id);
@@ -1137,8 +1301,8 @@ async fn invoke(
             Ok((out, signals))
         }
         // The capability asks its owner first: held until an approver
-        // decides (owner consent §4).
-        TrustedOutcome::Held {
+        // decides (owner consent §4). Returned at once, waiting or not.
+        Outcome::Held {
             invocation_id,
             consent_request_id,
             signals,
@@ -1155,7 +1319,7 @@ async fn invoke(
             Ok((out, signals))
         }
         // The rejection is already recorded; surface it as a tool error.
-        TrustedOutcome::Rejected {
+        Outcome::Rejected {
             code: Some(code),
             error,
             ..
@@ -1163,13 +1327,16 @@ async fn invoke(
             code,
             message: error,
         }),
-        TrustedOutcome::Rejected { status, error, .. } => {
-            Err(if status == StatusCode::BAD_REQUEST {
-                ApiError::InvalidRequest(error)
-            } else {
-                ApiError::Conflict(error)
-            })
-        }
+        Outcome::Rejected { status, error, .. } => Err(if status == StatusCode::BAD_REQUEST {
+            ApiError::InvalidRequest(error)
+        } else {
+            ApiError::Conflict(error)
+        }),
+        Outcome::QuotaExhausted { quota, resets_at } => Err(ApiError::coded(
+            StatusCode::TOO_MANY_REQUESTS,
+            "monthly_quota_exhausted",
+            crate::handlers::invoke::quota_message(quota, resets_at),
+        )),
     }
 }
 
@@ -1178,16 +1345,25 @@ async fn poll_invocation(
     user: &AuthUser,
     args: Value,
 ) -> Result<Value, ApiError> {
-    let db = &state.db;
-    // Only rows touching an agent the credential may act as (MCP and
-    // discovery spec §4.2), as REST's reads are.
-    let scope = crate::auth::agents_in_scope(state, user).await?;
     #[derive(Deserialize)]
     struct A {
         invocation_id: Uuid,
     }
     let a: A = serde_json::from_value(args)
         .map_err(|e| ApiError::InvalidRequest(format!("bad poll args: {e}")))?;
+    invocation_view(state, user, a.invocation_id).await
+}
+
+/// An invocation as `poll_invocation` shows it, for a caller who may see it.
+pub(crate) async fn invocation_view(
+    state: &RelayState,
+    user: &AuthUser,
+    invocation_id: Uuid,
+) -> Result<Value, ApiError> {
+    let db = &state.db;
+    // Only rows touching an agent the credential may act as (MCP and
+    // discovery spec §4.2), as REST's reads are.
+    let scope = crate::auth::agents_in_scope(state, user).await?;
 
     let r = sqlx::query!(
         r#"
@@ -1213,7 +1389,7 @@ async fn poll_invocation(
         WHERE i.id = $2
         "#,
         user.user_id,
-        a.invocation_id,
+        invocation_id,
     )
     .fetch_optional(db)
     .await?
@@ -1834,7 +2010,17 @@ async fn bridge_get_agent(
     user: &AuthUser,
     args: Value,
 ) -> Result<Value, ApiError> {
-    let id = arg_uuid(&args, "agent_id")?;
+    let id = match args.get("agent").and_then(Value::as_str) {
+        Some(_) => {
+            let reference = agent_ref_arg(&args, "agent")?;
+            crate::discovery::profile::resolve(state, Some(user.user_id), &reference)
+                .await?
+                .ok_or(ApiError::NotFound)?
+                .summary
+                .id
+        }
+        None => arg_uuid(&args, "agent_id")?,
+    };
     dto_value(agents::get_one(State(state.clone()), user.clone(), Path(id)).await)
 }
 
@@ -3110,7 +3296,7 @@ mod manage_agents_tests {
 
     #[test]
     fn new_tools_are_advertised() {
-        let listed = super::tools_list_result(false);
+        let listed = super::tools_list_result(false, false);
         let names: Vec<&str> = listed["tools"]
             .as_array()
             .unwrap()

@@ -344,6 +344,15 @@ pub async fn rotate(
     )
     .execute(&mut *tx)
     .await?;
+    // And the client agent the relay made for it (MCP and discovery spec
+    // §6.4), so the new key keeps calling as it.
+    sqlx::query!(
+        r#"UPDATE default_agents SET key = $1 WHERE key = $2"#,
+        format!("api_key:{new_id}"),
+        format!("api_key:{}", old.id),
+    )
+    .execute(&mut *tx)
+    .await?;
 
     // Retire the predecessor. Once this commits, any in-flight request
     // using the old plaintext starts failing at the auth extractor.
@@ -829,6 +838,16 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
+        // The client agent the relay made for the key (MCP spec §6.4).
+        sqlx::query(
+            "INSERT INTO default_agents (key, user_id, agent_id)
+             SELECT 'api_key:' || id, user_id, $2 FROM api_keys WHERE id = $1",
+        )
+        .bind(old_id)
+        .bind(agent_id)
+        .execute(&pool)
+        .await
+        .unwrap();
 
         let res = crate::router(state)
             .oneshot(
@@ -853,5 +872,16 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(by, Some(new_id));
+        let default: Option<uuid::Uuid> =
+            sqlx::query_scalar("SELECT agent_id FROM default_agents WHERE key = $1")
+                .bind(format!("api_key:{new_id}"))
+                .fetch_optional(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            default,
+            Some(agent_id),
+            "the default agent moves with the key"
+        );
     }
 }
