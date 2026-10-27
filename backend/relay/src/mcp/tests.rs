@@ -630,3 +630,251 @@ async fn discovery_tools(pool: PgPool) {
         .unwrap()
         .contains("search_agents"));
 }
+
+// ─── The public directory (spec §6.3) ─────────────────────────
+
+mod directory {
+    use std::net::SocketAddr;
+    use std::sync::{Arc, Mutex};
+
+    use axum::extract::ConnectInfo;
+    use axum::http::StatusCode;
+
+    use super::*;
+
+    fn directory_state(pool: &PgPool, on: bool, trust: bool) -> crate::state::RelayState {
+        state(pool, true)
+            .with_mcp(crate::mcp::McpConfig {
+                agents_enabled: on,
+                directory_per_ip_per_min: 2,
+                trust_forwarded_for: trust,
+                ..Default::default()
+            })
+            .with_rate_limiter(crate::limits::RateLimiter::Counting(Arc::new(Mutex::new(
+                Default::default(),
+            ))))
+    }
+
+    /// A directory request from `peer`, with optional extra headers.
+    async fn send(
+        s: &crate::state::RelayState,
+        peer: &str,
+        headers: &[(&str, &str)],
+        method: &str,
+        params: Value,
+    ) -> (StatusCode, axum::http::HeaderMap, Value) {
+        let mut req = Request::builder()
+            .method("POST")
+            .uri("/mcp/directory")
+            .header(header::CONTENT_TYPE, "application/json");
+        for (k, v) in headers {
+            req = req.header(*k, *v);
+        }
+        let mut req = req
+            .body(Body::from(
+                json!({ "jsonrpc": "2.0", "id": 1, "method": method, "params": params })
+                    .to_string(),
+            ))
+            .unwrap();
+        req.extensions_mut()
+            .insert(ConnectInfo(peer.parse::<SocketAddr>().unwrap()));
+        let res = crate::router(s.clone()).oneshot(req).await.unwrap();
+        let (status, headers) = (res.status(), res.headers().clone());
+        let body = res.into_body().collect().await.unwrap().to_bytes();
+        (
+            status,
+            headers,
+            serde_json::from_slice(&body).unwrap_or(Value::Null),
+        )
+    }
+
+    /// Off, it's a 404; on, the tools answer without sign-in, show only
+    /// network agents, never 401, and can't call anything.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn serves_the_public_directory(pool: PgPool) {
+        let bob = person(&pool, "bob").await;
+        let venue = agent(&pool, bob.account, "venue").await;
+        capability(&pool, venue, "check", Some(100)).await;
+        let hidden = agent(&pool, bob.account, "hidden").await;
+        sqlx::query("UPDATE agents SET visibility = 'private' WHERE id = $1")
+            .bind(hidden)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let (status, _, _) = send(
+            &directory_state(&pool, false, false),
+            "10.0.0.1:1",
+            &[],
+            "tools/list",
+            json!({}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        let s = crate::state::RelayState::new(pool.clone(), config(true)).with_mcp(
+            crate::mcp::McpConfig {
+                agents_enabled: true,
+                ..Default::default()
+            },
+        );
+        let (status, _, init) = send(&s, "10.0.0.1:1", &[], "initialize", json!({})).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(init["result"]["serverInfo"]["name"], "chakramcp-directory");
+        let (_, _, listed) = send(&s, "10.0.0.1:1", &[], "tools/list", json!({})).await;
+        let names: Vec<&str> = listed["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "search_agents",
+                "get_agent_profile",
+                "featured_agents",
+                "list_reviews"
+            ]
+        );
+
+        let call = |name: &str, args: Value| json!({ "name": name, "arguments": args });
+        let (_, _, found) = send(
+            &s,
+            "10.0.0.1:1",
+            &[],
+            "tools/call",
+            call("search_agents", json!({})),
+        )
+        .await;
+        let found = ok(&found["result"]);
+        let slugs: Vec<&str> = found["agents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| a["slug"].as_str().unwrap())
+            .collect();
+        assert_eq!(slugs, ["venue"]);
+        assert!(found["agents"][0].get("you").is_none());
+
+        let (_, _, profile) = send(
+            &s,
+            "10.0.0.1:1",
+            &[],
+            "tools/call",
+            call("get_agent_profile", json!({ "agent": "bob/venue" })),
+        )
+        .await;
+        assert_eq!(ok(&profile["result"])["capabilities"][0]["name"], "check");
+        let (_, _, private) = send(
+            &s,
+            "10.0.0.1:1",
+            &[],
+            "tools/call",
+            call("get_agent_profile", json!({ "agent": "bob/hidden" })),
+        )
+        .await;
+        assert_eq!(private["result"]["isError"], true);
+        let (_, _, reviews) = send(
+            &s,
+            "10.0.0.1:1",
+            &[],
+            "tools/call",
+            call("list_reviews", json!({ "agent": "bob/venue" })),
+        )
+        .await;
+        assert_eq!(ok(&reviews["result"])["count"], 0);
+        let (_, _, callable) = send(
+            &s,
+            "10.0.0.1:1",
+            &[],
+            "tools/call",
+            call("search_agents", json!({ "callable": true })),
+        )
+        .await;
+        assert_eq!(callable["result"]["isError"], true);
+        let (_, _, invoke) = send(
+            &s,
+            "10.0.0.1:1",
+            &[],
+            "tools/call",
+            call("invoke", json!({})),
+        )
+        .await;
+        assert!(invoke["error"].is_object(), "no invoke here: {invoke}");
+
+        // A bad token changes nothing: no 401, no challenge.
+        let (status, headers, _) = send(
+            &s,
+            "10.0.0.1:1",
+            &[("authorization", "Bearer nope")],
+            "tools/list",
+            json!({}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(!headers.contains_key(header::WWW_AUTHENTICATE));
+    }
+
+    /// Each IP gets its own bucket. Without TRUST_FORWARDED_FOR the header is
+    /// ignored; with it, the last entry counts.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn limits_each_client_ip(pool: PgPool) {
+        let s = directory_state(&pool, true, false);
+        for _ in 0..2 {
+            let (status, _, _) = send(&s, "10.0.0.1:1", &[], "ping", json!({})).await;
+            assert_eq!(status, StatusCode::OK);
+        }
+        let (status, headers, body) = send(
+            &s,
+            "10.0.0.1:2",
+            &[("x-forwarded-for", "192.0.2.9")],
+            "ping",
+            json!({}),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::TOO_MANY_REQUESTS,
+            "a forged header doesn't escape the limit"
+        );
+        assert_eq!(body["error"]["code"], "directory_rate_limited");
+        assert!(headers.contains_key(header::RETRY_AFTER));
+        let (status, _, _) = send(&s, "10.0.0.2:1", &[], "ping", json!({})).await;
+        assert_eq!(status, StatusCode::OK, "another IP has its own bucket");
+
+        // Behind a proxy: the proxy's address is shared, the last
+        // X-Forwarded-For entry is the client.
+        let s = directory_state(&pool, true, true);
+        let proxy = "172.16.0.1:443";
+        for _ in 0..2 {
+            let (status, _, _) = send(
+                &s,
+                proxy,
+                &[("x-forwarded-for", "forged, 198.51.100.7")],
+                "ping",
+                json!({}),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK);
+        }
+        let (status, _, _) = send(
+            &s,
+            proxy,
+            &[("x-forwarded-for", "198.51.100.7")],
+            "ping",
+            json!({}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+        let (status, _, _) = send(
+            &s,
+            proxy,
+            &[("x-forwarded-for", "198.51.100.8")],
+            "ping",
+            json!({}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+    }
+}

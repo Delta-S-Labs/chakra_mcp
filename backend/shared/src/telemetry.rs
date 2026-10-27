@@ -35,6 +35,7 @@ pub mod names {
     pub const INVOCATIONS_TOTAL: &str = "chakramcp_invocations_total";
     pub const INVOCATION_DURATION_SECONDS: &str = "chakramcp_invocation_duration_seconds";
     pub const MCP_TOOL_CALLS_TOTAL: &str = "chakramcp_mcp_tool_calls_total";
+    pub const MCP_DIRECTORY_REQUESTS_TOTAL: &str = "chakramcp_mcp_directory_requests_total";
     pub const LIMIT_REFUSALS_TOTAL: &str = "chakramcp_limit_refusals_total";
     pub const RATE_LIMITER_ERRORS_TOTAL: &str = "chakramcp_rate_limiter_errors_total";
     pub const CREDITS_QUEUE_DEPTH: &str = "chakramcp_credits_queue_depth";

@@ -144,6 +144,15 @@ services:
       CALLS_MEMORY_ENABLED: ${CALLS_MEMORY_ENABLED:-false}
       CALLS_TAG_THRESHOLD: ${CALLS_TAG_THRESHOLD:-0.7}
       CALLS_MEMORY_MC_PER_1K_TOKENS: ${CALLS_MEMORY_MC_PER_1K_TOKENS:-42}
+      # MCP: the public directory and agents' own endpoints. Off until set;
+      # the rest default to the server's own defaults, written out.
+      MCP_AGENTS_ENABLED: ${MCP_AGENTS_ENABLED:-false}
+      MCP_TOOL_WAIT_SECS: ${MCP_TOOL_WAIT_SECS:-25}
+      MCP_MAX_WAITERS: ${MCP_MAX_WAITERS:-200}
+      MCP_DIRECTORY_PER_IP_PER_MIN: ${MCP_DIRECTORY_PER_IP_PER_MIN:-60}
+      # Caddy, in front, sets X-Forwarded-For to the client's IP: the
+      # directory's per-IP limit reads it.
+      TRUST_FORWARDED_FOR: "true"
       JWT_SECRET: ${JWT_SECRET}
       APP_PORT: "8080"
       RELAY_PORT: "8090"

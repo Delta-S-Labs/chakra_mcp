@@ -360,9 +360,14 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
     let mut relay_handle = tokio::spawn({
         let stop = stopped(stop_rx);
         async move {
-            if let Err(err) = axum::serve(relay_listener, relay)
-                .with_graceful_shutdown(stop)
-                .await
+            // The socket peer is the client's IP for the public directory's
+            // per-IP limit when no trusted proxy says otherwise.
+            if let Err(err) = axum::serve(
+                relay_listener,
+                relay.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+            )
+            .with_graceful_shutdown(stop)
+            .await
             {
                 tracing::error!(?err, "relay server exited with error");
             }

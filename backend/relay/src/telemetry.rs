@@ -71,6 +71,17 @@ pub fn record_tool_call(tool: &str, ok: bool) {
     .increment(1);
 }
 
+/// Record one request to the public MCP directory: `limited` when its
+/// per-IP limit refused it. Directory requests are anonymous, so they're
+/// counted here rather than written to `usage_events`.
+pub fn record_directory_request(limited: bool) {
+    counter!(
+        names::MCP_DIRECTORY_REQUESTS_TOTAL,
+        "result" => if limited { "limited" } else { "ok" }
+    )
+    .increment(1);
+}
+
 #[cfg(test)]
 pub(crate) mod testing {
     //! Read metrics back in tests: hold a [`Recorded`] for the test's

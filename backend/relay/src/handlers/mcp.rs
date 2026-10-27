@@ -29,47 +29,13 @@ use chakramcp_shared::error::ApiError;
 use crate::auth::{user_is_member, AuthUser};
 use crate::consent::visibility::shown_input;
 use crate::handlers::invoke::{Outcome, StartOptions, Target};
+use crate::mcp::rpc::{
+    initialize, reply_err, rpc_err, tool, tool_result, RpcError, RpcRequest, RpcResponse,
+    ERR_INVALID_PARAMS, ERR_INVALID_REQUEST, ERR_METHOD_NOT_FOUND,
+};
 use crate::state::RelayState;
 
-const PROTOCOL_VERSION: &str = "2025-06-18";
 const SERVER_NAME: &str = "chakramcp-relay";
-/// The release this build reports (e.g. `0.2.0`, or `edge` from main).
-const SERVER_VERSION: &str = chakramcp_shared::telemetry::VERSION;
-
-// ─── JSON-RPC envelope ───────────────────────────────────
-
-#[derive(Debug, Deserialize)]
-pub struct RpcRequest {
-    pub jsonrpc: String,
-    #[serde(default)]
-    pub id: Option<Value>,
-    pub method: String,
-    #[serde(default)]
-    pub params: Value,
-}
-
-#[derive(Debug, Serialize)]
-struct RpcResponse {
-    jsonrpc: &'static str,
-    id: Value,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    result: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<RpcError>,
-}
-
-#[derive(Debug, Serialize)]
-struct RpcError {
-    code: i32,
-    message: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    data: Option<Value>,
-}
-
-const ERR_INVALID_REQUEST: i32 = -32600;
-const ERR_METHOD_NOT_FOUND: i32 = -32601;
-const ERR_INVALID_PARAMS: i32 = -32602;
-const ERR_INTERNAL: i32 = -32603;
 
 // ─── Entry point ─────────────────────────────────────────
 
@@ -141,130 +107,21 @@ pub async fn handle(
     response
 }
 
-fn reply_err(id: Value, code: i32, message: impl Into<String>) -> Response {
-    Json(RpcResponse {
-        jsonrpc: "2.0",
-        id,
-        result: None,
-        error: Some(RpcError {
-            code,
-            message: message.into(),
-            data: None,
-        }),
-    })
-    .into_response()
-}
-
-fn rpc_err(code: i32, message: impl Into<String>) -> RpcError {
-    RpcError {
-        code,
-        message: message.into(),
-        data: None,
-    }
-}
-
-fn api_err_to_rpc(e: ApiError) -> RpcError {
-    use chakramcp_shared::error::ApiError::*;
-    let (code, msg) = match &e {
-        InvalidRequest(m) => (ERR_INVALID_PARAMS, m.clone()),
-        Unauthorized => (ERR_INVALID_REQUEST, "unauthorized".into()),
-        Forbidden => (ERR_INVALID_REQUEST, "forbidden".into()),
-        NotFound => (ERR_INVALID_REQUEST, "not found".into()),
-        Conflict(m) => (ERR_INVALID_REQUEST, m.clone()),
-        // Usage limits: a client-side "back off" error (no JSON-RPC 429). The
-        // message says when to retry; `data` carries the same as fields.
-        RateLimited {
-            limit,
-            retry_after_secs,
-        } => {
-            return RpcError {
-                code: ERR_INVALID_REQUEST,
-                message: format!("{e}; retry in {retry_after_secs} s"),
-                data: Some(json!({
-                    "code": "account_rate_limited",
-                    "limit": limit,
-                    "retry_after_secs": retry_after_secs,
-                })),
-            };
-        }
-        InsufficientCredits {
-            retry_after_secs,
-            next_grant_at,
-            credits_url,
-        } => {
-            let when = next_grant_at.format("%Y-%m-%d");
-            let message = match credits_url {
-                Some(url) => {
-                    format!("{e}; the free grant arrives on {when}, or buy credits at {url}")
-                }
-                None => format!("{e}; the free grant arrives on {when}"),
-            };
-            let mut data = json!({
-                "code": "account_credits_exhausted",
-                "retry_after_secs": retry_after_secs,
-                "next_grant_at": next_grant_at,
-            });
-            if let Some(url) = credits_url {
-                data["credits_url"] = json!(url);
-            }
-            return RpcError {
-                code: ERR_INVALID_REQUEST,
-                message,
-                data: Some(data),
-            };
-        }
-        // The app's sign-up, sign-in and checkout errors; the relay never
-        // returns them.
-        SignupDisabled | SigninRateLimited { .. } | TooManyCheckouts => {
-            (ERR_INVALID_REQUEST, e.to_string())
-        }
-        PaymentProvider => (ERR_INTERNAL, e.to_string()),
-        PayloadTooLarge { code, message } => {
-            return RpcError {
-                code: ERR_INVALID_PARAMS,
-                message: message.clone(),
-                data: Some(json!({ "code": code })),
-            };
-        }
-        Policy { code, message } | Coded { code, message, .. } => {
-            return RpcError {
-                code: ERR_INVALID_REQUEST,
-                message: message.clone(),
-                data: Some(json!({ "code": code })),
-            };
-        }
-        Database(_) | Auth(_) | Internal(_) => (ERR_INTERNAL, e.to_string()),
-    };
-    RpcError {
-        code,
-        message: msg,
-        data: None,
-    }
-}
-
 // ─── initialize ──────────────────────────────────────────
 
+/// What `/mcp` tells a client on `initialize`.
+const INSTRUCTIONS: &str = "ChakraMCP relay: a network of agents. Find agents with search_agents \
+     (or featured_agents), and read one with get_agent_profile: what it \
+     does, its capabilities and their input schemas, and what you can \
+     call. Call one by name with invoke {agent: \"account/agent\", \
+     capability, input, wait_seconds}: public capabilities need nothing \
+     more, others need a friendship (propose_friendship) and a grant \
+     from the owner. Use create_agent + publish_capability to register \
+     your own agent and what it offers, and pull_inbox + respond to \
+     serve requests sent to it.";
+
 fn initialize_result() -> Value {
-    json!({
-        "protocolVersion": PROTOCOL_VERSION,
-        "capabilities": {
-            "tools": { "listChanged": false }
-        },
-        "serverInfo": {
-            "name": SERVER_NAME,
-            "version": SERVER_VERSION,
-        },
-        "instructions":
-            "ChakraMCP relay: a network of agents. Find agents with search_agents \
-             (or featured_agents), and read one with get_agent_profile: what it \
-             does, its capabilities and their input schemas, and what you can \
-             call. Call one by name with invoke {agent: \"account/agent\", \
-             capability, input, wait_seconds}: public capabilities need nothing \
-             more, others need a friendship (propose_friendship) and a grant \
-             from the owner. Use create_agent + publish_capability to register \
-             your own agent and what it offers, and pull_inbox + respond to \
-             serve requests sent to it."
-    })
+    initialize(SERVER_NAME, INSTRUCTIONS)
 }
 
 // ─── tools/list ──────────────────────────────────────────
@@ -272,15 +129,7 @@ fn initialize_result() -> Value {
 fn tools_list_result(calls: bool, discovery: bool) -> Value {
     let mut result = json!({
         "tools": [
-            tool("get_agent_profile",
-                "Read one agent's profile: what it does, its owner, its capabilities with their input and output schemas and who can call each, reviews, how to call it, and your standing with it (what you can call now, and as which of your agents).",
-                json!({
-                    "type": "object",
-                    "required": ["agent"],
-                    "properties": {
-                        "agent": { "type": "string", "description": "The agent's id, or account/agent (e.g. bob/venue-bot)." }
-                    }
-                })),
+            crate::mcp::discovery::profile_tool(true),
             tool("list_my_accounts",
                 "List the accounts you belong to (with your role). Use an account's id as the account_id for create_agent.",
                 json!({ "type": "object", "properties": {} })),
@@ -616,44 +465,16 @@ fn tools_list_result(calls: bool, discovery: bool) -> Value {
         // on (DISCOVERY_V2), so an operator who hasn't enabled it doesn't get
         // one through MCP.
         if discovery {
-            tools.extend(discovery_tools());
+            tools.extend([
+                crate::mcp::discovery::search_tool(true),
+                crate::mcp::discovery::featured_tool(),
+            ]);
         }
         if calls {
             tools.extend(crate::calls::mcp::tools());
         }
     }
     result
-}
-
-fn discovery_tools() -> Vec<Value> {
-    vec![
-        tool("search_agents",
-            "Search the agent directory, best matches first: any word of q matches, and a name or slug match ranks highest. Results include your own private agents, what each offers (capabilities, with access 'public' or 'friends'), whether it's online, and your standing (you.callable lists what you can call now). Pass next_cursor back as cursor, with the same filters, for more.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "q": { "type": "string", "description": "Free text, e.g. 'book a meeting room'." },
-                    "capability": { "type": "string", "description": "Part of a capability's name." },
-                    "tags": { "type": "array", "items": { "type": "string" }, "description": "Agents with all of these tags." },
-                    "mode": { "type": "string", "enum": ["push", "pull"] },
-                    "callable": { "type": "boolean", "description": "Only agents you can call now." },
-                    "include_dormant": { "type": "boolean", "description": "Also agents not seen in 30 days with nothing public." },
-                    "limit": { "type": "integer", "minimum": 1, "maximum": 100 },
-                    "cursor": { "type": "string" }
-                }
-            })),
-        tool("featured_agents",
-            "Agents worth trying first: the relay's own house agents, then online agents with something anyone can call.",
-            json!({ "type": "object", "properties": {} })),
-    ]
-}
-
-pub(crate) fn tool(name: &str, description: &str, input_schema: Value) -> Value {
-    json!({
-        "name": name,
-        "description": description,
-        "inputSchema": input_schema,
-    })
 }
 
 // ─── tools/call dispatch ─────────────────────────────────
@@ -681,14 +502,14 @@ async fn call_tool(
         "list_my_accounts" => list_my_accounts(&state.db, user).await,
         "list_my_agents" => list_my_agents(&state.db, user).await,
         "list_network_agents" => list_network_agents(state, user).await,
-        "get_agent_profile" => get_agent_profile(state, user, p.arguments).await,
+        "get_agent_profile" => {
+            crate::mcp::discovery::get_agent_profile(state, Some(user), &p.arguments).await
+        }
         "search_agents" if state.config.discovery_v2_enabled => {
-            search_agents(state, user, p.arguments).await
+            crate::mcp::discovery::search_agents(state, Some(user), p.arguments).await
         }
         "featured_agents" if state.config.discovery_v2_enabled => {
-            crate::discovery::featured::featured(state, Some(user.user_id))
-                .await
-                .map(|agents| json!({ "agents": agents }))
+            crate::mcp::discovery::featured_agents(state, Some(user)).await
         }
         "list_grants" => list_grants(state, user, p.arguments).await,
         "list_friendships" => list_friendships(state, user, p.arguments).await,
@@ -737,47 +558,10 @@ async fn call_tool(
         }
     };
 
-    let (envelope, ok) = match result {
-        Ok(value) => {
-            // The full JSON always travels in `content` text. We ALSO set
-            // `structuredContent`, but only when the value is a JSON object:
-            // the MCP spec types `structuredContent` as an object, and strict
-            // clients (e.g. the OpenAI Agents SDK's pydantic CallToolResult)
-            // reject a top-level array. List tools return arrays, so for those
-            // we omit `structuredContent` and clients parse `content` text.
-            let mut envelope = json!({
-                "content": [
-                    { "type": "text", "text": serde_json::to_string_pretty(&value).unwrap_or_default() }
-                ],
-                "isError": false,
-            });
-            if value.is_object() {
-                envelope["structuredContent"] = value;
-            }
-            if signals.credits_low {
-                envelope["_meta"] = json!({ "chakramcp/credits": "low" });
-            }
-            (envelope, true)
-        }
-        Err(api_err) => {
-            // Per MCP, tool errors come back as a successful response
-            // with isError=true so the LLM can read them, *not* as a
-            // protocol-level RPC error.
-            let rpc = api_err_to_rpc(api_err);
-            let mut envelope = json!({
-                "content": [
-                    { "type": "text", "text": format!("Error: {}", rpc.message) }
-                ],
-                "isError": true,
-            });
-            // A usage-limit refusal also comes back as fields (retry hint,
-            // next grant, where to buy) for clients that read them.
-            if let Some(data) = rpc.data {
-                envelope["structuredContent"] = data;
-            }
-            (envelope, false)
-        }
-    };
+    let (mut envelope, ok) = tool_result(result);
+    if ok && signals.credits_low {
+        envelope["_meta"] = json!({ "chakramcp/credits": "low" });
+    }
 
     // Meter every MCP tool call (reads + writes). Queued for the background
     // writer, so the response never waits on it. Audit for write tools is
@@ -913,70 +697,6 @@ async fn list_network_agents(state: &RelayState, user: &AuthUser) -> Result<Valu
             row
         })
         .collect::<Vec<_>>()))
-}
-
-/// `get_agent_profile`: one agent's profile with your standing.
-async fn get_agent_profile(
-    state: &RelayState,
-    user: &AuthUser,
-    args: Value,
-) -> Result<Value, ApiError> {
-    let reference = agent_ref_arg(&args, "agent")?;
-    let loaded = crate::discovery::profile::resolve(state, Some(user.user_id), &reference)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    Ok(json!(
-        crate::discovery::profile::profile(state, Some(user), loaded).await?
-    ))
-}
-
-/// `search_agents`: the directory search, signed in.
-async fn search_agents(
-    state: &RelayState,
-    user: &AuthUser,
-    args: Value,
-) -> Result<Value, ApiError> {
-    #[derive(Deserialize)]
-    struct A {
-        q: Option<String>,
-        capability: Option<String>,
-        #[serde(default)]
-        tags: Vec<String>,
-        mode: Option<String>,
-        callable: Option<bool>,
-        include_dormant: Option<bool>,
-        limit: Option<i64>,
-        cursor: Option<String>,
-    }
-    let a: A = serde_json::from_value(args)
-        .map_err(|e| ApiError::InvalidRequest(format!("bad search_agents args: {e}")))?;
-    let page = crate::discovery::search::search(
-        state,
-        Some(user),
-        crate::discovery::search::SearchParams {
-            q: a.q,
-            capability: a.capability,
-            tags: (!a.tags.is_empty()).then(|| a.tags.join(",")),
-            mode: a.mode,
-            callable: a.callable,
-            include_dormant: a.include_dormant,
-            limit: a.limit,
-            cursor: a.cursor,
-            ..Default::default()
-        },
-    )
-    .await?;
-    Ok(json!(page))
-}
-
-/// An agent named by id or `account/agent` in `args[key]`.
-fn agent_ref_arg(args: &Value, key: &str) -> Result<crate::discovery::profile::AgentRef, ApiError> {
-    args.get(key)
-        .and_then(Value::as_str)
-        .and_then(crate::discovery::profile::AgentRef::parse)
-        .ok_or_else(|| {
-            ApiError::InvalidRequest(format!("{key} must be an agent id or account/agent"))
-        })
 }
 
 async fn list_invocations(
@@ -2012,7 +1732,7 @@ async fn bridge_get_agent(
 ) -> Result<Value, ApiError> {
     let id = match args.get("agent").and_then(Value::as_str) {
         Some(_) => {
-            let reference = agent_ref_arg(&args, "agent")?;
+            let reference = crate::mcp::discovery::agent_ref_arg(&args, "agent")?;
             crate::discovery::profile::resolve(state, Some(user.user_id), &reference)
                 .await?
                 .ok_or(ApiError::NotFound)?
@@ -2259,7 +1979,7 @@ mod manage_agents_tests {
         let next_grant_at = chrono::DateTime::parse_from_rfc3339("2026-11-01T00:00:00Z")
             .unwrap()
             .with_timezone(&chrono::Utc);
-        let managed = super::api_err_to_rpc(ApiError::InsufficientCredits {
+        let managed = crate::mcp::rpc::api_err_to_rpc(ApiError::InsufficientCredits {
             retry_after_secs: 600,
             next_grant_at,
             credits_url: Some("https://chakramcp.com/app/credits".into()),
@@ -2275,7 +1995,7 @@ mod manage_agents_tests {
         assert_eq!(data["retry_after_secs"], 600);
         assert_eq!(data["credits_url"], "https://chakramcp.com/app/credits");
 
-        let self_hosted = super::api_err_to_rpc(ApiError::InsufficientCredits {
+        let self_hosted = crate::mcp::rpc::api_err_to_rpc(ApiError::InsufficientCredits {
             retry_after_secs: 600,
             next_grant_at,
             credits_url: None,
@@ -2286,7 +2006,7 @@ mod manage_agents_tests {
         );
         assert!(self_hosted.data.unwrap().get("credits_url").is_none());
 
-        let rate = super::api_err_to_rpc(ApiError::RateLimited {
+        let rate = crate::mcp::rpc::api_err_to_rpc(ApiError::RateLimited {
             limit: 60,
             retry_after_secs: 23,
         });

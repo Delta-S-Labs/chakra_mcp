@@ -410,6 +410,11 @@ are set:
 | Call memory (tagging and recall) | (env only) | `CALLS_MEMORY_ENABLED` | `false` (needs `TYPESAFE_AI_KEY`) |
 | Call memory tag threshold | (env only)      | `CALLS_TAG_THRESHOLD` | `0.7`                               |
 | Call memory cost (milli-credits per 1,000 tokens) | (env only) | `CALLS_MEMORY_MC_PER_1K_TOKENS` | `42` |
+| MCP directory and agent endpoints | (env only) | `MCP_AGENTS_ENABLED` | `false` |
+| How long an agent endpoint's tool call waits (seconds) | (env only) | `MCP_TOOL_WAIT_SECS` | `25` (0–55) |
+| Tool calls waiting at once | (env only) | `MCP_MAX_WAITERS` | `200` |
+| Directory requests per client IP per minute | (env only) | `MCP_DIRECTORY_PER_IP_PER_MIN` | `60` |
+| Client IP from `X-Forwarded-For` (behind a proxy only) | (env only) | `TRUST_FORWARDED_FOR` | `false` |
 | Dodo Payments API key (chakramcp.com only) | (env only) | `DODO_PAYMENTS_API_KEY` | unset: no buying credits |
 | Dodo webhook key, `whsec_…` | (env only) | `DODO_PAYMENTS_WEBHOOK_KEY` | unset |
 | Dodo credits product, `pdt_…` | (env only) | `DODO_PAYMENTS_PRODUCT_ID` | unset |
