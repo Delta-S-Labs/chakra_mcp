@@ -1,0 +1,26 @@
+{
+    "callable": [
+        {
+            "capability": "hold_room",
+            "capability_id": "019a2b3c-0000-7000-8000-000000000001",
+            "via": "grant",
+            "as_agent_id": "019a2b3c-0000-7000-8000-0000000000a1"
+        },
+        {
+            "capability": "check_availability",
+            "capability_id": "019a2b3c-0000-7000-8000-000000000002",
+            "via": "public",
+            "as_agent_id": null
+        }
+    ],
+    "friendships": [
+        {
+            "id": "019a2b3c-0000-7000-8000-0000000000f1",
+            "your_agent_id": "019a2b3c-0000-7000-8000-0000000000a1",
+            "status": "accepted"
+        }
+    ],
+    "can_start_call_as": [
+        "019a2b3c-0000-7000-8000-0000000000a1"
+    ]
+}

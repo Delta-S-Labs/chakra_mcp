@@ -60,6 +60,8 @@ class _AgentExtras(TypedDict, total=False):
     # Who may call this agent. Push agents always show ``"nobody"``.
     # Absent on relays without calls.
     accept_calls: AcceptCalls
+    # Directory tags. Absent on relays before 0.6.0.
+    tags: list[str]
 
 
 class Agent(_AgentExtras):
@@ -86,6 +88,16 @@ class Agent(_AgentExtras):
 #: it pulls its inbox (``"pull"``).
 AgentMode = Literal["push", "pull"]
 
+#: Who can call a capability: anyone signed in (``"public"``, within its
+#: monthly quota), or friends holding a grant (``"friends"``).
+Access = Literal["public", "friends"]
+
+
+class CapabilityBrief(TypedDict):
+    id: str
+    name: str
+    access: Access
+
 
 class _NetworkAgentExtras(TypedDict, total=False):
     # Pulled its inbox in the last 5 minutes. Absent on relays before 0.4.0.
@@ -93,6 +105,13 @@ class _NetworkAgentExtras(TypedDict, total=False):
     # Who may call it; push agents show ``"nobody"``. Absent on relays
     # without calls.
     accept_calls: AcceptCalls
+    # The shared directory fields (relays from 0.6.0).
+    visibility: Visibility
+    # The capabilities you can see, with who can call each.
+    capabilities: list[CapabilityBrief]
+    last_seen_at: str
+    friend_count: int
+    featured: bool
 
 
 class NetworkAgent(_NetworkAgentExtras):
@@ -130,6 +149,163 @@ class NetworkPage(_NetworkPageExtras):
     """A page of the network directory, newest first."""
 
     agents: list[NetworkAgent]
+
+
+# ─── Discovery (relays from 0.6.0) ───────────────────────
+
+
+class AgentListing(TypedDict):
+    """The fields every directory list shares: search, featured, profiles
+    and the network list."""
+
+    id: str
+    slug: str
+    account_slug: str
+    display_name: str
+    description: str
+    mode: AgentMode
+    tags: list[str]
+    visibility: Visibility
+    # Polled its inbox in the last 5 minutes. Push agents never show online.
+    online: bool
+    # Pull agents: the last inbox poll, else creation. Push: the last card
+    # fetch.
+    last_seen_at: str
+    created_at: str
+    verified: bool
+    # One of the relay's featured (house) agents.
+    featured: bool
+    friend_count: int
+    # ``None`` when ``review_count == 0``.
+    avg_rating: float | None
+    review_count: int
+    accept_calls: AcceptCalls
+
+
+class CallableCapability(TypedDict):
+    """A capability you can call now, and how."""
+
+    capability: str
+    capability_id: str
+    via: Literal["grant", "public"]
+    # The agent of yours holding the grant; ``None`` for a public capability.
+    as_agent_id: str | None
+
+
+class StandingFriendship(TypedDict):
+    id: str
+    your_agent_id: str
+    status: Literal["proposed", "accepted"]
+
+
+class Standing(TypedDict):
+    """What you can do with an agent, for the agents your credential may
+    act as (``chakra.discovery.standing()``)."""
+
+    callable: list[CallableCapability]
+    friendships: list[StandingFriendship]
+    # Your agents that could start a call with it.
+    can_start_call_as: list[str]
+
+
+class _YouExtras(TypedDict, total=False):
+    # Your standing with the agent.
+    you: Standing
+
+
+class DiscoveryAgent(AgentListing, _YouExtras):
+    """A search result (``chakra.discovery.search()``)."""
+
+    capabilities: list[CapabilityBrief]
+    # Deprecated: the same as ``slug``.
+    agent_slug: str
+    # Deprecated: see ``capabilities[i]["access"]``.
+    has_public_capabilities: bool
+
+
+class _DiscoveryPageExtras(TypedDict, total=False):
+    # How many agents match. First page only.
+    total_estimate: int
+
+
+class DiscoveryPage(_DiscoveryPageExtras):
+    """A page of search results, best matches first."""
+
+    agents: list[DiscoveryAgent]
+    # Pass back as ``cursor``, with the same filters, for the next page.
+    next_cursor: str | None
+
+
+class _FeaturedPublicCapability(TypedDict):
+    id: str
+    name: str
+    description: str
+
+
+class FeaturedAgent(AgentListing):
+    """An agent worth trying first (``chakra.discovery.featured()``)."""
+
+    capabilities: list[CapabilityBrief]
+    # Deprecated: the same as ``slug``.
+    agent_slug: str
+    # Deprecated: see ``capabilities[i]["access"]``.
+    public_capabilities: list[_FeaturedPublicCapability]
+
+
+class CapabilityDetail(TypedDict):
+    id: str
+    name: str
+    description: str
+    input_schema: dict[str, Any]
+    output_schema: dict[str, Any]
+    access: Access
+    # Calls per calling agent per month, for a public capability.
+    public_monthly_quota_per_agent: int | None
+    # Asks its owner before running.
+    consent_required: bool
+    semantics: Literal["autonomous", "human_in_loop"]
+
+
+class ProfileOwner(TypedDict):
+    account_slug: str
+    display_name: str
+    verified: bool
+
+
+class ProfileReview(TypedDict):
+    rating: int
+    text: str | None
+    at: str
+    # The reviewer's name, or "An agent" for one that isn't network-visible.
+    by: str
+
+
+class ProfileReviews(TypedDict):
+    # ``None`` when ``count == 0``.
+    avg_rating: float | None
+    count: int
+    # Up to three, newest first.
+    latest: list[ProfileReview]
+
+
+class _HowToCallExtras(TypedDict, total=False):
+    # The agent's A2A card and its page on the web (network-visible agents).
+    a2a_card: str
+    profile: str
+    mcp: str
+
+
+class HowToCall(_HowToCallExtras):
+    cli: str
+
+
+class AgentProfile(AgentListing, _YouExtras):
+    """An agent's profile (``chakra.discovery.profile()``)."""
+
+    owner: ProfileOwner
+    reviews: ProfileReviews
+    capabilities: list[CapabilityDetail]
+    how_to_call: HowToCall
 
 
 class CapabilityConsent(TypedDict, total=False):
@@ -418,6 +594,9 @@ class CreateAgentRequest(TypedDict, total=False):
     description: str
     visibility: Visibility
     endpoint_url: str | None
+    # Directory tags: at most 10, each 1-32 lowercase letters, digits or
+    # hyphens.
+    tags: list[str]
 
 
 class UpdateAgentRequest(TypedDict, total=False):
@@ -427,6 +606,8 @@ class UpdateAgentRequest(TypedDict, total=False):
     endpoint_url: str | None
     # Who may call this agent. Push agents only take ``"nobody"``.
     accept_calls: AcceptCalls
+    # Replace the directory tags.
+    tags: list[str]
 
 
 class CreateCapabilityRequest(TypedDict, total=False):

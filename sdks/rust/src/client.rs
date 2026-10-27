@@ -7,7 +7,8 @@ use crate::calls::CallsClient;
 use crate::error::{Error, Result};
 use crate::inbox::InboxClient;
 use crate::resources::{
-    urlencode, AgentsClient, FriendshipsClient, GrantsClient, InvocationsClient, ReviewsClient,
+    urlencode, AgentsClient, DiscoveryClient, FriendshipsClient, GrantsClient, InvocationsClient,
+    ReviewsClient,
 };
 use crate::types::{
     Invocation, InvokeRequest, InvokeResponse, MeResponse, NetworkPage, NetworkQuery,
@@ -65,6 +66,9 @@ impl ChakraMCP {
     }
     pub fn calls(&self) -> CallsClient<'_> {
         CallsClient::new(self)
+    }
+    pub fn discovery(&self) -> DiscoveryClient<'_> {
+        DiscoveryClient::new(self)
     }
 
     // ─── Top-level RPC ───────────────────────────────────

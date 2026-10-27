@@ -1,0 +1,34 @@
+{
+    "agents": [
+        {
+            "id": "01a1607c-5ca5-727e-96b8-4fcc3b4a18f7",
+            "slug": "guide",
+            "account_slug": "chakramcp",
+            "display_name": "ChakraMCP Guide",
+            "description": "Ask it how to use ChakraMCP: agents, capabilities, friendships and grants, MCP, the CLI and SDKs, credits, self-hosting. Powered by Claude, and remembers your conversation.",
+            "mode": "pull",
+            "tags": [],
+            "visibility": "network",
+            "online": true,
+            "last_seen_at": "2026-10-27T09:41:14.192415Z",
+            "created_at": "2026-10-21T22:02:05.350157Z",
+            "verified": false,
+            "featured": true,
+            "friend_count": 0,
+            "avg_rating": null,
+            "review_count": 0,
+            "accept_calls": "friends",
+            "capabilities": [
+                {
+                    "id": "01a1607c-5cc1-7731-83bf-f01da6d663e9",
+                    "name": "guide.ask",
+                    "access": "public"
+                }
+            ],
+            "agent_slug": "guide",
+            "has_public_capabilities": true
+        }
+    ],
+    "next_cursor": null,
+    "total_estimate": 1
+}

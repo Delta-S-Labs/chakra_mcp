@@ -138,6 +138,9 @@ pub struct Agent {
     /// from relays that predate calls.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accept_calls: Option<AcceptCalls>,
+    /// Directory tags. Empty from relays before 0.6.0.
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 /// Who may call an agent. Non-exhaustive: a setting this SDK version
@@ -208,6 +211,18 @@ pub struct NetworkAgent {
     /// that predate calls.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accept_calls: Option<AcceptCalls>,
+    // The shared directory fields: empty or `None` from relays before 0.6.0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<Visibility>,
+    /// The capabilities you can see, with who can call each.
+    #[serde(default)]
+    pub capabilities: Vec<CapabilityBrief>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_seen_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub friend_count: i64,
+    #[serde(default)]
+    pub featured: bool,
 }
 
 /// A page of the network directory, newest first. Pass `next_cursor`
@@ -228,6 +243,255 @@ pub struct NetworkQuery {
     pub limit: Option<u32>,
     /// `next_cursor` of the previous page.
     pub cursor: Option<String>,
+}
+
+// ─── Discovery (relays from 0.6.0) ─────────────────────────
+
+/// Who can call a capability: anyone signed in (`Public`, within its
+/// monthly quota), or friends holding a grant (`Friends`).
+/// Non-exhaustive: a value this SDK version doesn't know reads as
+/// `Unknown`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+#[non_exhaustive]
+pub enum Access {
+    Public,
+    Friends,
+    /// A value this SDK version doesn't know.
+    #[serde(other)]
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilityBrief {
+    pub id: String,
+    pub name: String,
+    pub access: Access,
+}
+
+/// The fields every directory list shares: search, featured, profiles
+/// and the network list.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentListing {
+    pub id: String,
+    pub slug: String,
+    pub account_slug: String,
+    pub display_name: String,
+    pub description: String,
+    pub mode: AgentMode,
+    pub tags: Vec<String>,
+    pub visibility: Visibility,
+    /// Polled its inbox in the last 5 minutes. Push agents never show
+    /// online.
+    pub online: bool,
+    /// Pull agents: the last inbox poll, else creation. Push: the last
+    /// card fetch, else creation.
+    pub last_seen_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+    pub verified: bool,
+    /// One of the relay's featured (house) agents.
+    pub featured: bool,
+    pub friend_count: i64,
+    /// `None` when `review_count == 0`.
+    pub avg_rating: Option<f64>,
+    pub review_count: i64,
+    pub accept_calls: AcceptCalls,
+}
+
+/// How you can call a capability: a grant to one of your agents, or
+/// public invoke. Non-exhaustive, as [`Access`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+#[non_exhaustive]
+pub enum CallableVia {
+    Grant,
+    Public,
+    /// A value this SDK version doesn't know.
+    #[serde(other)]
+    Unknown,
+}
+
+/// A capability you can call now.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CallableCapability {
+    pub capability: String,
+    pub capability_id: String,
+    pub via: CallableVia,
+    /// The agent of yours holding the grant; `None` for a public
+    /// capability, which any of your agents can call.
+    pub as_agent_id: Option<String>,
+}
+
+/// A friendship between one of your agents and this one.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StandingFriendship {
+    pub id: String,
+    pub your_agent_id: String,
+    /// `Proposed` or `Accepted`.
+    pub status: FriendshipStatus,
+}
+
+/// What you can do with an agent, for the agents your credential may act
+/// as.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Standing {
+    pub callable: Vec<CallableCapability>,
+    pub friendships: Vec<StandingFriendship>,
+    /// Your agents that could start a call with it.
+    pub can_start_call_as: Vec<String>,
+}
+
+/// A search result ([`crate::DiscoveryClient::search`]).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscoveryAgent {
+    #[serde(flatten)]
+    pub listing: AgentListing,
+    pub capabilities: Vec<CapabilityBrief>,
+    /// Deprecated: the same as `slug`.
+    #[serde(default)]
+    pub agent_slug: String,
+    /// Deprecated: see `capabilities[].access`.
+    #[serde(default)]
+    pub has_public_capabilities: bool,
+    /// Your standing, when the request is signed in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub you: Option<Standing>,
+}
+
+/// A page of search results. Pass `next_cursor` back as
+/// [`DiscoveryQuery::cursor`], with the same filters, for the next page.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscoveryPage {
+    #[serde(default)]
+    pub agents: Vec<DiscoveryAgent>,
+    /// `None` on the last page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+    /// How many agents match. First page only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_estimate: Option<i64>,
+}
+
+/// `GET /v1/discovery/agents` filters. Every one is optional; fill the
+/// rest with `..Default::default()`.
+#[derive(Debug, Clone, Default)]
+pub struct DiscoveryQuery {
+    /// Free text: any word matches, and better matches rank higher.
+    pub q: Option<String>,
+    /// Part of a capability's name.
+    pub capability: Option<String>,
+    /// A shape to match against any capability's output schema, e.g.
+    /// `{"properties": {"slots": {}}}`.
+    pub capability_schema: Option<Value>,
+    pub mode: Option<AgentMode>,
+    pub verified: Option<bool>,
+    /// All of these tags.
+    pub tags: Vec<String>,
+    /// Also pull agents not seen in 30 days with nothing public.
+    pub include_dormant: Option<bool>,
+    /// Only agents you can call now. Needs a credential.
+    pub callable: Option<bool>,
+    /// 1 to 100; the relay's default is 20.
+    pub limit: Option<u32>,
+    /// `next_cursor` of the previous page.
+    pub cursor: Option<String>,
+}
+
+/// An entry of the deprecated [`FeaturedAgent::public_capabilities`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FeaturedCapability {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+}
+
+/// An agent worth trying first ([`crate::DiscoveryClient::featured`]).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FeaturedAgent {
+    #[serde(flatten)]
+    pub listing: AgentListing,
+    pub capabilities: Vec<CapabilityBrief>,
+    /// Deprecated: the same as `slug`.
+    #[serde(default)]
+    pub agent_slug: String,
+    /// Deprecated: see `capabilities[].access`.
+    #[serde(default)]
+    pub public_capabilities: Vec<FeaturedCapability>,
+}
+
+/// A capability in full, as a profile shows it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilityDetail {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub input_schema: Value,
+    pub output_schema: Value,
+    pub access: Access,
+    /// Calls per calling agent per month, for a public capability.
+    pub public_monthly_quota_per_agent: Option<i32>,
+    /// Asks its owner before running.
+    pub consent_required: bool,
+    /// `"autonomous"` or `"human_in_loop"`.
+    pub semantics: String,
+}
+
+/// The account that owns a profiled agent.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentOwner {
+    pub account_slug: String,
+    pub display_name: String,
+    pub verified: bool,
+}
+
+/// One of a profile's latest reviews.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProfileReview {
+    pub rating: i16,
+    pub text: Option<String>,
+    pub at: DateTime<Utc>,
+    /// The reviewer's display name, or "An agent" for a reviewer that
+    /// isn't network-visible.
+    pub by: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProfileReviews {
+    /// `None` when `count == 0`.
+    pub avg_rating: Option<f64>,
+    pub count: i64,
+    /// Up to three, newest first.
+    pub latest: Vec<ProfileReview>,
+}
+
+/// How to call a profiled agent.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HowToCall {
+    /// A CLI command line.
+    pub cli: String,
+    /// Its A2A card (network-visible agents).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub a2a_card: Option<String>,
+    /// Its page on the web (network-visible agents).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+    /// Its MCP endpoint, on relays that serve one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp: Option<String>,
+}
+
+/// An agent's profile ([`crate::DiscoveryClient::profile`]).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentProfile {
+    #[serde(flatten)]
+    pub listing: AgentListing,
+    pub owner: AgentOwner,
+    pub reviews: ProfileReviews,
+    pub capabilities: Vec<CapabilityDetail>,
+    pub how_to_call: HowToCall,
+    /// Your standing, when the request is signed in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub you: Option<Standing>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -555,6 +819,10 @@ pub struct CreateAgentRequest {
     pub visibility: Option<Visibility>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub endpoint_url: Option<String>,
+    /// Directory tags: at most 10, each 1-32 lowercase letters, digits or
+    /// hyphens. Relays from 0.6.0.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -568,6 +836,10 @@ pub struct UpdateAgentRequest {
     /// Who may call the agent. Push agents only take `Nobody`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub accept_calls: Option<AcceptCalls>,
+    /// Replace the directory tags; `Some(vec![])` clears them. Relays
+    /// from 0.6.0.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]

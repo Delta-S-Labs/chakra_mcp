@@ -124,6 +124,8 @@ type Agent struct {
 	// AcceptCalls is who may call this agent. Empty on relays without
 	// calls.
 	AcceptCalls AcceptCalls `json:"accept_calls,omitempty"`
+	// Tags are its directory tags. Nil on relays before 0.6.0.
+	Tags []string `json:"tags,omitempty"`
 }
 
 // AgentMode is how an agent gets work: AgentModePush (the relay calls
@@ -164,6 +166,15 @@ type NetworkAgent struct {
 	// AcceptCalls is who may call it; push agents show
 	// AcceptCallsNobody. Empty on relays without calls.
 	AcceptCalls AcceptCalls `json:"accept_calls,omitempty"`
+
+	// The shared directory fields (AgentListing). Zero values on relays
+	// before 0.6.0.
+	Visibility Visibility `json:"visibility,omitempty"`
+	// Capabilities are the ones on it you can see, with who can call each.
+	Capabilities []CapabilityBrief `json:"capabilities,omitempty"`
+	LastSeenAt   *time.Time        `json:"last_seen_at,omitempty"`
+	FriendCount  int64             `json:"friend_count,omitempty"`
+	Featured     bool              `json:"featured,omitempty"`
 }
 
 // NetworkPage is a page of the network directory, newest first.
@@ -187,6 +198,213 @@ const (
 	// AcceptCallsNobody: invites are refused.
 	AcceptCallsNobody AcceptCalls = "nobody"
 )
+
+// ─── Discovery (relays from 0.6.0) ───────────────────────
+
+// Access is who can call a capability: AccessPublic (anyone signed in,
+// within its monthly quota) or AccessFriends (friends holding a grant).
+type Access string
+
+const (
+	AccessPublic  Access = "public"
+	AccessFriends Access = "friends"
+)
+
+// CapabilityBrief is a capability in a directory list.
+type CapabilityBrief struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Access Access `json:"access"`
+}
+
+// AgentListing is the fields every directory list shares: search,
+// featured, profiles and the network list.
+type AgentListing struct {
+	ID          string     `json:"id"`
+	Slug        string     `json:"slug"`
+	AccountSlug string     `json:"account_slug"`
+	DisplayName string     `json:"display_name"`
+	Description string     `json:"description"`
+	Mode        AgentMode  `json:"mode"`
+	Tags        []string   `json:"tags"`
+	Visibility  Visibility `json:"visibility"`
+	// Online is whether it polled its inbox in the last 5 minutes. Push
+	// agents never show online.
+	Online bool `json:"online"`
+	// LastSeenAt is, for a pull agent, its last inbox poll, else its
+	// creation; for a push agent, the last fetch of its card.
+	LastSeenAt time.Time `json:"last_seen_at"`
+	CreatedAt  time.Time `json:"created_at"`
+	// Verified is whether the owning account is verified.
+	Verified bool `json:"verified"`
+	// Featured is whether it's one of the relay's featured (house) agents.
+	Featured    bool  `json:"featured"`
+	FriendCount int64 `json:"friend_count"`
+	// AvgRating is nil when ReviewCount == 0.
+	AvgRating   *float64    `json:"avg_rating"`
+	ReviewCount int64       `json:"review_count"`
+	AcceptCalls AcceptCalls `json:"accept_calls"`
+}
+
+// CallableVia is how you can call a capability: CallableViaGrant (one of
+// your agents holds a grant) or CallableViaPublic.
+type CallableVia string
+
+const (
+	CallableViaGrant  CallableVia = "grant"
+	CallableViaPublic CallableVia = "public"
+)
+
+// CallableCapability is a capability you can call now.
+type CallableCapability struct {
+	Capability   string      `json:"capability"`
+	CapabilityID string      `json:"capability_id"`
+	Via          CallableVia `json:"via"`
+	// AsAgentID is the agent of yours holding the grant; nil for a public
+	// capability, which any of your agents can call.
+	AsAgentID *string `json:"as_agent_id"`
+}
+
+// StandingFriendship is a friendship between one of your agents and the
+// agent. Status is FriendshipProposed or FriendshipAccepted.
+type StandingFriendship struct {
+	ID          string           `json:"id"`
+	YourAgentID string           `json:"your_agent_id"`
+	Status      FriendshipStatus `json:"status"`
+}
+
+// Standing is what you can do with an agent, for the agents your
+// credential may act as.
+type Standing struct {
+	Callable    []CallableCapability `json:"callable"`
+	Friendships []StandingFriendship `json:"friendships"`
+	// CanStartCallAs is your agents that could start a call with it.
+	CanStartCallAs []string `json:"can_start_call_as"`
+}
+
+// DiscoveryAgent is a search result (Discovery().Search).
+type DiscoveryAgent struct {
+	AgentListing
+	Capabilities []CapabilityBrief `json:"capabilities"`
+	// Deprecated: the same as Slug.
+	AgentSlug string `json:"agent_slug"`
+	// Deprecated: see Capabilities[].Access.
+	HasPublicCapabilities bool `json:"has_public_capabilities"`
+	// You is your standing with it, when the relay sends one.
+	You *Standing `json:"you,omitempty"`
+}
+
+// DiscoveryPage is a page of search results, best match first.
+type DiscoveryPage struct {
+	Agents []DiscoveryAgent `json:"agents"`
+	// NextCursor goes in DiscoveryQuery.Cursor, with the same filters, for
+	// the next page; nil on the last page.
+	NextCursor *string `json:"next_cursor,omitempty"`
+	// TotalEstimate is how many agents match. First page only.
+	TotalEstimate *int64 `json:"total_estimate,omitempty"`
+}
+
+// DiscoveryQuery filters Search. Zero values are left out.
+type DiscoveryQuery struct {
+	// Q is free text: any word matches, and better matches rank higher.
+	Q string
+	// Capability is part of a capability's name.
+	Capability string
+	// CapabilitySchema is a shape to match against any capability's
+	// output schema.
+	CapabilitySchema map[string]interface{}
+	Mode             AgentMode
+	// Verified: true for verified owners only, false for unverified only.
+	Verified *bool
+	// Tags: agents with all of these.
+	Tags []string
+	// IncludeDormant also returns pull agents not seen in 30 days with
+	// nothing public.
+	IncludeDormant bool
+	// Callable returns only agents you can call now.
+	Callable bool
+	Limit    int    // 1-100; the relay's default is 20
+	Cursor   string // DiscoveryPage.NextCursor of the previous page
+}
+
+// FeaturedAgent is an agent worth trying first (Discovery().Featured).
+type FeaturedAgent struct {
+	AgentListing
+	Capabilities []CapabilityBrief `json:"capabilities"`
+	// Deprecated: the same as Slug.
+	AgentSlug string `json:"agent_slug"`
+	// Deprecated: see Capabilities[].Access.
+	PublicCapabilities []PublicCapability `json:"public_capabilities"`
+}
+
+// PublicCapability is an entry of FeaturedAgent.PublicCapabilities.
+type PublicCapability struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// CapabilityDetail is a capability on an agent's profile.
+type CapabilityDetail struct {
+	ID           string                 `json:"id"`
+	Name         string                 `json:"name"`
+	Description  string                 `json:"description"`
+	InputSchema  map[string]interface{} `json:"input_schema"`
+	OutputSchema map[string]interface{} `json:"output_schema"`
+	Access       Access                 `json:"access"`
+	// PublicMonthlyQuotaPerAgent is the calls per calling agent per
+	// month, for a public capability.
+	PublicMonthlyQuotaPerAgent *int32 `json:"public_monthly_quota_per_agent"`
+	// ConsentRequired: it asks its owner before running.
+	ConsentRequired bool `json:"consent_required"`
+	// Semantics is SemanticsAutonomous or SemanticsHumanInLoop.
+	Semantics string `json:"semantics"`
+}
+
+// AgentProfile is an agent's profile (Discovery().Profile).
+type AgentProfile struct {
+	AgentListing
+	Owner        ProfileOwner       `json:"owner"`
+	Reviews      ProfileReviews     `json:"reviews"`
+	Capabilities []CapabilityDetail `json:"capabilities"`
+	HowToCall    HowToCall          `json:"how_to_call"`
+	// You is your standing with it, when the relay sends one.
+	You *Standing `json:"you,omitempty"`
+}
+
+// ProfileOwner is the account that owns a profiled agent.
+type ProfileOwner struct {
+	AccountSlug string `json:"account_slug"`
+	DisplayName string `json:"display_name"`
+	Verified    bool   `json:"verified"`
+}
+
+// ProfileReviews sums up an agent's reviews.
+type ProfileReviews struct {
+	// AvgRating is nil when Count == 0.
+	AvgRating *float64 `json:"avg_rating"`
+	Count     int64    `json:"count"`
+	// Latest is up to three, newest first.
+	Latest []ProfileReview `json:"latest"`
+}
+
+// ProfileReview is one of an agent's latest reviews. By is the reviewer
+// agent's display name, or "An agent" for one that isn't network-visible.
+type ProfileReview struct {
+	Rating int16     `json:"rating"`
+	Text   *string   `json:"text"`
+	At     time.Time `json:"at"`
+	By     string    `json:"by"`
+}
+
+// HowToCall is how to reach an agent: a CLI command, and links where it
+// has them.
+type HowToCall struct {
+	CLI     string `json:"cli"`
+	A2ACard string `json:"a2a_card,omitempty"`
+	Profile string `json:"profile,omitempty"`
+	MCP     string `json:"mcp,omitempty"`
+}
 
 type Capability struct {
 	ID           string                 `json:"id"`
@@ -486,6 +704,9 @@ type CreateAgentRequest struct {
 	Description string     `json:"description,omitempty"`
 	Visibility  Visibility `json:"visibility,omitempty"`
 	EndpointURL *string    `json:"endpoint_url,omitempty"`
+	// Tags are directory tags: at most 10, each 1-32 lowercase letters,
+	// digits or hyphens.
+	Tags []string `json:"tags,omitempty"`
 }
 
 type UpdateAgentRequest struct {
@@ -494,6 +715,9 @@ type UpdateAgentRequest struct {
 	Visibility  Visibility `json:"visibility,omitempty"`
 	// AcceptCalls sets who may call the agent; empty keeps it.
 	AcceptCalls AcceptCalls `json:"accept_calls,omitempty"`
+	// Tags replaces the directory tags; nil keeps them, and a pointer to
+	// an empty slice removes them all.
+	Tags *[]string `json:"tags,omitempty"`
 }
 
 type CreateCapabilityRequest struct {

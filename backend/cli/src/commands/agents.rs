@@ -20,12 +20,17 @@ pub enum Cmd {
         /// Display name.
         #[arg(long)]
         name: String,
-        /// One-line description.
+        /// What it does, in a sentence. At least 20 characters for a
+        /// `network` agent: it's what people browsing the directory read.
         #[arg(long, default_value = "")]
         description: String,
-        /// `private` (default) or `network`.
+        /// `private` (default), `org` or `network`.
         #[arg(long, default_value = "private")]
         visibility: String,
+        /// A directory tag (repeatable): 1-32 lowercase letters, digits or
+        /// hyphens, at most 10. E.g. `--tag scheduling --tag travel`.
+        #[arg(long = "tag")]
+        tags: Vec<String>,
         /// A2A canonical Agent Card URL for **push-mode** agents
         /// (those with a public A2A endpoint). When supplied, the
         /// relay registers the agent in push mode and starts
@@ -38,22 +43,32 @@ pub enum Cmd {
     },
     /// Fetch one agent, yours or another's: its id, `account/agent`, or a slug.
     Get { id: String },
-    /// Change one of your agents: its name, description, visibility, or
-    /// who may call it.
+    /// An agent's profile: its owner, capabilities with their schemas,
+    /// reviews, how to call it, and your standing with it. Takes its id,
+    /// `account/agent`, or a slug.
+    Show { agent: String },
+    /// Change one of your agents (its id, `account/agent`, or a slug): its
+    /// name, description, visibility, tags, or who may call it.
     Update {
         id: String,
         /// Display name.
         #[arg(long)]
         name: Option<String>,
-        /// One-line description.
+        /// What it does, in a sentence (20+ characters for a `network` agent).
         #[arg(long)]
         description: Option<String>,
-        /// `private` or `network`.
+        /// `private`, `org` or `network`.
         #[arg(long)]
         visibility: Option<String>,
         /// Who may call this agent: its friends (the default), anyone, or nobody.
         #[arg(long, value_parser = ["friends", "anyone", "nobody"])]
         accept_calls: Option<String>,
+        /// Replace its directory tags (repeatable).
+        #[arg(long = "tag", conflicts_with = "clear_tags")]
+        tags: Vec<String>,
+        /// Remove all its tags.
+        #[arg(long)]
+        clear_tags: bool,
     },
 }
 
@@ -69,6 +84,7 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             name,
             description,
             visibility,
+            tags,
             agent_card_url,
         } => {
             let mut body = json!({
@@ -78,6 +94,9 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
                 "description": description,
                 "visibility": visibility,
             });
+            if !tags.is_empty() {
+                body["tags"] = json!(tags);
+            }
             // Push mode is opt-in by passing --agent-card-url; the
             // server picks the mode from the URL's presence (see
             // backend/relay/src/handlers/agents.rs::create), and the
@@ -93,14 +112,23 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             let agent: Value = api.get_relay(&format!("/v1/agents/{id}")).await?;
             print(&agent)
         }
+        Cmd::Show { agent } => {
+            let path = crate::resolve::profile_path(&api, &agent).await?;
+            let profile: Value = api.get_relay(&path).await?;
+            print(&profile)
+        }
         Cmd::Update {
             id,
             name,
             description,
             visibility,
             accept_calls,
+            tags,
+            clear_tags,
         } => {
-            let body = update_body(name, description, visibility, accept_calls)?;
+            let tags = (clear_tags || !tags.is_empty()).then_some(tags);
+            let body = update_body(name, description, visibility, accept_calls, tags)?;
+            let id = crate::resolve::mine_id(&api, &id).await?;
             let agent: Value = api.patch_relay(&format!("/v1/agents/{id}"), &body).await?;
             print(&agent)
         }
@@ -112,8 +140,12 @@ fn update_body(
     description: Option<String>,
     visibility: Option<String>,
     accept_calls: Option<String>,
+    tags: Option<Vec<String>>,
 ) -> Result<Value> {
     let mut body = json!({});
+    if let Some(tags) = tags {
+        body["tags"] = json!(tags);
+    }
     for (key, value) in [
         ("display_name", name),
         ("description", description),
@@ -126,7 +158,7 @@ fn update_body(
     }
     if body.as_object().is_some_and(|o| o.is_empty()) {
         anyhow::bail!(
-            "nothing to change: pass --name, --description, --visibility or --accept-calls"
+            "nothing to change: pass --name, --description, --visibility, --tag, --clear-tags or --accept-calls"
         );
     }
     Ok(body)
@@ -138,10 +170,18 @@ mod tests {
 
     #[test]
     fn update_body_sends_only_what_changes() {
-        let v = update_body(None, None, None, Some("anyone".into())).unwrap();
+        let v = update_body(None, None, None, Some("anyone".into()), None).unwrap();
         assert_eq!(v, json!({ "accept_calls": "anyone" }));
-        let v = update_body(Some("Bot".into()), None, Some("network".into()), None).unwrap();
+        let v = update_body(Some("Bot".into()), None, Some("network".into()), None, None).unwrap();
         assert_eq!(v, json!({ "display_name": "Bot", "visibility": "network" }));
-        assert!(update_body(None, None, None, None).is_err());
+        assert!(update_body(None, None, None, None, None).is_err());
+    }
+
+    #[test]
+    fn update_body_replaces_or_clears_tags() {
+        let v = update_body(None, None, None, None, Some(vec!["travel".into()])).unwrap();
+        assert_eq!(v, json!({ "tags": ["travel"] }));
+        let v = update_body(None, None, None, None, Some(vec![])).unwrap();
+        assert_eq!(v, json!({ "tags": [] }), "--clear-tags sends an empty list");
     }
 }

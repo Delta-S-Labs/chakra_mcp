@@ -7,6 +7,10 @@
 //!
 //! Both return the agent's row (`id`, `slug`, `account_slug`, …). A name that
 //! matches nothing, or several agents, is an `InvalidArgs` error (exit 6).
+//!
+//! A peer named `account/agent` is one profile request
+//! (`/v1/discovery/agents/{account}/{agent}`, relays from 0.6.0); an older
+//! relay's 404 falls back to the network list.
 
 use serde_json::Value;
 use uuid::Uuid;
@@ -37,6 +41,11 @@ pub async fn peer(api: &ApiClient, ident: &str) -> Result<Value, WaitError> {
             .await
             .map_err(|e| classify_http_err(&e));
     }
+    if let Some((account, slug)) = ident.split_once('/') {
+        if let Some(agent) = profile(api, &profile_by_name(account, slug)).await? {
+            return Ok(agent);
+        }
+    }
     let agents = my_agents(api).await?;
     let own = pick(&agents, ident);
     if !own.is_empty() {
@@ -49,6 +58,38 @@ pub async fn peer(api: &ApiClient, ident: &str) -> Result<Value, WaitError> {
         "on the network",
         "see `chakramcp network`, or name it as `account/agent`",
     )
+}
+
+/// The profile path for an agent named by id, `account/agent`, or a slug (a
+/// bare slug resolves as [`peer`] does).
+pub async fn profile_path(api: &ApiClient, ident: &str) -> Result<String, WaitError> {
+    if Uuid::parse_str(ident).is_ok() {
+        return Ok(format!("/v1/discovery/agents/{ident}"));
+    }
+    if let Some((account, slug)) = ident.split_once('/') {
+        return Ok(profile_by_name(account, slug));
+    }
+    Ok(format!(
+        "/v1/discovery/agents/{}",
+        peer_id(api, ident).await?
+    ))
+}
+
+fn profile_by_name(account: &str, slug: &str) -> String {
+    let enc = |s: &str| url::form_urlencoded::byte_serialize(s.as_bytes()).collect::<String>();
+    format!("/v1/discovery/agents/{}/{}", enc(account), enc(slug))
+}
+
+/// A profile, or `None` on a 404: no such agent you can see, or a relay
+/// without profiles.
+async fn profile(api: &ApiClient, path: &str) -> Result<Option<Value>, WaitError> {
+    match api.get_relay::<Value>(path).await {
+        Ok(agent) => Ok(Some(agent)),
+        Err(e) => match classify_http_err(&e) {
+            WaitError::InvalidArgs(_) => Ok(None),
+            other => Err(other),
+        },
+    }
 }
 
 /// The id of [`mine`].
@@ -210,6 +251,18 @@ mod tests {
         assert!(
             none.to_string().contains("see `chakramcp agents list`"),
             "{none}"
+        );
+    }
+
+    #[test]
+    fn profiles_are_addressed_by_name() {
+        assert_eq!(
+            profile_by_name("bob", "venue-bot"),
+            "/v1/discovery/agents/bob/venue-bot"
+        );
+        assert_eq!(
+            profile_by_name("a b", "c/d"),
+            "/v1/discovery/agents/a+b/c%2Fd"
         );
     }
 

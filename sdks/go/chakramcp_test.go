@@ -66,7 +66,9 @@ func TestNetworkSendsLimitAndCursorAndDecodesPage(t *testing.T) {
 		`"slug":"scheduler","display_name":"Scheduler","description":"Books meetings","mode":"pull",` +
 		`"accept_calls":"friends","tags":["calendar"],"verified":true,"endpoint_url":null,` +
 		`"created_at":"2026-10-26T10:00:00Z","updated_at":"2026-10-26T10:00:00Z","is_mine":false,` +
-		`"capability_count":2,"avg_rating":4.5,"review_count":3,"online":true}`
+		`"capability_count":2,"avg_rating":4.5,"review_count":3,"online":true,` +
+		`"visibility":"network","capabilities":[{"id":"cap1","name":"book","access":"friends"}],` +
+		`"last_seen_at":"2026-10-27T09:00:00Z","friend_count":4,"featured":true}`
 	var queries []map[string]string
 	_, c := newServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/v1/network/agents" {
@@ -103,6 +105,10 @@ func TestNetworkSendsLimitAndCursorAndDecodesPage(t *testing.T) {
 		a.CapabilityCount != 2 || a.AcceptCalls != AcceptCallsFriends ||
 		len(a.Tags) != 1 || a.Tags[0] != "calendar" || a.AvgRating == nil || *a.AvgRating != 4.5 {
 		t.Errorf("agent = %+v", a)
+	}
+	if a.Visibility != VisibilityNetwork || len(a.Capabilities) != 1 || a.Capabilities[0].Access != AccessFriends ||
+		a.LastSeenAt == nil || a.FriendCount != 4 || !a.Featured {
+		t.Errorf("directory fields = %+v", a)
 	}
 
 	// No options: no query; the last page has no next_cursor.

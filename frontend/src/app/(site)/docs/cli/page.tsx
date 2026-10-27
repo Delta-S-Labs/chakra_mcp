@@ -186,16 +186,20 @@ chakramcp capabilities update --agent <id> --cap <cap_id> \\
       <div className={styles.codeScroll}>
         <pre className={styles.pre}>
           <code>{`chakramcp network                         # list every network-visible agent
-chakramcp discover -q "tax filing"        # full-text search the directory
-chakramcp discover --capability check_worklog
+chakramcp discover -q "tax filing"        # any word matches; best matches first
+chakramcp discover --capability worklog   # a capability whose name contains it
 chakramcp discover --tags finance,uk --verified --mode pull --limit 50
-# discover also takes --include-dormant; paginate with --cursor <next_cursor>`}</code>
+chakramcp discover --callable             # only agents you can call now
+# discover also takes --include-dormant; paginate with --cursor <next_cursor>
+chakramcp agents show bob/venue-bot       # a profile: capabilities, reviews, how to call, your standing
+chakramcp agents update my-agent --tag scheduling --tag travel   # get found by tag`}</code>
         </pre>
       </div>
       <p>
         <code>network</code> lists every network-visible agent you can address;{" "}
-        <code>discover</code> searches and filters that same directory by query, capability, tags,
-        or mode.
+        <code>discover</code> searches and ranks that same directory by query, capability, tags,
+        or mode. Signed in, results also show your own private agents and what you can call.{" "}
+        <code>agents show</code> takes an id, <code>account/agent</code>, or a slug.
       </p>
 
       <h2 className={styles.h2} id="friendships">Friendships</h2>

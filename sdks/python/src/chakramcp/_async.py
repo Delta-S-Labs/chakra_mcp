@@ -17,6 +17,7 @@ from ._errors import ChakraMCPError, raise_for_response
 from ._sync import (
     _EVENT_KINDS,
     MAX_CALLS_BATCH,
+    _agent_ref_path,
     _default_on_draft,
     _default_on_notice,
     _invite_answer,
@@ -26,6 +27,7 @@ from ._sync import (
     _reply_of,
     _ReplyResult,
     _report_call_error,
+    _search_query,
     _warn_no_human_handler,
     _without_none,
     is_drafted_reply,
@@ -33,6 +35,8 @@ from ._sync import (
 from ._types import (
     TERMINAL_STATUSES,
     Agent,
+    AgentMode,
+    AgentProfile,
     Call,
     CallEntry,
     CallFeedItem,
@@ -44,8 +48,10 @@ from ._types import (
     CreateAgentRequest,
     CreateCapabilityRequest,
     CreateGrantRequest,
+    DiscoveryPage,
     DraftedReply,
     EligibilityResponse,
+    FeaturedAgent,
     Friendship,
     FriendshipStatus,
     Grant,
@@ -62,6 +68,7 @@ from ._types import (
     Review,
     ReviewListResponse,
     ReviewTier,
+    Standing,
     StartCallRequest,
     UpdateAgentRequest,
     WriteReviewRequest,
@@ -113,6 +120,7 @@ class AsyncChakraMCP:
         self.inbox = AsyncInboxClient(self)
         self.reviews = AsyncReviewsClient(self)
         self.calls = AsyncCallsClient(self)
+        self.discovery = AsyncDiscoveryClient(self)
 
     async def aclose(self) -> None:
         if self._owns_client:
@@ -742,3 +750,50 @@ class AsyncCallsClient:
                     raise
         elif kind in _EVENT_KINDS and on_event is not None:
             await _resolve(on_event(item))
+
+
+class AsyncDiscoveryClient:
+    """Async mirror of :py:class:`chakramcp._sync.DiscoveryClient`. See its
+    docstrings for the semantics."""
+
+    def __init__(self, chakra: AsyncChakraMCP) -> None:
+        self._c = chakra
+
+    async def search(
+        self,
+        *,
+        q: str | None = None,
+        capability: str | None = None,
+        capability_schema: dict[str, Any] | None = None,
+        mode: AgentMode | None = None,
+        verified: bool | None = None,
+        tags: list[str] | None = None,
+        include_dormant: bool | None = None,
+        callable: bool | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+    ) -> DiscoveryPage:
+        query = _search_query(
+            {
+                "q": q,
+                "capability": capability,
+                "capability_schema": capability_schema,
+                "mode": mode,
+                "verified": verified,
+                "tags": tags,
+                "include_dormant": include_dormant,
+                "callable": callable,
+                "limit": limit,
+                "cursor": cursor,
+            }
+        )
+        return await self._c._relay("GET", f"/v1/discovery/agents{query}")
+
+    async def featured(self) -> list[FeaturedAgent]:
+        return (await self._c._relay("GET", "/v1/discovery/featured"))["agents"]
+
+    async def profile(self, ref: str) -> AgentProfile:
+        return await self._c._relay("GET", f"/v1/discovery/agents/{_agent_ref_path(ref)}")
+
+    async def standing(self, ref: str) -> Standing:
+        return await self._c._relay("GET", f"/v1/discovery/standing{_query({'agent': ref})}")
