@@ -37,6 +37,7 @@ import { getTemplate } from "./templates.js";
 import {
   AcceptCallRequest,
   Agent,
+  AgentProfile,
   AgentSummary,
   AskCallMemoryRequest,
   Call,
@@ -55,9 +56,12 @@ import {
   CreateCapabilityRequest,
   CreateGrantRequest,
   DeclineCallRequest,
+  DiscoveryPage,
+  DiscoveryQuery,
   DraftedReply,
   EligibilityResponse,
   EndCallRequest,
+  FeaturedAgent,
   FriendshipCounterRequest,
   FriendshipResponseRequest,
   Friendship,
@@ -79,6 +83,7 @@ import {
   ReviewListResponse,
   RevokeGrantRequest,
   SendCallMessageRequest,
+  Standing,
   StartCallRequest,
   TERMINAL_STATUSES,
   UpdateAgentRequest,
@@ -111,6 +116,7 @@ export class ChakraMCP {
   readonly inbox: InboxClient;
   readonly reviews: ReviewsClient;
   readonly calls: CallsClient;
+  readonly discovery: DiscoveryClient;
 
   private readonly fetcher: typeof fetch;
   private readonly headers: Record<string, string>;
@@ -134,6 +140,7 @@ export class ChakraMCP {
     this.inbox = new InboxClient(this);
     this.reviews = new ReviewsClient(this);
     this.calls = new CallsClient(this);
+    this.discovery = new DiscoveryClient(this);
   }
 
   /** Current user + memberships. */
@@ -316,6 +323,59 @@ function stringOrUndefined(v: unknown): string | undefined {
 }
 
 // ─── Sub-clients ─────────────────────────────────────────
+
+/** An agent's id, or `account_slug/agent_slug`, as a URL path. */
+function agentRefPath(ref: string): string {
+  const at = ref.indexOf("/");
+  return at < 0
+    ? encodeURIComponent(ref)
+    : `${encodeURIComponent(ref.slice(0, at))}/${encodeURIComponent(ref.slice(at + 1))}`;
+}
+
+/**
+ * The public directory (relays from 0.6.0): ranked search, featured agents,
+ * profiles and your standing. With a credential, results add your own and
+ * your orgs' agents and your standing (`you`).
+ */
+export class DiscoveryClient {
+  constructor(private readonly chakra: ChakraMCP) {}
+
+  /** Search the directory. Pass `next_cursor` back as `cursor`, with the same filters. */
+  search(query: DiscoveryQuery = {}): Promise<DiscoveryPage> {
+    const qs = new URLSearchParams();
+    if (query.q) qs.set("q", query.q);
+    if (query.capability) qs.set("capability", query.capability);
+    if (query.capability_schema) qs.set("capability_schema", JSON.stringify(query.capability_schema));
+    if (query.mode) qs.set("mode", query.mode);
+    if (query.verified !== undefined) qs.set("verified", String(query.verified));
+    if (query.tags?.length) qs.set("tags", query.tags.join(","));
+    if (query.include_dormant !== undefined) qs.set("include_dormant", String(query.include_dormant));
+    if (query.callable !== undefined) qs.set("callable", String(query.callable));
+    if (query.limit !== undefined) qs.set("limit", String(query.limit));
+    if (query.cursor) qs.set("cursor", query.cursor);
+    const q = qs.toString();
+    return this.chakra.relayRequest<DiscoveryPage>("GET", `/v1/discovery/agents${q ? `?${q}` : ""}`);
+  }
+
+  /** Agents worth trying first: the relay's house agents, then online ones with something public. */
+  async featured(): Promise<FeaturedAgent[]> {
+    const res = await this.chakra.relayRequest<{ agents: FeaturedAgent[] }>("GET", "/v1/discovery/featured");
+    return res.agents;
+  }
+
+  /** One agent's profile, by id or `account_slug/agent_slug`. */
+  profile(ref: string): Promise<AgentProfile> {
+    return this.chakra.relayRequest<AgentProfile>("GET", `/v1/discovery/agents/${agentRefPath(ref)}`);
+  }
+
+  /** Your standing with one agent, by id or `account_slug/agent_slug`. Needs a credential. */
+  standing(ref: string): Promise<Standing> {
+    return this.chakra.relayRequest<Standing>(
+      "GET",
+      `/v1/discovery/standing?agent=${encodeURIComponent(ref)}`,
+    );
+  }
+}
 
 export class AgentsClient {
   constructor(private readonly chakra: ChakraMCP) {}

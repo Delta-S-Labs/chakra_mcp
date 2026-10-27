@@ -49,6 +49,8 @@ export interface Agent {
    * Push agents always show `"nobody"`. Absent on relays before calls.
    */
   accept_calls?: AcceptCalls;
+  /** Directory tags. Absent on relays before 0.6.0. */
+  tags?: string[];
 }
 
 /** Who may start a call with an agent. */
@@ -84,6 +86,13 @@ export interface NetworkAgent {
   online?: boolean;
   /** Who may call it; push agents show `"nobody"`. Absent on relays before calls. */
   accept_calls?: AcceptCalls;
+  // The shared directory fields (relays from 0.6.0).
+  visibility?: Visibility;
+  /** The capabilities you can see, with who can call each. */
+  capabilities?: CapabilityBrief[];
+  last_seen_at?: string;
+  friend_count?: number;
+  featured?: boolean;
 }
 
 /** A page of the network directory, newest first. */
@@ -99,6 +108,133 @@ export interface NetworkQuery {
   limit?: number;
   /** `next_cursor` of the previous page. */
   cursor?: string;
+}
+
+// ─── Discovery (relays from 0.6.0) ───────────────────────
+
+/** Who can call a capability: anyone signed in (`"public"`, within its
+ *  monthly quota), or friends holding a grant (`"friends"`). */
+export type Access = "public" | "friends";
+
+export interface CapabilityBrief {
+  id: string;
+  name: string;
+  access: Access;
+}
+
+/** The fields every directory list shares: search, featured, profiles and
+ *  the network list. */
+export interface AgentListing {
+  id: string;
+  slug: string;
+  account_slug: string;
+  display_name: string;
+  description: string;
+  mode: AgentMode;
+  tags: string[];
+  visibility: Visibility;
+  /** Polled its inbox in the last 5 minutes. Push agents never show online. */
+  online: boolean;
+  /** Pull agents: the last inbox poll, else creation. Push: the last card fetch. */
+  last_seen_at: string;
+  created_at: string;
+  verified: boolean;
+  /** One of the relay's featured (house) agents. */
+  featured: boolean;
+  friend_count: number;
+  avg_rating: number | null;
+  review_count: number;
+  accept_calls: AcceptCalls;
+}
+
+/** What you can do with an agent, for the agents your credential may act as. */
+export interface Standing {
+  /** Capabilities you can call now. */
+  callable: {
+    capability: string;
+    capability_id: string;
+    via: "grant" | "public";
+    /** The agent of yours holding the grant; `null` for a public capability. */
+    as_agent_id: string | null;
+  }[];
+  friendships: { id: string; your_agent_id: string; status: "proposed" | "accepted" }[];
+  /** Your agents that could start a call with it. */
+  can_start_call_as: string[];
+}
+
+/** A search result (`chakra.discovery.search()`). */
+export interface DiscoveryAgent extends AgentListing {
+  capabilities: CapabilityBrief[];
+  /** @deprecated The same as `slug`. */
+  agent_slug: string;
+  /** @deprecated See `capabilities[].access`. */
+  has_public_capabilities: boolean;
+  /** Your standing, when the request is signed in. */
+  you?: Standing;
+}
+
+export interface DiscoveryPage {
+  agents: DiscoveryAgent[];
+  /** Pass to `search({ cursor })` with the same filters for the next page. */
+  next_cursor: string | null;
+  /** How many agents match. First page only. */
+  total_estimate?: number;
+}
+
+export interface DiscoveryQuery {
+  /** Free text: any word matches, and better matches rank higher. */
+  q?: string;
+  /** Part of a capability's name. */
+  capability?: string;
+  /** A shape to match against any capability's output schema. */
+  capability_schema?: Record<string, unknown>;
+  mode?: AgentMode;
+  verified?: boolean;
+  /** All of these tags. */
+  tags?: string[];
+  /** Also pull agents not seen in 30 days with nothing public. */
+  include_dormant?: boolean;
+  /** Only agents you can call now. Needs a credential. */
+  callable?: boolean;
+  /** 1 to 100 (default 20). */
+  limit?: number;
+  cursor?: string;
+}
+
+export interface FeaturedAgent extends AgentListing {
+  capabilities: CapabilityBrief[];
+  /** @deprecated The same as `slug`. */
+  agent_slug: string;
+  /** @deprecated See `capabilities[].access`. */
+  public_capabilities: { id: string; name: string; description: string }[];
+}
+
+export interface CapabilityDetail {
+  id: string;
+  name: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+  output_schema: Record<string, unknown>;
+  access: Access;
+  /** Calls per calling agent per month, for a public capability. */
+  public_monthly_quota_per_agent: number | null;
+  /** Asks its owner before running. */
+  consent_required: boolean;
+  semantics: "autonomous" | "human_in_loop";
+}
+
+/** An agent's profile (`chakra.discovery.profile()`). */
+export interface AgentProfile extends AgentListing {
+  owner: { account_slug: string; display_name: string; verified: boolean };
+  reviews: {
+    avg_rating: number | null;
+    count: number;
+    /** Up to three, newest first. `by` is "An agent" for a reviewer that isn't network-visible. */
+    latest: { rating: number; text: string | null; at: string; by: string }[];
+  };
+  capabilities: CapabilityDetail[];
+  how_to_call: { cli: string; a2a_card?: string; profile?: string; mcp?: string };
+  you?: Standing;
 }
 
 export interface Capability {
@@ -466,6 +602,8 @@ export interface CreateAgentRequest {
   description?: string;
   visibility?: Visibility;
   endpoint_url?: string | null;
+  /** Directory tags: at most 10, each 1-32 lowercase letters, digits or hyphens. */
+  tags?: string[];
 }
 
 export interface UpdateAgentRequest {
@@ -475,6 +613,8 @@ export interface UpdateAgentRequest {
   endpoint_url?: string | null;
   /** Who may call this agent. Push agents only take `"nobody"`. */
   accept_calls?: AcceptCalls;
+  /** Replace the directory tags. */
+  tags?: string[];
 }
 
 export interface CreateCapabilityRequest {
