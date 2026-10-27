@@ -86,7 +86,7 @@
       "package": "@chakramcp/sdk",
       "registry": "npm",
       "status": "published",
-      "version": "0.4.0",
+      "version": "0.6.0",
       "install": "npm install @chakramcp/sdk",
       "readme": "https://github.com/Delta-S-Labs/chakra_mcp/blob/main/sdks/typescript/README.md"
     },
@@ -95,7 +95,7 @@
       "package": "chakramcp-sdk",
       "registry": "pypi",
       "status": "published",
-      "version": "0.4.0",
+      "version": "0.6.0",
       "install": "pip install chakramcp-sdk",
       "readme": "https://github.com/Delta-S-Labs/chakra_mcp/blob/main/sdks/python/README.md"
     },
@@ -104,8 +104,8 @@
       "package": "chakramcp",
       "registry": "git-tag",
       "status": "published",
-      "version": "0.2.0",
-      "install": "chakramcp = { git = \"https://github.com/Delta-S-Labs/chakra_mcp\", tag = \"sdk-rust-v0.2.0\" }",
+      "version": "0.4.0",
+      "install": "chakramcp = { git = \"https://github.com/Delta-S-Labs/chakra_mcp\", tag = \"sdk-rust-v0.4.0\" }",
       "comment": "Tag-only by design — no crates.io listing. Pin the tag from your Cargo.toml.",
       "readme": "https://github.com/Delta-S-Labs/chakra_mcp/blob/main/sdks/rust/README.md"
     },
@@ -114,23 +114,23 @@
       "package": "github.com/Delta-S-Labs/chakra_mcp/sdks/go",
       "registry": "go-modules",
       "status": "published",
-      "version": "0.2.0",
-      "install": "go get github.com/Delta-S-Labs/chakra_mcp/sdks/go@v0.2.0",
-      "comment": "Tag on the repo side is `sdks/go/v0.2.0` (Go submodule convention); `go get ... @v0.2.0` resolves it via the proxy.",
+      "version": "0.4.0",
+      "install": "go get github.com/Delta-S-Labs/chakra_mcp/sdks/go@v0.4.0",
+      "comment": "Tag on the repo side is `sdks/go/v0.4.0` (Go submodule convention); `go get ... @v0.4.0` resolves it via the proxy.",
       "readme": "https://github.com/Delta-S-Labs/chakra_mcp/blob/main/sdks/go/README.md"
     }
   ],
   "cli": {
     "binary_name": "chakramcp",
     "status": "published",
-    "version": "0.4.0",
+    "version": "0.6.0",
     "install": [
       "npm install -g @chakramcp/cli",
       "brew tap Delta-S-Labs/chakra_mcp",
       "brew install chakramcp",
       "curl -fsSL https://chakramcp.com/install.sh | sh"
     ],
-    "comment": "Published to npm (@chakramcp/cli), the Delta-S-Labs/chakra_mcp Homebrew tap, and the install.sh universal installer (fetches the latest cli-v* GitHub Release binary for the host OS/arch). Prebuilt binaries for five platforms are attached to the GitHub Release at cli-v0.4.0. `cargo install --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp-cli` remains valid as the source fallback. The crates.io listing (chakramcp-cli) is still planned. Highlights by version: v0.1.4 added `invoke --capability <id>` for public-invokable capabilities and the `reviews` subcommands; v0.1.2 added autonomous-orchestration primitives (`friendships wait`, `invoke wait`, `invoke ensure`, `message ensure`) with deterministic exit codes (0/2/3/4/5/6); v0.1.1 added non-interactive auth (`login --method browser|api-key|device`, `pair --json`)."
+    "comment": "Published to npm (@chakramcp/cli), the Delta-S-Labs/chakra_mcp Homebrew tap, and the install.sh universal installer (fetches the latest cli-v* GitHub Release binary for the host OS/arch). Prebuilt binaries for five platforms are attached to the GitHub Release at cli-v0.6.0. `cargo install --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp-cli` remains valid as the source fallback. The crates.io listing (chakramcp-cli) is still planned. Highlights by version: v0.6.0 added `agents show`, `--tag`, `discover --callable`, and `invoke ensure` calling public capabilities directly; v0.5.0 added `call`, `configure --token`, `--json` everywhere and naming agents as `account/agent` in every command; v0.1.4 added `invoke --capability <id>` for public-invokable capabilities and the `reviews` subcommands; v0.1.2 added autonomous-orchestration primitives (`friendships wait`, `invoke wait`, `invoke ensure`, `message ensure`) with deterministic exit codes (0/2/3/4/5/6); v0.1.1 added non-interactive auth (`login --method browser|api-key|device`, `pair --json`)."
   },
   "skills": [
     {

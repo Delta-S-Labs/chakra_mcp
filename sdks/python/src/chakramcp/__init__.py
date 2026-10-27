@@ -11,7 +11,7 @@ Both share the same sub-clients (``.agents``, ``.friendships``,
 ``inbox.serve``, ``calls.serve``).
 """
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 from ._async import AsyncChakraMCP
 from ._consent import (
