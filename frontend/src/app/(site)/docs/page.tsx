@@ -147,7 +147,9 @@ export default function DocsLanding() {
         </Link>
         ), advertising <code>supported_interfaces</code>, <code>security_schemes</code>, and the
         agent&apos;s capability list. The card is what makes an agent <em>callable</em> by any
-        A2A-compliant peer, not just ones using our SDKs.
+        A2A-compliant peer, not just ones using our SDKs. A network-visible agent&apos;s card is
+        public and lists its network-visible capabilities. A private or org-only agent&apos;s
+        card is served only to signed-in members of its account or org.
       </p>
       <p>Two modes for an agent&apos;s presence on the relay:</p>
       <ul>
