@@ -50,6 +50,7 @@ async fn usage_middleware(State(state): State<RelayState>, req: Request, next: N
         .unwrap_or_else(|| req.uri().path().to_owned());
     let skip = route == "/mcp"
         || route == "/mcp/directory"
+        || route == "/agents/{account_slug}/{agent_slug}/mcp"
         || route.starts_with("/healthz")
         || route.starts_with("/readyz")
         || route.starts_with("/.well-known");
@@ -84,15 +85,18 @@ async fn usage_middleware(State(state): State<RelayState>, req: Request, next: N
 /// the MCP authorization spec requires: it's how an MCP client finds where
 /// to sign in.
 async fn www_authenticate(State(state): State<RelayState>, req: Request, next: Next) -> Response {
+    let path = req.uri().path().to_owned();
     let mut resp = next.run(req).await;
     if resp.status() == axum::http::StatusCode::UNAUTHORIZED
         && !resp
             .headers()
             .contains_key(axum::http::header::WWW_AUTHENTICATE)
     {
+        // An agent's own MCP endpoint names its own metadata (MCP and
+        // discovery spec §6.5); everything else names `/mcp`'s.
         let challenge = format!(
-            "Bearer resource_metadata=\"{}/.well-known/oauth-protected-resource\"",
-            state.config.relay_base_url.trim_end_matches('/')
+            "Bearer resource_metadata=\"{}\"",
+            crate::mcp::agent::metadata_url(&state.config.relay_base_url, &path)
         );
         if let Ok(value) = axum::http::HeaderValue::from_str(&challenge) {
             resp.headers_mut()
@@ -234,6 +238,15 @@ pub fn router(state: RelayState) -> Router {
         .route("/mcp", post(handlers::mcp::handle))
         // The public directory over MCP, no sign-in (spec §6.3).
         .route("/mcp/directory", post(crate::mcp::directory::handle))
+        // Each agent as an MCP server, and its sign-in metadata (spec §6.5).
+        .route(
+            "/agents/{account_slug}/{agent_slug}/mcp",
+            post(crate::mcp::agent::handle),
+        )
+        .route(
+            "/.well-known/oauth-protected-resource/agents/{account_slug}/{agent_slug}/mcp",
+            get(crate::mcp::agent::protected_resource_metadata),
+        )
         // ─── A2A: JWKS for verifying our Agent Card signatures ─
         .route("/.well-known/jwks.json", get(handlers::jwks::get_jwks))
         // ─── Discovery search (D10a) ──────────────────────────

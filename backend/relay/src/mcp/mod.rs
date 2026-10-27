@@ -2,6 +2,7 @@
 //! §6): who a call by name is made as and the agents the relay makes for it
 //! (`caller`), and waiting for a result (`wait`).
 
+pub mod agent;
 pub mod caller;
 pub mod directory;
 pub mod discovery;

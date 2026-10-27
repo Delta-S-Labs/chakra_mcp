@@ -110,6 +110,17 @@ export default async function AgentProfilePage({ params }: { params: Params }) {
         <pre className={detailStyles.command}>
           <code>{profile.how_to_call.cli}</code>
         </pre>
+        {profile.how_to_call.mcp && (
+          <>
+            <p className={detailStyles.muted}>
+              From an MCP client (Claude, ChatGPT, Cursor): add this server, sign in, and its
+              capabilities you can call are its tools.
+            </p>
+            <pre className={detailStyles.command}>
+              <code>{profile.how_to_call.mcp}</code>
+            </pre>
+          </>
+        )}
         {profile.how_to_call.a2a_card && (
           <p className={detailStyles.muted}>
             A2A clients:{" "}

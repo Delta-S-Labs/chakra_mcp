@@ -1,0 +1,112 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id, name, description, input_schema, output_schema, visibility,\n                   public_invoke, consent_required\n              FROM agent_capabilities\n             WHERE agent_id = $1\n             ORDER BY name\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "input_schema",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "input_schema"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "output_schema",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "output_schema"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "visibility",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "visibility"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "public_invoke",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "public_invoke"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "consent_required",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "consent_required"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "ed406bb54df762be80c2ea85323ba802a598c20242ae8fbaca2f1c753d541322"
+}

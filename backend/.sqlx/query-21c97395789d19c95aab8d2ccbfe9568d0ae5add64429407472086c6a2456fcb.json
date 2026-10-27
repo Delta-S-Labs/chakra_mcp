@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT DISTINCT capability_id FROM grants\n             WHERE granter_agent_id = $1 AND grantee_agent_id = ANY($2)\n               AND status = 'active' AND (expires_at IS NULL OR expires_at > now())\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "capability_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "grants",
+            "name": "capability_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "21c97395789d19c95aab8d2ccbfe9568d0ae5add64429407472086c6a2456fcb"
+}

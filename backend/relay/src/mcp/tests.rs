@@ -878,3 +878,484 @@ mod directory {
         assert_eq!(status, StatusCode::OK);
     }
 }
+
+// ─── Agents' own endpoints (spec §6.5) ────────────────────────
+
+mod agent_endpoints {
+    use axum::http::StatusCode;
+
+    use super::*;
+
+    fn endpoint_state(pool: &PgPool, on: bool) -> crate::state::RelayState {
+        state(pool, true).with_mcp(crate::mcp::McpConfig {
+            agents_enabled: on,
+            tool_wait_secs: 2,
+            ..Default::default()
+        })
+    }
+
+    async fn post(
+        s: &crate::state::RelayState,
+        path: &str,
+        token: Option<&str>,
+        method: &str,
+        params: Value,
+    ) -> (StatusCode, axum::http::HeaderMap, Value) {
+        let mut req = Request::builder()
+            .method("POST")
+            .uri(path)
+            .header(header::CONTENT_TYPE, "application/json");
+        if let Some(t) = token {
+            req = req.header(header::AUTHORIZATION, format!("Bearer {t}"));
+        }
+        let req = req
+            .body(Body::from(
+                json!({ "jsonrpc": "2.0", "id": 1, "method": method, "params": params })
+                    .to_string(),
+            ))
+            .unwrap();
+        let res = crate::router(s.clone()).oneshot(req).await.unwrap();
+        let (status, headers) = (res.status(), res.headers().clone());
+        let body = res.into_body().collect().await.unwrap().to_bytes();
+        (
+            status,
+            headers,
+            serde_json::from_slice(&body).unwrap_or(Value::Null),
+        )
+    }
+
+    async fn call(
+        s: &crate::state::RelayState,
+        path: &str,
+        token: &str,
+        tool: &str,
+        args: Value,
+    ) -> Value {
+        let (status, _, body) = post(
+            s,
+            path,
+            Some(token),
+            "tools/call",
+            json!({ "name": tool, "arguments": args }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        body["result"].clone()
+    }
+
+    /// `structuredContent` fits the tools' output schema: a known status,
+    /// and only its fields, of the right types.
+    fn conforms(result: &Value) {
+        let s = result["structuredContent"]
+            .as_object()
+            .expect("structuredContent");
+        let status = s["status"].as_str().unwrap();
+        assert!(
+            [
+                "succeeded",
+                "pending",
+                "in_progress",
+                "awaiting_consent",
+                "failed",
+                "timeout",
+                "refused"
+            ]
+            .contains(&status),
+            "{status}"
+        );
+        for (k, v) in s {
+            match k.as_str() {
+                "status" | "invocation_id" | "code" | "error" => assert!(v.is_string(), "{k}: {v}"),
+                "safety" => assert!(v.is_object(), "{k}: {v}"),
+                "output" => {}
+                other => panic!("unexpected field {other}"),
+            }
+        }
+    }
+
+    /// Bob's venue agent: a public `check`, a friends-only `hold` (granted
+    /// to Alice's planner), a friends-only `cancel`, a dotted `quote.ask`
+    /// taking a string, and `book` that asks its owner first.
+    struct Fixture {
+        alice: Person,
+        planner: Uuid,
+        venue: Uuid,
+    }
+
+    async fn fixture(pool: &PgPool) -> Fixture {
+        let alice = person(pool, "alice").await;
+        let bob = person(pool, "bob").await;
+        let planner = agent(pool, alice.account, "planner").await;
+        let venue = agent(pool, bob.account, "venue").await;
+        capability(pool, venue, "check", Some(100)).await;
+        let hold = capability(pool, venue, "hold", None).await;
+        befriend_and_grant(pool, venue, planner, hold).await;
+        capability(pool, venue, "cancel", None).await;
+        let quote = capability(pool, venue, "quote.ask", Some(100)).await;
+        sqlx::query(
+            "UPDATE agent_capabilities SET input_schema = '{\"type\":\"string\"}' WHERE id = $1",
+        )
+        .bind(quote)
+        .execute(pool)
+        .await
+        .unwrap();
+        let book = capability(pool, venue, "book", Some(100)).await;
+        sqlx::query("UPDATE agent_capabilities SET consent_required = true WHERE id = $1")
+            .bind(book)
+            .execute(pool)
+            .await
+            .unwrap();
+        Fixture {
+            alice,
+            planner,
+            venue,
+        }
+    }
+
+    /// Answer the venue's newest pending request.
+    async fn answer(pool: &PgPool, venue: Uuid, status: &str, output: Value, error: Option<&str>) {
+        let p = pool.clone();
+        let status = status.to_owned();
+        let error = error.map(str::to_owned);
+        tokio::spawn(async move {
+            for _ in 0..40 {
+                tokio::time::sleep(Duration::from_millis(150)).await;
+                let done = sqlx::query(
+                    "UPDATE relay_invocations SET status = $2, output_preview = $3, error_message = $4
+                      WHERE granter_agent_id = $1 AND status = 'pending'",
+                )
+                .bind(venue)
+                .bind(&status)
+                .bind(&output)
+                .bind(&error)
+                .execute(&p)
+                .await
+                .unwrap();
+                if done.rows_affected() > 0 {
+                    return;
+                }
+            }
+        });
+    }
+
+    const PATH: &str = "/agents/bob/venue/mcp";
+
+    /// Off is 404; no token or a bad one is 401 naming this endpoint's
+    /// metadata, which is served; missing, private and deleted agents 404.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn http_answers(pool: PgPool) {
+        let f = fixture(&pool).await;
+        let (status, _, _) = post(
+            &endpoint_state(&pool, false),
+            PATH,
+            Some(&f.alice.token),
+            "initialize",
+            json!({}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        let s = endpoint_state(&pool, true);
+        for token in [None, Some("nope")] {
+            let (status, headers, _) = post(&s, PATH, token, "initialize", json!({})).await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED);
+            assert_eq!(
+                headers[header::WWW_AUTHENTICATE],
+                r#"Bearer resource_metadata="https://relay.example/.well-known/oauth-protected-resource/agents/bob/venue/mcp""#
+            );
+        }
+        let res = crate::router(s.clone())
+            .oneshot(
+                Request::builder()
+                    .uri("/.well-known/oauth-protected-resource/agents/bob/venue/mcp")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let meta: Value =
+            serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        assert_eq!(
+            meta["resource"],
+            "https://relay.example/agents/bob/venue/mcp"
+        );
+
+        let (status, _, _) = post(
+            &s,
+            "/agents/bob/nobody/mcp",
+            Some(&f.alice.token),
+            "initialize",
+            json!({}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        let secret = agent(&pool, f.alice.account, "secret").await;
+        sqlx::query("UPDATE agents SET visibility = 'private' WHERE id = $1")
+            .bind(secret)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let carol = person(&pool, "carol").await;
+        let (status, _, _) = post(
+            &s,
+            "/agents/alice/secret/mcp",
+            Some(&carol.token),
+            "initialize",
+            json!({}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "private to others");
+        sqlx::query("UPDATE agents SET tombstoned_at = now() WHERE id = $1")
+            .bind(f.venue)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let (status, _, _) = post(&s, PATH, Some(&f.alice.token), "initialize", json!({})).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "deleted");
+    }
+
+    /// initialize names the agent; a push agent is a JSON-RPC error with its
+    /// card.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn initialize(pool: PgPool) {
+        let f = fixture(&pool).await;
+        let s = endpoint_state(&pool, true);
+        let (_, _, body) = post(&s, PATH, Some(&f.alice.token), "initialize", json!({})).await;
+        assert_eq!(body["result"]["serverInfo"]["name"], "venue");
+        assert!(body["result"]["instructions"]
+            .as_str()
+            .unwrap()
+            .contains("An agent for testing things."));
+
+        sqlx::query("UPDATE agents SET mode = 'push', agent_card_url = 'https://push.example/.well-known/agent-card.json' WHERE id = $1")
+            .bind(f.venue)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let (_, _, body) = post(&s, PATH, Some(&f.alice.token), "initialize", json!({})).await;
+        assert_eq!(body["error"]["data"]["code"], "chk.mcp.push_agent");
+        assert!(body["error"]["data"]["a2a_card"]
+            .as_str()
+            .unwrap()
+            .ends_with("/agents/bob/venue/.well-known/agent-card.json"));
+    }
+
+    /// tools/list offers what you can call now, with MCP-shaped names,
+    /// wrapped non-object inputs and the output schema; a stranger sees only
+    /// the public ones.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn tools_list(pool: PgPool) {
+        let f = fixture(&pool).await;
+        let s = endpoint_state(&pool, true);
+        let (_, _, body) = post(&s, PATH, Some(&f.alice.token), "tools/list", json!({})).await;
+        let tools = body["result"]["tools"].as_array().unwrap();
+        let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
+        assert_eq!(
+            names,
+            [
+                "book",
+                "check",
+                "hold",
+                "quote_ask",
+                "chakramcp_about",
+                "chakramcp_get_result"
+            ]
+        );
+        let quote = &tools[3];
+        assert_eq!(quote["title"], "quote.ask");
+        assert_eq!(quote["inputSchema"]["required"], json!(["input"]));
+        assert_eq!(quote["outputSchema"]["required"], json!(["status"]));
+        assert!(tools[0]["description"]
+            .as_str()
+            .unwrap()
+            .contains("Asks its owner before running."));
+
+        let carol = person(&pool, "carol").await;
+        let (_, _, body) = post(&s, PATH, Some(&carol.token), "tools/list", json!({})).await;
+        let names: Vec<&str> = body["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "book",
+                "check",
+                "quote_ask",
+                "chakramcp_about",
+                "chakramcp_get_result"
+            ]
+        );
+    }
+
+    /// Each row of the result table, each fitting the output schema.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn tool_results(pool: PgPool) {
+        let f = fixture(&pool).await;
+        let s = endpoint_state(&pool, true);
+        let token = &f.alice.token;
+
+        answer(&pool, f.venue, "succeeded", json!({ "free": true }), None).await;
+        let done = call(&s, PATH, token, "hold", json!({ "room": "A" })).await;
+        conforms(&done);
+        assert_eq!(
+            (
+                done["isError"].clone(),
+                done["structuredContent"]["status"].clone()
+            ),
+            (json!(false), json!("succeeded"))
+        );
+        assert_eq!(done["structuredContent"]["output"]["free"], true);
+        let held_by: Uuid = sqlx::query_scalar("SELECT grantee_agent_id FROM relay_invocations WHERE granter_agent_id = $1 AND capability_name = 'hold'")
+            .bind(f.venue)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(held_by, f.planner, "called as the grant's holder");
+
+        let running = call(&s, PATH, token, "check", json!({})).await;
+        conforms(&running);
+        assert_eq!(running["structuredContent"]["status"], "pending");
+        assert_eq!(running["isError"], false);
+        assert!(running["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("chakramcp_get_result"));
+        let pending_id = running["structuredContent"]["invocation_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let held = call(&s, PATH, token, "book", json!({})).await;
+        conforms(&held);
+        assert_eq!(held["structuredContent"]["status"], "awaiting_consent");
+
+        sqlx::query("UPDATE relay_invocations SET status = 'failed', error_message = 'no rooms' WHERE id = $1")
+            .bind(Uuid::parse_str(&pending_id).unwrap())
+            .execute(&pool)
+            .await
+            .unwrap();
+        let failed = call(
+            &s,
+            PATH,
+            token,
+            "chakramcp_get_result",
+            json!({ "invocation_id": pending_id }),
+        )
+        .await;
+        conforms(&failed);
+        assert_eq!(
+            (
+                failed["isError"].clone(),
+                failed["structuredContent"]["error"].clone()
+            ),
+            (json!(true), json!("no rooms"))
+        );
+
+        let refused = call(&s, PATH, token, "cancel", json!({})).await;
+        conforms(&refused);
+        assert_eq!(refused["structuredContent"]["status"], "refused");
+        assert_eq!(
+            refused["structuredContent"]["code"], "not_found",
+            "not offered, so not a tool"
+        );
+
+        sqlx::query("UPDATE agent_capabilities SET public_monthly_quota_per_agent = 2 WHERE agent_id = $1 AND name = 'check'")
+            .bind(f.venue)
+            .execute(&pool)
+            .await
+            .unwrap();
+        call(&s, PATH, token, "check", json!({})).await;
+        let quota = call(&s, PATH, token, "check", json!({})).await;
+        conforms(&quota);
+        assert_eq!(
+            quota["structuredContent"]["code"],
+            "monthly_quota_exhausted"
+        );
+    }
+
+    /// A wrapped input is unwrapped; `chakramcp_get_result` only shows your
+    /// own calls to this agent; `chakramcp_about` says how to get access.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn inputs_results_and_about(pool: PgPool) {
+        let f = fixture(&pool).await;
+        let s = endpoint_state(&pool, true);
+        let quoted = call(
+            &s,
+            PATH,
+            &f.alice.token,
+            "quote_ask",
+            json!({ "input": "two rooms" }),
+        )
+        .await;
+        let id = quoted["structuredContent"]["invocation_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let input: Value =
+            sqlx::query_scalar("SELECT input_preview FROM relay_invocations WHERE id = $1")
+                .bind(Uuid::parse_str(&id).unwrap())
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(input, json!("two rooms"));
+
+        let carol = person(&pool, "carol").await;
+        let other = call(
+            &s,
+            PATH,
+            &carol.token,
+            "chakramcp_get_result",
+            json!({ "invocation_id": id }),
+        )
+        .await;
+        assert_eq!(other["structuredContent"]["code"], "not_found");
+        let mine = call(
+            &s,
+            PATH,
+            &f.alice.token,
+            "chakramcp_get_result",
+            json!({ "invocation_id": id, "wait_seconds": 0 }),
+        )
+        .await;
+        assert_eq!(mine["structuredContent"]["status"], "pending");
+
+        let about = call(&s, PATH, &carol.token, "chakramcp_about", json!({})).await;
+        let about = ok(&about);
+        assert_eq!(
+            about["how_to_call"]["mcp"],
+            "https://relay.example/agents/bob/venue/mcp"
+        );
+        assert_eq!(about["not_callable_yet"], json!(["cancel", "hold"]));
+        assert!(about["how_to_get_access"]
+            .as_str()
+            .unwrap()
+            .contains("propose_friendship"));
+    }
+
+    /// `?as=` names the caller; outside the credential's scope it's refused
+    /// at initialize.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn as_names_the_caller(pool: PgPool) {
+        let f = fixture(&pool).await;
+        let s = endpoint_state(&pool, true);
+        let helper = agent(&pool, f.alice.account, "helper").await;
+        let path = format!("{PATH}?as=alice/helper");
+        let out = call(&s, &path, &f.alice.token, "check", json!({})).await;
+        let id =
+            Uuid::parse_str(out["structuredContent"]["invocation_id"].as_str().unwrap()).unwrap();
+        let by: Uuid =
+            sqlx::query_scalar("SELECT grantee_agent_id FROM relay_invocations WHERE id = $1")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(by, helper);
+
+        let (key, _) = scoped_key(&pool, f.alice.id, "selected", &[f.planner]).await;
+        let (_, _, body) = post(&s, &path, Some(&key), "initialize", json!({})).await;
+        assert_eq!(body["error"]["data"]["code"], "chk.auth.out_of_scope");
+    }
+}

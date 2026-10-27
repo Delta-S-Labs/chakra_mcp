@@ -96,6 +96,10 @@ pub struct HowToCall {
     /// Its page on the web (network-visible agents).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
+    /// Its own MCP endpoint (pull agents, with `MCP_AGENTS_ENABLED`): add
+    /// it to an MCP client to call its capabilities as tools.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mcp: Option<String>,
 }
 
 /// The live agent `r` names, loaded for `viewer`, if the viewer may see it.
@@ -243,6 +247,12 @@ pub async fn profile(
             format!(
                 "{}/agents/{name}",
                 state.config.frontend_base_url.trim_end_matches('/')
+            )
+        }),
+        mcp: (state.mcp.agents_enabled && agent.mode == "pull").then(|| {
+            format!(
+                "{}/agents/{name}/mcp",
+                state.config.relay_base_url.trim_end_matches('/')
             )
         }),
     };

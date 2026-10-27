@@ -116,16 +116,16 @@ struct ErrorBody {
     credits_url: Option<String>,
 }
 
-impl IntoResponse for ApiError {
-    fn into_response(self) -> Response {
-        let (status, code, retryable) = match &self {
+impl ApiError {
+    /// The HTTP status, the stable `code` and whether retrying can help.
+    pub fn parts(&self) -> (StatusCode, &'static str, bool) {
+        match self {
             ApiError::InvalidRequest(_) => (StatusCode::BAD_REQUEST, "invalid_request", false),
             ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized", false),
             ApiError::Forbidden => (StatusCode::FORBIDDEN, "forbidden", false),
             ApiError::NotFound => (StatusCode::NOT_FOUND, "not_found", false),
             ApiError::Conflict(_) => (StatusCode::CONFLICT, "conflict", false),
             ApiError::Database(_) | ApiError::Internal(_) => {
-                tracing::error!(error = ?self, "internal error");
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal_error", true)
             }
             ApiError::Auth(_) => (StatusCode::UNAUTHORIZED, "unauthorized", false),
@@ -154,7 +154,22 @@ impl IntoResponse for ApiError {
             ApiError::Coded { status, code, .. } => {
                 (*status, *code, *status == StatusCode::TOO_MANY_REQUESTS)
             }
-        };
+        }
+    }
+
+    /// The stable `code` clients match on, e.g. `not_found` or
+    /// `chk.policy.grant_required`.
+    pub fn code(&self) -> &'static str {
+        self.parts().1
+    }
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        if matches!(self, ApiError::Database(_) | ApiError::Internal(_)) {
+            tracing::error!(error = ?self, "internal error");
+        }
+        let (status, code, retryable) = self.parts();
         let retry_after = match &self {
             ApiError::SigninRateLimited { retry_after_secs }
             | ApiError::RateLimited {
