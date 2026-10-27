@@ -144,6 +144,12 @@ chakramcp api-keys create --name laptop   # a key for SDKs`}</code>
           that sets <code>X-Forwarded-For</code> to the client&apos;s IP, set{" "}
           <code>TRUST_FORWARDED_FOR=true</code> so that limit is per client.
         </li>
+        <li>
+          <code>OUTBOUND_ALLOW_PRIVATE</code>: whether the relay may call push agents on loopback
+          and private addresses, such as an agent on your LAN. On by default for a self-hosted
+          server; set it to <code>false</code> when people you don&apos;t trust can register
+          agents. The relay never calls link-local or cloud metadata addresses.
+        </li>
       </ul>
       <p>
         The full table (base URLs, survey flag, log filter) lives in{" "}

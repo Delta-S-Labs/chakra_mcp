@@ -354,17 +354,12 @@ async fn handle_authorized_push(
             capability_description: capability_description.as_deref(),
         });
     let keystore = KeyStore::new(state.db.clone());
-    let http = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(
-            crate::forwarder::FORWARD_TIMEOUT_SECONDS,
-        ))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
 
     match forward_push(
         &state.db,
         &keystore,
-        &http,
+        &state.forward_http,
+        state.outbound,
         &authz,
         &capability_name,
         body,
@@ -394,20 +389,29 @@ async fn handle_authorized_push(
             )
                 .into_response()
         }
-        Err(ForwardError::NoCachedCard) | Err(ForwardError::NoUpstreamInterface) => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            [(header::CONTENT_TYPE, "application/json")],
-            Json(serde_json::json!({
-                "jsonrpc": "2.0",
-                "id": null,
-                "error": {
-                    "code": -32005,
-                    "message": "target agent's upstream card not cached or unreachable",
-                    "data": { "code": "chk.target.unreachable" }
-                }
-            })),
-        )
-            .into_response(),
+        Err(
+            e @ (ForwardError::NoCachedCard
+            | ForwardError::NoUpstreamInterface
+            | ForwardError::Blocked(_)),
+        ) => {
+            if let ForwardError::Blocked(msg) = &e {
+                tracing::warn!(error = %msg, agent_id = %authz.target_agent_id, "push forward refused");
+            }
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                [(header::CONTENT_TYPE, "application/json")],
+                Json(serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": null,
+                    "error": {
+                        "code": -32005,
+                        "message": "target agent's upstream card not cached or unreachable",
+                        "data": { "code": "chk.target.unreachable" }
+                    }
+                })),
+            )
+                .into_response()
+        }
         Err(ForwardError::Transport(msg)) => {
             tracing::warn!(error = %msg, "upstream forward transport error");
             (

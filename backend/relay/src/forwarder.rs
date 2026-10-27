@@ -59,6 +59,10 @@ pub enum ForwardError {
     Mint(String),
     #[error("network/transport error: {0}")]
     Transport(String),
+    /// The card's interface URL is an address this server doesn't call
+    /// (`crate::outbound`).
+    #[error("upstream endpoint blocked: {0}")]
+    Blocked(String),
     #[error("audit-row write failed: {0}")]
     Audit(#[from] sqlx::Error),
 }
@@ -224,6 +228,7 @@ pub async fn forward_push(
     db: &PgPool,
     keystore: &KeyStore,
     http: &reqwest::Client,
+    policy: crate::outbound::OutboundPolicy,
     authz: &Authorized,
     capability_name: &str,
     request_body: Bytes,
@@ -236,8 +241,12 @@ pub async fn forward_push(
         "forward_push called for non-push target"
     );
 
-    // (1) Resolve upstream endpoint from the cached card.
+    // (1) Resolve upstream endpoint from the cached card. The agent wrote
+    // that card, so the URL is checked like any agent-supplied one; `http`
+    // checks the addresses a host name resolves to.
     let upstream_url = load_upstream_endpoint(db, authz.target_agent_id).await?;
+    crate::outbound::check_url(&upstream_url, policy)
+        .map_err(|e| ForwardError::Blocked(e.to_string()))?;
 
     // (2) Mint the relay JWT.
     let signing_key = keystore
@@ -800,6 +809,7 @@ mod tests {
             &pool,
             &keystore,
             &http,
+            crate::outbound::OutboundPolicy::default(),
             &authz,
             "do",
             body.clone(),
@@ -877,6 +887,7 @@ mod tests {
             &pool,
             &keystore,
             &http,
+            crate::outbound::OutboundPolicy::default(),
             &authz,
             "do",
             Bytes::from_static(b"{}"),
@@ -930,6 +941,7 @@ mod tests {
             &pool,
             &keystore,
             &http,
+            crate::outbound::OutboundPolicy::default(),
             &authz,
             "do",
             Bytes::from_static(b"{}"),
@@ -969,6 +981,7 @@ mod tests {
             &pool,
             &keystore,
             &http,
+            crate::outbound::OutboundPolicy::default(),
             &authz,
             "do",
             Bytes::from_static(b"{}"),
@@ -1009,6 +1022,7 @@ mod tests {
             &pool,
             &keystore,
             &reqwest::Client::new(),
+            crate::outbound::OutboundPolicy::default(),
             &authz,
             "do",
             Bytes::from_static(b"{}"),
@@ -1018,5 +1032,63 @@ mod tests {
         )
         .await;
         assert!(matches!(r, Err(ForwardError::NoCachedCard)));
+    }
+
+    #[sqlx::test(migrations = "../migrations")]
+    async fn a_card_pointing_at_a_blocked_address_is_never_called(pool: PgPool) {
+        // The interface URL comes from the agent's own card, so a card can
+        // name the relay's own network. Nothing is sent, nothing recorded.
+        let deny = crate::outbound::OutboundPolicy {
+            allow_private: false,
+        };
+        let keystore = KeyStore::new(pool.clone());
+        let _ = keystore.ensure_active_key().await.unwrap();
+        for target in [
+            "http://127.0.0.1:8090/v1/agents",
+            "http://169.254.169.254/latest/meta-data/",
+            "http://localhost:8080/",
+        ] {
+            let authz = seed_authorized_for_upstream(&pool, target).await;
+            let r = forward_push(
+                &pool,
+                &keystore,
+                &reqwest::Client::new(),
+                deny,
+                &authz,
+                "do",
+                Bytes::from_static(b"{}"),
+                &req_headers(),
+                None,
+                None,
+            )
+            .await;
+            assert!(
+                matches!(r, Err(ForwardError::Blocked(_))),
+                "{target}: {r:?}"
+            );
+        }
+        // Metadata addresses stay blocked when private ones are allowed.
+        let authz = seed_authorized_for_upstream(&pool, "http://169.254.169.254/").await;
+        let r = forward_push(
+            &pool,
+            &keystore,
+            &reqwest::Client::new(),
+            crate::outbound::OutboundPolicy {
+                allow_private: true,
+            },
+            &authz,
+            "do",
+            Bytes::from_static(b"{}"),
+            &req_headers(),
+            None,
+            None,
+        )
+        .await;
+        assert!(matches!(r, Err(ForwardError::Blocked(_))), "{r:?}");
+        let recorded: i64 = sqlx::query_scalar("SELECT count(*) FROM relay_invocations")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(recorded, 0);
     }
 }

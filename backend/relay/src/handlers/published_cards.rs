@@ -444,7 +444,7 @@ async fn cached_or_fetch_push_card(
             }
         }
     }
-    let fetcher = Fetcher::new();
+    let fetcher = Fetcher::new(state.outbound);
     match cache_card_for_agent(&state.db, &fetcher, agent_id, &state.config.relay_base_url).await {
         Ok(card) => Ok(card),
         Err(CacheError::NotPushMode) | Err(CacheError::NotFound) => {

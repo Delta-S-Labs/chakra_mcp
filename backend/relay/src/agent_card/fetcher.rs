@@ -39,6 +39,7 @@ use super::types::{
     AgentCard, AgentInterface, HttpAuthDetails, HttpAuthSecurityScheme, SecurityRequirement,
     SecurityScheme, A2A_PROTOCOL_VERSION, PROTOCOL_BINDING_JSONRPC,
 };
+use crate::outbound::{OutboundError, OutboundPolicy};
 
 /// Hard upper bound on how often we re-fetch, regardless of what the
 /// upstream Cache-Control says. Discovery spec §"Push card refresh"
@@ -89,39 +90,34 @@ pub enum FetchError {
     Transport(String),
     #[error("upstream URL is malformed or scheme is not http(s): {0}")]
     BadUrl(String),
+    /// An address this server doesn't call (`crate::outbound`).
+    #[error("{0}")]
+    Blocked(String),
 }
 
 /// HTTP client that fetches upstream A2A Agent Cards.
 ///
-/// Stateless apart from a tuned `reqwest::Client`. Construct once at
-/// startup (in RelayState) and share. Cheap to clone — `reqwest::Client`
-/// is `Arc<Inner>` internally.
+/// Stateless apart from a tuned `reqwest::Client`. Cheap to clone —
+/// `reqwest::Client` is `Arc<Inner>` internally.
 #[derive(Debug, Clone)]
 pub struct Fetcher {
     client: reqwest::Client,
-}
-
-impl Default for Fetcher {
-    fn default() -> Self {
-        Self::new()
-    }
+    policy: OutboundPolicy,
 }
 
 impl Fetcher {
-    pub fn new() -> Self {
-        let client = reqwest::Client::builder()
+    /// A fetcher that reaches only the addresses `policy` allows, and
+    /// follows at most 3 redirects, each checked the same way.
+    pub fn new(policy: OutboundPolicy) -> Self {
+        let client = crate::outbound::client_builder(policy)
             .user_agent(format!(
                 "chakramcp-relay/{} (+https://chakramcp.com)",
                 chakramcp_shared::telemetry::VERSION
             ))
             .timeout(Duration::from_secs(FETCH_TIMEOUT_SECONDS))
-            // Don't follow redirects to a different host without
-            // checking — for v1 we trust the agent_card_url the
-            // operator registered. Defensive but minimal: cap at 3 hops.
-            .redirect(reqwest::redirect::Policy::limited(3))
             .build()
             .expect("reqwest client builds with default options");
-        Self { client }
+        Self { client, policy }
     }
 
     /// Fetch + normalize. `if_none_match` is the etag we have cached
@@ -134,8 +130,10 @@ impl Fetcher {
         account_slug: &str,
         agent_slug: &str,
     ) -> Result<FetchOutcome, FetchError> {
-        if !(upstream_url.starts_with("http://") || upstream_url.starts_with("https://")) {
-            return Err(FetchError::BadUrl(upstream_url.to_string()));
+        match crate::outbound::check_url(upstream_url, self.policy) {
+            Ok(_) => {}
+            Err(OutboundError::BadUrl) => return Err(FetchError::BadUrl(upstream_url.to_string())),
+            Err(e @ OutboundError::Blocked(_)) => return Err(FetchError::Blocked(e.to_string())),
         }
 
         let mut req = self.client.get(upstream_url);
@@ -556,6 +554,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_card_url_this_server_does_not_call_is_never_fetched() {
+        let server = TestUpstream::start(sample_upstream_card_json(), None, None).await;
+        let deny = Fetcher::new(OutboundPolicy {
+            allow_private: false,
+        });
+        // By IP and by `localhost`, both refused before sending.
+        let by_name = format!(
+            "http://localhost:{}/.well-known/agent-card.json",
+            server.addr.port()
+        );
+        for url in [server.url(), by_name] {
+            let r = deny.fetch(&url, None, "https://r", "a", "b").await;
+            assert!(r.is_err(), "{url} should be refused");
+        }
+        assert!(matches!(
+            deny.fetch(&server.url(), None, "https://r", "a", "b").await,
+            Err(FetchError::Blocked(_))
+        ));
+        assert_eq!(server.request_count(), 0, "nothing reached the server");
+
+        // The metadata address is refused even with private ones allowed.
+        let allow = Fetcher::new(OutboundPolicy::default());
+        assert!(matches!(
+            allow
+                .fetch(
+                    "http://169.254.169.254/latest/meta-data/",
+                    None,
+                    "https://r",
+                    "a",
+                    "b"
+                )
+                .await,
+            Err(FetchError::Blocked(_))
+        ));
+    }
+
+    #[tokio::test]
     async fn fetch_and_normalize_substitutes_url_and_auth() {
         let server = TestUpstream::start(
             sample_upstream_card_json(),
@@ -564,7 +599,7 @@ mod tests {
         )
         .await;
 
-        let f = Fetcher::new();
+        let f = Fetcher::new(OutboundPolicy::default());
         let outcome = f
             .fetch(
                 &server.url(),
@@ -632,7 +667,7 @@ mod tests {
             Some("public, max-age=86400"), // 24h — must be clamped to 3600
         )
         .await;
-        let f = Fetcher::new();
+        let f = Fetcher::new(OutboundPolicy::default());
         let outcome = f
             .fetch(&server.url(), None, "https://r", "a", "b")
             .await
@@ -648,7 +683,7 @@ mod tests {
     #[tokio::test]
     async fn missing_cache_control_defaults_to_clamp() {
         let server = TestUpstream::start(sample_upstream_card_json(), None, None).await;
-        let f = Fetcher::new();
+        let f = Fetcher::new(OutboundPolicy::default());
         let outcome = f
             .fetch(&server.url(), None, "https://r", "a", "b")
             .await
@@ -667,7 +702,7 @@ mod tests {
     async fn etag_round_trip_returns_not_modified() {
         let server =
             TestUpstream::start(sample_upstream_card_json(), Some("\"v1-etag\""), None).await;
-        let f = Fetcher::new();
+        let f = Fetcher::new(OutboundPolicy::default());
         // First fetch — Fresh.
         let _ = f
             .fetch(&server.url(), None, "https://r", "a", "b")
@@ -689,7 +724,7 @@ mod tests {
     #[tokio::test]
     async fn malformed_upstream_json_is_invalid_card_error() {
         let server = TestUpstream::start("{not json".to_string(), None, None).await;
-        let f = Fetcher::new();
+        let f = Fetcher::new(OutboundPolicy::default());
         let r = f.fetch(&server.url(), None, "https://r", "a", "b").await;
         assert!(matches!(r, Err(FetchError::InvalidUpstreamCard(_))));
     }
@@ -707,7 +742,7 @@ mod tests {
             axum::serve(listener, app).await.ok();
         });
 
-        let f = Fetcher::new();
+        let f = Fetcher::new(OutboundPolicy::default());
         let r = f
             .fetch(
                 &format!("http://{addr}/.well-known/agent-card.json"),
@@ -722,7 +757,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_non_http_scheme() {
-        let f = Fetcher::new();
+        let f = Fetcher::new(OutboundPolicy::default());
         let r = f
             .fetch(
                 "ftp://upstream.example.com/card",
@@ -815,7 +850,7 @@ mod tests {
         .await
         .unwrap();
 
-        let f = Fetcher::new();
+        let f = Fetcher::new(OutboundPolicy::default());
         let normalized = cache_card_for_agent(&pool, &f, agent_id, "https://chakramcp.com")
             .await
             .unwrap();
@@ -871,7 +906,7 @@ mod tests {
         .await
         .unwrap();
 
-        let f = Fetcher::new();
+        let f = Fetcher::new(OutboundPolicy::default());
         let _ = cache_card_for_agent(&pool, &f, agent_id, "https://chakramcp.com")
             .await
             .unwrap();
@@ -914,7 +949,7 @@ mod tests {
         .await
         .unwrap();
 
-        let f = Fetcher::new();
+        let f = Fetcher::new(OutboundPolicy::default());
         let r = cache_card_for_agent(&pool, &f, agent_id, "https://r").await;
         assert!(matches!(r, Err(CacheError::NotPushMode)));
     }
