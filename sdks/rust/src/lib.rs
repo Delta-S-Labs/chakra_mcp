@@ -50,7 +50,7 @@ pub use client::{ChakraMCP, ChakraMCPBuilder, PollOpts};
 pub use error::{Error, Result};
 pub use inbox::{HandlerResult, InboxClient, RespondOutcome, ServeBuilder};
 pub use resources::{
-    AgentsClient, CapabilitiesClient, FriendshipsClient, GrantsClient, InvocationsClient,
-    ReviewsClient,
+    AgentsClient, CapabilitiesClient, DiscoveryClient, FriendshipsClient, GrantsClient,
+    InvocationsClient, ReviewsClient,
 };
 pub use types::*;

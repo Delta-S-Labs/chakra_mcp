@@ -1,8 +1,8 @@
-//! Sub-clients - agents, friendships, grants, invocations.
-//! Each is a thin handle over the parent ChakraMCP that namespaces a
-//! group of endpoints.
+//! Sub-clients - agents, friendships, grants, invocations, reviews,
+//! discovery. Each is a thin handle over the parent ChakraMCP that
+//! namespaces a group of endpoints.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::client::ChakraMCP;
@@ -339,6 +339,106 @@ impl<'a> ReviewsClient<'a> {
                 &json!({}),
             )
             .await
+    }
+}
+
+// ─── Discovery (relays from 0.6.0) ─────────────────────────
+
+/// The public directory: ranked search, featured agents, profiles and
+/// your standing. With a credential, results add your own and your orgs'
+/// agents and your standing (`you`).
+pub struct DiscoveryClient<'a> {
+    parent: &'a ChakraMCP,
+}
+
+impl<'a> DiscoveryClient<'a> {
+    pub(crate) fn new(parent: &'a ChakraMCP) -> Self {
+        Self { parent }
+    }
+
+    /// Search the directory. Pass `next_cursor` back as
+    /// [`DiscoveryQuery::cursor`], with the same filters, for the next
+    /// page.
+    pub async fn search(&self, query: &DiscoveryQuery) -> Result<DiscoveryPage> {
+        let mut q = Vec::new();
+        if let Some(s) = query.q.as_deref() {
+            q.push(format!("q={}", urlencode(s)));
+        }
+        if let Some(c) = query.capability.as_deref() {
+            q.push(format!("capability={}", urlencode(c)));
+        }
+        if let Some(schema) = &query.capability_schema {
+            q.push(format!(
+                "capability_schema={}",
+                urlencode(&schema.to_string())
+            ));
+        }
+        if let Some(m) = query.mode {
+            q.push(format!("mode={}", serde_plain(&m)));
+        }
+        if let Some(v) = query.verified {
+            q.push(format!("verified={v}"));
+        }
+        if !query.tags.is_empty() {
+            q.push(format!("tags={}", urlencode(&query.tags.join(","))));
+        }
+        if let Some(d) = query.include_dormant {
+            q.push(format!("include_dormant={d}"));
+        }
+        if let Some(c) = query.callable {
+            q.push(format!("callable={c}"));
+        }
+        if let Some(n) = query.limit {
+            q.push(format!("limit={n}"));
+        }
+        if let Some(c) = query.cursor.as_deref() {
+            q.push(format!("cursor={}", urlencode(c)));
+        }
+        let qs = if q.is_empty() {
+            String::new()
+        } else {
+            format!("?{}", q.join("&"))
+        };
+        self.parent
+            .relay_get(&format!("/v1/discovery/agents{qs}"))
+            .await
+    }
+
+    /// Agents worth trying first: the relay's house agents, then online
+    /// ones with something public.
+    pub async fn featured(&self) -> Result<Vec<FeaturedAgent>> {
+        #[derive(Deserialize)]
+        struct Featured {
+            agents: Vec<FeaturedAgent>,
+        }
+        let res: Featured = self.parent.relay_get("/v1/discovery/featured").await?;
+        Ok(res.agents)
+    }
+
+    /// One agent's profile, by id or `account_slug/agent_slug`.
+    pub async fn profile(&self, agent: &str) -> Result<AgentProfile> {
+        self.parent
+            .relay_get(&format!("/v1/discovery/agents/{}", agent_ref_path(agent)))
+            .await
+    }
+
+    /// Your standing with one agent, by id or `account_slug/agent_slug`.
+    /// Needs a credential.
+    pub async fn standing(&self, agent: &str) -> Result<Standing> {
+        self.parent
+            .relay_get(&format!(
+                "/v1/discovery/standing?agent={}",
+                urlencode(agent)
+            ))
+            .await
+    }
+}
+
+/// An agent's id, or `account_slug/agent_slug`, as a URL path.
+fn agent_ref_path(agent: &str) -> String {
+    match agent.split_once('/') {
+        Some((account, slug)) => format!("{}/{}", urlencode(account), urlencode(slug)),
+        None => urlencode(agent),
     }
 }
 

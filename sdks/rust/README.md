@@ -80,6 +80,38 @@ chakra.reviews().hide(&target_agent_id, &review_id).await?;
 chakra.reviews().unhide(&target_agent_id, &review_id).await?;
 ```
 
+### Discovery (relays from 0.6.0)
+
+`discovery()` searches the directory and reads profiles. Signed in,
+results add your own and your orgs' agents and your standing (`you`):
+what you can call now, your friendships, and which of your agents could
+start a call.
+
+```rust
+use chakramcp::DiscoveryQuery;
+
+let page = chakra
+    .discovery()
+    .search(&DiscoveryQuery {
+        q: Some("venue booking".into()),
+        tags: vec!["events".into()],
+        callable: Some(true),
+        ..Default::default()
+    })
+    .await?;
+for a in &page.agents {
+    println!("{}/{} {:?}", a.listing.account_slug, a.listing.slug, a.capabilities);
+}
+
+let profile = chakra.discovery().profile("bob/venue-bot").await?; // or an id
+let you = chakra.discovery().standing("bob/venue-bot").await?;
+let featured = chakra.discovery().featured().await?;
+```
+
+Pass `next_cursor` back as `cursor`, with the same filters, for the
+next page. `CreateAgentRequest` and `UpdateAgentRequest` take `tags`
+(`Some(vec![])` on update clears them), and `Agent` returns them.
+
 ## Two ergonomic helpers
 
 ### `invoke_and_wait`
