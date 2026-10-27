@@ -393,8 +393,9 @@ fn tools_list_result(calls: bool) -> Value {
                         "account_id":   { "type": "string", "format": "uuid", "description": "One of your account ids (see list_my_agents → account_id)." },
                         "slug":         { "type": "string", "description": "3-32 chars of [a-z0-9-], no leading/trailing or double hyphens. Unique within the account." },
                         "display_name": { "type": "string" },
-                        "description":  { "type": "string" },
-                        "visibility":   { "type": "string", "enum": ["private", "org", "network"], "description": "Defaults to the account's default visibility. Use 'network' to make the agent discoverable by peers." }
+                        "description":  { "type": "string", "description": "What the agent does. At least 20 characters for a network-visible agent." },
+                        "visibility":   { "type": "string", "enum": ["private", "org", "network"], "description": "Defaults to the account's default visibility. Use 'network' to make the agent discoverable by peers." },
+                        "tags":         { "type": "array", "items": { "type": "string" }, "description": "Directory tags: at most 10, each 1-32 lowercase letters, digits or hyphens (e.g. scheduling, travel)." }
                     }
                 })),
             tool("publish_capability",
@@ -430,7 +431,7 @@ fn tools_list_result(calls: bool) -> Value {
                     "properties": { "agent_id": { "type": "string", "format": "uuid" } }
                 })),
             tool("update_agent",
-                "Patch one of your agents' metadata (display_name, description, visibility, endpoint_url, agent_card_url) or who may call it (accept_calls).",
+                "Patch one of your agents' metadata (display_name, description, visibility, endpoint_url, agent_card_url, tags) or who may call it (accept_calls).",
                 json!({
                     "type": "object",
                     "required": ["agent_id"],
@@ -442,7 +443,9 @@ fn tools_list_result(calls: bool) -> Value {
                         "endpoint_url": { "type": "string" },
                         "agent_card_url": { "type": "string" },
                         "accept_calls": { "type": "string", "enum": ["friends", "anyone", "nobody"],
-                                          "description": "Who may call this agent: its friends (the default), anyone, or nobody. Push agents only take nobody." }
+                                          "description": "Who may call this agent: its friends (the default), anyone, or nobody. Push agents only take nobody." },
+                        "tags":         { "type": "array", "items": { "type": "string" },
+                                          "description": "Replace its directory tags: at most 10, each 1-32 lowercase letters, digits or hyphens." }
                     }
                 })),
             tool("delete_agent",
@@ -1534,6 +1537,8 @@ async fn create_agent(state: &RelayState, user: &AuthUser, args: Value) -> Resul
         display_name: String,
         description: Option<String>,
         visibility: Option<String>,
+        #[serde(default)]
+        tags: Vec<String>,
     }
     let a: A = serde_json::from_value(args)
         .map_err(|e| ApiError::InvalidRequest(format!("bad create_agent args: {e}")))?;
@@ -1573,6 +1578,13 @@ async fn create_agent(state: &RelayState, user: &AuthUser, args: Value) -> Resul
         }
     };
 
+    // The directory rules, as REST create applies them (spec §5.6–5.7).
+    let description = a.description.unwrap_or_default(); // column is NOT NULL DEFAULT ''
+    chakramcp_shared::agent_rules::check_description(&visibility, &description)
+        .map_err(ApiError::InvalidRequest)?;
+    let tags =
+        chakramcp_shared::agent_rules::normalize_tags(&a.tags).map_err(ApiError::InvalidRequest)?;
+
     // Pull mode only over MCP — laptop / sandboxed agents serve the
     // relay inbox and have no public A2A endpoint.
     let id = Uuid::now_v7();
@@ -1583,20 +1595,21 @@ async fn create_agent(state: &RelayState, user: &AuthUser, args: Value) -> Resul
         r#"
         INSERT INTO agents
             (id, account_id, created_by_user_id, slug, display_name, description,
-             visibility, mode, created_by_client_id, created_by_api_key_id)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pull', $8, $9)
+             visibility, mode, created_by_client_id, created_by_api_key_id, tags)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pull', $8, $9, $10)
         ON CONFLICT (account_id, slug) WHERE tombstoned_at IS NULL DO NOTHING
-        RETURNING id, account_id, slug, display_name, description, visibility, created_at
+        RETURNING id, account_id, slug, display_name, description, visibility, tags, created_at
         "#,
         id,
         a.account_id,
         user.user_id,
         slug,
         display_name,
-        a.description.unwrap_or_default(), // column is NOT NULL DEFAULT ''
+        description,
         visibility,
         created_by_client_id,
         user.api_key_id,
+        &tags,
     )
     .fetch_optional(db)
     .await?
@@ -1642,6 +1655,7 @@ async fn create_agent(state: &RelayState, user: &AuthUser, args: Value) -> Resul
         "display_name": inserted.display_name,
         "description": inserted.description,
         "visibility": inserted.visibility,
+        "tags": inserted.tags,
         "created_at": inserted.created_at,
     }))
 }
@@ -2186,7 +2200,7 @@ mod manage_agents_tests {
                 "account_id": account_id,
                 "slug": "self-reg-bot",
                 "display_name": "Self Reg Bot",
-                "description": "registered over MCP",
+                "description": "Registered over MCP for a test.",
                 "visibility": "network",
             }),
         )
@@ -2328,7 +2342,7 @@ mod manage_agents_tests {
             &pool,
             &token,
             "create_agent",
-            json!({ "account_id": account_id, "slug": "evt-bot", "display_name": "E", "visibility": "network" }),
+            json!({ "account_id": account_id, "slug": "evt-bot", "display_name": "E", "visibility": "network", "description": "An agent for testing things." }),
         )
         .await;
         assert_eq!(made["isError"], json!(false), "{made}");
@@ -2373,7 +2387,7 @@ mod manage_agents_tests {
             &pool,
             &token,
             "create_agent",
-            json!({ "account_id": account_id, "slug": "rd-bot", "display_name": "R", "visibility": "network" }),
+            json!({ "account_id": account_id, "slug": "rd-bot", "display_name": "R", "visibility": "network", "description": "An agent for testing things." }),
         )
         .await;
         call(&pool, &token, "list_my_agents", json!({})).await;
@@ -2458,7 +2472,7 @@ mod manage_agents_tests {
     #[sqlx::test(migrations = "../migrations")]
     async fn full_agent_flow_over_mcp(pool: PgPool) {
         let (_uid, account_id, token) = seed_user_with_jwt(&pool).await;
-        let mk = |slug: &str, name: &str| json!({ "account_id": account_id, "slug": slug, "display_name": name, "visibility": "network" });
+        let mk = |slug: &str, name: &str| json!({ "account_id": account_id, "slug": slug, "display_name": name, "visibility": "network", "description": "An agent for testing things." });
 
         // Two agents under the same owner (A = caller, B = capability owner).
         let a = ok(&call(&pool, &token, "create_agent", mk("agent-a", "A")).await)["id"]
@@ -2562,7 +2576,7 @@ mod manage_agents_tests {
         // Agents' replies become drafts; see consent::tests.
         let m = crate::telemetry::testing::Recorded::start();
         let (_uid, account_id, token) = seed_user_with_jwt(&pool).await;
-        let mk = |slug: &str| json!({ "account_id": account_id, "slug": slug, "display_name": slug, "visibility": "network" });
+        let mk = |slug: &str| json!({ "account_id": account_id, "slug": slug, "display_name": slug, "visibility": "network", "description": "An agent for testing things." });
         let a = ok(&call(&pool, &token, "create_agent", mk("hitl-a")).await)["id"]
             .as_str()
             .unwrap()
@@ -2678,7 +2692,7 @@ mod manage_agents_tests {
         // returning a row after it's been claimed (in_progress) and must
         // surface calls the caller issued (direction=outbound).
         let (_uid, account_id, token) = seed_user_with_jwt(&pool).await;
-        let mk = |slug: &str| json!({ "account_id": account_id, "slug": slug, "display_name": slug, "visibility": "network" });
+        let mk = |slug: &str| json!({ "account_id": account_id, "slug": slug, "display_name": slug, "visibility": "network", "description": "An agent for testing things." });
         let a = ok(&call(&pool, &token, "create_agent", mk("li-a")).await)["id"]
             .as_str()
             .unwrap()
@@ -2788,7 +2802,7 @@ mod manage_agents_tests {
     async fn create_grant_requires_friendship(pool: PgPool) {
         // No friendship → grant must be rejected.
         let (_uid, account_id, token) = seed_user_with_jwt(&pool).await;
-        let mk = |slug: &str| json!({ "account_id": account_id, "slug": slug, "display_name": slug, "visibility": "network" });
+        let mk = |slug: &str| json!({ "account_id": account_id, "slug": slug, "display_name": slug, "visibility": "network", "description": "An agent for testing things." });
         let a = ok(&call(&pool, &token, "create_agent", mk("grant-a")).await)["id"]
             .as_str()
             .unwrap()
@@ -2822,7 +2836,7 @@ mod manage_agents_tests {
     /// (token, grantee A, grant id, friendship id).
     async fn seed_granted_pair(pool: &PgPool) -> (String, String, String, String) {
         let (_uid, account_id, token) = seed_user_with_jwt(pool).await;
-        let mk = |slug: &str| json!({ "account_id": account_id, "slug": slug, "display_name": slug, "visibility": "network" });
+        let mk = |slug: &str| json!({ "account_id": account_id, "slug": slug, "display_name": slug, "visibility": "network", "description": "An agent for testing things." });
         let a = ok(&call(pool, &token, "create_agent", mk("inv-a")).await)["id"]
             .as_str()
             .unwrap()
@@ -3053,7 +3067,7 @@ mod manage_agents_tests {
     #[sqlx::test(migrations = "../migrations")]
     async fn create_grant_accepts_and_validates_purpose(pool: PgPool) {
         let (_uid, account_id, token) = seed_user_with_jwt(&pool).await;
-        let mk = |slug: &str| json!({ "account_id": account_id, "slug": slug, "display_name": slug, "visibility": "network" });
+        let mk = |slug: &str| json!({ "account_id": account_id, "slug": slug, "display_name": slug, "visibility": "network", "description": "An agent for testing things." });
         let a = ok(&call(&pool, &token, "create_agent", mk("p-a")).await)["id"].clone();
         let b = ok(&call(&pool, &token, "create_agent", mk("p-b")).await)["id"].clone();
         let cap = ok(&call(

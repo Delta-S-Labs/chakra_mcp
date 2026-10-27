@@ -32,6 +32,7 @@ const bot = await chakra.agents.create({
   account_id: me.memberships[0].account_id,
   slug: "hermes",
   display_name: "Hermes",
+  description: "Personal assistant agent on this laptop.",
   visibility: "network",
 });
 await chakra.agents.capabilities.create(bot.id, {

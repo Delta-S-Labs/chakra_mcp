@@ -12,6 +12,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use chakramcp_shared::agent_rules;
 use chakramcp_shared::error::{ApiError, ApiResult};
 
 use crate::auth::{user_can_admin_account, user_is_member, AuthUser};
@@ -100,6 +101,8 @@ pub struct AgentDto {
     /// Who may call it: `friends`, `anyone` or `nobody` (calls spec §3.1).
     /// Always `nobody` for push agents, which can't take calls yet.
     pub accept_calls: String,
+    /// Directory tags (MCP and discovery spec §5.6).
+    pub tags: Vec<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
     /// True when the requesting user is a member of the owning account.
@@ -137,6 +140,10 @@ pub struct CreateRequest {
     /// (the default — `inbox.serve()`-style polling).
     #[serde(default)]
     pub agent_card_url: Option<String>,
+    /// Directory tags (MCP and discovery spec §5.6): at most 10, each 1–32
+    /// lowercase letters, digits or hyphens.
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -170,6 +177,9 @@ pub struct UpdateRequest {
     /// §3.1). Push agents only take `nobody`.
     #[serde(default)]
     pub accept_calls: Option<String>,
+    /// Replace the directory tags (spec §5.6). Absent: unchanged.
+    #[serde(default)]
+    pub tags: Option<Vec<String>>,
 }
 
 /// The `accept_calls` an agent shows: push agents can't take calls yet,
@@ -197,7 +207,7 @@ pub async fn list_mine(
         r#"
         SELECT
             a.id, a.account_id, a.slug, a.display_name, a.description,
-            a.visibility, a.endpoint_url, a.mode, a.accept_calls, a.created_at, a.updated_at,
+            a.visibility, a.endpoint_url, a.mode, a.accept_calls, a.created_at, a.updated_at, a.tags,
             acc.slug as account_slug, acc.display_name as account_display_name,
             (SELECT COUNT(*)::bigint FROM agent_capabilities c WHERE c.agent_id = a.id) as "capability_count!",
             (SELECT COUNT(*)::bigint FROM agent_capabilities c
@@ -247,6 +257,7 @@ pub async fn list_mine(
                 visibility: r.visibility,
                 endpoint_url: r.endpoint_url,
                 accept_calls: effective_accept_calls(&r.mode, r.accept_calls),
+                tags: r.tags,
                 mode: r.mode,
                 created_at: r.created_at,
                 updated_at: r.updated_at,
@@ -561,7 +572,7 @@ pub async fn get_one(
         r#"
         SELECT
             a.id, a.account_id, a.slug, a.display_name, a.description,
-            a.visibility, a.endpoint_url, a.mode, a.accept_calls, a.created_at, a.updated_at,
+            a.visibility, a.endpoint_url, a.mode, a.accept_calls, a.created_at, a.updated_at, a.tags,
             acc.slug as account_slug, acc.display_name as account_display_name,
             (SELECT COUNT(*)::bigint FROM agent_capabilities c WHERE c.agent_id = a.id) as "capability_count!",
             (SELECT AVG(rating)::float8 FROM agent_reviews r
@@ -616,6 +627,7 @@ pub async fn get_one(
         visibility: r.visibility,
         endpoint_url: if manageable { r.endpoint_url } else { None },
         accept_calls: effective_accept_calls(&r.mode, r.accept_calls),
+        tags: r.tags,
         mode: r.mode,
         created_at: r.created_at,
         updated_at: r.updated_at,
@@ -680,6 +692,9 @@ pub async fn create(
         }
     };
     let visibility = visibility.as_str();
+    agent_rules::check_description(visibility, &req.description)
+        .map_err(ApiError::InvalidRequest)?;
+    let tags = agent_rules::normalize_tags(&req.tags).map_err(ApiError::InvalidRequest)?;
 
     let id = Uuid::now_v7();
     // ON CONFLICT must match the partial unique index (`tombstoned_at IS NULL`)
@@ -716,10 +731,10 @@ pub async fn create(
         INSERT INTO agents
             (id, account_id, created_by_user_id, slug, display_name, description,
              visibility, endpoint_url, mode, agent_card_url,
-             created_by_client_id, created_by_api_key_id)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+             created_by_client_id, created_by_api_key_id, tags)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         ON CONFLICT (account_id, slug) WHERE tombstoned_at IS NULL DO NOTHING
-        RETURNING id, account_id, slug, display_name, description, visibility, endpoint_url, mode, accept_calls, created_at, updated_at
+        RETURNING id, account_id, slug, display_name, description, visibility, endpoint_url, mode, accept_calls, created_at, updated_at, tags
         "#,
         id,
         req.account_id,
@@ -733,6 +748,7 @@ pub async fn create(
         agent_card_url,
         created_by_client_id,
         user.api_key_id,
+        &tags,
     )
     .fetch_optional(&state.db)
     .await?
@@ -837,6 +853,7 @@ pub async fn create(
         visibility: inserted.visibility,
         endpoint_url: inserted.endpoint_url,
         accept_calls: effective_accept_calls(&inserted.mode, inserted.accept_calls),
+        tags: inserted.tags,
         mode: inserted.mode,
         created_at: inserted.created_at,
         updated_at: inserted.updated_at,
@@ -857,7 +874,8 @@ pub async fn update(
     Json(req): Json<UpdateRequest>,
 ) -> ApiResult<Json<AgentDto>> {
     let row = sqlx::query!(
-        r#"SELECT account_id, slug FROM agents WHERE id = $1 AND tombstoned_at IS NULL"#,
+        r#"SELECT account_id, slug, visibility, description FROM agents
+            WHERE id = $1 AND tombstoned_at IS NULL"#,
         id
     )
     .fetch_optional(&state.db)
@@ -897,6 +915,22 @@ pub async fn update(
             return Err(ApiError::Forbidden);
         }
     }
+
+    // Directory rules (spec §5.6–5.7). The description rule applies when the
+    // agent becomes network-visible or a network agent's description
+    // changes; existing agents are left alone otherwise.
+    let new_visibility = req.visibility.as_deref().unwrap_or(&row.visibility);
+    let new_description = req.description.as_deref().unwrap_or(&row.description);
+    if new_visibility != row.visibility || new_description != row.description {
+        agent_rules::check_description(new_visibility, new_description)
+            .map_err(ApiError::InvalidRequest)?;
+    }
+    let tags = req
+        .tags
+        .as_deref()
+        .map(agent_rules::normalize_tags)
+        .transpose()
+        .map_err(ApiError::InvalidRequest)?;
 
     // Slug rename. Validate, then write a slug_aliases row so the
     // old slug keeps resolving (with a 301) for the rename window
@@ -995,7 +1029,8 @@ pub async fn update(
                 WHEN $11::boolean THEN $12
                 ELSE slug
             END,
-            accept_calls = COALESCE($13, accept_calls)
+            accept_calls = COALESCE($13, accept_calls),
+            tags = COALESCE($14, tags)
         WHERE id = $1
         "#,
         id,
@@ -1011,6 +1046,7 @@ pub async fn update(
         set_slug,
         new_slug,
         req.accept_calls.as_deref(),
+        tags.as_deref(),
     )
     .execute(&mut *tx)
     .await?;
@@ -1056,7 +1092,7 @@ pub async fn update(
         r#"
         SELECT
             a.id, a.account_id, a.slug, a.display_name, a.description,
-            a.visibility, a.endpoint_url, a.mode, a.accept_calls, a.created_at, a.updated_at,
+            a.visibility, a.endpoint_url, a.mode, a.accept_calls, a.created_at, a.updated_at, a.tags,
             acc.slug as account_slug, acc.display_name as account_display_name,
             (SELECT COUNT(*)::bigint FROM agent_capabilities c WHERE c.agent_id = a.id) as "capability_count!",
             (SELECT AVG(rating)::float8 FROM agent_reviews r
@@ -1096,6 +1132,7 @@ pub async fn update(
         visibility: r.visibility,
         endpoint_url: r.endpoint_url,
         accept_calls: effective_accept_calls(&r.mode, r.accept_calls),
+        tags: r.tags,
         mode: r.mode,
         created_at: r.created_at,
         updated_at: r.updated_at,
@@ -1643,6 +1680,7 @@ mod create_push_mode_tests {
                             "slug": "alice-pull",
                             "display_name": "Alice Pull",
                             "visibility": "network",
+                            "description": "An agent for testing things.",
                         }))
                         .unwrap(),
                     ))
@@ -1683,6 +1721,7 @@ mod create_push_mode_tests {
                             "slug": "alice-push",
                             "display_name": "Alice Push",
                             "visibility": "network",
+                            "description": "An agent for testing things.",
                             "agent_card_url": "https://travel.example.com/.well-known/agent-card.json",
                         }))
                         .unwrap(),
@@ -1864,6 +1903,7 @@ mod mode_mutation_and_validation_tests {
                             "slug": slug,
                             "display_name": "Agent",
                             "visibility": "network",
+                            "description": "An agent for testing things.",
                         }))
                         .unwrap(),
                     ))
@@ -2271,6 +2311,7 @@ mod tombstone_tests {
                             "slug": slug,
                             "display_name": "Agent",
                             "visibility": "network",
+                            "description": "An agent for testing things.",
                         }))
                         .unwrap(),
                     ))
@@ -2353,6 +2394,7 @@ mod tombstone_tests {
                             "slug": "alice",
                             "display_name": "Reborn",
                             "visibility": "network",
+                            "description": "An agent for testing things.",
                         }))
                         .unwrap(),
                     ))
@@ -2483,6 +2525,7 @@ mod slug_rename_tests {
                             "slug": slug,
                             "display_name": "Agent",
                             "visibility": "network",
+                            "description": "An agent for testing things.",
                         }))
                         .unwrap(),
                     ))
@@ -2703,5 +2746,312 @@ mod slug_rename_tests {
         .unwrap();
         // ON CONFLICT DO UPDATE makes the most-recent rename win.
         assert_eq!(aliases.new_slug, "alice-v3");
+    }
+}
+
+#[cfg(test)]
+mod directory_rules_tests {
+    //! Tags and the description rule (MCP and discovery spec §5.6–5.7) on
+    //! REST and MCP create and update.
+    use axum::body::Body;
+    use axum::http::{header, Method, Request, StatusCode};
+    use chakramcp_shared::config::SharedConfig;
+    use chakramcp_shared::jwt;
+    use http_body_util::BodyExt;
+    use serde_json::{json, Value};
+    use sqlx::PgPool;
+    use tower::ServiceExt;
+    use uuid::Uuid;
+
+    const SECRET: &str = "test-secret-test-secret-test-secret-test-secret";
+    const ABOUT: &str = "Books meeting rooms for teams.";
+
+    fn config() -> SharedConfig {
+        SharedConfig {
+            database_url: "ignored".into(),
+            jwt_secret: SECRET.into(),
+            admin_email: None,
+            survey_enabled: false,
+            frontend_base_url: "https://web.example".into(),
+            app_base_url: "http://localhost:8080".into(),
+            relay_base_url: "http://localhost:8090".into(),
+            discovery_v2_enabled: true,
+            log_filter: "warn".into(),
+        }
+    }
+
+    async fn seed(pool: &PgPool) -> (Uuid, String) {
+        let user_id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO users (id, email, display_name, password_hash) VALUES ($1, $2, 'U', 'x')",
+        )
+        .bind(user_id)
+        .bind(format!("{user_id}@t.local"))
+        .execute(pool)
+        .await
+        .unwrap();
+        let account_id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO accounts (id, slug, display_name, account_type, owner_user_id)
+             VALUES ($1, 'acme', 'Acme', 'individual', $2)",
+        )
+        .bind(account_id)
+        .bind(user_id)
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO account_memberships (id, account_id, user_id, role) VALUES ($1, $2, $3, 'owner')",
+        )
+        .bind(Uuid::now_v7())
+        .bind(account_id)
+        .bind(user_id)
+        .execute(pool)
+        .await
+        .unwrap();
+        let token = jwt::encode_jwt(
+            &jwt::UserClaims::new(user_id, format!("{user_id}@t.local"), false, 1),
+            SECRET,
+        )
+        .unwrap();
+        (account_id, token)
+    }
+
+    async fn send(
+        pool: &PgPool,
+        method: Method,
+        uri: &str,
+        token: &str,
+        body: Value,
+    ) -> (StatusCode, Value) {
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method(method)
+                    .uri(uri)
+                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = res.status();
+        let bytes = res.into_body().collect().await.unwrap().to_bytes();
+        (
+            status,
+            serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+        )
+    }
+
+    async fn create(pool: &PgPool, token: &str, body: Value) -> (StatusCode, Value) {
+        send(pool, Method::POST, "/v1/agents", token, body).await
+    }
+
+    /// Tags are normalised on create and replaced on update; bad ones are a
+    /// 400 that says why.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn tags_on_create_and_update(pool: PgPool) {
+        let (account, token) = seed(&pool).await;
+        let (status, agent) = create(
+            &pool,
+            &token,
+            json!({ "account_id": account, "slug": "rooms", "display_name": "Rooms",
+                    "tags": [" Booking", "travel", "booking"] }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{agent}");
+        assert_eq!(agent["tags"], json!(["booking", "travel"]));
+        let id = agent["id"].as_str().unwrap();
+
+        let uri = format!("/v1/agents/{id}");
+        let (status, updated) = send(
+            &pool,
+            Method::PATCH,
+            &uri,
+            &token,
+            json!({ "tags": ["events"] }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{updated}");
+        assert_eq!(updated["tags"], json!(["events"]));
+        let (_, same) = send(
+            &pool,
+            Method::PATCH,
+            &uri,
+            &token,
+            json!({ "display_name": "Rooms 2" }),
+        )
+        .await;
+        assert_eq!(same["tags"], json!(["events"]), "absent tags are unchanged");
+
+        for bad in [
+            json!(["has space"]),
+            json!((0..11).map(|i| format!("t{i}")).collect::<Vec<_>>()),
+        ] {
+            let (status, body) =
+                send(&pool, Method::PATCH, &uri, &token, json!({ "tags": bad })).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+            assert_eq!(body["error"]["code"], "invalid_request");
+        }
+    }
+
+    /// A network-visible agent needs a 20-character description when it's
+    /// made, made visible, or its description changes. Other edits leave an
+    /// existing agent alone.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn network_agents_need_a_description(pool: PgPool) {
+        let (account, token) = seed(&pool).await;
+        let (status, body) = create(
+            &pool,
+            &token,
+            json!({ "account_id": account, "slug": "terse", "display_name": "T",
+                    "visibility": "network", "description": "Books." }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert!(body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("20 characters"));
+
+        let (status, private) = create(
+            &pool,
+            &token,
+            json!({ "account_id": account, "slug": "quiet", "display_name": "Q" }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{private}");
+        let uri = format!("/v1/agents/{}", private["id"].as_str().unwrap());
+        let (status, _) = send(
+            &pool,
+            Method::PATCH,
+            &uri,
+            &token,
+            json!({ "visibility": "network" }),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "made visible without a description"
+        );
+        let (status, body) = send(
+            &pool,
+            Method::PATCH,
+            &uri,
+            &token,
+            json!({ "visibility": "network", "description": ABOUT }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let (status, _) = send(
+            &pool,
+            Method::PATCH,
+            &uri,
+            &token,
+            json!({ "description": "Short." }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "shortened");
+
+        // An agent from before the rule keeps working until its listing changes.
+        let old = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO agents (id, account_id, slug, display_name, description, visibility)
+             VALUES ($1, $2, 'old', 'Old', '', 'network')",
+        )
+        .bind(old)
+        .bind(account)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let uri = format!("/v1/agents/{old}");
+        let (status, body) = send(
+            &pool,
+            Method::PATCH,
+            &uri,
+            &token,
+            json!({ "display_name": "Old 2", "visibility": "network", "description": "" }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+
+    /// MCP `create_agent` applies the same rules and takes tags.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn mcp_create_agent_follows_the_rules(pool: PgPool) {
+        let (account, token) = seed(&pool).await;
+        let call = |args: Value| {
+            json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                    "params": { "name": "create_agent", "arguments": args } })
+        };
+        let (_, res) = send(
+            &pool,
+            Method::POST,
+            "/mcp",
+            &token,
+            call(json!({ "account_id": account, "slug": "terse", "display_name": "T", "visibility": "network" })),
+        )
+        .await;
+        assert_eq!(res["result"]["isError"], true, "{res}");
+
+        let (_, res) = send(
+            &pool,
+            Method::POST,
+            "/mcp",
+            &token,
+            call(
+                json!({ "account_id": account, "slug": "rooms", "display_name": "Rooms",
+                         "visibility": "network", "description": ABOUT, "tags": ["Booking"] }),
+            ),
+        )
+        .await;
+        assert_eq!(res["result"]["isError"], false, "{res}");
+        assert_eq!(
+            res["result"]["structuredContent"]["tags"],
+            json!(["booking"])
+        );
+    }
+
+    /// A pull agent's card carries its tags on each skill and links its web
+    /// profile when it's network-visible.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn cards_carry_tags_and_the_profile(pool: PgPool) {
+        let (account, token) = seed(&pool).await;
+        let (_, agent) = create(
+            &pool,
+            &token,
+            json!({ "account_id": account, "slug": "rooms", "display_name": "Rooms",
+                    "visibility": "network", "description": ABOUT, "tags": ["booking"] }),
+        )
+        .await;
+        sqlx::query(
+            "INSERT INTO agent_capabilities (id, agent_id, name, description) VALUES ($1, $2, 'hold', 'Hold a room.')",
+        )
+        .bind(Uuid::now_v7())
+        .bind(Uuid::parse_str(agent["id"].as_str().unwrap()).unwrap())
+        .execute(&pool)
+        .await
+        .unwrap();
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/agents/acme/rooms/.well-known/agent-card.json")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let card: Value =
+            serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        assert_eq!(card["skills"][0]["tags"], json!(["booking"]));
+        assert_eq!(
+            card["documentation_url"],
+            "https://web.example/agents/acme/rooms"
+        );
     }
 }

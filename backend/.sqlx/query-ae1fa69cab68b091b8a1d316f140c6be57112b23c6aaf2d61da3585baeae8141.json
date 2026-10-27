@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        INSERT INTO agents\n            (id, account_id, created_by_user_id, slug, display_name, description,\n             visibility, mode, created_by_client_id, created_by_api_key_id)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pull', $8, $9)\n        ON CONFLICT (account_id, slug) WHERE tombstoned_at IS NULL DO NOTHING\n        RETURNING id, account_id, slug, display_name, description, visibility, created_at\n        ",
+  "query": "\n        INSERT INTO agents\n            (id, account_id, created_by_user_id, slug, display_name, description,\n             visibility, endpoint_url, mode, agent_card_url,\n             created_by_client_id, created_by_api_key_id, tags)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)\n        ON CONFLICT (account_id, slug) WHERE tombstoned_at IS NULL DO NOTHING\n        RETURNING id, account_id, slug, display_name, description, visibility, endpoint_url, mode, accept_calls, created_at, updated_at, tags\n        ",
   "describe": {
     "columns": [
       {
@@ -71,12 +71,67 @@
       },
       {
         "ordinal": 6,
+        "name": "endpoint_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "endpoint_url"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "mode",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "mode"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "accept_calls",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "accept_calls"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
           "Table": {
             "table": "agents",
             "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "tags",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "tags"
           }
         }
       }
@@ -91,7 +146,11 @@
         "Text",
         "Text",
         "Text",
-        "Uuid"
+        "Text",
+        "Text",
+        "Text",
+        "Uuid",
+        "TextArray"
       ]
     },
     "nullable": [
@@ -101,8 +160,13 @@
       false,
       false,
       false,
+      true,
+      false,
+      false,
+      false,
+      false,
       false
     ]
   },
-  "hash": "ca607a0493bd789a4366d8073c7b8b4fe381a30cd8f9122d078091d565d7763d"
+  "hash": "ae1fa69cab68b091b8a1d316f140c6be57112b23c6aaf2d61da3585baeae8141"
 }

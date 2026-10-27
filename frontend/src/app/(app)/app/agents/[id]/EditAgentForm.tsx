@@ -97,6 +97,7 @@ export function EditAgentForm({
             onChange={(e) => setVisibility(e.target.value as Visibility)}
           >
             <option value="private">Private</option>
+            <option value="org">Org</option>
             <option value="network">Network</option>
           </select>
         </label>
@@ -128,6 +129,11 @@ export function EditAgentForm({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
+          {visibility === "network" && (
+            <span className={styles.fieldHint}>
+              People browsing the directory read this first: at least 20 characters.
+            </span>
+          )}
         </label>
 
         <button type="submit" className={styles.create} disabled={pending}>

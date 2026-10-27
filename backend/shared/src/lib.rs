@@ -1,6 +1,7 @@
 //! Shared types + helpers for the ChakraMCP backend services.
 //!
 //! Both `chakramcp-app` and `chakramcp-relay` depend on this crate for:
+//! * Agent listing rules: tags and descriptions (`agent_rules`)
 //! * Database pool construction
 //! * JWT minting and verification (so app-issued tokens are accepted by the relay)
 //! * Common error envelope shape
@@ -17,6 +18,7 @@
 //!   and the memory eval
 //! * Telemetry: tracing init (text/JSON logs), Prometheus metrics, request IDs
 
+pub mod agent_rules;
 pub mod auto_friendship;
 pub mod calls_memory;
 pub mod config;
