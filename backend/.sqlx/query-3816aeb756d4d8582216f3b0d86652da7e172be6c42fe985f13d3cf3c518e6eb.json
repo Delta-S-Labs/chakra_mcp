@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO agents\n                (id, account_id, created_by_user_id, slug, display_name, description,\n                 visibility, mode, accept_calls, created_by_client_id, created_by_api_key_id)\n            VALUES ($1, $2, $3, $4, $5, $6, 'private', 'pull', 'nobody', $7, $8)\n            ON CONFLICT (account_id, slug) WHERE tombstoned_at IS NULL DO NOTHING\n            RETURNING id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "3816aeb756d4d8582216f3b0d86652da7e172be6c42fe985f13d3cf3c518e6eb"
+}

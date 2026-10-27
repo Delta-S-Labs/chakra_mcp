@@ -306,7 +306,8 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
         .with_usage_retention_days(usage_retention)
         .with_compliance_shared(system_one)
         .with_calls(calls)
-        .with_memory(chakramcp_relay::calls::memory::client(&calls));
+        .with_memory(chakramcp_relay::calls::memory::client(&calls))
+        .with_mcp(chakramcp_relay::mcp::McpConfig::from_env()?);
     relay_state
         .heartbeats
         .clone()

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n            a.id, a.account_id, a.slug, a.display_name, a.description,\n            a.visibility, a.endpoint_url, a.mode, a.accept_calls, a.created_at, a.updated_at, a.tags,\n            acc.slug as account_slug, acc.display_name as account_display_name,\n            (SELECT COUNT(*)::bigint FROM agent_capabilities c WHERE c.agent_id = a.id) as \"capability_count!\",\n            (SELECT AVG(rating)::float8 FROM agent_reviews r\n                WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS avg_rating,\n            (SELECT COUNT(*)::bigint FROM agent_reviews r\n                WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS \"review_count!\",\n            EXISTS(\n                SELECT 1 FROM account_memberships m\n                WHERE m.account_id = a.account_id AND m.user_id = $1\n            ) as \"is_mine!\"\n        FROM agents a\n        JOIN accounts acc ON acc.id = a.account_id\n        WHERE a.id = $2\n          AND a.tombstoned_at IS NULL\n          AND acc.tombstoned_at IS NULL\n        ",
+  "query": "\n        SELECT\n            a.id, a.account_id, a.slug, a.display_name, a.description,\n            a.visibility, a.endpoint_url, a.mode, a.accept_calls, a.created_at, a.updated_at, a.tags,\n            (SELECT CASE WHEN d.key LIKE 'user:%' THEN 'personal' ELSE 'client' END\n               FROM default_agents d WHERE d.agent_id = a.id LIMIT 1) AS default_kind,\n            acc.slug as account_slug, acc.display_name as account_display_name,\n            (SELECT COUNT(*)::bigint FROM agent_capabilities c WHERE c.agent_id = a.id) as \"capability_count!\",\n            (SELECT AVG(rating)::float8 FROM agent_reviews r\n                WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS avg_rating,\n            (SELECT COUNT(*)::bigint FROM agent_reviews r\n                WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS \"review_count!\"\n        FROM agents a\n        JOIN accounts acc ON acc.id = a.account_id\n        WHERE a.id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -137,6 +137,12 @@
       },
       {
         "ordinal": 12,
+        "name": "default_kind",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 13,
         "name": "account_slug",
         "type_info": "Text",
         "origin": {
@@ -147,7 +153,7 @@
         }
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "account_display_name",
         "type_info": "Text",
         "origin": {
@@ -158,33 +164,26 @@
         }
       },
       {
-        "ordinal": 14,
+        "ordinal": 15,
         "name": "capability_count!",
         "type_info": "Int8",
         "origin": "Expression"
       },
       {
-        "ordinal": 15,
+        "ordinal": 16,
         "name": "avg_rating",
         "type_info": "Float8",
         "origin": "Expression"
       },
       {
-        "ordinal": 16,
+        "ordinal": 17,
         "name": "review_count!",
         "type_info": "Int8",
-        "origin": "Expression"
-      },
-      {
-        "ordinal": 17,
-        "name": "is_mine!",
-        "type_info": "Bool",
         "origin": "Expression"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
         "Uuid"
       ]
     },
@@ -201,13 +200,13 @@
       false,
       false,
       false,
-      false,
-      false,
       null,
+      false,
+      false,
       null,
       null,
       null
     ]
   },
-  "hash": "ee196119e7f85a26aa314632cbb144f2a16598322445e77da61514ab84e438c9"
+  "hash": "92058b922209ff47622c9583d46c2cce20ea6eaa45ce225c82adb975ec27237c"
 }

@@ -106,6 +106,10 @@ pub struct AgentDto {
     pub accept_calls: String,
     /// Directory tags (MCP and discovery spec §5.6).
     pub tags: Vec<String>,
+    /// Set on an agent the relay made for MCP calls (spec §6.4): `personal`
+    /// or `client`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_kind: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
     /// True when the requesting user is a member of the owning account.
@@ -201,6 +205,8 @@ pub async fn list_mine(
         SELECT
             a.id, a.account_id, a.slug, a.display_name, a.description,
             a.visibility, a.endpoint_url, a.mode, a.accept_calls, a.created_at, a.updated_at, a.tags,
+            (SELECT CASE WHEN d.key LIKE 'user:%' THEN 'personal' ELSE 'client' END
+               FROM default_agents d WHERE d.agent_id = a.id LIMIT 1) AS default_kind,
             acc.slug as account_slug, acc.display_name as account_display_name,
             (SELECT COUNT(*)::bigint FROM agent_capabilities c WHERE c.agent_id = a.id) as "capability_count!",
             (SELECT COUNT(*)::bigint FROM agent_capabilities c
@@ -251,6 +257,7 @@ pub async fn list_mine(
                 endpoint_url: r.endpoint_url,
                 accept_calls: effective_accept_calls(&r.mode, r.accept_calls),
                 tags: r.tags,
+                default_kind: r.default_kind,
                 mode: r.mode,
                 created_at: r.created_at,
                 updated_at: r.updated_at,
@@ -540,6 +547,8 @@ pub async fn get_one(
         SELECT
             a.id, a.account_id, a.slug, a.display_name, a.description,
             a.visibility, a.endpoint_url, a.mode, a.accept_calls, a.created_at, a.updated_at, a.tags,
+            (SELECT CASE WHEN d.key LIKE 'user:%' THEN 'personal' ELSE 'client' END
+               FROM default_agents d WHERE d.agent_id = a.id LIMIT 1) AS default_kind,
             acc.slug as account_slug, acc.display_name as account_display_name,
             (SELECT COUNT(*)::bigint FROM agent_capabilities c WHERE c.agent_id = a.id) as "capability_count!",
             (SELECT AVG(rating)::float8 FROM agent_reviews r
@@ -595,6 +604,7 @@ pub async fn get_one(
         endpoint_url: if manageable { r.endpoint_url } else { None },
         accept_calls: effective_accept_calls(&r.mode, r.accept_calls),
         tags: r.tags,
+        default_kind: r.default_kind,
         mode: r.mode,
         created_at: r.created_at,
         updated_at: r.updated_at,
@@ -821,6 +831,7 @@ pub async fn create(
         endpoint_url: inserted.endpoint_url,
         accept_calls: effective_accept_calls(&inserted.mode, inserted.accept_calls),
         tags: inserted.tags,
+        default_kind: None,
         mode: inserted.mode,
         created_at: inserted.created_at,
         updated_at: inserted.updated_at,
@@ -1060,6 +1071,8 @@ pub async fn update(
         SELECT
             a.id, a.account_id, a.slug, a.display_name, a.description,
             a.visibility, a.endpoint_url, a.mode, a.accept_calls, a.created_at, a.updated_at, a.tags,
+            (SELECT CASE WHEN d.key LIKE 'user:%' THEN 'personal' ELSE 'client' END
+               FROM default_agents d WHERE d.agent_id = a.id LIMIT 1) AS default_kind,
             acc.slug as account_slug, acc.display_name as account_display_name,
             (SELECT COUNT(*)::bigint FROM agent_capabilities c WHERE c.agent_id = a.id) as "capability_count!",
             (SELECT AVG(rating)::float8 FROM agent_reviews r
@@ -1100,6 +1113,7 @@ pub async fn update(
         endpoint_url: r.endpoint_url,
         accept_calls: effective_accept_calls(&r.mode, r.accept_calls),
         tags: r.tags,
+        default_kind: r.default_kind,
         mode: r.mode,
         created_at: r.created_at,
         updated_at: r.updated_at,

@@ -3,6 +3,7 @@
 //! by REST discovery (`handlers::discovery`), the network list, featured
 //! agents and, from D3, the MCP tools.
 
+pub mod featured;
 pub mod fields;
 pub mod profile;
 pub mod search;

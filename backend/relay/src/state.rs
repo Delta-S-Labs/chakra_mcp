@@ -63,6 +63,11 @@ pub struct RelayState {
     /// The TypeSafe client for call memory (calls spec §8): set when
     /// `CALLS_MEMORY_ENABLED` is on and a key is configured.
     pub memory: Option<Arc<ComplianceChecker>>,
+    /// MCP settings (`MCP_*`, `TRUST_FORWARDED_FOR`); defaults until the
+    /// binary reads them (`with_mcp`).
+    pub mcp: crate::mcp::McpConfig,
+    /// Slots for MCP tool calls that wait for a result (`MCP_MAX_WAITERS`).
+    pub waiters: Arc<tokio::sync::Semaphore>,
 }
 
 impl RelayState {
@@ -93,6 +98,10 @@ impl RelayState {
                 ..Default::default()
             },
             memory: None,
+            mcp: crate::mcp::McpConfig::default(),
+            waiters: Arc::new(tokio::sync::Semaphore::new(
+                crate::mcp::McpConfig::default().max_waiters,
+            )),
         }
     }
 
@@ -117,6 +126,13 @@ impl RelayState {
     }
 
     /// The calls settings (spec §14), read from the environment.
+    /// MCP settings, and as many waiting slots as they allow.
+    pub fn with_mcp(mut self, mcp: crate::mcp::McpConfig) -> Self {
+        self.waiters = Arc::new(tokio::sync::Semaphore::new(mcp.max_waiters));
+        self.mcp = mcp;
+        self
+    }
+
     pub fn with_calls(mut self, calls: crate::calls::CallsConfig) -> Self {
         self.calls = calls;
         self

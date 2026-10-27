@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE default_agents SET key = $1 WHERE key = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6d8dad6483c940780967e1d79b9e20243076511ae347ddfbb28e3c1744635a1a"
+}

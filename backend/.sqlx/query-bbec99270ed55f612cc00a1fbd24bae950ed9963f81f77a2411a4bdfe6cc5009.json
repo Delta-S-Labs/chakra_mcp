@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT d.agent_id FROM default_agents d\n             JOIN agents a ON a.id = d.agent_id\n            WHERE d.key = $1 AND a.tombstoned_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "agent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "default_agents",
+            "name": "agent_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "bbec99270ed55f612cc00a1fbd24bae950ed9963f81f77a2411a4bdfe6cc5009"
+}
