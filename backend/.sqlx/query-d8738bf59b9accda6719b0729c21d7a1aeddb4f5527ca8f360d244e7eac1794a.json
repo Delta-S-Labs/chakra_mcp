@@ -1,0 +1,136 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, name, description, input_schema, output_schema, visibility, public_invoke,\n               public_monthly_quota_per_agent, consent_required, semantics\n          FROM agent_capabilities\n         WHERE agent_id = $1\n         ORDER BY name\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "input_schema",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "input_schema"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "output_schema",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "output_schema"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "visibility",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "visibility"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "public_invoke",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "public_invoke"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "public_monthly_quota_per_agent",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "public_monthly_quota_per_agent"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "consent_required",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "consent_required"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "semantics",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "semantics"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "d8738bf59b9accda6719b0729c21d7a1aeddb4f5527ca8f360d244e7eac1794a"
+}

@@ -1,0 +1,225 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT a.id, a.slug, a.display_name, a.description, a.mode, a.tags, a.visibility,\n               a.accept_calls, a.created_at, a.account_id,\n               acc.slug AS account_slug, acc.display_name AS account_display_name,\n               acc.verified_at IS NOT NULL AS \"verified!\",\n               ($2::text IS NOT NULL AND acc.slug = $2::text) AS \"featured!\",\n               COALESCE(h.last_polled_at > now() - interval '5 minutes', false) AS \"online!\",\n               CASE WHEN a.mode = 'push' THEN COALESCE(a.agent_card_fetched_at, a.created_at)\n                    ELSE COALESCE(h.last_polled_at, a.created_at) END AS \"last_seen_at!\",\n               (SELECT count(*) FROM friendships f\n                 WHERE f.status = 'accepted'\n                   AND (f.proposer_agent_id = a.id OR f.target_agent_id = a.id)) AS \"friend_count!\",\n               (SELECT AVG(rating)::float8 FROM agent_reviews r\n                 WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS avg_rating,\n               (SELECT count(*) FROM agent_reviews r\n                 WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS \"review_count!\",\n               ($3::uuid IS NOT NULL AND EXISTS (\n                   SELECT 1 FROM account_memberships m\n                    WHERE m.account_id = a.account_id AND m.user_id = $3)) AS \"member!\",\n               ($3::uuid IS NOT NULL AND EXISTS (\n                   SELECT 1\n                     FROM account_memberships caller_m\n                     JOIN accounts shared_org ON shared_org.id = caller_m.account_id\n                     JOIN account_memberships owner_m ON owner_m.account_id = shared_org.id\n                     JOIN account_memberships owner_acc_m\n                       ON owner_acc_m.user_id = owner_m.user_id\n                      AND owner_acc_m.account_id = a.account_id\n                    WHERE caller_m.user_id = $3\n                      AND shared_org.account_type = 'organization')) AS \"shares_org!\"\n          FROM agents a\n          JOIN accounts acc ON acc.id = a.account_id\n          LEFT JOIN agent_heartbeats h ON h.agent_id = a.id\n         WHERE a.id = ANY($1)\n           AND a.tombstoned_at IS NULL\n           AND acc.tombstoned_at IS NULL\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "display_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "mode",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "mode"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "tags",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "tags"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "visibility",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "visibility"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "accept_calls",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "accept_calls"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "account_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "account_slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "account_display_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "verified!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 13,
+        "name": "featured!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 14,
+        "name": "online!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 15,
+        "name": "last_seen_at!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 16,
+        "name": "friend_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 17,
+        "name": "avg_rating",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 18,
+        "name": "review_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 19,
+        "name": "member!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 20,
+        "name": "shares_org!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "ca3b088814159c32e397acc93df208e6aa4d342ce1785f457252686a70ccd9f3"
+}

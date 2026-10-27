@@ -1,0 +1,60 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT r.rating, r.comment, r.created_at,\n               CASE WHEN ra.visibility = 'network' AND ra.tombstoned_at IS NULL\n                    THEN ra.display_name END AS reviewer\n          FROM agent_reviews r\n          JOIN agents ra ON ra.id = r.reviewer_agent_id\n         WHERE r.target_agent_id = $1 AND r.hidden_at IS NULL\n         ORDER BY r.created_at DESC\n         LIMIT $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "rating",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "agent_reviews",
+            "name": "rating"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "comment",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_reviews",
+            "name": "comment"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "agent_reviews",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "reviewer",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "07c103af25855ee3f14b2999c1d36514f9b251b7f234b2338206718f461830a0"
+}
