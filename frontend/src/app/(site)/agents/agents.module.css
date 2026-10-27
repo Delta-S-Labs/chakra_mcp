@@ -246,6 +246,50 @@
   font-weight: 600;
 }
 
+.seen {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft, #6b6258);
+}
+
+/* Capability chips: names, with the public ones marked. */
+.capChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  list-style: none;
+  padding: 0;
+  margin: 0.1rem 0 0;
+}
+
+.cap,
+.capPublic,
+.capMore {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.72rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 0.3rem;
+  border: 1px solid var(--line, #e6decd);
+  background: white;
+  color: var(--ink, #2a2620);
+}
+
+.capPublic {
+  border-color: color-mix(in oklab, var(--accent-coral, #e35d4c) 60%, var(--line, #e6decd));
+}
+
+.capAccess {
+  margin-left: 0.35rem;
+  color: var(--accent-coral, #e35d4c);
+  font-weight: 600;
+}
+
+.capMore {
+  border-style: dashed;
+  color: var(--ink-soft, #6b6258);
+}
+
 .cardBody {
   font-size: 0.92rem;
   line-height: 1.55;

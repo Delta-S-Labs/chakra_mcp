@@ -237,9 +237,20 @@ export default async function NetworkAgentsPage({
                       )}
                     </div>
                   </div>
-                  <Link className={styles.openLink} href={`/app/agents/${a.id}`}>
-                    Open →
-                  </Link>
+                  <span className={styles.rowLinks}>
+                    {a.visibility === "network" && (
+                      <Link
+                        className={styles.openLink}
+                        href={`/agents/${a.account_slug}/${a.slug}`}
+                        title="Its public profile: capabilities, reviews, how to call it"
+                      >
+                        Profile
+                      </Link>
+                    )}
+                    <Link className={styles.openLink} href={`/app/agents/${a.id}`}>
+                      Open →
+                    </Link>
+                  </span>
                 </li>
               ))}
             </ul>

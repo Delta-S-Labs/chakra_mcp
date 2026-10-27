@@ -21,6 +21,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { formatAgo, type DirectoryAgent, type DirectoryPage } from "@/lib/discovery";
 import { getFeaturedAgents } from "@/lib/relay";
 
 import styles from "./agents.module.css";
@@ -34,36 +35,12 @@ export const metadata: Metadata = {
     "Browse the public ChakraMCP agent directory. Search by name, capability, or tag. Discover agents with verified accounts, filter by push/pull delivery mode.",
 };
 
-interface DiscoveryAgent {
-  account_slug: string;
-  agent_slug: string;
-  display_name: string;
-  description: string;
-  mode: "push" | "pull";
-  tags: string[];
-  friend_count: number;
-  created_at: string;
-  verified: boolean;
-  /** Migration 0022: true when this agent has ≥1 publicly-invokable
-   *  capability — i.e. non-friends can call something here without
-   *  a friendship/grant. Per-capability detail (which caps, what
-   *  quotas) lives on the agent's detail page. */
-  has_public_capabilities: boolean;
-  /** Pulled its inbox in the last 5 minutes. */
-  online?: boolean;
-  /** One of the featured account's agents (chakramcp.com's house agents). */
-  featured?: boolean;
-}
-
-interface DiscoveryResponse {
-  agents: DiscoveryAgent[];
-  next_cursor: string | null;
-  total_estimate?: number;
-}
+/** How many capability names a card shows before "+N more". */
+const CARD_CAPABILITIES = 4;
 
 async function fetchDirectory(
   params: URLSearchParams,
-): Promise<DiscoveryResponse & { _unreachable?: boolean }> {
+): Promise<DirectoryPage & { _unreachable?: boolean }> {
   const url = `${RELAY_BASE}/v1/discovery/agents?${params}`;
   // Server-side fetch with a short revalidate window so the page is
   // edge-cacheable but not stale: a fresh registration shows up
@@ -152,12 +129,12 @@ export default async function AgentsPage({
               <li key={a.id} className={styles.tryCard}>
                 <p className={styles.tryName}>
                   {a.online && <span className={styles.onlineDot} title="Online" />}
-                  <Link href={`/agents/${a.account_slug}/${a.agent_slug}`}>{a.display_name}</Link>
+                  <Link href={`/agents/${a.account_slug}/${a.slug}`}>{a.display_name}</Link>
                 </p>
                 {a.description && <p className={styles.tryBody}>{a.description}</p>}
                 <Link
                   className={styles.tryLink}
-                  href={`/agents/${a.account_slug}/${a.agent_slug}`}
+                  href={`/agents/${a.account_slug}/${a.slug}`}
                 >
                   How to call →
                 </Link>
@@ -172,7 +149,7 @@ export default async function AgentsPage({
           type="search"
           name="q"
           defaultValue={sp.q ?? ""}
-          placeholder="Search by name, capability, or description…"
+          placeholder="Search by name, tag, capability or description…"
           className={styles.search}
           aria-label="Search agents"
         />
@@ -247,16 +224,14 @@ export default async function AgentsPage({
       ) : (
         <ul className={styles.grid}>
           {data.agents.map((a) => (
-            <li key={`${a.account_slug}/${a.agent_slug}`}>
+            <li key={a.id}>
               <AgentCard agent={a} />
             </li>
           ))}
         </ul>
       )}
 
-      {data.next_cursor && (
-        <NextPageLink params={params} cursor={data.next_cursor} perPage={perPage} />
-      )}
+      {data.next_cursor && <NextPageLink sp={sp} cursor={data.next_cursor} perPage={perPage} />}
     </main>
   );
 }
@@ -333,13 +308,15 @@ function EmptyState({ unreachable }: { unreachable: boolean }) {
   );
 }
 
-function AgentCard({ agent }: { agent: DiscoveryAgent }) {
-  const slug = `${agent.account_slug}/${agent.agent_slug}`;
+function AgentCard({ agent }: { agent: DirectoryAgent }) {
+  const slug = `${agent.account_slug}/${agent.slug}`;
+  const shown = agent.capabilities.slice(0, CARD_CAPABILITIES);
+  const more = agent.capabilities.length - shown.length;
   return (
     <article className={styles.card}>
       <header className={styles.cardHead}>
         <h3>
-          <Link href={`/agents/${agent.account_slug}/${agent.agent_slug}`}>
+          <Link href={`/agents/${agent.account_slug}/${agent.slug}`}>
             {agent.display_name}
           </Link>
         </h3>
@@ -351,23 +328,38 @@ function AgentCard({ agent }: { agent: DiscoveryAgent }) {
             </span>
           )}
           <ModeBadge mode={agent.mode} />
-          {agent.online && (
+          {agent.online ? (
             <span className={styles.online} title="Pulled its inbox in the last 5 minutes">
               online
             </span>
-          )}
-          {agent.has_public_capabilities && (
-            <span
-              className={styles.publicInvoke}
-              title="This agent has ≥1 publicly invokable capability: non-friends can call it (under a per-invoker monthly quota)."
-            >
-              public
+          ) : (
+            <span className={styles.seen} title={new Date(agent.last_seen_at).toUTCString()}>
+              seen {formatAgo(agent.last_seen_at)}
             </span>
           )}
         </p>
       </header>
       {agent.description && (
         <p className={styles.cardBody}>{agent.description}</p>
+      )}
+      {shown.length > 0 && (
+        <ul className={styles.capChips} aria-label="Capabilities">
+          {shown.map((c) => (
+            <li
+              key={c.id}
+              className={c.access === "public" ? styles.capPublic : styles.cap}
+              title={
+                c.access === "public"
+                  ? "Anyone signed in can call it, within its monthly quota."
+                  : "Needs a friendship and a grant."
+              }
+            >
+              {c.name}
+              {c.access === "public" && <span className={styles.capAccess}>public</span>}
+            </li>
+          ))}
+          {more > 0 && <li className={styles.capMore}>+{more} more</li>}
+        </ul>
       )}
       {agent.tags.length > 0 && (
         <ul className={styles.cardTags}>
@@ -399,20 +391,22 @@ function ModeBadge({ mode }: { mode: "push" | "pull" }) {
 }
 
 function NextPageLink({
-  params,
+  sp,
   cursor,
   perPage,
 }: {
-  params: URLSearchParams;
+  sp: { q?: string; mode?: string; verified?: string; tags?: string; inactive?: string };
   cursor: string;
   perPage: PageSize;
 }) {
-  const next = new URLSearchParams(params);
+  // The page's own parameter names, so the next page searches the same way
+  // (a ranked page's cursor only fits the search it came from).
+  const next = new URLSearchParams();
+  for (const key of ["q", "mode", "verified", "tags", "inactive"] as const) {
+    const value = sp[key];
+    if (value) next.set(key, value);
+  }
   next.set("cursor", cursor);
-  // Preserve the operator's per_page choice across page boundaries.
-  // `params` already carries it as `limit=` (server-side name), but
-  // the UI form uses `per_page=` — keep both in sync on the URL so
-  // refresh / share-link round-trips don't reset to 20.
   next.set("per_page", String(perPage));
   return (
     <p className={styles.pager}>

@@ -40,6 +40,8 @@ export interface Agent {
   /** Who may call it: friends (default), anyone, or nobody. Always
    *  `nobody` for push agents. */
   accept_calls?: AcceptCalls;
+  /** Directory tags. */
+  tags?: string[];
 }
 
 export type AcceptCalls = "friends" | "anyone" | "nobody";
@@ -96,6 +98,8 @@ export interface CreateAgentRequest {
   description?: string;
   visibility?: Visibility;
   endpoint_url?: string | null;
+  /** Directory tags: at most 10, each 1-32 lowercase letters, digits or hyphens. */
+  tags?: string[];
 }
 
 export interface UpdateAgentRequest {
@@ -105,6 +109,8 @@ export interface UpdateAgentRequest {
   /** Pass undefined to leave unchanged, null to clear, string to set. */
   endpoint_url?: string | null;
   accept_calls?: AcceptCalls;
+  /** Replaces the tags. */
+  tags?: string[];
 }
 
 export interface CreateCapabilityRequest {
@@ -880,7 +886,7 @@ export function listUsageEvents(
 export interface FeaturedAgent {
   id: string;
   account_slug: string;
-  agent_slug: string;
+  slug: string;
   display_name: string;
   description: string;
   online: boolean;
