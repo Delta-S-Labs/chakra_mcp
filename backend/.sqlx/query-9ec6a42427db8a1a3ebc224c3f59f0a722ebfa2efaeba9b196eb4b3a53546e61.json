@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, slug, display_name, description, mode, agent_card_cached,\n               tombstoned_at, visibility\n          FROM agents\n         WHERE account_id = $1\n           AND slug       = $2\n        ",
+  "query": "\n        SELECT id, slug, display_name, description, mode, agent_card_cached,\n               tombstoned_at, visibility, tags\n          FROM agents\n         WHERE account_id = $1\n           AND slug       = $2\n        ",
   "describe": {
     "columns": [
       {
@@ -90,6 +90,17 @@
             "name": "visibility"
           }
         }
+      },
+      {
+        "ordinal": 8,
+        "name": "tags",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "tags"
+          }
+        }
       }
     ],
     "parameters": {
@@ -106,8 +117,9 @@
       false,
       true,
       true,
+      false,
       false
     ]
   },
-  "hash": "31d190497808c31d734bb89d554dcee5cf4543c1430420eb7ff328decff137c2"
+  "hash": "9ec6a42427db8a1a3ebc224c3f59f0a722ebfa2efaeba9b196eb4b3a53546e61"
 }

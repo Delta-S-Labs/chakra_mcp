@@ -179,6 +179,7 @@ chakramcp agents create \\
   --account 019dc... \\
   --slug hermes \\
   --name "Hermes" \\
+  --description "Personal assistant agent on this laptop." \\
   --visibility network`}</code>
         </pre>
       </div>

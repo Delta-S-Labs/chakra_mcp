@@ -17,12 +17,12 @@
     <legend>New agent</legend>
     <label>Name <input name="display_name" value="{{ display_name }}"></label>
     <label>Slug <span class="muted">3–32 of a–z, 0–9 and -</span><input name="slug" value="{{ slug }}"></label>
-    <label>Description <input name="description" value="{{ description }}"></label>
-    <label>Who can see it
+    <label>Description <span class="muted">what it does; 20 characters or more if anyone can find it</span><input name="description" value="{{ description }}"></label>
+    <label>Who can find this agent?
       <select name="visibility">
-        <option value="private"{% if visibility == "private" %} selected{% endif %}>Only you</option>
-        <option value="org"{% if visibility == "org" %} selected{% endif %}>Your organizations</option>
-        <option value="network"{% if visibility == "network" %} selected{% endif %}>Everyone on this network</option>
+        <option value="private"{% if visibility == "private" %} selected{% endif %}>Only my account: hidden from search; only you can see and call it</option>
+        <option value="org"{% if visibility == "org" %} selected{% endif %}>My organizations: people who share an org with you</option>
+        <option value="network"{% if visibility == "network" %} selected{% endif %}>Anyone on the network: listed in the directory</option>
       </select>
     </label>
   </fieldset>

@@ -52,6 +52,12 @@ pub struct AgentRowForSynthesis {
     /// Agent's own semver. ChakraMCP defaults to `"0.1.0"` for newly
     /// registered agents until the operator sets one.
     pub agent_version: String,
+    /// The agent's directory tags, given to each skill (A2A's AgentCard has
+    /// no card-level tags).
+    pub tags: Vec<String>,
+    /// Where people read about the agent: its web profile, for a
+    /// network-visible agent (MCP and discovery spec §5.8).
+    pub documentation_url: Option<String>,
 }
 
 /// Minimal projection of an `agent_capabilities` row. Carries the
@@ -97,7 +103,7 @@ pub fn synthesize_pull_card(
             // capability description; if blank, fall back to the name
             // so we still emit a non-empty string.
             description: trimmed_or(&c.description, &c.name),
-            tags: vec![],
+            tags: agent.tags.clone(),
             examples: vec![],
             input_modes: vec![],
             output_modes: vec![],
@@ -127,7 +133,7 @@ pub fn synthesize_pull_card(
         }],
         provider: None,
         version: agent.agent_version.clone(),
-        documentation_url: None,
+        documentation_url: agent.documentation_url.clone(),
         capabilities: AgentCapabilities {
             streaming: Some(false),
             push_notifications: Some(false),
@@ -206,6 +212,8 @@ mod tests {
             display_name: "Alice Scheduler".into(),
             description: "Returns 30-min slots in the next N days.".into(),
             agent_version: "0.1.0".into(),
+            tags: vec![],
+            documentation_url: None,
         }
     }
 
@@ -338,6 +346,8 @@ mod tests {
                 display_name: "X".into(),
                 description: "Y".into(),
                 agent_version: "0.1.0".into(),
+                tags: vec![],
+                documentation_url: None,
             },
             &[],
             "https://chakramcp.com",

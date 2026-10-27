@@ -161,6 +161,11 @@ export function CreateAgentForm({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
+          {effectiveVisibility === "network" && (
+            <span className={styles.fieldHint}>
+              People browsing the directory read this first: at least 20 characters.
+            </span>
+          )}
         </label>
 
         <label className={styles.field}>

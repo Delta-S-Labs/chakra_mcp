@@ -19,10 +19,33 @@ export interface PairableAgent {
 /** Mirrors the backend tiers (migration 0021 / 0031). */
 type AgentVisibility = "private" | "org" | "network";
 
-/** Anything unrecognised (empty, unknown) falls back to the safe default. */
-function parseVisibility(hint: string): AgentVisibility {
-  return hint === "org" || hint === "network" ? hint : "private";
+/** The device's hint, if it's a tier; otherwise the person chooses. */
+function parseVisibility(hint: string): AgentVisibility | null {
+  return hint === "private" || hint === "org" || hint === "network" ? hint : null;
 }
+
+/** A network-visible agent's description is at least this long (the API's
+ *  rule, MCP and discovery spec §5.7). */
+const MIN_NETWORK_DESCRIPTION = 20;
+
+const VISIBILITY_CHOICES: { value: AgentVisibility; label: string; detail: string }[] = [
+  {
+    value: "private",
+    label: "Only my account",
+    detail: "Hidden from search. Only you and your account's members can see it or call it.",
+  },
+  {
+    value: "network",
+    label: "Anyone on the network",
+    detail:
+      "Listed in the directory, so other people's agents can find it and ask to work with it.",
+  },
+  {
+    value: "org",
+    label: "My organizations",
+    detail: "People who share an organization with you. Not in the public directory.",
+  },
+];
 
 /**
  * Consent UI for an in-flight device-flow pairing session.
@@ -66,9 +89,9 @@ export function ConsentForm({
     displayNameHint || titleCase(slugHint),
   );
   const [description, setDescription] = useState(descriptionHint);
-  // Pre-fill from the client's hint; unrecognised values fall back to the
-  // safe default. User can still change it before approving.
-  const [visibility, setVisibility] = useState<AgentVisibility>(
+  // Pre-fill from the client's hint; without one, nothing is chosen until
+  // the person picks.
+  const [visibility, setVisibility] = useState<AgentVisibility | null>(
     parseVisibility(visibilityHint),
   );
 
@@ -102,6 +125,19 @@ export function ConsentForm({
         setError("Display name is required.");
         return;
       }
+      if (!visibility) {
+        setError("Choose who can find this agent.");
+        return;
+      }
+      if (
+        visibility === "network" &&
+        description.trim().length < MIN_NETWORK_DESCRIPTION
+      ) {
+        setError(
+          `An agent anyone can find needs a description of at least ${MIN_NETWORK_DESCRIPTION} characters saying what it does.`,
+        );
+        return;
+      }
     }
 
     setStatus("approving");
@@ -115,7 +151,7 @@ export function ConsentForm({
               agent_slug: slug.trim(),
               agent_display_name: displayName.trim(),
               agent_description: description.trim() || undefined,
-              agent_visibility: visibility,
+              agent_visibility: visibility ?? undefined,
             },
       );
       setApprovedAgent({
@@ -240,33 +276,44 @@ export function ConsentForm({
             />
           </div>
 
+          <fieldset className={styles.choices}>
+            <legend>Who can find this agent?</legend>
+            {VISIBILITY_CHOICES.map((choice) => (
+              <label key={choice.value} className={styles.choice}>
+                <input
+                  type="radio"
+                  name="agent-visibility"
+                  value={choice.value}
+                  checked={visibility === choice.value}
+                  onChange={() => setVisibility(choice.value)}
+                />
+                <span>
+                  <strong>{choice.label}</strong>
+                  <span className={styles.choiceDetail}>{choice.detail}</span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+
           <div className={styles.field}>
-            <label htmlFor="agent-description">Description (optional)</label>
+            <label htmlFor="agent-description">
+              Description{visibility === "network" ? "" : " (optional)"}
+            </label>
             <input
               id="agent-description"
               type="text"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What does this agent do?"
+              aria-describedby="agent-description-hint"
             />
-          </div>
-
-          <div className={styles.field}>
-            <label htmlFor="agent-visibility">Visibility</label>
-            <select
-              id="agent-visibility"
-              value={visibility}
-              onChange={(e) =>
-                setVisibility(e.target.value as AgentVisibility)
-              }
-            >
-              <option value="private">Private — only you can see it</option>
-              <option value="org">
-                Org — anyone sharing an org with you; not in the public
-                directory
-              </option>
-              <option value="network">Network — listed in the directory</option>
-            </select>
+            {visibility === "network" && (
+              <span id="agent-description-hint" className={styles.fieldHint}>
+                People browsing the directory read this first. At least{" "}
+                {MIN_NETWORK_DESCRIPTION} characters ({description.trim().length}{" "}
+                so far).
+              </span>
+            )}
           </div>
         </>
       )}

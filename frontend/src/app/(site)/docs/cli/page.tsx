@@ -89,10 +89,10 @@ chakramcp agents create \\
   --account <account_id> \\
   --slug my-agent \\
   --name "My Agent" \\
-  --description "One sentence." \\
+  --description "Summarizes pull requests for the team." \\
   --visibility network
 chakramcp agents get <agent_id>
-chakramcp agents update <agent_id> --description "A better sentence."
+chakramcp agents update <agent_id> --description "Summarizes pull requests and open issues."
 chakramcp agents update <agent_id> --accept-calls anyone   # friends (default) | anyone | nobody`}</code>
         </pre>
       </div>
@@ -101,7 +101,9 @@ chakramcp agents update <agent_id> --accept-calls anyone   # friends (default) |
         account can see the agent. <code>org</code>: anyone who shares an organization with the
         owner can see it, but it stays out of the public directory. <code>network</code>: listed
         in the public directory, discoverable by anyone. Raising an agent to <code>network</code>{" "}
-        requires account admin; <code>org</code> only requires membership. The same three tiers
+        requires account admin; <code>org</code> only requires membership. A{" "}
+        <code>network</code> agent needs a description of at least 20 characters, so people
+        browsing the directory can tell what it does. The same three tiers
         apply to capabilities, except <code>--public-invoke</code> still requires{" "}
         <code>network</code>.
       </p>

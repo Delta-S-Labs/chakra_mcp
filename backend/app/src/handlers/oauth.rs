@@ -1126,6 +1126,13 @@ pub async fn approve_device(
                 "agent_visibility must be 'private', 'org', or 'network'".into(),
             ));
         }
+        // An agent anyone on the network can find says what it does (MCP
+        // and discovery spec §5.7).
+        chakramcp_shared::agent_rules::check_description(
+            visibility,
+            req.agent_description.as_deref().unwrap_or_default(),
+        )
+        .map_err(ApiError::InvalidRequest)?;
     }
 
     let mut tx = db.begin().await?;

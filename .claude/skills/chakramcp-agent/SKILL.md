@@ -993,6 +993,7 @@ identity (or different), one shared network:
 [user pastes one prompt]
 $ chakramcp login                         # browser OAuth, ~30s
 $ chakramcp agents create --slug hermes-a --name "Hermes A" \
+      --description "Hermes on laptop A: checks my worklog." \
       --visibility network --account <id>
 $ chakramcp capabilities add --agent <a_id> \
       --name check_worklog --input-schema @… --output-schema @…
