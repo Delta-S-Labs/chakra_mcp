@@ -269,6 +269,8 @@ mod tests {
                 display_name: "Alice".into(),
                 description: "Demo agent.".into(),
                 agent_version: "0.1.0".into(),
+                tags: vec![],
+                documentation_url: None,
             },
             &[CapabilityRowForSynthesis {
                 id: "cap-1".into(),

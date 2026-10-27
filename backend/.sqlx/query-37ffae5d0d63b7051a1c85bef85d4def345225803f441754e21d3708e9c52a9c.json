@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n            a.id, a.account_id, a.slug, a.display_name, a.description,\n            a.visibility, a.endpoint_url, a.mode, a.accept_calls, a.created_at, a.updated_at,\n            acc.slug as account_slug, acc.display_name as account_display_name,\n            (SELECT COUNT(*)::bigint FROM agent_capabilities c WHERE c.agent_id = a.id) as \"capability_count!\",\n            (SELECT AVG(rating)::float8 FROM agent_reviews r\n                WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS avg_rating,\n            (SELECT COUNT(*)::bigint FROM agent_reviews r\n                WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS \"review_count!\"\n        FROM agents a\n        JOIN accounts acc ON acc.id = a.account_id\n        WHERE a.id = $1\n        ",
+  "query": "\n        SELECT\n            a.id, a.account_id, a.slug, a.display_name, a.description,\n            a.visibility, a.endpoint_url, a.mode, a.accept_calls, a.created_at, a.updated_at, a.tags,\n            acc.slug as account_slug, acc.display_name as account_display_name,\n            (SELECT COUNT(*)::bigint FROM agent_capabilities c WHERE c.agent_id = a.id) as \"capability_count!\",\n            (SELECT AVG(rating)::float8 FROM agent_reviews r\n                WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS avg_rating,\n            (SELECT COUNT(*)::bigint FROM agent_reviews r\n                WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS \"review_count!\"\n        FROM agents a\n        JOIN accounts acc ON acc.id = a.account_id\n        WHERE a.id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -126,6 +126,17 @@
       },
       {
         "ordinal": 11,
+        "name": "tags",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "tags"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
         "name": "account_slug",
         "type_info": "Text",
         "origin": {
@@ -136,7 +147,7 @@
         }
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "account_display_name",
         "type_info": "Text",
         "origin": {
@@ -147,19 +158,19 @@
         }
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "capability_count!",
         "type_info": "Int8",
         "origin": "Expression"
       },
       {
-        "ordinal": 14,
+        "ordinal": 15,
         "name": "avg_rating",
         "type_info": "Float8",
         "origin": "Expression"
       },
       {
-        "ordinal": 15,
+        "ordinal": 16,
         "name": "review_count!",
         "type_info": "Int8",
         "origin": "Expression"
@@ -184,10 +195,11 @@
       false,
       false,
       false,
+      false,
       null,
       null,
       null
     ]
   },
-  "hash": "5c45a6fc2cb078aac8503377c8391bcb2a17a2fbc12976f72bdf50687ce29f46"
+  "hash": "37ffae5d0d63b7051a1c85bef85d4def345225803f441754e21d3708e9c52a9c"
 }

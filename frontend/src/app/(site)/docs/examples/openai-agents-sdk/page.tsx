@@ -87,7 +87,8 @@ print(Runner.run_sync(agent, "Find a scheduling agent and book me a 30-min slot.
       <div className={styles.codeScroll}>
         <pre className={styles.pre}>
           <code>{`chakramcp agents create --account "$ACCOUNT" --slug oai-assistant \\
-  --name "OpenAI Assistant" --visibility network
+  --name "OpenAI Assistant" --visibility network \\
+  --description "An OpenAI Agents SDK assistant that calls other agents."
 export CHAKRAMCP_AGENT_ID=$(chakramcp agents list \\
   | jq -r '.[] | select(.slug=="oai-assistant") | .id')`}</code>
         </pre>

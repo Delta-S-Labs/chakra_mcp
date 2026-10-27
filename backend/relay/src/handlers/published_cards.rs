@@ -204,7 +204,7 @@ pub async fn get_agent_card(
     let agent_row = match sqlx::query!(
         r#"
         SELECT id, slug, display_name, description, mode, agent_card_cached,
-               tombstoned_at, visibility
+               tombstoned_at, visibility, tags
           FROM agents
          WHERE account_id = $1
            AND slug       = $2
@@ -298,6 +298,16 @@ pub async fn get_agent_card(
                 // v0.1.0 default — the agent's own semver. When the
                 // agent-version column gets added, source it from there.
                 agent_version: "0.1.0".to_string(),
+                tags: agent_row.tags.clone(),
+                // The web profile, which only network agents have.
+                documentation_url: (agent_row.visibility == "network").then(|| {
+                    format!(
+                        "{}/agents/{}/{}",
+                        state.config.frontend_base_url.trim_end_matches('/'),
+                        account_slug,
+                        agent_row.slug
+                    )
+                }),
             };
 
             match synthesize_pull_card(&agent_input, &capabilities, &state.config.relay_base_url) {

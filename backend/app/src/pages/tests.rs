@@ -622,10 +622,28 @@ async fn pairing_approves_new_and_existing_agents_and_denies(pool: PgPool) {
         "the slug comes from the hint"
     );
 
-    let approved = browser
+    // Anyone on the network can find it: it needs a real description.
+    let terse = browser
         .submit(
             "/app/pair",
             &form,
+            &[
+                ("step", "approve"),
+                ("target", "new"),
+                ("display_name", "Release Notes Bot"),
+                ("slug", "release-notes-bot"),
+                ("description", "Notes."),
+                ("visibility", "network"),
+            ],
+        )
+        .await;
+    assert_eq!(terse.status, StatusCode::BAD_REQUEST);
+    assert!(terse.body.contains("20 characters"), "{}", terse.body);
+
+    let approved = browser
+        .submit(
+            "/app/pair",
+            &terse,
             &[
                 ("step", "approve"),
                 ("target", "new"),
