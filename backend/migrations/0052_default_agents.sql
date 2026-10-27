@@ -8,7 +8,9 @@
 -- `api_key:<id>`). A deleted default agent is replaced on next use, which
 -- updates the row.
 --
--- A new table nothing reads yet: no lock on a hot table.
+-- Locking: the foreign keys take SHARE ROW EXCLUSIVE on `agents` and
+-- `users` for the moment the table is created. That blocks writes to them,
+-- never reads, so the invocation path doesn't wait.
 
 CREATE TABLE IF NOT EXISTS default_agents (
     key        TEXT PRIMARY KEY,
