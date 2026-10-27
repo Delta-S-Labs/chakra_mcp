@@ -715,8 +715,9 @@ type UpdateAgentRequest struct {
 	Visibility  Visibility `json:"visibility,omitempty"`
 	// AcceptCalls sets who may call the agent; empty keeps it.
 	AcceptCalls AcceptCalls `json:"accept_calls,omitempty"`
-	// Tags replaces the directory tags; empty keeps them.
-	Tags []string `json:"tags,omitempty"`
+	// Tags replaces the directory tags; nil keeps them, and a pointer to
+	// an empty slice removes them all.
+	Tags *[]string `json:"tags,omitempty"`
 }
 
 type CreateCapabilityRequest struct {

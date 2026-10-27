@@ -243,3 +243,23 @@ func TestAgentsCreateSendsTags(t *testing.T) {
 		t.Errorf("tags sent though unset: %v", bodies[1])
 	}
 }
+
+// UpdateAgentRequest.Tags: nil keeps the tags, an empty slice clears them.
+func TestUpdateAgentTagsKeepOrClear(t *testing.T) {
+	for _, tc := range []struct {
+		tags *[]string
+		want string
+	}{
+		{nil, `{"display_name":"Rooms"}`},
+		{&[]string{}, `{"display_name":"Rooms","tags":[]}`},
+		{&[]string{"events"}, `{"display_name":"Rooms","tags":["events"]}`},
+	} {
+		body, err := json.Marshal(UpdateAgentRequest{DisplayName: "Rooms", Tags: tc.tags})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(body) != tc.want {
+			t.Errorf("body = %s, want %s", body, tc.want)
+		}
+	}
+}
