@@ -29,12 +29,12 @@ use crate::print;
 
 #[derive(Args, Debug)]
 pub struct DiscoverArgs {
-    /// Full-text query against display name, description, and tags.
+    /// Free text: any word matches, and better matches rank higher (the
+    /// name and slug first, then tags, then descriptions and capabilities).
     #[arg(long, short = 'q')]
     pub query: Option<String>,
 
-    /// Filter to agents that publish a capability with this name.
-    /// Exact match against `agent_capabilities.name`.
+    /// Agents with a capability whose name contains this, case-insensitively.
     #[arg(long)]
     pub capability: Option<String>,
 
@@ -54,6 +54,11 @@ pub struct DiscoverArgs {
     /// By default the directory hides them to keep results trustworthy.
     #[arg(long)]
     pub include_dormant: bool,
+
+    /// Only agents you can call now: something public, or a grant to one
+    /// of your agents. Needs you signed in.
+    #[arg(long)]
+    pub callable: bool,
 
     /// Page size. Default 20, max 100.
     #[arg(long, default_value_t = 20)]
@@ -83,6 +88,9 @@ pub async fn run(args: DiscoverArgs, api: ApiClient) -> Result<()> {
     }
     if args.include_dormant {
         params.push(("include_dormant".into(), "true".into()));
+    }
+    if args.callable {
+        params.push(("callable".into(), "true".into()));
     }
     params.push(("limit".into(), args.limit.to_string()));
     if let Some(c) = args.cursor {
