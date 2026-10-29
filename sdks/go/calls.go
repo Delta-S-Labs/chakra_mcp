@@ -202,18 +202,60 @@ func (cs *CallsClient) Ask(ctx context.Context, callID, agentID, question string
 
 // Pull claims agentID's undelivered call entries, oldest first: invites,
 // messages and events. Each is delivered once. The relay returns at
-// most 25; limit <= 0 takes that.
+// most 25; limit <= 0 takes that. Use PullWithOptions to wait for
+// entries.
 func (cs *CallsClient) Pull(ctx context.Context, agentID string, limit int) ([]CallFeedItem, error) {
-	q := url.Values{}
-	q.Set("agent_id", agentID)
-	if limit > 0 {
-		q.Set("limit", strconv.Itoa(limit))
-	}
-	var out []CallFeedItem
-	if err := cs.c.do(ctx, http.MethodGet, cs.c.relayURL, "/v1/inbox/calls?"+q.Encode(), nil, &out); err != nil {
+	return cs.PullWithOptions(ctx, agentID, CallsPullOptions{Limit: limit})
+}
+
+// CallsPullOptions configures Calls().PullWithOptions and PullWithMeta.
+// Zero values are left out.
+type CallsPullOptions struct {
+	// Limit is the most entries to claim; 0 takes the relay's default.
+	Limit int
+	// Wait is how many seconds the relay may hold the pull open until an
+	// entry arrives (0-25; larger values are clamped). 0 doesn't wait.
+	// Relays before 0.7 ignore it and answer at once.
+	Wait int
+}
+
+// CallsPullResult is what Calls().PullWithMeta returns.
+type CallsPullResult struct {
+	Items []CallFeedItem
+	// Waited is the seconds the relay honoured of CallsPullOptions.Wait,
+	// as in PullResult.Waited: 0 means it didn't wait, nil means a relay
+	// before 0.7 (or a header that isn't an integer).
+	Waited *int
+}
+
+// PullWithOptions is Pull with options: it can wait for entries.
+func (cs *CallsClient) PullWithOptions(ctx context.Context, agentID string, opts CallsPullOptions) ([]CallFeedItem, error) {
+	res, err := cs.PullWithMeta(ctx, agentID, opts)
+	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	return res.Items, nil
+}
+
+// PullWithMeta is PullWithOptions that also says whether the relay
+// waited, for agents that run their own loop: after an empty batch,
+// pull again straight away when Waited is above 0, and sleep first
+// otherwise.
+func (cs *CallsClient) PullWithMeta(ctx context.Context, agentID string, opts CallsPullOptions) (*CallsPullResult, error) {
+	q := url.Values{}
+	q.Set("agent_id", agentID)
+	if opts.Limit > 0 {
+		q.Set("limit", strconv.Itoa(opts.Limit))
+	}
+	if opts.Wait > 0 {
+		q.Set("wait", strconv.Itoa(opts.Wait))
+	}
+	var out []CallFeedItem
+	h, err := cs.c.doWithHeaders(ctx, http.MethodGet, cs.c.relayURL, "/v1/inbox/calls?"+q.Encode(), nil, &out)
+	if err != nil {
+		return nil, err
+	}
+	return &CallsPullResult{Items: out, Waited: waitedFrom(h)}, nil
 }
 
 // ─── Serve ───────────────────────────────────────────────
@@ -249,7 +291,7 @@ type CallMessageHandler func(ctx context.Context, item CallFeedItem) (*CallMessa
 type CallEventHandler func(ctx context.Context, item CallFeedItem) error
 
 // CallsServeOptions configures Calls().Serve. Zero-valued fields fall
-// back to PollInterval=2s, BatchSize=25.
+// back to WaitSecs=25, PollInterval=2s, BatchSize=25.
 type CallsServeOptions struct {
 	// OnMessage handles each message. Required.
 	OnMessage CallMessageHandler
@@ -258,7 +300,13 @@ type CallsServeOptions struct {
 	OnInvite CallInviteHandler
 	// OnEvent is told of accepted, declined, ended and missed calls.
 	// Without one, they're ignored.
-	OnEvent      CallEventHandler
+	OnEvent CallEventHandler
+	// WaitSecs is how long each pull asks the relay to wait for entries,
+	// in seconds (see CallsPullOptions.Wait); 0 takes 25, and negative
+	// never waits.
+	WaitSecs int
+	// PollInterval is the sleep after a failed pull, and after an empty
+	// one the relay didn't wait for (relays before 0.7 never wait).
 	PollInterval time.Duration
 	BatchSize    int
 	// OnError is called when a pull, an answer or a reply fails, and
@@ -270,9 +318,12 @@ type CallsServeOptions struct {
 // Serve runs a pull agent's calls loop: it claims agentID's calls feed,
 // answers invites, hands messages to OnMessage and sends its replies
 // as agentID, and passes the other events to OnEvent, one item at a
-// time in order. An answer or reply to a call that ended meanwhile is
-// dropped. A handler error or panic goes to OnError and the loop keeps
-// going. Serve returns nil when ctx is cancelled.
+// time in order. Each pull waits up to WaitSecs for entries; after an
+// empty batch Serve pulls again at once if the relay waited, and sleeps
+// PollInterval if it didn't (relays before 0.7). An answer or reply to
+// a call that ended meanwhile is dropped. A handler error or panic goes
+// to OnError and the loop keeps going. Serve returns nil when ctx is
+// cancelled, which also aborts a pull in flight.
 func (cs *CallsClient) Serve(ctx context.Context, agentID string, opts CallsServeOptions) error {
 	if opts.OnMessage == nil {
 		return errors.New("chakramcp: Calls().Serve requires OnMessage")
@@ -285,11 +336,12 @@ func (cs *CallsClient) Serve(ctx context.Context, agentID string, opts CallsServ
 	if batch <= 0 {
 		batch = 25
 	}
+	wait := serveWait(opts.WaitSecs)
 	for {
 		if ctx.Err() != nil {
 			return nil
 		}
-		items, err := cs.Pull(ctx, agentID, batch)
+		res, err := cs.PullWithMeta(ctx, agentID, CallsPullOptions{Limit: batch, Wait: wait})
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil
@@ -300,17 +352,20 @@ func (cs *CallsClient) Serve(ctx context.Context, agentID string, opts CallsServ
 			}
 			continue
 		}
-		if len(items) == 0 {
+		if len(res.Items) == 0 {
+			if relayWaited(res.Waited) {
+				continue
+			}
 			if !sleep(ctx, interval) {
 				return nil
 			}
 			continue
 		}
-		for i := range items {
+		for i := range res.Items {
 			if ctx.Err() != nil {
 				return nil
 			}
-			cs.handleItem(ctx, agentID, items[i], opts)
+			cs.handleItem(ctx, agentID, res.Items[i], opts)
 		}
 	}
 }

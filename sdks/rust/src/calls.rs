@@ -16,12 +16,13 @@ use serde::Serialize;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
-use crate::client::ChakraMCP;
+use crate::client::{pull_path, ChakraMCP};
 use crate::error::{Error, Result};
+use crate::inbox::DEFAULT_WAIT_SECS;
 use crate::resources::{serde_plain, urlencode};
 use crate::types::{
     Call, CallEntry, CallEntryKind, CallFeedItem, CallHistoryQuery, CallList, CallMemory,
-    CallRecall, ListCallsQuery, StartCallRequest,
+    CallRecall, ListCallsQuery, PullQuery, PullResult, StartCallRequest,
 };
 
 pub struct CallsClient<'a> {
@@ -195,12 +196,33 @@ impl<'a> CallsClient<'a> {
 
     /// Claim the agent's undelivered call entries, oldest first (at most
     /// 25). Each is delivered once.
-    pub async fn pull(&self, agent_id: &str, limit: Option<u32>) -> Result<Vec<CallFeedItem>> {
-        let mut path = format!("/v1/inbox/calls?agent_id={}", urlencode(agent_id));
-        if let Some(n) = limit {
-            path.push_str(&format!("&limit={n}"));
-        }
-        self.parent.relay_get(&path).await
+    ///
+    /// Takes a [`PullQuery`], or a bare `Option<u32>` limit. With `wait`,
+    /// the relay holds the pull until an entry arrives or the wait ends;
+    /// relays before 0.7 answer at once.
+    pub async fn pull(
+        &self,
+        agent_id: &str,
+        query: impl Into<PullQuery>,
+    ) -> Result<Vec<CallFeedItem>> {
+        Ok(self.pull_with_meta(agent_id, query).await?.items)
+    }
+
+    /// [`Self::pull`], plus how long the relay waited, for agents that run
+    /// their own loop. After an empty answer with `waited: Some(n)`, n > 0,
+    /// pull again at once; otherwise the relay didn't wait, so pause first.
+    pub async fn pull_with_meta(
+        &self,
+        agent_id: &str,
+        query: impl Into<PullQuery>,
+    ) -> Result<PullResult<CallFeedItem>> {
+        let q = query.into();
+        let path = pull_path(
+            "/v1/inbox/calls",
+            agent_id,
+            &[("limit", q.limit), ("wait", q.wait)],
+        );
+        self.parent.relay_pull(&path, q.wait).await
     }
 
     /// Long-running loop for a pull agent: pull the calls feed, hand each
@@ -218,6 +240,12 @@ impl<'a> CallsClient<'a> {
     /// refuses, go to [`CallsServeBuilder::on_error`] (stderr without
     /// one), and the loop carries on. An answer refused with
     /// `chk.calls.not_active` (the call ended meanwhile) is ignored.
+    ///
+    /// Each pull asks the relay to wait for entries
+    /// ([`CallsServeBuilder::wait_secs`], 25 s by default). While it waits,
+    /// the loop pulls again straight after an empty answer. A relay that
+    /// didn't wait, such as one before 0.7, gets
+    /// [`CallsServeBuilder::poll_interval`] between pulls.
     ///
     /// ```no_run
     /// use chakramcp::{CallReply, ChakraMCP, InviteAnswer};
@@ -248,6 +276,7 @@ impl<'a> CallsClient<'a> {
             on_error: None,
             poll_interval: Duration::from_secs(2),
             batch_size: 25,
+            wait_secs: DEFAULT_WAIT_SECS,
             cancel: None,
         }
     }
@@ -395,6 +424,7 @@ pub struct CallsServeBuilder<'a> {
     on_error: Option<Box<dyn FnMut(CallsServeError) + Send + 'a>>,
     poll_interval: Duration,
     batch_size: u32,
+    wait_secs: u32,
     cancel: Option<CancellationToken>,
 }
 
@@ -446,7 +476,8 @@ impl<'a> CallsServeBuilder<'a> {
         self
     }
 
-    /// How long to wait after an empty pull. Default 2 s.
+    /// How long to wait after an empty pull the relay didn't wait on, and
+    /// after a failed pull. Default 2 s.
     pub fn poll_interval(mut self, d: Duration) -> Self {
         self.poll_interval = d;
         self
@@ -458,9 +489,19 @@ impl<'a> CallsServeBuilder<'a> {
         self
     }
 
-    /// Stop the loop when `token` fires. The feed delivers each entry
-    /// once, so a pull in flight and the batch it returns are handled
-    /// first; drop the future to stop at once.
+    /// Seconds each pull asks the relay to wait for entries; 25 by
+    /// default, the most a relay honours unless its operator allows more.
+    /// 0 never waits: each empty pull is followed by `poll_interval`, as
+    /// before 0.7.
+    pub fn wait_secs(mut self, secs: u32) -> Self {
+        self.wait_secs = secs;
+        self
+    }
+
+    /// Stop the loop when `token` fires. A pull waiting for entries stops
+    /// at once. The feed delivers each entry once, so a batch already
+    /// pulled, and a pull that doesn't wait (`wait_secs(0)`) in flight,
+    /// are handled first; drop the future to stop at once.
     pub fn with_cancellation(mut self, token: CancellationToken) -> Self {
         self.cancel = Some(token);
         self
@@ -469,18 +510,40 @@ impl<'a> CallsServeBuilder<'a> {
     /// Run the loop. Returns when the cancellation token fires.
     pub async fn run(mut self) -> Result<()> {
         let cancel = self.cancel.take().unwrap_or_default();
+        let query = PullQuery {
+            limit: Some(self.batch_size),
+            wait: (self.wait_secs > 0).then_some(self.wait_secs),
+        };
         loop {
             if cancel.is_cancelled() {
                 return Ok(());
             }
-            let batch = match self.calls.pull(&self.agent_id, Some(self.batch_size)).await {
-                Ok(b) => b,
+            let pull = self.calls.pull_with_meta(&self.agent_id, query);
+            let pulled = if query.wait.is_some() {
+                // A waiting pull can take the whole wait: stop it on cancel.
+                match cancel.run_until_cancelled(pull).await {
+                    Some(r) => r,
+                    None => return Ok(()),
+                }
+            } else {
+                pull.await
+            };
+            let batch = match pulled {
+                Ok(PullResult { items, waited }) => {
+                    if items.is_empty() && waited.is_some_and(|n| n > 0) {
+                        // The relay waited and nothing came: pull again.
+                        continue;
+                    }
+                    items
+                }
                 Err(e) => {
                     self.report(CallsServeError::Pull(e));
                     Vec::new()
                 }
             };
             if batch.is_empty() {
+                // A failed pull, or an empty one the relay didn't wait on
+                // (an older relay, or one with no waiting slot free).
                 if cancel
                     .run_until_cancelled(tokio::time::sleep(self.poll_interval))
                     .await

@@ -6,9 +6,9 @@ use std::time::Duration;
 use serde_json::{json, Value};
 use tokio_util::sync::CancellationToken;
 
-use crate::client::ChakraMCP;
+use crate::client::{pull_path, ChakraMCP};
 use crate::error::Result;
-use crate::types::{DraftedReply, Invocation, Notice};
+use crate::types::{DraftedReply, InboxPullQuery, Invocation, Notice, PullQuery, PullResult};
 
 #[derive(Debug, Clone)]
 pub enum HandlerResult {
@@ -50,12 +50,37 @@ impl<'a> InboxClient<'a> {
     /// Atomically claim the oldest pending invocations targeting an
     /// agent you own. Concurrent pullers (across machines) get
     /// disjoint batches via `FOR UPDATE SKIP LOCKED` at the DB.
-    pub async fn pull(&self, agent_id: &str, limit: Option<u32>) -> Result<Vec<Invocation>> {
-        let mut path = format!("/v1/inbox?agent_id={}", urlencode(agent_id));
-        if let Some(n) = limit {
-            path.push_str(&format!("&limit={n}"));
-        }
-        self.parent.relay_get(&path).await
+    ///
+    /// Takes an [`InboxPullQuery`], or a bare `Option<u32>` limit. With
+    /// `wait`, the relay holds the pull until work arrives or the wait
+    /// ends; relays before 0.7 answer at once.
+    pub async fn pull(
+        &self,
+        agent_id: &str,
+        query: impl Into<InboxPullQuery>,
+    ) -> Result<Vec<Invocation>> {
+        Ok(self.pull_with_meta(agent_id, query).await?.items)
+    }
+
+    /// [`Self::pull`], plus how long the relay waited, for agents that run
+    /// their own loop. After an empty answer with `waited: Some(n)`, n > 0,
+    /// pull again at once; otherwise the relay didn't wait, so pause first.
+    pub async fn pull_with_meta(
+        &self,
+        agent_id: &str,
+        query: impl Into<InboxPullQuery>,
+    ) -> Result<PullResult<Invocation>> {
+        let q = query.into();
+        let path = pull_path(
+            "/v1/inbox",
+            agent_id,
+            &[
+                ("limit", q.limit),
+                ("wait", q.wait),
+                ("lease_secs", q.lease_secs),
+            ],
+        );
+        self.parent.relay_pull(&path, q.wait).await
     }
 
     /// Report success for an in_progress invocation you claimed. For a
@@ -96,12 +121,22 @@ impl<'a> InboxClient<'a> {
     /// Claim the agent's notices, oldest first; each is delivered once. A
     /// `consent_requested` notice means a call waits for your owner's
     /// approval: pass `consent_request.approve_url` on to them.
-    pub async fn notices(&self, agent_id: &str, limit: Option<u32>) -> Result<Vec<Notice>> {
-        let mut path = format!("/v1/inbox/notices?agent_id={}", urlencode(agent_id));
-        if let Some(n) = limit {
-            path.push_str(&format!("&limit={n}"));
-        }
-        self.parent.relay_get(&path).await
+    ///
+    /// Takes a [`PullQuery`], or a bare `Option<u32>` limit. With `wait`,
+    /// the relay holds the pull until a notice arrives or the wait ends;
+    /// relays before 0.7 answer at once.
+    pub async fn notices(
+        &self,
+        agent_id: &str,
+        query: impl Into<PullQuery>,
+    ) -> Result<Vec<Notice>> {
+        let q = query.into();
+        let path = pull_path(
+            "/v1/inbox/notices",
+            agent_id,
+            &[("limit", q.limit), ("wait", q.wait)],
+        );
+        Ok(self.parent.relay_pull(&path, q.wait).await?.items)
     }
 
     /// Long-running pull → handler → respond loop. Returns a builder so
@@ -112,6 +147,12 @@ impl<'a> InboxClient<'a> {
     /// Errors raised by the handler - both Err returns and panics
     /// turned into errors - are reported as `failed` invocations and
     /// the loop continues.
+    ///
+    /// Each pull asks the relay to wait for work ([`ServeBuilder::wait_secs`],
+    /// 25 s by default). While it waits, the loop pulls again straight
+    /// after an empty answer, so work is handled as it arrives. A relay
+    /// that didn't wait, such as one before 0.7, gets
+    /// [`ServeBuilder::poll_interval`] between pulls.
     pub fn serve<F, Fut, E>(
         self,
         agent_id: impl Into<String>,
@@ -128,6 +169,8 @@ impl<'a> InboxClient<'a> {
             handler,
             poll_interval: Duration::from_secs(2),
             batch_size: 25,
+            wait_secs: DEFAULT_WAIT_SECS,
+            lease_secs: None,
             cancel: None,
             _phantom: std::marker::PhantomData,
         }
@@ -140,6 +183,8 @@ pub struct ServeBuilder<'a, F, Fut, E> {
     handler: F,
     poll_interval: Duration,
     batch_size: u32,
+    wait_secs: u32,
+    lease_secs: Option<u32>,
     cancel: Option<CancellationToken>,
     _phantom: std::marker::PhantomData<fn() -> (Fut, E)>,
 }
@@ -150,6 +195,8 @@ where
     Fut: Future<Output = std::result::Result<HandlerResult, E>> + Send + 'a,
     E: std::fmt::Display + Send + 'a,
 {
+    /// How long to wait after an empty pull the relay didn't wait on, and
+    /// after a failed pull. Default 2 s.
     pub fn poll_interval(mut self, d: Duration) -> Self {
         self.poll_interval = d;
         self
@@ -158,6 +205,21 @@ where
         self.batch_size = n;
         self
     }
+    /// Seconds each pull asks the relay to wait for work; 25 by default,
+    /// the most a relay honours unless its operator allows more. 0 never
+    /// waits: each empty pull is followed by `poll_interval`, as before 0.7.
+    pub fn wait_secs(mut self, secs: u32) -> Self {
+        self.wait_secs = secs;
+        self
+    }
+    /// How long each claim lasts before the relay may hand the invocation
+    /// out again, for handlers that run longer than its default lease.
+    /// Relays that don't support leases ignore it.
+    pub fn lease_secs(mut self, secs: u32) -> Self {
+        self.lease_secs = Some(secs);
+        self
+    }
+    /// Stop the loop when `token` fires, also mid-pull.
     pub fn with_cancellation(mut self, token: CancellationToken) -> Self {
         self.cancel = Some(token);
         self
@@ -166,28 +228,33 @@ where
     /// Run the loop. Returns when the cancellation token fires.
     pub async fn run(mut self) -> Result<()> {
         let cancel = self.cancel.unwrap_or_default();
+        let query = InboxPullQuery {
+            limit: Some(self.batch_size),
+            wait: (self.wait_secs > 0).then_some(self.wait_secs),
+            lease_secs: self.lease_secs,
+        };
         loop {
             if cancel.is_cancelled() {
                 return Ok(());
             }
-            let batch = match tokio::select! {
+            let pulled = tokio::select! {
                 _ = cancel.cancelled() => return Ok(()),
-                r = self.inbox.pull(&self.agent_id, Some(self.batch_size)) => r,
-            } {
-                Ok(b) => b,
-                Err(_) => {
-                    // Transient pull errors - sleep and retry.
-                    if cancel
-                        .run_until_cancelled(tokio::time::sleep(self.poll_interval))
-                        .await
-                        .is_none()
-                    {
-                        return Ok(());
+                r = self.inbox.pull_with_meta(&self.agent_id, query) => r,
+            };
+            let batch = match pulled {
+                Ok(PullResult { items, waited }) => {
+                    if items.is_empty() && waited.is_some_and(|n| n > 0) {
+                        // The relay waited and nothing came: pull again.
+                        continue;
                     }
-                    continue;
+                    items
                 }
+                // Transient pull errors - sleep and retry.
+                Err(_) => Vec::new(),
             };
             if batch.is_empty() {
+                // A failed pull, or an empty one the relay didn't wait on
+                // (an older relay, or one with no waiting slot free).
                 if cancel
                     .run_until_cancelled(tokio::time::sleep(self.poll_interval))
                     .await
@@ -232,6 +299,9 @@ where
         Box::pin(self.run())
     }
 }
+
+/// What `serve` loops ask the relay to wait for work, in seconds.
+pub(crate) const DEFAULT_WAIT_SECS: u32 = 25;
 
 fn urlencode(s: &str) -> String {
     url::form_urlencoded::byte_serialize(s.as_bytes()).collect()

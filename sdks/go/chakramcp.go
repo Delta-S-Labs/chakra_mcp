@@ -42,7 +42,8 @@ type Client struct {
 
 // Options is the long form of New for callers who want to override URLs
 // or supply a custom *http.Client (for testing, or to reuse a shared
-// transport with proxy settings, etc.).
+// transport with proxy settings, etc.). A custom client's Timeout must
+// be longer than the waits you ask pulls for: Serve waits up to 25 s.
 type Options struct {
 	APIKey     string
 	AppURL     string
@@ -200,17 +201,24 @@ func (c *Client) InvokeAndWait(ctx context.Context, req *InvokeRequest, opts Pol
 // ─── HTTP plumbing ───────────────────────────────────────
 
 func (c *Client) do(ctx context.Context, method, base, path string, body any, out any) error {
+	_, err := c.doWithHeaders(ctx, method, base, path, body, out)
+	return err
+}
+
+// doWithHeaders is do that also returns the response headers of a 2xx
+// answer (nil with an error). Errors are the same as do's.
+func (c *Client) doWithHeaders(ctx context.Context, method, base, path string, body any, out any) (http.Header, error) {
 	var reader io.Reader
 	if body != nil {
 		buf, err := json.Marshal(body)
 		if err != nil {
-			return fmt.Errorf("chakramcp: marshal body: %w", err)
+			return nil, fmt.Errorf("chakramcp: marshal body: %w", err)
 		}
 		reader = bytes.NewReader(buf)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, base+path, reader)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("authorization", "Bearer "+c.apiKey)
 	req.Header.Set("user-agent", defaultUserAgent)
@@ -219,25 +227,38 @@ func (c *Client) do(ctx context.Context, method, base, path string, body any, ou
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if resp.StatusCode == http.StatusNoContent {
 		_ = resp.Body.Close()
-		return nil
+		return resp.Header, nil
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return errorFromResponse(resp)
+		return nil, errorFromResponse(resp)
 	}
 	defer resp.Body.Close()
 	if out == nil {
 		_, _ = io.Copy(io.Discard, resp.Body)
-		return nil
+		return resp.Header, nil
 	}
 	dec := json.NewDecoder(resp.Body)
 	if err := dec.Decode(out); err != nil {
-		return fmt.Errorf("chakramcp: decode response: %w", err)
+		return nil, fmt.Errorf("chakramcp: decode response: %w", err)
 	}
-	return nil
+	return resp.Header, nil
+}
+
+// waitHeader is the response header in which a relay says how many
+// seconds it held a pull open for work. Relays before 0.7 don't send it.
+const waitHeader = "ChakraMCP-Wait"
+
+// waitedFrom reads waitHeader: nil when it's missing or not an integer.
+func waitedFrom(h http.Header) *int {
+	n, err := strconv.Atoi(h.Get(waitHeader))
+	if err != nil {
+		return nil
+	}
+	return &n
 }
 
 func orDefault(s, def string) string {

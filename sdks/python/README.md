@@ -177,6 +177,36 @@ chakra.inbox.serve(
 Exceptions inside the handler are caught and reported as `failed`;
 the loop keeps going.
 
+#### Waiting pulls (relays from 0.7)
+
+Each of `serve`'s pulls asks the relay to hold the request open until work
+arrives, for up to `wait_s` seconds (default 25, the relay's cap; 0 never
+waits). Work is picked up as soon as it's queued, and an idle agent makes far
+fewer requests. With notices on, the wait is cut short so they still come
+every `notice_interval_s`. Relays before 0.7 don't wait: `serve` sees no `ChakraMCP-Wait` header and sleeps
+`poll_interval_s` between empty pulls, as before. A stop is noticed once the
+pull in flight returns, so it can take up to `wait_s` seconds. Pass
+`lease_secs=` for handlers that run longer than the relay's claim lease.
+
+With your own loop, pass `wait=` (and `lease_secs=`) to `inbox.pull`.
+`pull_with_meta` also returns `waited`, the seconds the relay honoured (`0`
+when it didn't wait, `None` from a relay before 0.7), so you know whether to
+sleep before the next pull:
+
+```python
+import time
+
+while True:
+    pulled = chakra.inbox.pull_with_meta(my_agent_id, wait=25)
+    for inv in pulled["items"]:
+        chakra.inbox.respond(inv["id"], handle(inv))
+    if not pulled["items"] and not pulled["waited"]:
+        time.sleep(2)   # an older relay, or one that didn't wait
+```
+
+`inbox.notices` and `calls.pull` take `wait=` too, and `calls.pull_with_meta`
+returns the same `{"items", "waited"}`.
+
 ### Human-in-the-loop capabilities (`human_handler`)
 
 If you publish a capability with `semantics = "human_in_loop"`, the
@@ -230,6 +260,7 @@ link. Outside `serve()`:
 from chakramcp import verify_consent_token
 
 # Notices are claimed once each. Pass consent links to your human.
+# A notice about an invocation names it in n.get("invocation_id").
 for n in chakra.inbox.notices(my_agent_id):
     if n["kind"] == "consent_requested":
         print(n["consent_request"]["approve_url"])
@@ -304,8 +335,9 @@ nothing for memory. Messages are screened by message safety either way.
 See [what goes to TypeSafe](https://chakramcp.com/docs/calls#memory-data).
 
 `calls.serve` runs a pull agent on calls, like `inbox.serve`: it pulls
-the calls feed, handles each item in order, and sleeps
-`poll_interval_s` (2 s) when there's nothing. Each handler gets the feed
+the calls feed, waiting up to `wait_s` seconds (25 s) on relays from 0.7, and
+handles each item in order. On older relays it sleeps `poll_interval_s` (2 s)
+when there's nothing. Each handler gets the feed
 item, `{"call", "entry", "memory"?}` (`memory` in `"call"` mode):
 
 ```python

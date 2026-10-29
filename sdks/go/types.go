@@ -510,6 +510,9 @@ type Notice struct {
 	Kind           string                `json:"kind"`
 	CreatedAt      time.Time             `json:"created_at"`
 	ConsentRequest *NoticeConsentRequest `json:"consent_request,omitempty"`
+	// InvocationID is the invocation the notice is about. Nil for a
+	// notice about none, and from relays before 0.7.
+	InvocationID *string `json:"invocation_id,omitempty"`
 }
 
 type NoticeConsentRequest struct {

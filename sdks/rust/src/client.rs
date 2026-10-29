@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use reqwest::header::HeaderMap;
 use reqwest::{Client, Method, RequestBuilder, Response, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
 
@@ -11,12 +12,18 @@ use crate::resources::{
     ReviewsClient,
 };
 use crate::types::{
-    Invocation, InvokeRequest, InvokeResponse, MeResponse, NetworkPage, NetworkQuery,
+    Invocation, InvokeRequest, InvokeResponse, MeResponse, NetworkPage, NetworkQuery, PullResult,
 };
 
 pub(crate) const DEFAULT_APP_URL: &str = "https://app.chakramcp.com";
 pub(crate) const DEFAULT_RELAY_URL: &str = "https://relay.chakramcp.com";
 const USER_AGENT: &str = concat!("chakramcp-rust-sdk/", env!("CARGO_PKG_VERSION"));
+/// The client's timeout unless [`ChakraMCPBuilder::request_timeout`] sets one.
+const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+/// How long past its `wait` a waiting pull may run before it times out.
+const WAIT_TIMEOUT_MARGIN: Duration = Duration::from_secs(30);
+/// The header in which a relay from 0.7 says how long a pull waited.
+const WAIT_HEADER: &str = "chakramcp-wait";
 
 /// Top-level client. Cheap to clone - wraps an `Arc`-backed reqwest
 /// client internally so handing it to multiple tasks is fine.
@@ -25,6 +32,9 @@ pub struct ChakraMCP {
     pub(crate) http: Client,
     pub(crate) app_url: String,
     pub(crate) relay_url: String,
+    /// The timeout the SDK gave `http`; `None` for a client passed to
+    /// [`ChakraMCPBuilder::http_client`].
+    pub(crate) request_timeout: Option<Duration>,
 }
 
 impl ChakraMCP {
@@ -171,6 +181,49 @@ impl ChakraMCP {
         let resp = self.relay_request(Method::DELETE, path).send().await?;
         decode_no_body(resp).await
     }
+
+    /// [`Self::relay_get`] that also returns the response headers.
+    /// `timeout`, when set, replaces the client's timeout for this request.
+    pub(crate) async fn relay_get_with_headers<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        timeout: Option<Duration>,
+    ) -> Result<(T, HeaderMap)> {
+        let mut req = self.relay_request(Method::GET, path);
+        if let Some(t) = timeout {
+            req = req.timeout(t);
+        }
+        let resp = req.send().await?;
+        let headers = resp.headers().clone();
+        Ok((decode(resp).await?, headers))
+    }
+
+    /// GET a pull feed whose query carries `wait` (if any), and read how
+    /// long the relay waited from `ChakraMCP-Wait`. A waiting pull may run
+    /// `wait` + 30 s whatever the client's timeout, so a short timeout
+    /// doesn't cut it off.
+    pub(crate) async fn relay_pull<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        wait: Option<u32>,
+    ) -> Result<PullResult<T>> {
+        let (items, headers) = self
+            .relay_get_with_headers(path, self.wait_timeout(wait))
+            .await?;
+        Ok(PullResult {
+            items,
+            waited: waited_header(&headers),
+        })
+    }
+
+    /// The timeout for a pull that waits `wait` seconds: the client's own,
+    /// or `wait` + 30 s when that's longer. `None` (the client's) when the
+    /// pull doesn't wait.
+    fn wait_timeout(&self, wait: Option<u32>) -> Option<Duration> {
+        let wait = wait.filter(|&w| w > 0)?;
+        let needed = Duration::from_secs(u64::from(wait)) + WAIT_TIMEOUT_MARGIN;
+        Some(self.request_timeout.map_or(needed, |t| t.max(needed)))
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -201,10 +254,14 @@ impl ChakraMCPBuilder {
         self.relay_url = Some(url.into());
         self
     }
+    /// The timeout for each request; 60 s by default. A waiting pull may
+    /// run longer: its `wait` and 30 s more.
     pub fn request_timeout(mut self, timeout: Duration) -> Self {
         self.request_timeout = Some(timeout);
         self
     }
+    /// Use this client as is: its headers, its timeout. A waiting pull
+    /// still gets a timeout of its `wait` and 30 s more.
     pub fn http_client(mut self, client: Client) -> Self {
         self.custom_http = Some(client);
         self
@@ -219,9 +276,10 @@ impl ChakraMCPBuilder {
         let app_url = trim_url(self.app_url.unwrap_or_else(|| DEFAULT_APP_URL.into()))?;
         let relay_url = trim_url(self.relay_url.unwrap_or_else(|| DEFAULT_RELAY_URL.into()))?;
 
-        let http = if let Some(c) = self.custom_http {
-            c
+        let (http, request_timeout) = if let Some(c) = self.custom_http {
+            (c, None)
         } else {
+            let timeout = self.request_timeout.unwrap_or(DEFAULT_REQUEST_TIMEOUT);
             let mut headers = reqwest::header::HeaderMap::new();
             headers.insert(
                 reqwest::header::AUTHORIZATION,
@@ -232,18 +290,31 @@ impl ChakraMCPBuilder {
                 reqwest::header::USER_AGENT,
                 reqwest::header::HeaderValue::from_static(USER_AGENT),
             );
-            Client::builder()
+            let client = Client::builder()
                 .default_headers(headers)
-                .timeout(self.request_timeout.unwrap_or(Duration::from_secs(60)))
-                .build()?
+                .timeout(timeout)
+                .build()?;
+            (client, Some(timeout))
         };
 
         Ok(ChakraMCP {
             http,
             app_url,
             relay_url,
+            request_timeout,
         })
     }
+}
+
+/// `route?agent_id=…`, then each option that's set.
+pub(crate) fn pull_path(route: &str, agent_id: &str, opts: &[(&str, Option<u32>)]) -> String {
+    let mut path = format!("{route}?agent_id={}", urlencode(agent_id));
+    for (name, value) in opts {
+        if let Some(v) = value {
+            path.push_str(&format!("&{name}={v}"));
+        }
+    }
+    path
 }
 
 fn trim_url(url: String) -> Result<String> {
@@ -276,6 +347,11 @@ pub(crate) async fn decode_no_body(resp: Response) -> Result<()> {
     let retry_after = retry_after_header(&resp);
     let body = resp.text().await?;
     Err(api_error(status, retry_after, body))
+}
+
+/// The `ChakraMCP-Wait` header, when it's a whole number of seconds.
+fn waited_header(headers: &HeaderMap) -> Option<u32> {
+    headers.get(WAIT_HEADER)?.to_str().ok()?.trim().parse().ok()
 }
 
 /// The `Retry-After` header, when it's a whole number of seconds.

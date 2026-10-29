@@ -584,3 +584,100 @@ func TestAgentUpdateSendsAcceptCalls(t *testing.T) {
 		t.Errorf("accept_calls = %q", agent.AcceptCalls)
 	}
 }
+
+// ─── Waiting pulls ────────────────────────────────────────
+
+func noopOnMessage(context.Context, CallFeedItem) (*CallMessage, error) { return nil, nil }
+
+func TestCallsPullWithMetaSendsWaitAndReadsTheHeader(t *testing.T) {
+	var pulls pullLog
+	_, c := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		pulls.add(r.URL)
+		if r.URL.Query().Has("wait") {
+			w.Header().Set("ChakraMCP-Wait", r.URL.Query().Get("wait"))
+		}
+		_, _ = w.Write([]byte(`[` + feedItem("c1", "active", 2, "message", "a1", "hello", "") + `]`))
+	})
+	ctx := context.Background()
+	res, err := c.Calls().PullWithMeta(ctx, "a2", CallsPullOptions{Limit: 5, Wait: 10})
+	if err != nil {
+		t.Fatalf("PullWithMeta: %v", err)
+	}
+	if len(res.Items) != 1 || res.Items[0].Call.ID != "c1" || res.Waited == nil || *res.Waited != 10 {
+		t.Errorf("result = %+v (Waited %v), want one item, waited 10", res.Items, res.Waited)
+	}
+	// No wait asked: none sent, and no header back means nil.
+	res, err = c.Calls().PullWithMeta(ctx, "a2", CallsPullOptions{})
+	if err != nil {
+		t.Fatalf("PullWithMeta: %v", err)
+	}
+	if res.Waited != nil {
+		t.Errorf("Waited = %d, want nil", *res.Waited)
+	}
+	if _, err := c.Calls().PullWithOptions(ctx, "a2", CallsPullOptions{Wait: 25}); err != nil {
+		t.Fatalf("PullWithOptions: %v", err)
+	}
+	if _, err := c.Calls().Pull(ctx, "a2", 3); err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+	want := []string{
+		"/v1/inbox/calls?agent_id=a2&limit=5&wait=10",
+		"/v1/inbox/calls?agent_id=a2",
+		"/v1/inbox/calls?agent_id=a2&wait=25",
+		"/v1/inbox/calls?agent_id=a2&limit=3",
+	}
+	for i, w := range want {
+		if got := pulls.at(i).RequestURI(); got != w {
+			t.Errorf("pull %d = %s, want %s", i, got, w)
+		}
+	}
+}
+
+func TestCallsServeLoopsStraightBackWhileTheRelayWaits(t *testing.T) {
+	var pulls pullLog
+	_, c := newServer(t, emptyFeed("/v1/inbox/calls", "25", &pulls))
+	start := time.Now()
+	stop := startServe(t, func(ctx context.Context) error {
+		return c.Calls().Serve(ctx, "a2", CallsServeOptions{OnMessage: noopOnMessage, PollInterval: 30 * time.Second})
+	})
+	waitFor(t, "5 pulls without sleeping", func() bool { return pulls.count() >= 5 })
+	stop()
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Errorf("took %s", elapsed)
+	}
+}
+
+func TestCallsServeSendsWaitAndSleepsWhenTheRelayDidNot(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		waitSecs int
+		wait     string // "" means not sent
+	}{
+		{"default", 0, "25"},
+		{"own wait", 7, "7"},
+		{"never wait", -1, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var pulls pullLog
+			// No ChakraMCP-Wait header: an older relay.
+			_, c := newServer(t, emptyFeed("/v1/inbox/calls", "", &pulls))
+			stop := startServe(t, func(ctx context.Context) error {
+				return c.Calls().Serve(ctx, "a2", CallsServeOptions{
+					OnMessage:    noopOnMessage,
+					WaitSecs:     tc.waitSecs,
+					PollInterval: 30 * time.Second,
+				})
+			})
+			waitFor(t, "the first pull", func() bool { return pulls.count() >= 1 })
+			time.Sleep(150 * time.Millisecond)
+			stop()
+			if n := pulls.count(); n != 1 {
+				t.Errorf("pulls = %d, want 1 (Serve should sleep PollInterval)", n)
+			}
+			q := pulls.at(0).Query()
+			if got := q.Get("wait"); got != tc.wait || q.Has("wait") != (tc.wait != "") {
+				t.Errorf("wait = %q, want %q", got, tc.wait)
+			}
+		})
+	}
+}

@@ -6,7 +6,8 @@ type checking for free. Callers can still wrap them in pydantic models
 or dataclasses if they want runtime validation; we don't impose that.
 """
 
-from typing import Any, Literal, TypedDict
+import sys
+from typing import TYPE_CHECKING, Any, Generic, Literal, TypedDict, TypeVar
 
 Visibility = Literal["private", "org", "network"]
 FriendshipStatus = Literal[
@@ -422,6 +423,35 @@ class Notice(TypedDict, total=False):
     kind: str
     created_at: str
     consent_request: dict[str, Any]
+    # The invocation the notice is about, when there is one. Older relays
+    # leave it out.
+    invocation_id: str | None
+
+
+_Item = TypeVar("_Item")
+
+if TYPE_CHECKING or sys.version_info >= (3, 11):
+
+    class PullResult(TypedDict, Generic[_Item]):
+        """What ``inbox.pull_with_meta`` and ``calls.pull_with_meta``
+        return: ``PullResult[Invocation]`` and ``PullResult[CallFeedItem]``.
+
+        ``waited`` is the wait the relay honoured, in seconds, from its
+        ``ChakraMCP-Wait`` header: ``0`` when it didn't wait, and ``None``
+        when the header is missing (relays before 0.7 don't wait)."""
+
+        items: list[_Item]
+        waited: int | None
+
+else:  # Python 3.10 can't make a TypedDict generic at run time.
+
+    class PullResult(TypedDict):
+        items: list[Any]
+        waited: int | None
+
+        def __class_getitem__(cls, _item: Any) -> Any:
+            # Lets ``PullResult[Invocation]`` evaluate, as on 3.11+.
+            return cls
 
 
 class AgentSummary(TypedDict):

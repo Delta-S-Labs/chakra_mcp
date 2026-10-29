@@ -753,6 +753,10 @@ pub struct Notice {
     pub created_at: DateTime<Utc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub consent_request: Option<NoticeConsentRequest>,
+    /// The invocation the notice is about, when it's about one. `None`
+    /// from relays before 0.7.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invocation_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -776,6 +780,67 @@ pub struct Requester {
     pub account_id: String,
     pub account_display_name: Option<String>,
     pub verified: bool,
+}
+
+// ─── Pull feeds: inbox, notices, calls ──────────────────────
+
+/// `GET /v1/inbox` options. Fill the rest with `..Default::default()`.
+///
+/// `wait` asks the relay to hold the pull until work arrives, for up to
+/// that many seconds (capped at 25 unless its operator allows more),
+/// rather than answer `[]` at once. Relays before 0.7 don't wait: they
+/// ignore `wait` and `lease_secs` and answer at once.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct InboxPullQuery {
+    /// Invocations per pull; the relay's default is 25.
+    pub limit: Option<u32>,
+    /// Seconds to wait for work when there's none.
+    pub wait: Option<u32>,
+    /// How long the claim lasts before the relay may hand the invocation
+    /// out again, for handlers that run longer than its default lease.
+    pub lease_secs: Option<u32>,
+}
+
+/// A bare limit, as `pull` took before it could wait.
+impl From<Option<u32>> for InboxPullQuery {
+    fn from(limit: Option<u32>) -> Self {
+        Self {
+            limit,
+            ..Self::default()
+        }
+    }
+}
+
+/// Options for pulling notices or the calls feed. `wait` is as on
+/// [`InboxPullQuery`]. Fill the rest with `..Default::default()`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PullQuery {
+    /// Items per pull; the relay's default is 25.
+    pub limit: Option<u32>,
+    /// Seconds to wait for work when there's none.
+    pub wait: Option<u32>,
+}
+
+/// A bare limit, as these pulls took before they could wait.
+impl From<Option<u32>> for PullQuery {
+    fn from(limit: Option<u32>) -> Self {
+        Self {
+            limit,
+            ..Self::default()
+        }
+    }
+}
+
+/// What a pull claimed, and how long the relay waited for it.
+#[derive(Debug, Clone)]
+pub struct PullResult<T> {
+    pub items: Vec<T>,
+    /// The seconds the relay honoured for `wait`, from its
+    /// `ChakraMCP-Wait` header. `Some(0)` means it didn't wait: none was
+    /// asked, its waiting slots were full, or it's shutting down. `None`
+    /// means the header was missing or not a number: a relay before 0.7,
+    /// which never waits.
+    pub waited: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

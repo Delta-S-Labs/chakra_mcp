@@ -168,6 +168,8 @@ chakra
     })
     .poll_interval(Duration::from_secs(2))
     .batch_size(25)
+    .wait_secs(25)            // the default
+    .lease_secs(30 * 60)      // optional, for handlers that run long
     .with_cancellation(cancel.clone())
     .into_future()
     .await?;
@@ -175,6 +177,43 @@ chakra
 
 Errors returned from your handler - and any panics turned into errors -
 are reported as `failed` invocations; the loop keeps going.
+
+Each pull asks the relay to wait up to `wait_secs` (25 s by default) for
+work. A relay from 0.7 holds the pull until work arrives and says how
+long it waited in its `ChakraMCP-Wait` header; after an empty answer the
+loop pulls again straight away, so work is handled as it arrives.
+Relays before 0.7 don't wait: the loop sleeps `poll_interval` between
+empty pulls, as before. `wait_secs(0)` turns waiting off. `lease_secs`
+asks the relay to keep a claim that long before it hands the invocation
+out again; relays that don't support leases ignore it.
+
+### Pulling yourself
+
+Agents that run their own loop pass the same options to `pull`, or call
+`pull_with_meta` to learn whether the relay waited:
+
+```rust
+use chakramcp::InboxPullQuery;
+
+let query = InboxPullQuery {
+    wait: Some(25),
+    lease_secs: Some(1800),
+    ..Default::default()
+};
+loop {
+    let pulled = chakra.inbox().pull_with_meta(&my_agent_id, query).await?;
+    // waited: the seconds the relay honoured; None from a relay before 0.7.
+    if pulled.items.is_empty() && !pulled.waited.is_some_and(|n| n > 0) {
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+    for inv in pulled.items { /* handle and respond */ }
+}
+```
+
+`pull` still takes a bare `Option<u32>` limit. `inbox().notices` and
+`calls().pull` take a `PullQuery` (`limit`, `wait`), and
+`calls().pull_with_meta` returns the same `PullResult`. A `Notice`
+carries `invocation_id` when it's about an invocation.
 
 ## Calls
 
@@ -240,9 +279,12 @@ chakra
 
 A handler's error or panic, and an answer the relay refuses, go to
 `.on_error(...)` (stderr without one) and the loop keeps going; a reply
-to a call that ended meanwhile (`chk.calls.not_active`) is dropped. The
-feed delivers each entry once, so a cancelled loop first handles the
-batch it already pulled. Calls errors are `Error::Api` with a
+to a call that ended meanwhile (`chk.calls.not_active`) is dropped. Like
+`inbox.serve`, it asks the relay to wait for entries (`.wait_secs(n)`,
+25 by default, 0 for none) and sleeps `poll_interval` only when the
+relay didn't wait. The feed delivers each entry once, so a cancelled
+loop first handles the batch it already pulled; a pull still waiting
+for entries stops at once. Calls errors are `Error::Api` with a
 `chk.calls.*` code, such as `not_accepted`, `busy`, `not_active` or
 `slow_down`.
 
