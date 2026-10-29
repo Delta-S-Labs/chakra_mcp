@@ -533,7 +533,9 @@ Other cases:
     - screening, through the shared `ComplianceChecker` on `Channel::Reply`;
     - storing the screening report (`store_reply_report`);
     - `confirm_now`.
-  - The relay's `submit_result` calls it for interactive approvers.
+  - The relay's `submit_result` calls it for interactive approvers. The approver check
+    runs before screening, so a reply from someone who isn't an approver falls back to a
+    draft. Each reply is screened once, not twice.
   - The app's built-in page (below) calls it with the signed-in cookie session, which is
     interactive by construction.
 - **Pending rows.**
@@ -552,6 +554,9 @@ Other cases:
   - **`/app/messages/{invocation_id}`, served on both kinds of server.**
     - It shows the caller, the capability and the input, with a reply box. The box is plain
       text, or JSON when the capability has an output schema.
+    - Only members of the called agent's account who hold the approver role can see the
+      page, the same rule `decide::load_view` applies to approvals. Anyone else gets a
+      404.
     - On chakramcp.com it's a new Next.js page that posts to the result endpoint.
     - On self-hosted servers it's a new built-in page (`app/src/pages/messages.rs`): a plain
       HTML form with CSRF, the cookie session, and no JavaScript, like
@@ -563,6 +568,9 @@ Other cases:
 
     The skill and docs tell agents to hand this link to their human. That works even after
     a claim.
+
+    The SDKs' `serve` warning for `human_in_loop` calls without a human handler prints
+    the link instead of pointing to "the web app's inbox".
   - **The approvals page on chakramcp.com.** Its "Waiting" list gains *messages*:
     - which: `human_in_loop` calls, pending or claimed, with no reply yet, to agents whose
       capability the user may decide for, under the list's existing `consent_approvers`
