@@ -83,7 +83,7 @@ services:
 
   # Stores and queries metrics; Alloy remote-writes into it.
   prometheus:
-    image: prom/prometheus:v3.15.0
+    image: prom/prometheus:v3.15.1
     restart: unless-stopped
     logging: *logging
     command:
