@@ -317,8 +317,8 @@ async def test_async_inbox_serve_sleeps_when_the_relay_did_not_wait() -> None:
         # Asleep for poll_interval_s after the empty pull.
         assert route.call_count == 1
         task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
+        await asyncio.wait({task})
+        assert task.cancelled()
 
 
 @respx.mock
@@ -411,5 +411,5 @@ async def test_async_calls_serve_sleeps_when_the_relay_did_not_wait() -> None:
         await asyncio.sleep(0.1)
         assert route.call_count == 1
         task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
+        await asyncio.wait({task})
+        assert task.cancelled()
