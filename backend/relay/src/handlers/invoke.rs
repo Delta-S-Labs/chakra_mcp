@@ -57,6 +57,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
+use chakramcp_shared::wake::Feed;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -253,6 +254,8 @@ pub struct ListQuery {
 pub struct InboxQuery {
     pub agent_id: Uuid,
     pub limit: Option<i64>,
+    /// Seconds to wait for work when there's none (waking pull agents §6).
+    pub wait: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1043,6 +1046,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
     if let Some(gate) = &gate {
         let enqueued = consent_enqueue::enqueue_consent_required(
             &state.db,
+            &state.wake,
             NewInvocation {
                 id,
                 grant_id: Some(row.grant_id),
@@ -1104,6 +1108,10 @@ pub(crate) async fn authorize_and_enqueue_trusted(
     )
     .execute(&state.db)
     .await?;
+    state.wake.notify(
+        row.granter_agent_id,
+        chakramcp_shared::wake::Feed::Invocations,
+    );
     crate::calls::link::note(&state.db, call, id, row.grantee_agent_id).await;
 
     Ok(Outcome::Enqueued {
@@ -1361,6 +1369,7 @@ pub(crate) async fn authorize_and_enqueue_public(
     if let Some(gate) = &gate {
         let enqueued = consent_enqueue::enqueue_consent_required(
             &state.db,
+            &state.wake,
             NewInvocation {
                 id,
                 grant_id: None,
@@ -1421,6 +1430,10 @@ pub(crate) async fn authorize_and_enqueue_public(
     )
     .execute(&state.db)
     .await?;
+    state.wake.notify(
+        cap.granter_agent_id,
+        chakramcp_shared::wake::Feed::Invocations,
+    );
     crate::calls::link::note(&state.db, call, id, grantee_agent_id).await;
 
     Ok(Outcome::Enqueued {
@@ -1431,12 +1444,12 @@ pub(crate) async fn authorize_and_enqueue_public(
     })
 }
 
-// ─── GET /v1/inbox?agent_id=X[&limit=N] ──────────────────
+// ─── GET /v1/inbox?agent_id=X[&limit=N][&wait=S] ─────────
 pub async fn inbox(
     State(state): State<RelayState>,
     user: AuthUser,
     Query(q): Query<InboxQuery>,
-) -> ApiResult<Json<Vec<InvocationDto>>> {
+) -> ApiResult<(WaitHeader, Json<Vec<InvocationDto>>)> {
     let limit = q
         .limit
         .unwrap_or(INBOX_DEFAULT_LIMIT)
@@ -1462,41 +1475,16 @@ pub async fn inbox(
     // The agent is online (in memory; flushed in batches).
     state.heartbeats.record(q.agent_id);
 
-    // Atomically claim the oldest pending rows for this agent.
-    // FOR UPDATE SKIP LOCKED lets concurrent pollers safely pull
-    // disjoint batches without blocking each other.
-    let mut tx = state.db.begin().await?;
-    let claimed = sqlx::query!(
-        r#"
-        WITH picked AS (
-            SELECT id FROM relay_invocations
-            WHERE granter_agent_id = $1
-              AND status = 'pending'
-            ORDER BY created_at ASC
-            LIMIT $2
-            FOR UPDATE SKIP LOCKED
-        )
-        UPDATE relay_invocations i
-        SET status = 'in_progress',
-            claimed_at = now(),
-            claimed_by_user_id = $3
-        FROM picked
-        WHERE i.id = picked.id
-        RETURNING i.id
-        "#,
-        q.agent_id,
-        limit,
-        user.user_id,
-    )
-    .fetch_all(&mut *tx)
-    .await?;
-    tx.commit().await?;
-
-    if claimed.is_empty() {
-        return Ok(Json(vec![]));
+    let (ids, waited) =
+        crate::inbox_wait::claim_waiting(&state, q.agent_id, Feed::Invocations, q.wait, || {
+            claim_invocations(&state.db, q.agent_id, limit, user.user_id)
+        })
+        .await?;
+    let header = crate::inbox_wait::wait_header(waited);
+    if ids.is_empty() {
+        return Ok((header, Json(vec![])));
     }
 
-    let ids: Vec<Uuid> = claimed.into_iter().map(|r| r.id).collect();
     // Consent tokens for approved requests, minted on first delivery.
     let mut consents = consent_deliver::deliver(&state, &ids).await?;
     // Bundle in friendship + grant context. The relay just verified
@@ -1560,96 +1548,138 @@ pub async fn inbox(
     .fetch_all(&state.db)
     .await?;
 
-    Ok(Json(
-        rows.into_iter()
-            .map(|r| {
-                let grant_context = match (
-                    r.grant_id,
-                    r.g_status.clone(),
-                    r.g_granter_agent_id,
-                    r.g_grantee_agent_id,
-                    r.g_capability_id,
-                    r.g_capability_visibility.clone(),
-                    r.g_granted_at,
-                ) {
-                    (
-                        Some(grant_id),
-                        Some(status),
-                        Some(granter),
-                        Some(grantee),
-                        Some(capability_id),
-                        Some(visibility),
-                        Some(granted_at),
-                    ) => Some(GrantContext {
-                        id: grant_id,
-                        status,
-                        granter_agent_id: granter,
-                        grantee_agent_id: grantee,
-                        capability_id,
-                        capability_name: r.capability_name.clone(),
-                        capability_visibility: visibility,
-                        granted_at,
-                        expires_at: r.g_expires_at,
-                        purpose: r.g_purpose.clone(),
-                    }),
-                    _ => None,
-                };
-                let friendship_context = match (
-                    r.f_id,
-                    r.f_status.clone(),
-                    r.f_proposer_agent_id,
-                    r.f_target_agent_id,
-                ) {
-                    (Some(id), Some(status), Some(proposer), Some(target)) => {
-                        Some(FriendshipContext {
-                            id,
+    Ok((
+        header,
+        Json(
+            rows.into_iter()
+                .map(|r| {
+                    let grant_context = match (
+                        r.grant_id,
+                        r.g_status.clone(),
+                        r.g_granter_agent_id,
+                        r.g_grantee_agent_id,
+                        r.g_capability_id,
+                        r.g_capability_visibility.clone(),
+                        r.g_granted_at,
+                    ) {
+                        (
+                            Some(grant_id),
+                            Some(status),
+                            Some(granter),
+                            Some(grantee),
+                            Some(capability_id),
+                            Some(visibility),
+                            Some(granted_at),
+                        ) => Some(GrantContext {
+                            id: grant_id,
                             status,
-                            proposer_agent_id: proposer,
-                            target_agent_id: target,
-                            proposer_message: r.f_proposer_message,
-                            response_message: r.f_response_message,
-                            decided_at: r.f_decided_at,
-                        })
-                    }
-                    _ => None,
-                };
+                            granter_agent_id: granter,
+                            grantee_agent_id: grantee,
+                            capability_id,
+                            capability_name: r.capability_name.clone(),
+                            capability_visibility: visibility,
+                            granted_at,
+                            expires_at: r.g_expires_at,
+                            purpose: r.g_purpose.clone(),
+                        }),
+                        _ => None,
+                    };
+                    let friendship_context = match (
+                        r.f_id,
+                        r.f_status.clone(),
+                        r.f_proposer_agent_id,
+                        r.f_target_agent_id,
+                    ) {
+                        (Some(id), Some(status), Some(proposer), Some(target)) => {
+                            Some(FriendshipContext {
+                                id,
+                                status,
+                                proposer_agent_id: proposer,
+                                target_agent_id: target,
+                                proposer_message: r.f_proposer_message,
+                                response_message: r.f_response_message,
+                                decided_at: r.f_decided_at,
+                            })
+                        }
+                        _ => None,
+                    };
 
-                let safety = safety_from_snapshot(r.trust_snapshot.as_ref(), true, &r.status);
-                InvocationDto {
-                    safety,
-                    id: r.id,
-                    grant_id: r.grant_id,
-                    granter_agent_id: r.granter_agent_id,
-                    granter_display_name: r.granter_display_name,
-                    grantee_agent_id: r.grantee_agent_id,
-                    grantee_display_name: r.grantee_display_name,
-                    grantee_account_id: r.grantee_account_id,
-                    capability_id: r.capability_id,
-                    capability_name: r.capability_name,
-                    semantics: r.capability_semantics,
-                    status: r.status,
-                    elapsed_ms: r.elapsed_ms,
-                    error_message: r.error_message,
-                    input_preview: r.input_preview,
-                    output_preview: r.output_preview,
-                    created_at: r.created_at,
-                    claimed_at: r.claimed_at,
-                    call_id: r.call_id,
-                    i_served: true,
-                    i_invoked: false,
-                    tier: if r.grant_id.is_some() {
-                        "friend".into()
-                    } else {
-                        "public".into()
-                    },
-                    friendship_context,
-                    grant_context,
-                    consent: consents.remove(&r.id),
-                    human_confirmed: None,
-                }
-            })
-            .collect(),
+                    let safety = safety_from_snapshot(r.trust_snapshot.as_ref(), true, &r.status);
+                    InvocationDto {
+                        safety,
+                        id: r.id,
+                        grant_id: r.grant_id,
+                        granter_agent_id: r.granter_agent_id,
+                        granter_display_name: r.granter_display_name,
+                        grantee_agent_id: r.grantee_agent_id,
+                        grantee_display_name: r.grantee_display_name,
+                        grantee_account_id: r.grantee_account_id,
+                        capability_id: r.capability_id,
+                        capability_name: r.capability_name,
+                        semantics: r.capability_semantics,
+                        status: r.status,
+                        elapsed_ms: r.elapsed_ms,
+                        error_message: r.error_message,
+                        input_preview: r.input_preview,
+                        output_preview: r.output_preview,
+                        created_at: r.created_at,
+                        claimed_at: r.claimed_at,
+                        call_id: r.call_id,
+                        i_served: true,
+                        i_invoked: false,
+                        tier: if r.grant_id.is_some() {
+                            "friend".into()
+                        } else {
+                            "public".into()
+                        },
+                        friendship_context,
+                        grant_context,
+                        consent: consents.remove(&r.id),
+                        human_confirmed: None,
+                    }
+                })
+                .collect(),
+        ),
     ))
+}
+
+/// The `ChakraMCP-Wait` header on an inbox answer.
+pub type WaitHeader = [(axum::http::HeaderName, axum::http::HeaderValue); 1];
+
+/// Claim up to `limit` of `agent`'s oldest pending invocations for `user`,
+/// moving them to `in_progress`. `FOR UPDATE SKIP LOCKED` lets concurrent
+/// pullers take disjoint batches without blocking each other. Shared by
+/// REST and MCP.
+pub(crate) async fn claim_invocations(
+    db: &PgPool,
+    agent: Uuid,
+    limit: i64,
+    user_id: Uuid,
+) -> Result<Vec<Uuid>, ApiError> {
+    Ok(sqlx::query_scalar!(
+        r#"
+        WITH picked AS (
+            SELECT id FROM relay_invocations
+            WHERE granter_agent_id = $1
+              AND status = 'pending'
+            ORDER BY created_at ASC
+            LIMIT $2
+            FOR UPDATE SKIP LOCKED
+        )
+        UPDATE relay_invocations i
+        SET status = 'in_progress',
+            claimed_at = now(),
+            claimed_by_user_id = $3
+        FROM picked
+        WHERE i.id = picked.id
+        RETURNING i.id
+        "#,
+        agent,
+        limit,
+        user_id,
+    )
+    .fetch_all(db)
+    .await?)
 }
 
 // ─── GET /v1/inbox/notices?agent_id=X[&limit=N] ──────────
@@ -1660,10 +1690,10 @@ pub async fn inbox_notices(
     State(state): State<RelayState>,
     user: AuthUser,
     Query(q): Query<InboxQuery>,
-) -> ApiResult<Json<Vec<crate::consent::notices::Notice>>> {
-    Ok(Json(
-        crate::consent::notices::claim(&state, &user, q.agent_id, q.limit).await?,
-    ))
+) -> ApiResult<(WaitHeader, Json<Vec<crate::consent::notices::Notice>>)> {
+    let (notices, waited) =
+        crate::consent::notices::claim(&state, &user, q.agent_id, q.limit, q.wait).await?;
+    Ok((crate::inbox_wait::wait_header(waited), Json(notices)))
 }
 
 // ─── POST /v1/invocations/{id}/result ────────────────────

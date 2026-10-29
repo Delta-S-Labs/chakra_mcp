@@ -95,13 +95,20 @@ pub fn tools() -> Vec<Value> {
         tool(
             "pull_calls",
             "Claim your agent's new call events, oldest first, each once: invites, messages, \
-             answers and ends.",
+             answers and ends. With wait_seconds, waits for events instead of returning an \
+             empty list at once.",
             json!({
                 "type": "object",
                 "required": ["agent_id"],
                 "properties": {
                     "agent_id": agent,
-                    "limit": { "type": "integer", "minimum": 1, "maximum": 25 }
+                    "limit": { "type": "integer", "minimum": 1, "maximum": 25 },
+                    "wait_seconds": {
+                        "type": "integer", "minimum": 0, "maximum": 60,
+                        "description": "Seconds to wait for events when there are none, then \
+                                        return an empty list. The server waits at most 25 by \
+                                        default; 0 or absent returns at once."
+                    }
                 }
             }),
         ),
@@ -270,7 +277,7 @@ pub async fn call(
             Ok(messages::send(state, user, a.call_id, a.req).await?.dto())
         }
         "pull_calls" => Ok(json!(
-            feed::claim(state, user, args(name, arguments)?).await?
+            feed::claim(state, user, args(name, arguments)?).await?.0
         )),
         "call_history" => {
             let a: History = args(name, arguments)?;

@@ -4,6 +4,7 @@
 
 use std::time::Duration;
 
+use chakramcp_shared::wake::{Feed, Wake};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -17,13 +18,13 @@ const BATCH: i64 = 200;
 const PURGE_BATCH: i64 = 50;
 
 /// Start the workers. Call once per process, when calls are enabled.
-pub fn spawn_workers(db: PgPool) {
+pub fn spawn_workers(db: PgPool, wake: Wake) {
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(INTERVAL);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             ticker.tick().await;
-            if let Err(e) = tick(&db).await {
+            if let Err(e) = tick(&db, &wake).await {
                 tracing::warn!(error = %e, "calls worker failed; retrying next tick");
             }
         }
@@ -31,10 +32,10 @@ pub fn spawn_workers(db: PgPool) {
 }
 
 /// One pass of every worker.
-pub async fn tick(db: &PgPool) -> sqlx::Result<()> {
-    let missed = mark_missed(db).await?;
-    let idle = end_idle(db).await?;
-    let gone = end_gone(db).await?;
+pub async fn tick(db: &PgPool, wake: &Wake) -> sqlx::Result<()> {
+    let missed = mark_missed(db, wake).await?;
+    let idle = end_idle(db, wake).await?;
+    let gone = end_gone(db, wake).await?;
     let purged = purge_due(db).await?;
     if missed + idle + gone + purged > 0 {
         tracing::info!(missed, idle, gone, purged, "calls worker");
@@ -44,8 +45,8 @@ pub async fn tick(db: &PgPool) -> sqlx::Result<()> {
 
 /// Calls still ringing 24 h after the invite become `missed`; the caller is
 /// told.
-pub async fn mark_missed(db: &PgPool) -> sqlx::Result<u64> {
-    let n = sqlx::query_scalar!(
+pub async fn mark_missed(db: &PgPool, wake: &Wake) -> sqlx::Result<u64> {
+    let row = sqlx::query!(
         r#"
         WITH due AS (
             SELECT id FROM calls
@@ -72,20 +73,25 @@ pub async fn mark_missed(db: &PgPool) -> sqlx::Result<u64> {
             SELECT e.id, m.caller_agent_id
               FROM entries e JOIN missed m ON m.id = e.call_id
              WHERE m.caller_agent_id IS NOT NULL
+            RETURNING agent_id
         )
-        SELECT count(*) AS "n!" FROM missed
+        SELECT (SELECT count(*) FROM missed) AS "n!",
+               ARRAY(SELECT agent_id FROM told) AS "told!"
         "#,
         BATCH,
     )
     .fetch_one(db)
     .await?;
-    Ok(n as u64)
+    for agent in &row.told {
+        wake.notify(*agent, Feed::Calls);
+    }
+    Ok(row.n as u64)
 }
 
 /// Active calls quiet for `idle_secs` end (`ended_by = idle`); both agents
 /// are told.
-pub async fn end_idle(db: &PgPool) -> sqlx::Result<u64> {
-    let n = sqlx::query_scalar!(
+pub async fn end_idle(db: &PgPool, wake: &Wake) -> sqlx::Result<u64> {
+    let row = sqlx::query!(
         r#"
         WITH due AS (
             SELECT id FROM calls
@@ -116,20 +122,25 @@ pub async fn end_idle(db: &PgPool) -> sqlx::Result<u64> {
               JOIN ended x ON x.id = e.call_id
              CROSS JOIN LATERAL (VALUES (x.caller_agent_id), (x.callee_agent_id)) AS a(agent_id)
               JOIN agents g ON g.id = a.agent_id AND g.tombstoned_at IS NULL
+            RETURNING agent_id
         )
-        SELECT count(*) AS "n!" FROM ended
+        SELECT (SELECT count(*) FROM ended) AS "n!",
+               ARRAY(SELECT agent_id FROM told) AS "told!"
         "#,
         BATCH,
     )
     .fetch_one(db)
     .await?;
-    Ok(n as u64)
+    for agent in &row.told {
+        wake.notify(*agent, Feed::Calls);
+    }
+    Ok(row.n as u64)
 }
 
 /// Ringing or active calls with a party that's gone (deleted or tombstoned)
 /// end (`ended_by = gone`); the party that's left is told.
-pub async fn end_gone(db: &PgPool) -> sqlx::Result<u64> {
-    let n = sqlx::query_scalar!(
+pub async fn end_gone(db: &PgPool, wake: &Wake) -> sqlx::Result<u64> {
+    let row = sqlx::query!(
         r#"
         WITH due AS (
             SELECT c.id FROM calls c
@@ -162,14 +173,19 @@ pub async fn end_gone(db: &PgPool) -> sqlx::Result<u64> {
               JOIN ended x ON x.id = e.call_id
              CROSS JOIN LATERAL (VALUES (x.caller_agent_id), (x.callee_agent_id)) AS a(agent_id)
               JOIN agents g ON g.id = a.agent_id AND g.tombstoned_at IS NULL
+            RETURNING agent_id
         )
-        SELECT count(*) AS "n!" FROM ended
+        SELECT (SELECT count(*) FROM ended) AS "n!",
+               ARRAY(SELECT agent_id FROM told) AS "told!"
         "#,
         BATCH,
     )
     .fetch_one(db)
     .await?;
-    Ok(n as u64)
+    for agent in &row.told {
+        wake.notify(*agent, Feed::Calls);
+    }
+    Ok(row.n as u64)
 }
 
 /// Delete the content of calls whose TTL has run out (spec §9), each in its

@@ -129,7 +129,7 @@ pub(crate) async fn submit(
         "approve" => match narrowing(&input) {
             Ok(narrowing) => {
                 let is_reply = narrowing.draft_sha256.is_some();
-                decide::approve(&state.db, actor, id, narrowing)
+                decide::approve(&state.db, &state.wake, actor, id, narrowing)
                     .await
                     .map(|_| {
                         if is_reply {
@@ -162,7 +162,7 @@ pub(crate) async fn submit(
                         None,
                     )
                 }
-                Ok(note) => decide::deny(&state.db, actor, id, note.as_deref())
+                Ok(note) => decide::deny(&state.db, &state.wake, actor, id, note.as_deref())
                     .await
                     .map(|_| {
                         (

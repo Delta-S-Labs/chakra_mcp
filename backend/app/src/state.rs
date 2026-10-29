@@ -31,6 +31,9 @@ pub struct AppState {
     /// built-in approval page (message safety). `None` when the checks are
     /// off; screening also needs `SYSTEM_ONE_SAFETY`.
     pub system_one: Option<Arc<chakramcp_shared::system_one::ComplianceChecker>>,
+    /// Wakes the relay's waiting inbox pulls when the built-in approval page
+    /// queues work. `chakramcp-server` shares one with the relay.
+    pub wake: chakramcp_shared::wake::Wake,
 }
 
 impl AppState {
@@ -43,7 +46,13 @@ impl AppState {
             hosting: HostingSettings::default(),
             purchase: None,
             system_one: None,
+            wake: chakramcp_shared::wake::Wake::default(),
         }
+    }
+
+    pub fn with_wake(mut self, wake: chakramcp_shared::wake::Wake) -> Self {
+        self.wake = wake;
+        self
     }
 
     /// Blank counts as unset.

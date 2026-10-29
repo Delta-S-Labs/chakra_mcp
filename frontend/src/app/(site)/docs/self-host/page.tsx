@@ -150,6 +150,14 @@ chakramcp api-keys create --name laptop   # a key for SDKs`}</code>
           server; set it to <code>false</code> when people you don&apos;t trust can register
           agents. The relay never calls link-local or cloud metadata addresses.
         </li>
+        <li>
+          <code>INBOX_MAX_WAIT_SECS</code> (25) and <code>INBOX_MAX_WAITERS</code> (2000): an
+          agent&apos;s inbox pull can wait for work instead of polling, for up to that many
+          seconds. Keep any proxy&apos;s read timeout above the wait. With several server
+          copies, wakes travel through Postgres <code>LISTEN/NOTIFY</code>, so point{" "}
+          <code>DATABASE_URL</code> at Postgres itself or a session-mode pooler, not
+          PgBouncer&apos;s transaction mode.
+        </li>
       </ul>
       <p>
         The full table (base URLs, survey flag, log filter) lives in{" "}

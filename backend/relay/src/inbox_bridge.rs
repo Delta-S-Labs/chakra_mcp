@@ -133,6 +133,7 @@ const PREVIEW_BYTES: usize = 16 * 1024;
 /// covers it; the task then starts as `auth-required`.
 pub async fn park(
     db: &PgPool,
+    wake: &chakramcp_shared::wake::Wake,
     authz: &Authorized,
     capability_name: &str,
     request_body: Bytes,
@@ -182,6 +183,7 @@ pub async fn park(
         .expect("gate_for(true, ..) is Some");
         let enqueued = consent_enqueue::enqueue_consent_required(
             db,
+            wake,
             NewInvocation {
                 id: task_id,
                 grant_id: Some(authz.grant_id),
@@ -263,6 +265,10 @@ pub async fn park(
     )
     .execute(db)
     .await?;
+    wake.notify(
+        authz.target_agent_id,
+        chakramcp_shared::wake::Feed::Invocations,
+    );
 
     Ok(Parked {
         task_id,
@@ -474,7 +480,17 @@ mod tests {
         let body = Bytes::from_static(
             br#"{"jsonrpc":"2.0","id":42,"method":"SendMessage","params":{"message":"hi"}}"#,
         );
-        let parked = park(&pool, &authz, "do", body, None, None).await.unwrap();
+        let parked = park(
+            &pool,
+            &chakramcp_shared::wake::Wake::default(),
+            &authz,
+            "do",
+            body,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(parked.jsonrpc_id, serde_json::json!(42));
         assert_eq!(parked.task.status.state, "submitted");
@@ -508,7 +524,17 @@ mod tests {
         let (u, ca, cg, ta, tg, c, g) = seed_for_park(&pool).await;
         let authz = sample_authz_for(u, ca, cg, ta, tg, c, g);
         let body = Bytes::from_static(b"this is not json{{");
-        let parked = park(&pool, &authz, "do", body, None, None).await.unwrap();
+        let parked = park(
+            &pool,
+            &chakramcp_shared::wake::Wake::default(),
+            &authz,
+            "do",
+            body,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
         let row = sqlx::query!(
             "SELECT status, input_preview FROM relay_invocations WHERE id = $1",
             parked.task_id,
@@ -528,7 +554,16 @@ mod tests {
         let authz = sample_authz_for(u, ca, cg, ta, tg, c, g);
         // 17 KB > 16 KB cap.
         let body = Bytes::from(vec![b'a'; 17 * 1024]);
-        let r = park(&pool, &authz, "do", body, None, None).await;
+        let r = park(
+            &pool,
+            &chakramcp_shared::wake::Wake::default(),
+            &authz,
+            "do",
+            body,
+            None,
+            None,
+        )
+        .await;
         assert!(matches!(r, Err(ParkError::BodyTooLarge(_))));
     }
 
@@ -540,7 +575,17 @@ mod tests {
         let body = Bytes::from_static(
             br#"{"jsonrpc":"2.0","id":"req-abc","method":"SendMessage","params":{}}"#,
         );
-        let parked = park(&pool, &authz, "do", body, None, None).await.unwrap();
+        let parked = park(
+            &pool,
+            &chakramcp_shared::wake::Wake::default(),
+            &authz,
+            "do",
+            body,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
         assert_eq!(parked.jsonrpc_id, serde_json::json!("req-abc"));
     }
 
@@ -549,7 +594,17 @@ mod tests {
         let (u, ca, cg, ta, tg, c, g) = seed_for_park(&pool).await;
         let authz = sample_authz_for(u, ca, cg, ta, tg, c, g);
         let body = Bytes::from_static(br#"{"jsonrpc":"2.0","method":"SendMessage","params":{}}"#);
-        let parked = park(&pool, &authz, "do", body, None, None).await.unwrap();
+        let parked = park(
+            &pool,
+            &chakramcp_shared::wake::Wake::default(),
+            &authz,
+            "do",
+            body,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
         assert_eq!(parked.jsonrpc_id, serde_json::Value::Null);
     }
 
@@ -580,7 +635,17 @@ mod tests {
 
         let body =
             Bytes::from_static(br#"{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{}}"#);
-        let parked = park(&pool, &authz, "do", body, None, None).await.unwrap();
+        let parked = park(
+            &pool,
+            &chakramcp_shared::wake::Wake::default(),
+            &authz,
+            "do",
+            body,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
 
         let row_key_id: Option<Uuid> = sqlx::query_scalar!(
             r#"SELECT api_key_id FROM relay_invocations WHERE id = $1"#,

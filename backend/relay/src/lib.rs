@@ -21,6 +21,9 @@ pub mod forwarder;
 pub mod handlers;
 pub mod heartbeats;
 pub mod inbox_bridge;
+pub mod inbox_wait;
+#[cfg(test)]
+mod inbox_wait_tests;
 pub mod jwt_mint;
 pub mod limits;
 pub mod mcp;

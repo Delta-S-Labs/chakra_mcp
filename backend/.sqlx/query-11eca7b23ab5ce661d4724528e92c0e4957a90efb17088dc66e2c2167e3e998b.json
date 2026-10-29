@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH due AS (\n            SELECT c.id FROM calls c\n              LEFT JOIN agents ca ON ca.id = c.caller_agent_id\n              LEFT JOIN agents cb ON cb.id = c.callee_agent_id\n             WHERE c.state IN ('ringing', 'active')\n               AND (ca.id IS NULL OR ca.tombstoned_at IS NOT NULL\n                 OR cb.id IS NULL OR cb.tombstoned_at IS NOT NULL)\n             LIMIT $1\n               FOR UPDATE OF c SKIP LOCKED\n        ),\n        ended AS (\n            UPDATE calls c\n               SET state = 'ended', ended_at = now(), ended_by = 'gone',\n                   last_seq = c.last_seq + 1,\n                   purge_at = now() + make_interval(secs => c.ttl_secs)\n              FROM due\n             WHERE c.id = due.id\n            RETURNING c.id, c.last_seq, c.caller_agent_id, c.callee_agent_id\n        ),\n        entries AS (\n            INSERT INTO call_entries (id, call_id, seq, kind)\n            SELECT gen_random_uuid(), id, last_seq, 'ended' FROM ended\n            RETURNING id, call_id\n        ),\n        told AS (\n            INSERT INTO call_deliveries (entry_id, agent_id)\n            SELECT e.id, a.agent_id\n              FROM entries e\n              JOIN ended x ON x.id = e.call_id\n             CROSS JOIN LATERAL (VALUES (x.caller_agent_id), (x.callee_agent_id)) AS a(agent_id)\n              JOIN agents g ON g.id = a.agent_id AND g.tombstoned_at IS NULL\n            RETURNING agent_id\n        )\n        SELECT (SELECT count(*) FROM ended) AS \"n!\",\n               ARRAY(SELECT agent_id FROM told) AS \"told!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "told!",
+        "type_info": "UuidArray",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "11eca7b23ab5ce661d4724528e92c0e4957a90efb17088dc66e2c2167e3e998b"
+}

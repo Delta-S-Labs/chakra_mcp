@@ -32,7 +32,12 @@ async fn main() -> Result<()> {
     let credits = chakramcp_shared::credits::CreditsConfig::from_env(hosting.credits_enabled)?;
     let purchase =
         chakramcp_app::purchases::config::from_env(hosting.is_managed(), credits.enabled);
+    // The approval page queues work for pull agents; the bus tells the
+    // relay's waiting pulls.
+    let wake = chakramcp_shared::wake::Wake::new(0);
+    chakramcp_shared::wake::bus::spawn(pool.clone(), wake.clone());
     let state = AppState::new(pool, cfg.clone())
+        .with_wake(wake)
         .with_upsert_secret(env::var("UPSERT_SHARED_SECRET").ok())
         .with_credits_config(credits)
         .with_hosting(hosting)

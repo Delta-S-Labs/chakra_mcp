@@ -240,6 +240,7 @@ pub async fn invite(
         .await?;
     }
     tx.commit().await?;
+    super::wake_parties(state, &[callee.id]);
 
     record_audit(
         &state.db,
@@ -428,6 +429,7 @@ pub async fn accept(
         .await?;
     }
     tx.commit().await?;
+    super::wake_parties(state, &[caller]);
     audit(
         state,
         user,
@@ -504,6 +506,7 @@ pub async fn decline(
     entry.text = reason.as_deref();
     append(&mut tx, call.id, entry, &to).await?;
     tx.commit().await?;
+    super::wake_parties(state, &to);
     audit(
         state,
         user,
@@ -542,6 +545,7 @@ pub async fn end(
     let mut tx = state.db.begin().await?;
     end_in(&mut tx, &call, role.as_str(), Some(acting.agent_id), &to).await?;
     tx.commit().await?;
+    super::wake_parties(state, &to);
     audit(
         state,
         user,
@@ -600,6 +604,7 @@ pub async fn owner_end(
     let mut tx = state.db.begin().await?;
     end_in(&mut tx, &call, "owner", None, &call.live_agents()).await?;
     tx.commit().await?;
+    super::wake_parties(state, &call.live_agents());
     let account = owner_account(state, user, &call).await?;
     audit(
         state,
@@ -634,6 +639,9 @@ pub async fn delete_content(
     purge::close_invocations(&mut tx, call.id).await?;
     purge::purge_call(&mut tx, call.id).await?;
     tx.commit().await?;
+    if call.is_open() {
+        super::wake_parties(state, &call.live_agents());
+    }
     let account = owner_account(state, user, &call).await?;
     audit(
         state,

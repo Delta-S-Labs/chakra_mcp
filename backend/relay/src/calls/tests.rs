@@ -18,14 +18,14 @@ use crate::handlers::invoke::legacy_v01_contract_tests::config;
 use crate::state::RelayState;
 
 /// A person with an account, an API key and a web session.
-struct Person {
-    user: Uuid,
-    account: Uuid,
-    key: String,
-    web: String,
+pub(crate) struct Person {
+    pub user: Uuid,
+    pub account: Uuid,
+    pub key: String,
+    pub web: String,
 }
 
-async fn person(pool: &PgPool, name: &str) -> Person {
+pub(crate) async fn person(pool: &PgPool, name: &str) -> Person {
     let user = Uuid::now_v7();
     let account = Uuid::now_v7();
     sqlx::query(
@@ -77,7 +77,7 @@ async fn person(pool: &PgPool, name: &str) -> Person {
     }
 }
 
-async fn agent(pool: &PgPool, account: Uuid, slug: &str) -> Uuid {
+pub(crate) async fn agent(pool: &PgPool, account: Uuid, slug: &str) -> Uuid {
     let id = Uuid::now_v7();
     sqlx::query(
         "INSERT INTO agents (id, account_id, slug, display_name, visibility) VALUES ($1, $2, $3, $3, 'network')",
@@ -91,7 +91,7 @@ async fn agent(pool: &PgPool, account: Uuid, slug: &str) -> Uuid {
     id
 }
 
-async fn befriend(pool: &PgPool, a: Uuid, b: Uuid) {
+pub(crate) async fn befriend(pool: &PgPool, a: Uuid, b: Uuid) {
     sqlx::query(
         "INSERT INTO friendships (id, proposer_agent_id, target_agent_id, status, proposer_message, response_message)
          VALUES ($1, $2, $3, 'accepted', 'Let us plan the offsite venue together', 'Sure, venue planning only')",
@@ -105,14 +105,14 @@ async fn befriend(pool: &PgPool, a: Uuid, b: Uuid) {
 }
 
 /// Alice's agent and Bob's agent, friends.
-struct World {
-    alice: Person,
-    bob: Person,
-    a: Uuid,
-    b: Uuid,
+pub(crate) struct World {
+    pub alice: Person,
+    pub bob: Person,
+    pub a: Uuid,
+    pub b: Uuid,
 }
 
-async fn world(pool: &PgPool) -> World {
+pub(crate) async fn world(pool: &PgPool) -> World {
     let alice = person(pool, "Alice").await;
     let bob = person(pool, "Bob").await;
     let a = agent(pool, alice.account, "alice-agent").await;
@@ -121,14 +121,14 @@ async fn world(pool: &PgPool) -> World {
     World { alice, bob, a, b }
 }
 
-fn calls_on(pool: &PgPool) -> RelayState {
+pub(crate) fn calls_on(pool: &PgPool) -> RelayState {
     RelayState::new(pool.clone(), config()).with_calls(CallsConfig {
         enabled: true,
         ..CallsConfig::default()
     })
 }
 
-async fn http(
+pub(crate) async fn http(
     state: &RelayState,
     method: Method,
     token: &str,
@@ -158,16 +158,21 @@ async fn http(
     )
 }
 
-async fn post(state: &RelayState, token: &str, uri: &str, body: Value) -> (StatusCode, Value) {
+pub(crate) async fn post(
+    state: &RelayState,
+    token: &str,
+    uri: &str,
+    body: Value,
+) -> (StatusCode, Value) {
     http(state, Method::POST, token, uri, Some(body)).await
 }
 
-async fn get(state: &RelayState, token: &str, uri: &str) -> (StatusCode, Value) {
+pub(crate) async fn get(state: &RelayState, token: &str, uri: &str) -> (StatusCode, Value) {
     http(state, Method::GET, token, uri, None).await
 }
 
 /// Alice's agent invites Bob's; returns the call id.
-async fn ring(state: &RelayState, w: &World, extra: Value) -> Uuid {
+pub(crate) async fn ring(state: &RelayState, w: &World, extra: Value) -> Uuid {
     let mut body = json!({ "from_agent_id": w.a, "to_agent_id": w.b });
     if let Value::Object(m) = extra {
         body.as_object_mut().unwrap().extend(m);
@@ -178,7 +183,7 @@ async fn ring(state: &RelayState, w: &World, extra: Value) -> Uuid {
 }
 
 /// A ringing call Bob's agent has accepted.
-async fn active(state: &RelayState, w: &World) -> Uuid {
+pub(crate) async fn active(state: &RelayState, w: &World) -> Uuid {
     let id = ring(state, w, json!({})).await;
     let (status, call) = post(
         state,
@@ -191,7 +196,7 @@ async fn active(state: &RelayState, w: &World) -> Uuid {
     id
 }
 
-async fn say(
+pub(crate) async fn say(
     state: &RelayState,
     token: &str,
     call: Uuid,
@@ -393,7 +398,9 @@ async fn calls_are_declined_missed_idled_and_ended_by_owners(pool: PgPool) {
         .execute(&pool)
         .await
         .unwrap();
-    workers::tick(&pool).await.unwrap();
+    workers::tick(&pool, &chakramcp_shared::wake::Wake::default())
+        .await
+        .unwrap();
     let (_, call) = get(&s, &w.alice.key, &format!("/v1/calls/{id}")).await;
     assert_eq!(call["state"], "missed");
     assert_eq!(kinds(&pull(&s, &w.alice.key, w.a).await), ["missed"]);
@@ -407,7 +414,9 @@ async fn calls_are_declined_missed_idled_and_ended_by_owners(pool: PgPool) {
         .execute(&pool)
         .await
         .unwrap();
-    workers::tick(&pool).await.unwrap();
+    workers::tick(&pool, &chakramcp_shared::wake::Wake::default())
+        .await
+        .unwrap();
     let (_, call) = get(&s, &w.bob.key, &format!("/v1/calls/{id}")).await;
     assert_eq!(call["ended_by"], "idle");
     assert_eq!(kinds(&pull(&s, &w.alice.key, w.a).await), ["ended"]);
@@ -445,7 +454,9 @@ async fn calls_are_declined_missed_idled_and_ended_by_owners(pool: PgPool) {
         .execute(&pool)
         .await
         .unwrap();
-    workers::tick(&pool).await.unwrap();
+    workers::tick(&pool, &chakramcp_shared::wake::Wake::default())
+        .await
+        .unwrap();
     let (_, call) = get(&s, &w.alice.key, &format!("/v1/calls/{id}")).await;
     assert_eq!(call["ended_by"], "gone");
 }
@@ -886,12 +897,16 @@ async fn content_is_deleted_at_the_ttl_or_by_an_owner(pool: PgPool) {
             .unwrap()
     };
     // TTL 0, but Alice hasn't pulled Bob's message yet: it waits.
-    workers::tick(&pool).await.unwrap();
+    workers::tick(&pool, &chakramcp_shared::wake::Wake::default())
+        .await
+        .unwrap();
     assert!(!purged(pool.clone()).await);
     pull(&s, &w.alice.key, w.a).await;
     pull(&s, &w.bob.key, w.b).await;
     // Delivered, but the invocation is still pending: it waits.
-    workers::tick(&pool).await.unwrap();
+    workers::tick(&pool, &chakramcp_shared::wake::Wake::default())
+        .await
+        .unwrap();
     assert!(!purged(pool.clone()).await);
     // A week past the TTL, the invocation is closed and the call purged.
     sqlx::query("UPDATE calls SET purge_at = now() - interval '8 days' WHERE id = $1")
@@ -899,7 +914,9 @@ async fn content_is_deleted_at_the_ttl_or_by_an_owner(pool: PgPool) {
         .execute(&pool)
         .await
         .unwrap();
-    workers::tick(&pool).await.unwrap();
+    workers::tick(&pool, &chakramcp_shared::wake::Wake::default())
+        .await
+        .unwrap();
     assert!(purged(pool.clone()).await);
     let (status, error, input): (String, Option<String>, Option<Value>) = sqlx::query_as(
         "SELECT status, error_message, input_preview FROM relay_invocations WHERE id = $1",
@@ -1005,7 +1022,9 @@ async fn calls_follow_agents_that_move_or_go(pool: PgPool) {
     let (status, call) = get(&s, &w.alice.key, &format!("/v1/calls/{id}")).await;
     assert_eq!(status, StatusCode::OK);
     assert!(call["callee"]["agent_id"].is_null());
-    workers::tick(&pool).await.unwrap();
+    workers::tick(&pool, &chakramcp_shared::wake::Wake::default())
+        .await
+        .unwrap();
     let (_, call) = get(&s, &w.alice.key, &format!("/v1/calls/{id}")).await;
     assert_eq!(call["ended_by"], "gone");
 }
@@ -1068,7 +1087,7 @@ async fn concurrent_messages_get_distinct_ordered_seqs(pool: PgPool) {
 // ─── C2: capabilities in a call, and the MCP tools ───────
 
 /// A capability on `granter`, granted to `grantee`; the grant's id.
-async fn grant(pool: &PgPool, granter: Uuid, grantee: Uuid, name: &str) -> Uuid {
+pub(crate) async fn grant(pool: &PgPool, granter: Uuid, grantee: Uuid, name: &str) -> Uuid {
     let cap = Uuid::now_v7();
     sqlx::query(
         "INSERT INTO agent_capabilities (id, agent_id, name, description, input_schema, output_schema, visibility)
@@ -1209,7 +1228,7 @@ async fn a_refused_request_still_joins_its_call(pool: PgPool) {
     assert_eq!(entry["invocation"]["status"], "rejected");
 }
 
-async fn mcp(state: &RelayState, token: &str, method: &str, params: Value) -> Value {
+pub(crate) async fn mcp(state: &RelayState, token: &str, method: &str, params: Value) -> Value {
     let (status, body) = post(
         state,
         token,
@@ -1222,7 +1241,7 @@ async fn mcp(state: &RelayState, token: &str, method: &str, params: Value) -> Va
 }
 
 /// A tool's result as JSON (`structuredContent`, or the text for arrays).
-async fn tool(state: &RelayState, token: &str, name: &str, arguments: Value) -> Value {
+pub(crate) async fn tool(state: &RelayState, token: &str, name: &str, arguments: Value) -> Value {
     let result = mcp(
         state,
         token,

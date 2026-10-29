@@ -64,6 +64,11 @@ pub enum Cmd {
         /// At most 25.
         #[arg(long, default_value_t = 25)]
         limit: i64,
+        /// Wait up to this many seconds for events when there are none,
+        /// instead of returning an empty list at once. Servers before 0.7
+        /// don't wait.
+        #[arg(long, default_value_t = 0, value_name = "SECS")]
+        wait: u32,
     },
     /// Send a message on an active call.
     Send {
@@ -161,10 +166,16 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             }
             print(&json!({ "call": c, "entries": entries }))
         }
-        Cmd::Pull { as_agent, limit } => {
+        Cmd::Pull {
+            as_agent,
+            limit,
+            wait,
+        } => {
             let agent = my_agent(&api, &as_agent).await?;
             let v: Value = api
-                .get_relay(&format!("/v1/inbox/calls?agent_id={agent}&limit={limit}"))
+                .get_relay(&format!(
+                    "/v1/inbox/calls?agent_id={agent}&limit={limit}&wait={wait}"
+                ))
                 .await?;
             print(&v)
         }

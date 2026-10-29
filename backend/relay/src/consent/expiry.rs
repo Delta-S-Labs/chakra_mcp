@@ -8,6 +8,7 @@
 
 use std::time::Duration;
 
+use chakramcp_shared::wake::{Feed, Wake};
 use sqlx::PgPool;
 
 /// How often the worker runs.
@@ -24,7 +25,7 @@ const NOTICE_RETENTION_DAYS: i32 = 30;
 /// and how many invocations that ended: held requests rejected, and calls
 /// whose reply wasn't confirmed failed (with a `reply_expired` notice to
 /// the agent).
-pub async fn expire_once(db: &PgPool) -> sqlx::Result<(u64, u64)> {
+pub async fn expire_once(db: &PgPool, wake: &Wake) -> sqlx::Result<(u64, u64)> {
     let row = sqlx::query!(
         r#"
         WITH due AS (
@@ -69,8 +70,10 @@ pub async fn expire_once(db: &PgPool) -> sqlx::Result<(u64, u64)> {
               FROM failed f
               JOIN consent_requests c ON c.invocation_id = f.id AND c.kind = 'reply'
              WHERE f.granter_agent_id IS NOT NULL
+            RETURNING agent_id
         )
-        SELECT (SELECT count(*) FROM expired) AS "expired!",
+        SELECT ARRAY(SELECT agent_id FROM told) AS "told!",
+               (SELECT count(*) FROM expired) AS "expired!",
                (SELECT count(*) FROM rejected) AS "rejected!",
                (SELECT count(*) FROM failed) AS "failed!",
                (SELECT count(*) FROM expired WHERE kind = 'reply') AS "replies!"
@@ -79,6 +82,9 @@ pub async fn expire_once(db: &PgPool) -> sqlx::Result<(u64, u64)> {
     )
     .fetch_one(db)
     .await?;
+    for agent in &row.told {
+        wake.notify(*agent, Feed::Notices);
+    }
     let (expired, rejected, failed, replies) = (
         row.expired as u64,
         row.rejected as u64,
@@ -116,9 +122,9 @@ pub async fn prune_notices(db: &PgPool) -> sqlx::Result<u64> {
     .rows_affected())
 }
 
-async fn tick(db: &PgPool) -> sqlx::Result<()> {
+async fn tick(db: &PgPool, wake: &Wake) -> sqlx::Result<()> {
     // Drain a backlog in batches; one batch is the common case.
-    while expire_once(db).await?.0 as i64 == EXPIRE_BATCH {}
+    while expire_once(db, wake).await?.0 as i64 == EXPIRE_BATCH {}
     prune_notices(db).await?;
     let pending = sqlx::query_scalar!(
         r#"SELECT count(*) AS "n!" FROM consent_requests WHERE status = 'pending'"#
@@ -130,13 +136,13 @@ async fn tick(db: &PgPool) -> sqlx::Result<()> {
 }
 
 /// Run the worker for the life of the process.
-pub fn spawn_expiry_worker(db: PgPool) -> tokio::task::JoinHandle<()> {
+pub fn spawn_expiry_worker(db: PgPool, wake: Wake) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut every = tokio::time::interval(EXPIRY_INTERVAL);
         every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             every.tick().await;
-            if let Err(e) = tick(&db).await {
+            if let Err(e) = tick(&db, &wake).await {
                 tracing::warn!(error = %e, "consent expiry tick failed");
             }
         }

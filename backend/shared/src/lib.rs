@@ -17,6 +17,8 @@
 //! * Call memory's Jev requests and bundle (`calls_memory`), for the relay
 //!   and the memory eval
 //! * Telemetry: tracing init (text/JSON logs), Prometheus metrics, request IDs
+//! * Waking pull agents (`wake`): the in-memory hub and the bus that carries
+//!   wakes between processes
 
 pub mod agent_rules;
 pub mod auto_friendship;
@@ -33,3 +35,4 @@ pub mod scope;
 pub mod sessions;
 pub mod system_one;
 pub mod telemetry;
+pub mod wake;

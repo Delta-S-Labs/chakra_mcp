@@ -225,6 +225,7 @@ pub async fn send(
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
+    super::wake_parties(state, &to);
     Ok(entry)
 }
 

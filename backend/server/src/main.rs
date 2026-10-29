@@ -284,7 +284,14 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
     // its built-in approval page; the relay everything else).
     let system_one =
         chakramcp_relay::compliance::ComplianceChecker::from_env().map(std::sync::Arc::new);
+    // One wake hub for both halves (waking pull agents §4): the app's
+    // approval page and the relay queue work, the relay's pulls wait on it.
+    let wait = chakramcp_shared::wake::WakeSettings::from_env()?;
+    tracing::info!("{}", wait.summary());
+    let wake = chakramcp_shared::wake::Wake::new(wait.max_waiters);
+    chakramcp_shared::wake::bus::spawn(pool.clone(), wake.clone());
     let app_state = AppState::new(pool.clone(), cfg.shared.clone())
+        .with_wake(wake.clone())
         .with_upsert_secret(std::env::var("UPSERT_SHARED_SECRET").ok())
         .with_credits_config(credits)
         .with_hosting(cfg.hosting)
@@ -315,7 +322,8 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
         .with_calls(calls)
         .with_memory(chakramcp_relay::calls::memory::client(&calls))
         .with_mcp(chakramcp_relay::mcp::McpConfig::from_env()?)
-        .with_outbound(outbound);
+        .with_outbound(outbound)
+        .with_wake(wake.clone(), wait);
     relay_state
         .heartbeats
         .clone()
@@ -324,10 +332,16 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
         chakramcp_relay::retention::spawn_usage_pruner(relay_state.db.clone(), days);
     }
     // Owner consent: expire undecided requests and prune old notices.
-    chakramcp_relay::consent::expiry::spawn_expiry_worker(relay_state.db.clone());
+    chakramcp_relay::consent::expiry::spawn_expiry_worker(
+        relay_state.db.clone(),
+        relay_state.wake.clone(),
+    );
     if relay_state.calls.enabled {
         tracing::info!("calls enabled");
-        chakramcp_relay::calls::workers::spawn_workers(relay_state.db.clone());
+        chakramcp_relay::calls::workers::spawn_workers(
+            relay_state.db.clone(),
+            relay_state.wake.clone(),
+        );
         if relay_state.memory.is_some() {
             tracing::info!("calls memory enabled");
             chakramcp_relay::calls::memory::tagger::spawn_tagger(relay_state.clone());
@@ -397,6 +411,8 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
         }
     };
     let _ = stop_tx.send(true);
+    // Waiting inbox pulls return now, inside the drain period.
+    wake.close();
     if signalled {
         let drained = tokio::time::timeout(SHUTDOWN_DRAIN, async {
             let _ = tokio::join!(app_handle, relay_handle);

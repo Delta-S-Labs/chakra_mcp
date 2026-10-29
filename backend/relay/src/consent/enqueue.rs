@@ -12,6 +12,7 @@
 //! can't both take it: the second `UPDATE` re-checks `used < max_requests`
 //! after the first commits.
 
+use chakramcp_shared::wake::{Feed, Wake};
 use serde_json::Value;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -115,6 +116,7 @@ impl Enqueued {
 
 pub async fn enqueue_consent_required(
     db: &PgPool,
+    wake: &Wake,
     inv: NewInvocation<'_>,
     gate: &ConsentGate,
 ) -> Result<Enqueued, ApiError> {
@@ -193,9 +195,12 @@ pub async fn enqueue_consent_required(
 
     Ok(if covering_consent.is_some() {
         super::metrics::record("covered", 1);
+        wake.notify(inv.granter_agent_id, Feed::Invocations);
         Enqueued::Covered { consent_request_id }
     } else {
         super::metrics::record("held", 1);
+        // Held: the agent is told with a `consent_requested` notice.
+        wake.notify(inv.granter_agent_id, Feed::Notices);
         Enqueued::Held { consent_request_id }
     })
 }
