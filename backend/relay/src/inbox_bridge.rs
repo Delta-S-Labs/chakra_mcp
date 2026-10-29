@@ -47,6 +47,10 @@ pub enum ParkError {
     /// of range.
     #[error("bad consent terms: {0}")]
     BadConsentTerms(String),
+    /// `params.metadata["chakramcp.expires_in"]` wasn't a whole number of
+    /// seconds, or was under the minimum.
+    #[error("bad expires_in: {0}")]
+    BadExpiresIn(String),
     #[error("{0}")]
     Enqueue(chakramcp_shared::error::ApiError),
 }
@@ -95,6 +99,10 @@ pub struct A2aTask {
 
 /// The A2A metadata key message safety's findings travel under.
 pub const SAFETY_METADATA_KEY: &str = "chakramcp.safety";
+
+/// Where an A2A caller sets how long its request may wait to be answered,
+/// in seconds (waking pull agents §10).
+pub const EXPIRES_IN_METADATA_KEY: &str = "chakramcp.expires_in";
 
 /// The A2A metadata key `peer` travels under (waking pull agents §8).
 pub const PEER_METADATA_KEY: &str = "chakramcp.peer";
@@ -147,6 +155,10 @@ const PREVIEW_BYTES: usize = 16 * 1024;
 /// Park an authorized pull-mode A2A call. A capability that asks its owner
 /// first (`consent`) holds the call instead, unless a standing consent
 /// covers it; the task then starts as `auth-required`.
+/// `deadline` is the relay's settings and whether the capability is
+/// `human_in_loop`; the caller may shorten the deadline with
+/// `params.metadata["chakramcp.expires_in"]` (waking pull agents §10).
+#[allow(clippy::too_many_arguments)]
 pub async fn park(
     db: &PgPool,
     wake: &chakramcp_shared::wake::Wake,
@@ -155,6 +167,7 @@ pub async fn park(
     request_body: Bytes,
     consent: Option<ParkConsent>,
     trust_snapshot: Option<serde_json::Value>,
+    deadline: (&crate::invocation_sweep::InvocationSettings, bool),
 ) -> Result<Parked, ParkError> {
     if request_body.len() > PREVIEW_BYTES {
         return Err(ParkError::BodyTooLarge(request_body.len()));
@@ -175,6 +188,21 @@ pub async fn park(
         .get("params")
         .cloned()
         .unwrap_or(serde_json::Value::Null);
+
+    let expires_in =
+        match params
+            .get("metadata")
+            .and_then(|m| m.get(EXPIRES_IN_METADATA_KEY))
+        {
+            None => None,
+            Some(raw) => Some(raw.as_i64().ok_or_else(|| {
+                ParkError::BadExpiresIn("must be a whole number of seconds".into())
+            })?),
+        };
+    let (settings, human_in_loop) = deadline;
+    let ttl_secs = settings
+        .ttl(human_in_loop, expires_in)
+        .map_err(|e| ParkError::BadExpiresIn(e.to_string()))?;
 
     let task_id = Uuid::now_v7();
     if let Some(consent) = consent {
@@ -215,6 +243,7 @@ pub async fn park(
                 charge_account_id: authz.caller_account_id,
                 // A2A requests aren't made in calls (push agents are deferred).
                 call_id: None,
+                ttl_secs,
             },
             &gate,
         )
@@ -263,8 +292,9 @@ pub async fn park(
         INSERT INTO relay_invocations
             (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
              capability_name, invoked_by_user_id, status, elapsed_ms,
-             input_preview, api_key_id, minted_jti, trust_snapshot)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', 0, $8, $9, $10, $12)
+             input_preview, api_key_id, minted_jti, trust_snapshot, expires_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', 0, $8, $9, $10, $12,
+                now() + $13::bigint * interval '1 second')
         "#,
         task_id,
         authz.grant_id,
@@ -278,6 +308,7 @@ pub async fn park(
         authz.minted_jti,
         authz.caller_account_id,
         trust_snapshot,
+        ttl_secs,
     )
     .execute(db)
     .await?;
@@ -519,6 +550,10 @@ mod tests {
             body,
             None,
             None,
+            (
+                &crate::invocation_sweep::InvocationSettings::default(),
+                false,
+            ),
         )
         .await
         .unwrap();
@@ -563,6 +598,10 @@ mod tests {
             body,
             None,
             None,
+            (
+                &crate::invocation_sweep::InvocationSettings::default(),
+                false,
+            ),
         )
         .await
         .unwrap();
@@ -593,6 +632,10 @@ mod tests {
             body,
             None,
             None,
+            (
+                &crate::invocation_sweep::InvocationSettings::default(),
+                false,
+            ),
         )
         .await;
         assert!(matches!(r, Err(ParkError::BodyTooLarge(_))));
@@ -614,6 +657,10 @@ mod tests {
             body,
             None,
             None,
+            (
+                &crate::invocation_sweep::InvocationSettings::default(),
+                false,
+            ),
         )
         .await
         .unwrap();
@@ -633,6 +680,10 @@ mod tests {
             body,
             None,
             None,
+            (
+                &crate::invocation_sweep::InvocationSettings::default(),
+                false,
+            ),
         )
         .await
         .unwrap();
@@ -674,6 +725,10 @@ mod tests {
             body,
             None,
             None,
+            (
+                &crate::invocation_sweep::InvocationSettings::default(),
+                false,
+            ),
         )
         .await
         .unwrap();

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT cap.name, cap.description,\n               cap.consent_required, cap.consent_max_validity_secs, cap.consent_wait_secs,\n               g.purpose           as \"grant_purpose?\",\n               f.proposer_message  as \"proposer_message?\",\n               f.response_message  as \"response_message?\"\n        FROM agent_capabilities cap\n        LEFT JOIN grants g ON g.id = $2\n        LEFT JOIN LATERAL (\n            SELECT proposer_message, response_message\n            FROM friendships\n            WHERE status = 'accepted'\n              AND ((proposer_agent_id = $3 AND target_agent_id = $4)\n                OR (proposer_agent_id = $4 AND target_agent_id = $3))\n            ORDER BY decided_at DESC\n            LIMIT 1\n        ) f ON true\n        WHERE cap.id = $1\n        ",
+  "query": "\n        SELECT cap.name, cap.description, cap.semantics,\n               cap.consent_required, cap.consent_max_validity_secs, cap.consent_wait_secs,\n               g.purpose           as \"grant_purpose?\",\n               f.proposer_message  as \"proposer_message?\",\n               f.response_message  as \"response_message?\"\n        FROM agent_capabilities cap\n        LEFT JOIN grants g ON g.id = $2\n        LEFT JOIN LATERAL (\n            SELECT proposer_message, response_message\n            FROM friendships\n            WHERE status = 'accepted'\n              AND ((proposer_agent_id = $3 AND target_agent_id = $4)\n                OR (proposer_agent_id = $4 AND target_agent_id = $3))\n            ORDER BY decided_at DESC\n            LIMIT 1\n        ) f ON true\n        WHERE cap.id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -27,6 +27,17 @@
       },
       {
         "ordinal": 2,
+        "name": "semantics",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "semantics"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
         "name": "consent_required",
         "type_info": "Bool",
         "origin": {
@@ -37,7 +48,7 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "consent_max_validity_secs",
         "type_info": "Int4",
         "origin": {
@@ -48,7 +59,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "consent_wait_secs",
         "type_info": "Int4",
         "origin": {
@@ -59,7 +70,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "grant_purpose?",
         "type_info": "Text",
         "origin": {
@@ -70,7 +81,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "proposer_message?",
         "type_info": "Text",
         "origin": {
@@ -81,7 +92,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "response_message?",
         "type_info": "Text",
         "origin": {
@@ -106,10 +117,11 @@
       false,
       false,
       false,
+      false,
       true,
       true,
       true
     ]
   },
-  "hash": "dc835b7874826a19e180e6f123ee2d203828f6cfcd3b09787b63052e5853ff40"
+  "hash": "84db9245e77b71b20a96cf0e4b4e96a9e0c9606f48133c3ee8795c4920beeef9"
 }

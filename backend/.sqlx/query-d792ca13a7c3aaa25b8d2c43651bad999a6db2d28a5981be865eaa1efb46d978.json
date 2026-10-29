@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE relay_invocations\n        SET status = $2,\n            elapsed_ms = $3,\n            error_message = $4,\n            output_preview = $5,\n            lease_until = NULL\n        WHERE id = $1\n          AND (status = 'in_progress' OR (status = 'pending' AND deliveries > 0))\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int4",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d792ca13a7c3aaa25b8d2c43651bad999a6db2d28a5981be865eaa1efb46d978"
+}

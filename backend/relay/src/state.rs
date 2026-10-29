@@ -80,6 +80,9 @@ pub struct RelayState {
     pub wake: chakramcp_shared::wake::Wake,
     /// How long, and how many, inbox pulls may wait (`INBOX_MAX_*`).
     pub wait: chakramcp_shared::wake::WakeSettings,
+    /// Claim leases and call deadlines (`CLAIM_LEASE_SECS`,
+    /// `INVOCATION_*_TTL`; waking pull agents §9, §10).
+    pub invocations: crate::invocation_sweep::InvocationSettings,
 }
 
 impl RelayState {
@@ -118,6 +121,7 @@ impl RelayState {
             forward_http: forward_client(crate::outbound::OutboundPolicy::default()),
             wake: chakramcp_shared::wake::Wake::default(),
             wait: chakramcp_shared::wake::WakeSettings::default(),
+            invocations: crate::invocation_sweep::InvocationSettings::default(),
         }
     }
 
@@ -129,6 +133,15 @@ impl RelayState {
     ) -> Self {
         self.wake = wake;
         self.wait = wait;
+        self
+    }
+
+    /// Claim leases and call deadlines, as read at startup.
+    pub fn with_invocations(
+        mut self,
+        invocations: crate::invocation_sweep::InvocationSettings,
+    ) -> Self {
+        self.invocations = invocations;
         self
     }
 

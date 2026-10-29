@@ -60,7 +60,7 @@ pub async fn submit_result(
     }
     let row = sqlx::query!(
         r#"
-        SELECT i.status, i.created_at, i.capability_id,
+        SELECT i.status, i.deliveries, i.created_at, i.capability_id,
                i.granter_agent_id, i.grantee_agent_id,
                ga.account_id AS "granter_account_id?",
                ea.account_id AS "grantee_account_id?",
@@ -82,12 +82,8 @@ pub async fn submit_result(
     .await?
     .ok_or(ApiError::NotFound)?;
 
-    if row.status != "in_progress" {
-        return Err(ApiError::Conflict(format!(
-            "invocation is {}; only in_progress can be completed",
-            row.status
-        )));
-    }
+    let human_in_loop = row.capability_semantics.as_deref() == Some("human_in_loop");
+    check_answerable(&row.status, row.deliveries, human_in_loop)?;
     // Auth: caller must be a member of the granter's account. The agent
     // could be deleted in the meantime; if so, no one can report a result.
     let granter_account = row.granter_account_id.ok_or(ApiError::Forbidden)?;
@@ -152,7 +148,7 @@ pub async fn submit_result(
         });
     }
 
-    if row.capability_semantics.as_deref() == Some("human_in_loop") {
+    if human_in_loop {
         let (Some(capability_id), Some(granter), Some(grantee), Some(grantee_account)) = (
             row.capability_id,
             row.granter_agent_id,
@@ -217,14 +213,18 @@ pub async fn submit_result(
             .map(crate::handlers::invoke::truncate_for_audit),
         Preview::Whole => output,
     };
+    // The first answer wins: a late one lands on a call whose lease ran
+    // out, until someone else answers it or its deadline passes.
     let finished = sqlx::query!(
         r#"
         UPDATE relay_invocations
         SET status = $2,
             elapsed_ms = $3,
             error_message = $4,
-            output_preview = $5
-        WHERE id = $1 AND status = 'in_progress'
+            output_preview = $5,
+            lease_until = NULL
+        WHERE id = $1
+          AND (status = 'in_progress' OR (status = 'pending' AND deliveries > 0))
         "#,
         id,
         status,
@@ -235,6 +235,9 @@ pub async fn submit_result(
     .execute(&state.db)
     .await?
     .rows_affected();
+    if finished == 0 {
+        return Err(already_settled());
+    }
     crate::telemetry::record_invocation_outcome(
         crate::telemetry::Mode::Pull,
         status,
@@ -246,6 +249,36 @@ pub async fn submit_result(
         elapsed_ms,
         safety,
     })
+}
+
+/// `409 chk.invocation.already_settled`: the call has its result, timed
+/// out, or was refused (waking pull agents §11).
+pub fn already_settled() -> ApiError {
+    ApiError::coded(
+        axum::http::StatusCode::CONFLICT,
+        "chk.invocation.already_settled",
+        "this invocation is already settled",
+    )
+}
+
+/// Whether a call in `status`, claimed `deliveries` times, takes a result
+/// (waking pull agents §9): a claimed one, or one claimed before whose lease
+/// ran out (a late answer). A `human_in_loop` reply needs the claim, since
+/// it becomes a draft for the owner.
+fn check_answerable(status: &str, deliveries: i32, human_in_loop: bool) -> Result<(), ApiError> {
+    match status {
+        "in_progress" => Ok(()),
+        "pending" if deliveries > 0 && !human_in_loop => Ok(()),
+        "pending" => Err(ApiError::coded(
+            axum::http::StatusCode::CONFLICT,
+            "chk.invocation.not_claimed",
+            "this invocation hasn't been claimed: pull it from the inbox first",
+        )),
+        "succeeded" | "failed" | "rejected" | "timeout" => Err(already_settled()),
+        other => Err(ApiError::Conflict(format!(
+            "invocation is {other}; only in_progress can be completed"
+        ))),
+    }
 }
 
 /// Keep a reply's screening report (message safety §5), drafts and blocked

@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH due AS (\n            SELECT id FROM relay_invocations\n             WHERE status = 'in_progress' AND lease_until < now()\n             ORDER BY lease_until\n             LIMIT $1\n               FOR UPDATE SKIP LOCKED\n        )\n        UPDATE relay_invocations i\n           SET status = CASE WHEN i.deliveries >= $2 THEN 'timeout' ELSE 'pending' END,\n               error_message = CASE WHEN i.deliveries >= $2 THEN $3 ELSE i.error_message END,\n               elapsed_ms = CASE WHEN i.deliveries >= $2\n                                 THEN LEAST(EXTRACT(EPOCH FROM (now() - i.created_at)) * 1000,\n                                            2147483647)::int\n                                 ELSE i.elapsed_ms END,\n               claimed_at = CASE WHEN i.deliveries >= $2 THEN i.claimed_at END,\n               claimed_by_user_id = CASE WHEN i.deliveries >= $2 THEN i.claimed_by_user_id END,\n               lease_until = NULL\n          FROM due\n         WHERE i.id = due.id\n        RETURNING i.id, i.granter_agent_id, i.status\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "granter_agent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "granter_agent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "status"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "0572076aaaf3e279b91361fcc20e94d0b819e96c8ea5c4688d8091093c5f0df6"
+}

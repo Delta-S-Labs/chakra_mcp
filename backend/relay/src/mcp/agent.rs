@@ -388,6 +388,7 @@ impl Endpoint<'_> {
                 consent_terms: None,
                 call: None,
                 limits_source: "mcp_agent",
+                expires_in: None,
             },
         )
         .await;

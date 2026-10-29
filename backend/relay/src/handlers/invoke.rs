@@ -109,6 +109,10 @@ pub struct InvokeRequest {
     /// a party and the capability the other party's.
     #[serde(default)]
     pub call_id: Option<Uuid>,
+    /// Seconds the call may wait to be answered before it times out (waking
+    /// pull agents §10): at least 10, at most the server's default.
+    #[serde(default)]
+    pub expires_in: Option<i64>,
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -162,6 +166,16 @@ pub struct InvocationDto {
     pub output_preview: Option<Value>,
     pub created_at: DateTime<Utc>,
     pub claimed_at: Option<DateTime<Utc>>,
+    /// When it times out if it isn't answered (waking pull agents §10);
+    /// null on calls from before deadlines until the sweep sets one, and
+    /// on a held request until it's approved.
+    pub expires_at: Option<DateTime<Utc>>,
+    /// When the current claim lapses and the call goes back to `pending`
+    /// (waking pull agents §9); null unless claimed, and for
+    /// `human_in_loop` calls.
+    pub lease_until: Option<DateTime<Utc>>,
+    /// How many times it has been claimed.
+    pub deliveries: i32,
     /// The call it was made in, if any (calls spec §7).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub call_id: Option<Uuid>,
@@ -265,6 +279,9 @@ pub struct InboxQuery {
     pub limit: Option<i64>,
     /// Seconds to wait for work when there's none (waking pull agents §6).
     pub wait: Option<u32>,
+    /// How long the claim holds before the call goes back to `pending`
+    /// (waking pull agents §9); `CLAIM_LEASE_SECS` when absent.
+    pub lease_secs: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -488,6 +505,7 @@ pub async fn invoke(
             consent_terms: req.consent_terms.as_ref(),
             call: req.call_id,
             limits_source,
+            expires_in: req.expires_in,
         },
     )
     .await?;
@@ -622,6 +640,8 @@ pub(crate) struct StartOptions<'a> {
     pub call: Option<Uuid>,
     /// Labels the usage-limit check with the surface.
     pub limits_source: &'static str,
+    /// The caller's `expires_in`, in seconds (waking pull agents §10).
+    pub expires_in: Option<i64>,
 }
 
 /// Start an invocation: REST `POST /v1/invoke`, MCP `invoke` and the agent
@@ -645,6 +665,9 @@ pub(crate) async fn start(
     };
     let as_agent =
         as_agent.ok_or_else(|| ApiError::InvalidRequest("grantee_agent_id is required".into()))?;
+    // Refuse a too-short `expires_in` before anything is recorded; the
+    // capability's kind sets the most it may be, below.
+    state.invocations.ttl(false, opts.expires_in)?;
     match target {
         Target::Grant(grant_id) => {
             authorize_and_enqueue_trusted(
@@ -656,6 +679,7 @@ pub(crate) async fn start(
                 opts.consent_terms,
                 opts.limits_source,
                 opts.call,
+                opts.expires_in,
             )
             .await
         }
@@ -669,6 +693,7 @@ pub(crate) async fn start(
                 opts.consent_terms,
                 opts.limits_source,
                 opts.call,
+                opts.expires_in,
             )
             .await
         }
@@ -766,6 +791,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
     consent_terms: Option<&ConsentTerms>,
     limits_source: &'static str,
     call: Option<Uuid>,
+    expires_in: Option<i64>,
 ) -> Result<Outcome, ApiError> {
     consent_enqueue::validate_terms(consent_terms)?;
     let input_preview = truncate_for_audit(input);
@@ -783,6 +809,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
             gacc.slug as granter_account_slug,
             ea.account_id as grantee_account_id,
             cap.name as capability_name,
+            cap.semantics as capability_semantics,
             cap.visibility as capability_visibility,
             cap.description as capability_description,
             cap.input_schema as capability_input_schema,
@@ -911,6 +938,9 @@ pub(crate) async fn authorize_and_enqueue_trusted(
     if row.granter_mode == "push" {
         return reject(StatusCode::CONFLICT, PUSH_TARGET_ERROR.into()).await;
     }
+    let ttl_secs = state
+        .invocations
+        .ttl(row.capability_semantics == "human_in_loop", expires_in)?;
     let called = Called {
         agent_id: row.granter_agent_id,
         peer: state
@@ -1099,6 +1129,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
                 trust_snapshot: Some(&trust_snapshot),
                 charge_account_id: row.grantee_account_id,
                 call_id: call,
+                ttl_secs,
             },
             gate,
         )
@@ -1129,8 +1160,9 @@ pub(crate) async fn authorize_and_enqueue_trusted(
         INSERT INTO relay_invocations
             (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
              capability_name, invoked_by_user_id, status, input_preview,
-             api_key_id, minted_jti, trust_snapshot, call_id)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9, $10, $11, $13)
+             api_key_id, minted_jti, trust_snapshot, call_id, expires_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9, $10, $11, $13,
+                now() + $14::bigint * interval '1 second')
         "#,
         id,
         row.grant_id,
@@ -1145,6 +1177,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
         trust_snapshot,
         row.grantee_account_id,
         call,
+        ttl_secs,
     )
     .execute(&state.db)
     .await?;
@@ -1184,6 +1217,7 @@ pub(crate) async fn authorize_and_enqueue_public(
     consent_terms: Option<&ConsentTerms>,
     limits_source: &'static str,
     call: Option<Uuid>,
+    expires_in: Option<i64>,
 ) -> Result<Outcome, ApiError> {
     consent_enqueue::validate_terms(consent_terms)?;
     let input_preview = truncate_for_audit(input);
@@ -1194,6 +1228,7 @@ pub(crate) async fn authorize_and_enqueue_public(
     let cap = sqlx::query!(
         r#"
         SELECT cap.id, cap.name, cap.description, cap.input_schema, cap.agent_id AS granter_agent_id,
+               cap.semantics,
                cap.public_invoke, cap.public_monthly_quota_per_agent,
                cap.consent_required, cap.consent_max_validity_secs, cap.consent_wait_secs,
                ga.visibility AS granter_visibility, ga.mode AS granter_mode,
@@ -1251,6 +1286,9 @@ pub(crate) async fn authorize_and_enqueue_public(
     if cap.granter_mode == "push" {
         return Err(ApiError::Conflict(PUSH_TARGET_ERROR.into()));
     }
+    let ttl_secs = state
+        .invocations
+        .ttl(cap.semantics == "human_in_loop", expires_in)?;
     let called = Called {
         agent_id: cap.granter_agent_id,
         peer: state
@@ -1433,6 +1471,7 @@ pub(crate) async fn authorize_and_enqueue_public(
                 trust_snapshot: trust_snapshot.as_ref(),
                 charge_account_id: invoker.account_id,
                 call_id: call,
+                ttl_secs,
             },
             gate,
         )
@@ -1463,8 +1502,9 @@ pub(crate) async fn authorize_and_enqueue_public(
         INSERT INTO relay_invocations
             (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
              capability_name, invoked_by_user_id, status, input_preview,
-             api_key_id, minted_jti, trust_snapshot, call_id)
-        VALUES ($1, NULL, $2, $3, $4, $5, $6, 'pending', $7, $8, $9, $10, $12)
+             api_key_id, minted_jti, trust_snapshot, call_id, expires_at)
+        VALUES ($1, NULL, $2, $3, $4, $5, $6, 'pending', $7, $8, $9, $10, $12,
+                now() + $13::bigint * interval '1 second')
         "#,
         id,
         cap.granter_agent_id,
@@ -1478,6 +1518,7 @@ pub(crate) async fn authorize_and_enqueue_public(
         trust_snapshot,
         invoker.account_id,
         call,
+        ttl_secs,
     )
     .execute(&state.db)
     .await?;
@@ -1526,10 +1567,11 @@ pub async fn inbox(
     crate::auth::require_scope(&state, &user, q.agent_id).await?;
     // The agent is online (in memory; flushed in batches).
     state.heartbeats.record(q.agent_id);
+    let lease = state.invocations.lease(q.lease_secs);
 
     let (ids, waited) =
         crate::inbox_wait::claim_waiting(&state, q.agent_id, Feed::Invocations, q.wait, || {
-            claim_invocations(&state.db, q.agent_id, limit, user.user_id)
+            claim_invocations(&state.db, q.agent_id, limit, user.user_id, lease)
         })
         .await?;
     let header = crate::inbox_wait::wait_header(waited);
@@ -1550,6 +1592,7 @@ pub async fn inbox(
             i.capability_id, i.capability_name, i.status,
             i.elapsed_ms, i.error_message, i.input_preview, i.output_preview,
             i.created_at, i.claimed_at, i.trust_snapshot, i.call_id,
+            i.expires_at, i.lease_until, i.deliveries,
             ga.display_name as "granter_display_name?",
             ea.display_name as "grantee_display_name?",
             ea.account_id   as "grantee_account_id?",
@@ -1677,6 +1720,9 @@ pub async fn inbox(
                         output_preview: r.output_preview,
                         created_at: r.created_at,
                         claimed_at: r.claimed_at,
+                        expires_at: r.expires_at,
+                        lease_until: r.lease_until,
+                        deliveries: r.deliveries,
                         call_id: r.call_id,
                         i_served: true,
                         i_invoked: false,
@@ -1703,26 +1749,36 @@ pub type WaitHeader = [(axum::http::HeaderName, axum::http::HeaderValue); 1];
 /// moving them to `in_progress`. `FOR UPDATE SKIP LOCKED` lets concurrent
 /// pullers take disjoint batches without blocking each other. Shared by
 /// REST and MCP.
+/// Claim up to `limit` of `agent`'s pending invocations, oldest first, for
+/// a lease of `lease_secs` (waking pull agents §9): each claim counts a
+/// delivery, and a `human_in_loop` claim has no lease, since its owner
+/// answers it.
 pub(crate) async fn claim_invocations(
     db: &PgPool,
     agent: Uuid,
     limit: i64,
     user_id: Uuid,
+    lease_secs: u32,
 ) -> Result<Vec<Uuid>, ApiError> {
     Ok(sqlx::query_scalar!(
         r#"
         WITH picked AS (
-            SELECT id FROM relay_invocations
-            WHERE granter_agent_id = $1
-              AND status = 'pending'
-            ORDER BY created_at ASC
-            LIMIT $2
-            FOR UPDATE SKIP LOCKED
+            SELECT r.id, c.semantics
+              FROM relay_invocations r
+              LEFT JOIN agent_capabilities c ON c.id = r.capability_id
+             WHERE r.granter_agent_id = $1
+               AND r.status = 'pending'
+             ORDER BY r.created_at ASC
+             LIMIT $2
+               FOR UPDATE OF r SKIP LOCKED
         )
         UPDATE relay_invocations i
         SET status = 'in_progress',
             claimed_at = now(),
-            claimed_by_user_id = $3
+            claimed_by_user_id = $3,
+            deliveries = i.deliveries + 1,
+            lease_until = CASE WHEN picked.semantics = 'human_in_loop' THEN NULL
+                               ELSE now() + $4::int * interval '1 second' END
         FROM picked
         WHERE i.id = picked.id
         RETURNING i.id
@@ -1730,6 +1786,7 @@ pub(crate) async fn claim_invocations(
         agent,
         limit,
         user_id,
+        lease_secs as i32,
     )
     .fetch_all(db)
     .await?)
@@ -1779,6 +1836,85 @@ pub async fn report_result(
     Ok(Json(r).into_response())
 }
 
+// ─── POST /v1/invocations/{id}/release ───────────────────
+/// Hand a claim back (waking pull agents §9): the invocation goes back to
+/// `pending` for the next pull. Answers with the invocation.
+pub async fn release(
+    State(state): State<RelayState>,
+    user: AuthUser,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<InvocationDto>> {
+    release_claim(&state, &user, id).await?;
+    Ok(Json(fetch_one(&state, user.user_id, id).await?))
+}
+
+/// Put a claimed invocation back to `pending`, for anyone who may act as the
+/// called agent (as for results). The hand-back doesn't count as a
+/// delivery, and the agent's waiting pulls are woken. Refused once it's
+/// settled (`chk.invocation.already_settled`), and while it isn't claimed or
+/// has a reply waiting for the owner (`chk.invocation.not_releasable`).
+/// Shared with MCP `release_invocation`.
+pub(crate) async fn release_claim(
+    state: &RelayState,
+    user: &AuthUser,
+    id: Uuid,
+) -> Result<(), ApiError> {
+    let row = sqlx::query!(
+        r#"
+        SELECT i.status, i.granter_agent_id, ga.account_id AS "granter_account_id?"
+          FROM relay_invocations i
+          LEFT JOIN agents ga ON ga.id = i.granter_agent_id
+         WHERE i.id = $1
+        "#,
+        id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(ApiError::NotFound)?;
+    let account = row.granter_account_id.ok_or(ApiError::Forbidden)?;
+    if !user_is_member(&state.db, user.user_id, account).await? {
+        return Err(ApiError::Forbidden);
+    }
+    if let Some(agent) = row.granter_agent_id {
+        crate::auth::require_scope(state, user, agent).await?;
+    }
+    if matches!(
+        row.status.as_str(),
+        "succeeded" | "failed" | "rejected" | "timeout"
+    ) {
+        return Err(crate::consent::reply::already_settled());
+    }
+    let released = sqlx::query_scalar!(
+        r#"
+        UPDATE relay_invocations i
+           SET status = 'pending',
+               claimed_at = NULL,
+               claimed_by_user_id = NULL,
+               lease_until = NULL,
+               deliveries = GREATEST(i.deliveries - 1, 0)
+         WHERE i.id = $1 AND i.status = 'in_progress'
+           AND NOT EXISTS (
+               SELECT 1 FROM consent_requests cr
+                WHERE cr.invocation_id = i.id AND cr.kind = 'reply' AND cr.status = 'pending')
+        RETURNING i.granter_agent_id
+        "#,
+        id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| {
+        ApiError::coded(
+            StatusCode::CONFLICT,
+            "chk.invocation.not_releasable",
+            "only a claimed invocation without a reply waiting for its owner can be released",
+        )
+    })?;
+    if let Some(agent) = released {
+        state.wake.notify(agent, Feed::Invocations);
+    }
+    Ok(())
+}
+
 // ─── GET /v1/invocations ─────────────────────────────────
 pub async fn list(
     State(state): State<RelayState>,
@@ -1821,6 +1957,7 @@ pub async fn list(
             i.capability_id, i.capability_name, i.status,
             i.elapsed_ms, i.error_message, i.input_preview, i.output_preview,
             i.created_at, i.claimed_at, i.trust_snapshot, i.call_id,
+            i.expires_at, i.lease_until, i.deliveries,
             ga.display_name as "granter_display_name?",
             ga.mode         as "granter_mode?",
             ea.display_name as "grantee_display_name?",
@@ -1935,6 +2072,9 @@ pub async fn list(
                 output_preview: r.output_preview,
                 created_at: r.created_at,
                 claimed_at: r.claimed_at,
+                expires_at: r.expires_at,
+                lease_until: r.lease_until,
+                deliveries: r.deliveries,
                 call_id: r.call_id,
                 i_served,
                 i_invoked,
@@ -2023,6 +2163,7 @@ async fn fetch_one(state: &RelayState, user_id: Uuid, id: Uuid) -> Result<Invoca
             i.capability_id, i.capability_name, i.status,
             i.elapsed_ms, i.error_message, i.input_preview, i.output_preview,
             i.created_at, i.claimed_at, i.trust_snapshot, i.call_id,
+            i.expires_at, i.lease_until, i.deliveries,
             ga.display_name as "granter_display_name?",
             ga.mode         as "granter_mode?",
             ea.display_name as "grantee_display_name?",
@@ -2107,6 +2248,9 @@ async fn fetch_one(state: &RelayState, user_id: Uuid, id: Uuid) -> Result<Invoca
         output_preview: r.output_preview,
         created_at: r.created_at,
         claimed_at: r.claimed_at,
+        expires_at: r.expires_at,
+        lease_until: r.lease_until,
+        deliveries: r.deliveries,
         call_id: r.call_id,
         i_served,
         i_invoked,

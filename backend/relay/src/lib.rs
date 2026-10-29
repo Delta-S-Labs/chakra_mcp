@@ -13,6 +13,8 @@ use tower_http::cors::{Any, CorsLayer};
 pub mod agent_card;
 pub mod auth;
 pub mod calls;
+#[cfg(test)]
+mod claims_tests;
 pub mod compliance;
 pub mod consent;
 pub mod discovery;
@@ -24,6 +26,7 @@ pub mod inbox_bridge;
 pub mod inbox_wait;
 #[cfg(test)]
 mod inbox_wait_tests;
+pub mod invocation_sweep;
 pub mod jwt_mint;
 pub mod limits;
 pub mod mcp;
@@ -226,6 +229,10 @@ pub fn router(state: RelayState) -> Router {
         .route(
             "/v1/invocations/{id}/result",
             post(handlers::invoke::report_result),
+        )
+        .route(
+            "/v1/invocations/{id}/release",
+            post(handlers::invoke::release),
         )
         // ─── Audit + usage (migration 0025) ────────────
         .route("/v1/audit", get(handlers::events_read::audit_list))

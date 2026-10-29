@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT i.id, i.capability_name, i.input_preview, i.status, i.trust_snapshot,\n               i.created_at, i.claimed_at, i.call_id,\n               i.grantee_agent_id, ea.display_name as \"grantee_display_name?\"\n        FROM relay_invocations i\n        LEFT JOIN agents ea ON ea.id = i.grantee_agent_id\n        WHERE i.id = ANY($1)\n        ORDER BY i.created_at ASC\n        ",
+  "query": "\n        SELECT i.id, i.capability_name, i.input_preview, i.status, i.trust_snapshot,\n               i.created_at, i.claimed_at, i.call_id, i.expires_at, i.lease_until,\n               i.grantee_agent_id, ea.display_name as \"grantee_display_name?\"\n        FROM relay_invocations i\n        LEFT JOIN agents ea ON ea.id = i.grantee_agent_id\n        WHERE i.id = ANY($1)\n        ORDER BY i.created_at ASC\n        ",
   "describe": {
     "columns": [
       {
@@ -93,6 +93,28 @@
       },
       {
         "ordinal": 8,
+        "name": "expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "expires_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "lease_until",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "lease_until"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
         "name": "grantee_agent_id",
         "type_info": "Uuid",
         "origin": {
@@ -103,7 +125,7 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 11,
         "name": "grantee_display_name?",
         "type_info": "Text",
         "origin": {
@@ -129,8 +151,10 @@
       true,
       true,
       true,
+      true,
+      true,
       false
     ]
   },
-  "hash": "870ab47150f6f53a567b2ddb6a157bd30fb04948459a530444de068295996f7e"
+  "hash": "c9594070f8d4adf1641e95dea1bec06609ed13f1ecb1b623f8c3c437a4be3066"
 }

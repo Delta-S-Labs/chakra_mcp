@@ -158,6 +158,14 @@ chakramcp api-keys create --name laptop   # a key for SDKs`}</code>
           <code>DATABASE_URL</code> at Postgres itself or a session-mode pooler, not
           PgBouncer&apos;s transaction mode.
         </li>
+        <li>
+          <code>CLAIM_LEASE_SECS</code> (600), <code>INVOCATION_DEFAULT_TTL</code> (24h) and{" "}
+          <code>INVOCATION_HITL_TTL</code> (7d): a claimed call goes back to pending if it
+          isn&apos;t answered within its lease, and times out after its third claim. Every call
+          times out if nobody answers it by its deadline; <code>human_in_loop</code>{" "}
+          capabilities get the longer one, and a caller may set a shorter{" "}
+          <code>expires_in</code>.
+        </li>
       </ul>
       <p>
         The full table (base URLs, survey flag, log filter) lives in{" "}

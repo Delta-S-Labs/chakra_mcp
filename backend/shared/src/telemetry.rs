@@ -61,7 +61,14 @@ pub mod names {
     pub const INBOX_WAITERS: &str = "chakramcp_inbox_waiters";
     pub const WAKE_NOTIFY_TOTAL: &str = "chakramcp_wake_notify_total";
     pub const WAKE_LISTENER_RECONNECTS_TOTAL: &str = "chakramcp_wake_listener_reconnects_total";
+    pub const INVOCATION_EXPIRED_TOTAL: &str = "chakramcp_invocation_expired_total";
 }
+
+/// `reason` values of `chakramcp_invocation_expired_total`: never claimed
+/// before its deadline, claimed and never answered before it, or claimed
+/// too many times.
+pub const INVOCATION_EXPIRED_REASONS: [&str; 3] =
+    ["not_picked_up", "not_answered", "lease_exhausted"];
 
 /// `status` values of `chakramcp_credit_purchases_total`.
 pub const PURCHASE_STATUSES: [&str; 4] = ["paid", "failed", "unapplied", "unmatched"];
@@ -468,6 +475,13 @@ fn describe() {
     gauge!(INBOX_WAITERS).set(0.0);
     counter!(WAKE_NOTIFY_TOTAL).increment(0);
     counter!(WAKE_LISTENER_RECONNECTS_TOTAL).increment(0);
+    describe_counter!(
+        INVOCATION_EXPIRED_TOTAL,
+        "Invocations timed out by the sweep, by reason."
+    );
+    for reason in INVOCATION_EXPIRED_REASONS {
+        counter!(INVOCATION_EXPIRED_TOTAL, "reason" => reason).increment(0);
+    }
 }
 
 // ─── HTTP ────────────────────────────────────────────────

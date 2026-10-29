@@ -28,6 +28,10 @@ pub struct Notice {
     pub id: Uuid,
     pub kind: String,
     pub created_at: DateTime<Utc>,
+    /// The invocation the notice is about, when it's about one: for
+    /// `invocation_expired` (waking pull agents §10), and the consent
+    /// notices' invocation.
+    pub invocation_id: Option<Uuid>,
     /// The consent request the notice is about: for `consent_requested`,
     /// the one waiting for approval; for `reply_*`, the reply's.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -115,6 +119,8 @@ async fn claim_rows(state: &RelayState, agent_id: Uuid, limit: i64) -> ApiResult
             RETURNING n.id, n.kind, n.payload, n.created_at
         )
         SELECT c.id, c.kind, c.created_at,
+               COALESCE((c.payload->>'invocation_id')::uuid, cr.invocation_id)
+                   AS "invocation_id?",
                cr.id AS "cr_id?", cr.invocation_id AS "cr_invocation_id?",
                cr.status AS "cr_status?", cr.terms AS "cr_terms?",
                cr.expires_at AS "cr_expires_at?", cr.capability_id AS "cr_capability_id?",
@@ -183,6 +189,7 @@ async fn claim_rows(state: &RelayState, agent_id: Uuid, limit: i64) -> ApiResult
                 id: r.id,
                 kind: r.kind,
                 created_at: r.created_at,
+                invocation_id: r.invocation_id,
                 consent_request,
             }
         })
