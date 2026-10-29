@@ -170,7 +170,7 @@ introduces.
 | Every existing `INSERT INTO agent_notices` (consent enqueue, consent expiry, reply notices) | that agent, `Notices` | 1 |
 | A call entry delivered to a party (invite, message, accept, decline, end, missed) | recipient, `Calls` | 1 |
 | Release, or a lease expiring back to `pending` (§9) | called agent, `Invocations` | 4 |
-| The sweep's `invocation_expired` notice, and the `answered_by_owner` notice | called agent, `Notices` | 4, 5 |
+| The sweep's `invocation_expired` notice | called agent, `Notices` | 4 |
 | The `wake_url_disabled` notice | that agent, `Notices` | 6 |
 
 Workers that change many rows use `RETURNING` to get the agent ids, and call `notify`
@@ -257,9 +257,11 @@ connection outside the pool.
     `call pull --wait 25`;
   - a shell loop becomes `while true; do chakramcp inbox pull --wait 25 …; done`.
 - **SDKs (TypeScript, Python, Go, Rust):**
-  - **`pull` takes `wait` and `leaseSecs`** (in each language's own spelling) and reports
-    whether the relay waited. That's for agents with their own loop, like the house
-    agents.
+  - **`pull` takes `wait` and `leaseSecs`** (in each language's own spelling), and its
+    return type doesn't change.
+    - A new `pullWithMeta` returns `{ items, waited }`, where `waited` is the honoured
+      `ChakraMCP-Wait`, or null when the header is missing.
+    - It's for agents with their own loop, like the house agents.
   - **`inbox.serve` and `calls.serve`** send `wait=25`:
     - while the header says the relay waits, they loop straight away;
     - without the header, they sleep for the poll interval as now, so they still work
@@ -450,8 +452,12 @@ and the rows claimed, which is the trap itself.
 What's new:
 - The CLI gets `inbox list --agent …`, an alias for
   `invocations list --direction inbound --status pending`.
-- The skill and docs (PR 7) tell chat assistants to list first, with `list_invocations`,
-  and to claim only what they'll answer now.
+- The skill and docs (PR 7) tell chat assistants:
+  - to list first, with `list_invocations`;
+  - that a claim takes the oldest rows, not a chosen one, so to claim with `limit: 1`
+    only when they'll answer now;
+  - never to claim `human_in_loop` calls just to look at them, but to pass on their
+    `owner_reply_url`.
 
 ### Release: handing a claim back
 
@@ -502,9 +508,13 @@ clients that can't pass `lease_secs`:
 
 Work finished after its lease still lands, and the first answer wins.
 
-`submit_result`'s final `UPDATE` today ignores `rows_affected`. It must check it, so that
-losing a race with the sweep or another answer returns
-`409 chk.invocation.already_settled`, not a success.
+Other cases:
+- **A row nobody has claimed** (`pending` with `deliveries = 0`) gets
+  `409 chk.invocation.not_claimed` ("claim it first"). The owner's web reply is the one
+  exception.
+- **A lost race.** `submit_result`'s final `UPDATE` today ignores `rows_affected`. It must
+  check it, so that losing a race with the sweep or another answer returns
+  `409 chk.invocation.already_settled`, not a success.
 
 ### The owner answers on the web (`human_in_loop`)
 
@@ -515,29 +525,55 @@ losing a race with the sweep or another answer returns
 - The web Inbox shows that form, but only for `in_progress` rows.
 
 **What's added:**
-- **Pending rows.** `submit_result` lets an interactive approver's reply to a
-  `human_in_loop` row through when the row is `pending`, as well as `in_progress`. Every
-  other caller keeps the rules above.
-  - `confirm_now` then first claims the row, in its own transaction: `in_progress`,
-    `claimed_at = now()`, `claimed_by_user_id` = the owner, and `deliveries + 1`.
-  - Then it releases the reply as today.
-  - `reply::release` keeps its `status = 'in_progress'` guard.
-- **The web Inbox** shows its reply form on inbound `pending` `human_in_loop` rows too, with
-  a plain text box next to the JSON one. Other capabilities still need a claim first.
-- **The approvals page.** Its "Waiting" list gains *messages*. These are `human_in_loop`
-  calls, pending or claimed and still unanswered, to agents whose capability the user may
-  decide for, under the same `consent_approvers` rule the list already uses.
-  - Each shows the caller, the capability, the input and a reply box.
-  - The box posts to the existing result endpoint.
-  - An invocation that already has a reply draft waiting shows as that draft, not twice.
-- **Self-hosted servers.** The app's built-in approvals page (`app/src/pages/approvals.rs`)
-  gets the same messages list and reply box.
+- **One function in `shared`.** The owner's reply to a `human_in_loop` call becomes
+  `shared::consent::reply::answer_as_owner(db, checker, actor, invocation_id, draft)`. The
+  app crate has no relay dependency, so this is how both crates call the same code.
+  - It moves out of the relay's `submit_result`:
+    - the approver check (`approvers::may_decide`);
+    - screening, through the shared `ComplianceChecker` on `Channel::Reply`;
+    - storing the screening report (`store_reply_report`);
+    - `confirm_now`.
+  - The relay's `submit_result` calls it for interactive approvers.
+  - The app's built-in page (below) calls it with the signed-in cookie session, which is
+    interactive by construction.
+- **Pending rows.**
+  - **What's accepted:** `answer_as_owner` accepts a `pending` row as well as an
+    `in_progress` one.
+  - **One transaction:** in the same transaction as the confirm and the release, it first
+    claims a `pending` row: `in_progress`, `claimed_at = now()`, `claimed_by_user_id` =
+    the owner, and `deliveries + 1`. If any step fails, nothing is committed, so a failed
+    reply leaves the row as it was.
+  - **Unchanged guard:** `reply::release` keeps its `status = 'in_progress'` guard.
+- **Notices.**
+  - **A row that was `in_progress`:** the agent had it, so it gets `reply_confirmed` as
+    today. That's how it learns its owner answered. A result it posts later gets the 409.
+  - **A row that was `pending`:** the agent never saw it, so it gets no notice.
+- **Where the owner answers.**
+  - **`/app/messages/{invocation_id}`, served on both kinds of server.**
+    - It shows the caller, the capability and the input, with a reply box. The box is plain
+      text, or JSON when the capability has an output schema.
+    - On chakramcp.com it's a new Next.js page that posts to the result endpoint.
+    - On self-hosted servers it's a new built-in page (`app/src/pages/messages.rs`): a plain
+      HTML form with CSRF, the cookie session, and no JavaScript, like
+      `/app/approvals/{id}`. It calls `answer_as_owner` directly.
+  - **How owners find it.** `human_in_loop` invocations carry
+    `owner_reply_url = {frontend_base_url}/app/messages/{id}`:
+    - in inbox items, the invocations list and `GET /v1/invocations/{id}`;
+    - built in memory from config, like `approve_url`.
+
+    The skill and docs tell agents to hand this link to their human. That works even after
+    a claim.
+  - **The approvals page on chakramcp.com.** Its "Waiting" list gains *messages*:
+    - which: `human_in_loop` calls, pending or claimed, with no reply yet, to agents whose
+      capability the user may decide for, under the list's existing `consent_approvers`
+      rule;
+    - each links to `/app/messages/{id}`;
+    - an invocation that already has a reply draft waiting shows once, as that draft.
+  - **The web Inbox on chakramcp.com** shows its reply form on inbound `pending`
+    `human_in_loop` rows too. Other capabilities still need a claim first.
 - **What readers see:** `human_confirmed`, with its token, as for any confirmed reply. No
   new field.
-- **The agent is told.** When an owner's reply settles a row that was `in_progress`, the
-  agent gets an `answered_by_owner` notice, and a result it posts later gets the 409.
-- **Non-`human_in_loop` calls** are left as they are. They don't appear on the approvals
-  page.
+- **Non-`human_in_loop` calls** are left as they are.
 
 ### Left as they are
 
@@ -579,7 +615,7 @@ computed in memory:
 
 - Today a notice exposes only `{id, kind, created_at, consent_request}`.
 - It gains `invocation_id`, read from the payload's `invocation_id` and null when absent.
-- Notices about an invocation carry it: `invocation_expired` and `answered_by_owner`.
+- Notices about an invocation carry it, `invocation_expired` included.
   `wake_url_disabled` has none.
 - The four SDKs' `Notice` types gain the optional field.
 
@@ -592,8 +628,9 @@ computed in memory:
 
 **Lock order.**
 - The deadline pass locks a row's pending reply draft (`consent_requests`) before the
-  invocation, the same order the reply-approval path uses. Both use `SKIP LOCKED`.
-- A row whose draft is busy waits for the next pass.
+  invocation, the same order the reply-approval path uses (`FOR UPDATE OF cr`).
+- The sweep takes both locks with `SKIP LOCKED`, so a row whose draft is busy waits for
+  the next pass.
 
 **The deadline pass.** `pending` or `in_progress` rows past `expires_at` become `timeout`:
 - `error_message`:
@@ -614,8 +651,14 @@ computed in memory:
 
 **Backfill.**
 - Rows from before the migration have no `expires_at`.
-- The first passes give each open one a fresh deadline of `now() + ttl` (24 hours, or 7
-  days for `human_in_loop`), a thousand at a time, until none are left.
+- The first passes give each `pending` or `in_progress` one a fresh deadline of
+  `now() + ttl` (24 hours, or 7 days for `human_in_loop`), a thousand at a time, until
+  none are left.
+- `awaiting_consent` rows are left alone:
+  - approval keeps a NULL `expires_at` NULL, since NULL plus an interval is NULL;
+  - the sweep gives the now-`pending` row its deadline on its next pass.
+- The pass runs on every sweep, not only the first ones. The open-expiry index covers
+  NULLs, so it's cheap once nothing is left.
 - So rows already trapped, such as unanswered `message_owner` calls, get a full window to
   be answered on the web. They don't all time out in the first pass.
 
@@ -628,6 +671,7 @@ computed in memory:
 | --- | --- |
 | A result or release on a settled invocation, or a result that loses a race with the sweep | `409 chk.invocation.already_settled` |
 | Release of a row that isn't claimed, or has a pending draft | `409 chk.invocation.not_releasable` |
+| A result on a `pending` row nobody has claimed (except the owner's web reply) | `409 chk.invocation.not_claimed` |
 | `wait` or `lease_secs` above its cap | Clamped. `ChakraMCP-Wait` and the row's `lease_until` show what was used |
 | `expires_in` longer than the default | Clamped to the default |
 | `expires_in` under 10 seconds, or not a number | 400 |
@@ -746,7 +790,10 @@ Each setting gets a row in `docs/INSTALL.md` and `.env.example`, in the PR that 
   today).
 - Safety screening blocks a bad reply.
 - The messages list and drafts aren't shown twice.
-- The `answered_by_owner` notice is sent.
+- A claimed row's agent gets `reply_confirmed`, and a pending row's agent gets nothing.
+- A failed screening leaves a `pending` row unclaimed.
+- The self-hosted `/app/messages/{id}` page works with CSRF and a cookie session.
+- `owner_reply_url` is on `human_in_loop` items.
 - The agent's later result gets the 409.
 
 ### Wake URLs (against a local test server)
@@ -804,10 +851,10 @@ Each PR merges when CI is green.
    - `invocation_id` on notices;
    - `inbox list`.
 5. **The owner's reply on the web:**
-   - `confirm_now` on pending rows;
-   - the Inbox form on pending rows;
-   - approvals messages, on the web and on the self-hosted page;
-   - the notice.
+   - `answer_as_owner` in `shared`, which takes pending rows;
+   - `owner_reply_url` on `human_in_loop` items;
+   - `/app/messages/{id}` in Next.js and as a built-in self-hosted page;
+   - approvals messages, and the Inbox form on pending rows.
 6. **Wake URLs:**
    - migration 0055 and the dispatcher;
    - REST, MCP, CLI and the web settings form;
@@ -857,9 +904,14 @@ Each PR merges when CI is green.
 - Section 5 proposed a new `owner-reply` endpoint.
 - But `submit_result` already lets a signed-in approver answer, through
   `reply::confirm_now`, and the web Inbox offers it for claimed rows.
-- So the design extends that path to `pending` rows and adds the approvals messages.
-- `answered_by` and the `consent_requests` column are dropped. `human_confirmed` already
-  marks an owner's reply.
+- So that logic moves into `shared` (`answer_as_owner`) and takes `pending` rows too.
+- The self-hosted built-in pages (no-JavaScript, cookie-session forms in the app crate)
+  can then call it from a new `/app/messages/{id}` page. Owners reach that page through
+  `owner_reply_url` on the call.
+- `answered_by`, the `consent_requests` column and the `answered_by_owner` notice are
+  dropped:
+  - `human_confirmed` already marks an owner's reply;
+  - `confirm_now` already sends `reply_confirmed`.
 
 **Looking without claiming uses the existing invocations list.**
 - Section 5 proposed `claim=false`.
@@ -876,7 +928,7 @@ Each PR merges when CI is green.
 **The migrations are split.** Columns go under the exclusive lock, and indexes in their own
 migration under `SHARE`, as 0046 and 0047 are. `consent_requests` is no longer altered.
 
-**Notices gain `invocation_id`,** so `invocation_expired` and `answered_by_owner` say which
+**Notices gain `invocation_id`,** so `invocation_expired` says which
 call they're about.
 
 **Smaller fixes:**
