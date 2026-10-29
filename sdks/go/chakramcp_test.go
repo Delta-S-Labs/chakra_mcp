@@ -6,7 +6,10 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -489,4 +492,352 @@ func TestOtherErrorsCarryRetryAfterOnlyWhenSent(t *testing.T) {
 		t.Fatalf("expected plain *Error, got %T: %v", err, err)
 	}
 	assertRetryAfter(t, err, secs(5))
+}
+
+// ─── Waiting pulls ────────────────────────────────────────
+
+// pullLog records the URL of each pull a fake relay answers.
+type pullLog struct {
+	mu   sync.Mutex
+	urls []*url.URL
+}
+
+func (p *pullLog) add(u *url.URL) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.urls = append(p.urls, u)
+}
+
+func (p *pullLog) count() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.urls)
+}
+
+func (p *pullLog) at(i int) *url.URL {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.urls[i]
+}
+
+// emptyFeed is a relay whose feed at path is always empty. It answers
+// with the ChakraMCP-Wait header set to waited ("" sends none), and
+// logs each pull.
+func emptyFeed(path, waited string, pulls *pullLog) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != path {
+			http.NotFound(w, r)
+			return
+		}
+		pulls.add(r.URL)
+		if waited != "" {
+			w.Header().Set("ChakraMCP-Wait", waited)
+		}
+		_, _ = w.Write([]byte(`[]`))
+	}
+}
+
+// startServe runs serve in the background. The returned stop cancels
+// it and fails the test unless it returns nil within 2 s.
+func startServe(t *testing.T, serve func(ctx context.Context) error) (stop func()) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	done := make(chan error, 1)
+	go func() { done <- serve(ctx) }()
+	return func() {
+		t.Helper()
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatalf("Serve: %v", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("Serve did not stop on cancel")
+		}
+	}
+}
+
+// waitFor polls cond until it holds, failing the test after 2 s.
+func waitFor(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func intp(n int) *int { return &n }
+
+func noopHandler(context.Context, Invocation) (HandlerResult, error) { return Succeeded(nil), nil }
+
+func TestPullSendsWaitAndLeaseOnlyWhenSet(t *testing.T) {
+	var pulls pullLog
+	_, c := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		pulls.add(r.URL)
+		_, _ = w.Write([]byte(`[]`))
+	})
+	ctx := context.Background()
+	if _, err := c.Inbox().PullWithOptions(ctx, "a1", PullOptions{Limit: 5, Wait: 20, LeaseSecs: 1800}); err != nil {
+		t.Fatalf("PullWithOptions: %v", err)
+	}
+	if _, err := c.Inbox().Pull(ctx, "a1", 0); err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+	if _, err := c.Inbox().PullWithMeta(ctx, "a1", PullOptions{Wait: 25}); err != nil {
+		t.Fatalf("PullWithMeta: %v", err)
+	}
+	if _, err := c.Inbox().NoticesWithOptions(ctx, "a1", NoticesOptions{Wait: 25}); err != nil {
+		t.Fatalf("NoticesWithOptions: %v", err)
+	}
+	if _, err := c.Inbox().Notices(ctx, "a1", 3); err != nil {
+		t.Fatalf("Notices: %v", err)
+	}
+	want := []string{
+		"/v1/inbox?agent_id=a1&lease_secs=1800&limit=5&wait=20",
+		"/v1/inbox?agent_id=a1",
+		"/v1/inbox?agent_id=a1&wait=25",
+		"/v1/inbox/notices?agent_id=a1&wait=25",
+		"/v1/inbox/notices?agent_id=a1&limit=3",
+	}
+	if pulls.count() != len(want) {
+		t.Fatalf("pulls = %d, want %d", pulls.count(), len(want))
+	}
+	for i, w := range want {
+		if got := pulls.at(i).RequestURI(); got != w {
+			t.Errorf("pull %d = %s, want %s", i, got, w)
+		}
+	}
+}
+
+func TestPullWithMetaReadsTheWaitHeader(t *testing.T) {
+	for _, tc := range []struct {
+		name, header string
+		want         *int
+	}{
+		{"waited", "25", intp(25)},
+		{"did not wait", "0", intp(0)},
+		{"older relay", "", nil},
+		{"not an integer", "soon", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, c := newServer(t, func(w http.ResponseWriter, _ *http.Request) {
+				if tc.header != "" {
+					w.Header().Set("ChakraMCP-Wait", tc.header)
+				}
+				_, _ = w.Write([]byte(`[{"id":"inv1","capability_name":"echo","status":"in_progress","elapsed_ms":0,"input_preview":{},"created_at":"2026-01-01T00:00:00Z","i_served":true,"i_invoked":false}]`))
+			})
+			res, err := c.Inbox().PullWithMeta(context.Background(), "a1", PullOptions{Wait: 25})
+			if err != nil {
+				t.Fatalf("PullWithMeta: %v", err)
+			}
+			if len(res.Items) != 1 || res.Items[0].ID != "inv1" {
+				t.Errorf("items = %+v", res.Items)
+			}
+			switch {
+			case tc.want == nil && res.Waited != nil:
+				t.Errorf("Waited = %d, want nil", *res.Waited)
+			case tc.want != nil && (res.Waited == nil || *res.Waited != *tc.want):
+				t.Errorf("Waited = %v, want %d", res.Waited, *tc.want)
+			}
+		})
+	}
+}
+
+func TestPullWithMetaMapsErrorsAsBefore(t *testing.T) {
+	_, c := newServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("ChakraMCP-Wait", "0")
+		w.Header().Set("Retry-After", "12")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":{"code":"account_rate_limited","message":"rate limit exceeded"}}`))
+	})
+	res, err := c.Inbox().PullWithMeta(context.Background(), "a1", PullOptions{Wait: 25})
+	if res != nil {
+		t.Errorf("result = %+v, want nil", res)
+	}
+	var rl *RateLimitedError
+	if !errors.As(err, &rl) {
+		t.Fatalf("expected *RateLimitedError, got %T: %v", err, err)
+	}
+	assertRetryAfter(t, err, secs(12))
+}
+
+func TestServeLoopsStraightBackWhileTheRelayWaits(t *testing.T) {
+	var pulls pullLog
+	_, c := newServer(t, emptyFeed("/v1/inbox", "25", &pulls))
+	start := time.Now()
+	stop := startServe(t, func(ctx context.Context) error {
+		return c.Inbox().Serve(ctx, "a1", noopHandler, ServeOptions{PollInterval: 30 * time.Second, NoticeInterval: -1})
+	})
+	waitFor(t, "5 pulls without sleeping", func() bool { return pulls.count() >= 5 })
+	stop()
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Errorf("took %s", elapsed)
+	}
+}
+
+func TestServeSleepsWhenTheRelayDidNotWait(t *testing.T) {
+	for _, tc := range []struct{ name, header string }{
+		{"older relay", ""},
+		{"did not wait", "0"},
+		{"not an integer", "soon"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var pulls pullLog
+			_, c := newServer(t, emptyFeed("/v1/inbox", tc.header, &pulls))
+			stop := startServe(t, func(ctx context.Context) error {
+				return c.Inbox().Serve(ctx, "a1", noopHandler, ServeOptions{PollInterval: 30 * time.Second, NoticeInterval: -1})
+			})
+			waitFor(t, "the first pull", func() bool { return pulls.count() >= 1 })
+			time.Sleep(150 * time.Millisecond)
+			stop() // also checks that cancelling cuts the sleep short
+			if n := pulls.count(); n != 1 {
+				t.Errorf("pulls = %d, want 1 (Serve should sleep PollInterval)", n)
+			}
+		})
+	}
+}
+
+func TestServeSendsWaitAndLease(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		opts        ServeOptions
+		wait, lease string // "" means not sent
+	}{
+		{"default", ServeOptions{}, "25", ""},
+		{"own wait and lease", ServeOptions{WaitSecs: 5, LeaseSecs: 1800}, "5", "1800"},
+		{"never wait", ServeOptions{WaitSecs: -1}, "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var pulls pullLog
+			_, c := newServer(t, emptyFeed("/v1/inbox", "", &pulls))
+			opts := tc.opts
+			opts.PollInterval = 30 * time.Second
+			opts.NoticeInterval = -1
+			stop := startServe(t, func(ctx context.Context) error {
+				return c.Inbox().Serve(ctx, "a1", noopHandler, opts)
+			})
+			waitFor(t, "the first pull", func() bool { return pulls.count() >= 1 })
+			stop()
+			q := pulls.at(0).Query()
+			if got := q.Get("wait"); got != tc.wait || q.Has("wait") != (tc.wait != "") {
+				t.Errorf("wait = %q, want %q", got, tc.wait)
+			}
+			if got := q.Get("lease_secs"); got != tc.lease || q.Has("lease_secs") != (tc.lease != "") {
+				t.Errorf("lease_secs = %q, want %q", got, tc.lease)
+			}
+			if q.Get("limit") != "25" || q.Get("agent_id") != "a1" {
+				t.Errorf("query = %v", q)
+			}
+		})
+	}
+}
+
+func TestServeWaitsNoLongerThanTheNextNoticesCheck(t *testing.T) {
+	var pulls pullLog
+	var notices atomic.Int32
+	_, c := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/inbox/notices":
+			notices.Add(1)
+			_, _ = w.Write([]byte(`[]`))
+		case "/v1/inbox":
+			pulls.add(r.URL)
+			_, _ = w.Write([]byte(`[]`))
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	stop := startServe(t, func(ctx context.Context) error {
+		return c.Inbox().Serve(ctx, "a1", noopHandler, ServeOptions{PollInterval: 30 * time.Second, NoticeInterval: 10 * time.Second})
+	})
+	waitFor(t, "the first pull", func() bool { return pulls.count() >= 1 })
+	stop()
+	if notices.Load() != 1 {
+		t.Errorf("notices checks = %d, want 1 before the first pull", notices.Load())
+	}
+	// 10 s until the next check (rounded up), never the full 25.
+	w, err := strconv.Atoi(pulls.at(0).Query().Get("wait"))
+	if err != nil || w < 1 || w > 10 {
+		t.Errorf("wait = %q, want 1-10", pulls.at(0).Query().Get("wait"))
+	}
+}
+
+func TestServeCancelAbortsAWaitingPull(t *testing.T) {
+	held := make(chan struct{}, 1)
+	_, c := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case held <- struct{}{}:
+		default:
+		}
+		// Hold the pull like a relay waiting for work.
+		select {
+		case <-r.Context().Done():
+		case <-time.After(10 * time.Second):
+		}
+		w.Header().Set("ChakraMCP-Wait", "25")
+		_, _ = w.Write([]byte(`[]`))
+	})
+	stop := startServe(t, func(ctx context.Context) error {
+		return c.Inbox().Serve(ctx, "a1", noopHandler, ServeOptions{NoticeInterval: -1})
+	})
+	select {
+	case <-held:
+	case <-time.After(2 * time.Second):
+		t.Fatal("no pull")
+	}
+	stop() // returns within 2 s though the relay would hold for 10
+}
+
+func TestServeReportsAClientTimeoutAndKeepsGoing(t *testing.T) {
+	var pulls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pulls.Add(1)
+		select {
+		case <-r.Context().Done():
+		case <-time.After(2 * time.Second):
+		}
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	t.Cleanup(srv.Close)
+	c, err := NewWithOptions(Options{
+		APIKey:     "ck_test",
+		RelayURL:   srv.URL,
+		HTTPClient: &http.Client{Timeout: 50 * time.Millisecond},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var errs atomic.Int32
+	stop := startServe(t, func(ctx context.Context) error {
+		return c.Inbox().Serve(ctx, "a1", noopHandler, ServeOptions{
+			PollInterval:   10 * time.Millisecond,
+			NoticeInterval: -1,
+			OnError:        func(error, *Invocation) { errs.Add(1) },
+		})
+	})
+	// A timeout shorter than the wait is a failed pull, not the end.
+	waitFor(t, "two reported timeouts", func() bool { return errs.Load() >= 2 })
+	stop()
+	if pulls.Load() < 2 {
+		t.Errorf("pulls = %d, want at least 2", pulls.Load())
+	}
+}
+
+func TestNoticeCarriesInvocationID(t *testing.T) {
+	_, c := newServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`[{"id":"n1","kind":"reply_confirmed","created_at":"2026-10-29T00:00:00Z","invocation_id":"inv7"},` +
+			`{"id":"n2","kind":"reply_confirmed","created_at":"2026-10-29T00:00:00Z"}]`))
+	})
+	notices, err := c.Inbox().Notices(context.Background(), "a1", 0)
+	if err != nil {
+		t.Fatalf("Notices: %v", err)
+	}
+	if len(notices) != 2 || notices[0].InvocationID == nil || *notices[0].InvocationID != "inv7" || notices[1].InvocationID != nil {
+		t.Errorf("notices = %+v", notices)
+	}
 }

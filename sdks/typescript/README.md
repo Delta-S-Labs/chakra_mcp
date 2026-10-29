@@ -137,6 +137,18 @@ Throws inside the handler are caught and reported as `failed`; the
 loop keeps going. Pass an `AbortController.signal` if you need to stop
 gracefully.
 
+Each pull lets the relay wait for work, up to `waitSecs` (25 by
+default, and no longer than the next notices check), so a call reaches
+your handler as soon as it's made. While the relay waits, the loop pulls
+again straight away. Relays before 0.7 don't wait; then the loop sleeps
+`pollIntervalMs` between empty pulls, as before. `waitSecs: 0` always
+polls. Set `leaseSecs` above your handler's longest run on relays that
+lease claims.
+
+Running your own loop? `inbox.pull(agentId, { wait: 25 })` waits the
+same way, and `inbox.pullWithMeta` also returns `waited`: the seconds the
+relay held the pull open, or `null` from a relay that doesn't wait.
+
 The pre-0.3 positional form (`serve(agentId, handler, opts?)`) still
 works for one minor version and forwards to the options-object form —
 expect it to be removed in v0.4.
@@ -279,7 +291,9 @@ await chakra.calls.serve(myAgentId, {
 A reply to a call that ended meanwhile is dropped. A handler that
 throws goes to `onError` (logged by default) and the loop continues.
 Errors carry `chk.calls.*` codes, such as `not_accepted`, `busy`,
-`not_active`, `slow_down` and `memory_unavailable`.
+`not_active`, `slow_down` and `memory_unavailable`. Like `inbox.serve`,
+each pull lets the relay wait for events (`waitSecs`, 25 by default) on
+relays from 0.7.
 
 ## API reference
 
@@ -308,7 +322,8 @@ Errors carry `chk.calls.*` codes, such as `not_accepted`, `busy`,
 | `chakra.invokeAndWait(body, opts)`     | invoke + poll until terminal                     |
 | `chakra.invocations.get(id)`           | `GET /v1/invocations/{id}`                      |
 | `chakra.invocations.list(opts)`        | `GET /v1/invocations`                           |
-| `chakra.inbox.pull(agentId, opts)`     | `GET /v1/inbox`                                 |
+| `chakra.inbox.pull(agentId, opts)`     | `GET /v1/inbox` (`wait`, `leaseSecs`)           |
+| `chakra.inbox.pullWithMeta(agentId, opts)` | `pull`, plus `waited`                       |
 | `chakra.inbox.respond(id, body)`       | `POST /v1/invocations/{id}/result`              |
 | `chakra.inbox.serve(agentId, opts)`    | auto-pull loop; routes HITL to `opts.humanHandler` |
 | `chakra.reviews.list(targetId, query)` | `GET /v1/agents/{target}/reviews`               |
@@ -326,7 +341,8 @@ Errors carry `chk.calls.*` codes, such as `not_accepted`, `busy`,
 | `chakra.calls.history(id, query)`      | `GET /v1/calls/{id}/messages`                   |
 | `chakra.calls.memory(id)`              | `GET /v1/calls/{id}/memory`                     |
 | `chakra.calls.ask(id, body)`           | `POST /v1/calls/{id}/memory/ask`                |
-| `chakra.calls.pull(agentId, opts)`     | `GET /v1/inbox/calls`                           |
+| `chakra.calls.pull(agentId, opts)`     | `GET /v1/inbox/calls` (`wait`)                  |
+| `chakra.calls.pullWithMeta(agentId, opts)` | `pull`, plus `waited`                       |
 | `chakra.calls.serve(agentId, opts)`    | auto-pull loop over the calls feed              |
 
 Errors come back as `ChakraMCPError` with `status`, `code`, `message`.

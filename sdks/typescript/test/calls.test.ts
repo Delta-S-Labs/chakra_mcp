@@ -334,8 +334,9 @@ describe("CallsClient.serve", () => {
     ]);
     expect(got.map((it) => it.call.id)).toEqual(["call-2", "call-3"]);
     expect(got[0]!.memory).toEqual(memory);
-    // Each pull asks the feed for the agent, at most 25 at a time.
-    expect(r.seen[0]!.query).toEqual({ agent_id: CALLEE, limit: "25" });
+    // Each pull asks the feed for the agent, at most 25 at a time, and
+    // lets the relay wait up to 25 seconds for events.
+    expect(r.seen[0]!.query).toEqual({ agent_id: CALLEE, limit: "25", wait: "25" });
   });
 
   it("sends a text reply as is, and onInvite can accept with a reply or decline", async () => {

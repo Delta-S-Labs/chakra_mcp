@@ -77,6 +77,8 @@ import {
   NetworkPage,
   NetworkQuery,
   Notice,
+  PullOptions,
+  PullResult,
   ProposeFriendshipRequest,
   Review,
   ReviewListQuery,
@@ -218,6 +220,10 @@ export class ChakraMCP {
   relayRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
     return this.request<T>(this.relayUrl, method, path, body);
   }
+  /** @internal A relay GET with the answer's headers, cancelled by `signal`. */
+  relayGetWithHeaders<T>(path: string, signal?: AbortSignal): Promise<{ body: T; headers: Headers }> {
+    return this.send<T>(this.relayUrl, "GET", path, undefined, signal);
+  }
 
   private async request<T>(
     baseUrl: string,
@@ -225,13 +231,24 @@ export class ChakraMCP {
     path: string,
     body?: unknown,
   ): Promise<T> {
+    return (await this.send<T>(baseUrl, method, path, body)).body;
+  }
+
+  private async send<T>(
+    baseUrl: string,
+    method: string,
+    path: string,
+    body?: unknown,
+    signal?: AbortSignal,
+  ): Promise<{ body: T; headers: Headers }> {
     const init: RequestInit = {
       method,
       headers: { ...this.headers, ...(body !== undefined ? { "content-type": "application/json" } : {}) },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      ...(signal ? { signal } : {}),
     };
     const res = await this.fetcher(`${baseUrl}${path}`, init);
-    if (res.status === 204) return undefined as T;
+    if (res.status === 204) return { body: undefined as T, headers: res.headers };
 
     const text = await res.text();
     let parsed: unknown = null;
@@ -288,8 +305,33 @@ export class ChakraMCP {
         retryAfter,
       );
     }
-    return parsed as T;
+    return { body: parsed as T, headers: res.headers };
   }
+}
+
+/**
+ * The seconds a pull waited for work, from its `ChakraMCP-Wait` header:
+ * `null` from servers before 0.7, which don't wait.
+ */
+function waitedFrom(headers: Headers | undefined): number | null {
+  const raw = headers?.get?.("chakramcp-wait");
+  if (raw == null || raw.trim() === "") return null;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 0 ? n : null;
+}
+
+/** True when the relay held the pull open (so the loop needn't sleep). */
+function relayWaited(pulled: { waited: number | null }): boolean {
+  return pulled.waited !== null && pulled.waited > 0;
+}
+
+/** The pull query: `agent_id` plus whichever options are set. */
+function pullQuery(agentId: string, opts: PullOptions): string {
+  const qs = new URLSearchParams({ agent_id: agentId });
+  if (opts.limit) qs.set("limit", String(opts.limit));
+  if (opts.wait) qs.set("wait", String(opts.wait));
+  if (opts.leaseSecs) qs.set("lease_secs", String(opts.leaseSecs));
+  return qs.toString();
 }
 
 /** The standard error body. Fields past code + message are optional. */
@@ -547,7 +589,20 @@ export interface ServeOptions {
   onNotice?: (notice: Notice) => void | Promise<void>;
   /** How often to pull notices. Default 15000ms; 0 turns it off. */
   noticeIntervalMs?: number;
-  /** How often to poll when the inbox is empty. Default 2000ms. */
+  /**
+   * How long each pull may wait on the relay for work, in seconds.
+   * Default 25; 0 polls instead. While the relay waits, the loop pulls
+   * again straight away; servers before 0.7 don't wait, and the loop
+   * sleeps `pollIntervalMs` between empty pulls as before.
+   */
+  waitSecs?: number;
+  /**
+   * How long a claim is yours before the relay may hand it out again, in
+   * seconds, on servers that lease claims. Set it above your handler's
+   * longest run.
+   */
+  leaseSecs?: number;
+  /** How long to sleep after an empty pull the relay didn't wait on, or an error. Default 2000ms. */
   pollIntervalMs?: number;
   /** Max rows to claim per poll. Default 25. */
   batchSize?: number;
@@ -582,11 +637,26 @@ export function isDraftedReply(r: Invocation | DraftedReply): r is DraftedReply 
 export class InboxClient {
   constructor(private readonly chakra: ChakraMCP) {}
 
-  /** Atomically claim the oldest pending invocations targeting an agent you own. */
-  async pull(agentId: string, opts: { limit?: number } = {}): Promise<Invocation[]> {
-    const qs = new URLSearchParams({ agent_id: agentId });
-    if (opts.limit) qs.set("limit", String(opts.limit));
-    return this.chakra.relayRequest("GET", `/v1/inbox?${qs.toString()}`);
+  /**
+   * Atomically claim the oldest pending invocations targeting an agent you
+   * own. With `wait`, the relay holds the request until work arrives, up
+   * to that many seconds (servers before 0.7 answer at once).
+   */
+  async pull(agentId: string, opts: PullOptions = {}): Promise<Invocation[]> {
+    return (await this.pullWithMeta(agentId, opts)).items;
+  }
+
+  /**
+   * `pull`, plus `waited`: the seconds the relay held the request open
+   * (`ChakraMCP-Wait`), 0 when it didn't wait, `null` from servers before
+   * 0.7. A loop can pull again at once after a wait and sleep otherwise.
+   */
+  async pullWithMeta(agentId: string, opts: PullOptions = {}): Promise<PullResult<Invocation>> {
+    const { body, headers } = await this.chakra.relayGetWithHeaders<Invocation[]>(
+      `/v1/inbox?${pullQuery(agentId, opts)}`,
+      opts.signal,
+    );
+    return { items: body, waited: waitedFrom(headers) };
   }
 
   /**
@@ -613,10 +683,15 @@ export class InboxClient {
    * `consent_requested` notice means a call waits for your owner's
    * approval: pass `consent_request.approve_url` on to them.
    */
-  async notices(agentId: string, opts: { limit?: number } = {}): Promise<Notice[]> {
-    const qs = new URLSearchParams({ agent_id: agentId });
-    if (opts.limit) qs.set("limit", String(opts.limit));
-    return this.chakra.relayRequest("GET", `/v1/inbox/notices?${qs.toString()}`);
+  async notices(
+    agentId: string,
+    opts: { limit?: number; wait?: number; signal?: AbortSignal } = {},
+  ): Promise<Notice[]> {
+    const { body } = await this.chakra.relayGetWithHeaders<Notice[]>(
+      `/v1/inbox/notices?${pullQuery(agentId, { limit: opts.limit, wait: opts.wait })}`,
+      opts.signal,
+    );
+    return body;
   }
 
   /**
@@ -661,22 +736,36 @@ export class InboxClient {
     const interval = opts.pollIntervalMs ?? 2000;
     const limit = opts.batchSize ?? 25;
     const noticeInterval = opts.noticeIntervalMs ?? 15_000;
+    const maxWait = opts.waitSecs ?? 25;
     let lastNotices = 0;
     while (!opts.signal?.aborted) {
       if (noticeInterval > 0 && Date.now() - lastNotices >= noticeInterval) {
         lastNotices = Date.now();
         await this.dispatchNotices(agentId, opts);
       }
-      let batch: Invocation[];
+      // Wait no longer than the next notices check.
+      let wait = maxWait;
+      if (wait > 0 && noticeInterval > 0) {
+        const untilNotices = Math.ceil((lastNotices + noticeInterval - Date.now()) / 1000);
+        wait = Math.max(1, Math.min(wait, untilNotices));
+      }
+      let pulled: PullResult<Invocation>;
       try {
-        batch = await this.pull(agentId, { limit });
+        pulled = await this.pullWithMeta(agentId, {
+          limit,
+          wait,
+          leaseSecs: opts.leaseSecs,
+          signal: opts.signal,
+        });
       } catch (err) {
+        if (opts.signal?.aborted) break;
         opts.onError?.(err);
         await sleep(interval, opts.signal);
         continue;
       }
+      const batch = pulled.items;
       if (batch.length === 0) {
-        await sleep(interval, opts.signal);
+        if (!relayWaited(pulled)) await sleep(interval, opts.signal);
         continue;
       }
       // Process in parallel - invocations are independent.
@@ -861,7 +950,13 @@ export interface CallServeOptions {
    * Default: ignore them.
    */
   onEvent?: (item: CallFeedItem) => Promise<void> | void;
-  /** How often to poll when the feed is empty. Default 2000ms. */
+  /**
+   * How long each pull may wait on the relay for events, in seconds.
+   * Default 25; 0 polls instead. Servers before 0.7 don't wait, and the
+   * loop sleeps `pollIntervalMs` between empty pulls as before.
+   */
+  waitSecs?: number;
+  /** How long to sleep after an empty pull the relay didn't wait on, or an error. Default 2000ms. */
   pollIntervalMs?: number;
   /** Max items to claim per poll, at most 25. Default 25. */
   batchSize?: number;
@@ -1003,10 +1098,27 @@ export class CallsClient {
    * Claim the agent's undelivered call entries, oldest first (at most
    * 25); each is delivered once.
    */
-  pull(agentId: string, opts: { limit?: number } = {}): Promise<CallFeedItem[]> {
-    const qs = new URLSearchParams({ agent_id: agentId });
-    if (opts.limit) qs.set("limit", String(opts.limit));
-    return this.chakra.relayRequest<CallFeedItem[]>("GET", `/v1/inbox/calls?${qs.toString()}`);
+  async pull(
+    agentId: string,
+    opts: { limit?: number; wait?: number; signal?: AbortSignal } = {},
+  ): Promise<CallFeedItem[]> {
+    return (await this.pullWithMeta(agentId, opts)).items;
+  }
+
+  /**
+   * `pull`, plus `waited`: the seconds the relay held the request open
+   * (`ChakraMCP-Wait`), 0 when it didn't wait, `null` from servers before
+   * 0.7.
+   */
+  async pullWithMeta(
+    agentId: string,
+    opts: { limit?: number; wait?: number; signal?: AbortSignal } = {},
+  ): Promise<PullResult<CallFeedItem>> {
+    const { body, headers } = await this.chakra.relayGetWithHeaders<CallFeedItem[]>(
+      `/v1/inbox/calls?${pullQuery(agentId, { limit: opts.limit, wait: opts.wait })}`,
+      opts.signal,
+    );
+    return { items: body, waited: waitedFrom(headers) };
   }
 
   /**
@@ -1025,18 +1137,21 @@ export class CallsClient {
   async serve(agentId: string, opts: CallServeOptions): Promise<void> {
     const interval = opts.pollIntervalMs ?? 2000;
     const limit = Math.min(opts.batchSize ?? 25, 25);
+    const wait = opts.waitSecs ?? 25;
     const report = opts.onError ?? defaultOnCallError;
     while (!opts.signal?.aborted) {
-      let batch: CallFeedItem[];
+      let pulled: PullResult<CallFeedItem>;
       try {
-        batch = await this.pull(agentId, { limit });
+        pulled = await this.pullWithMeta(agentId, { limit, wait, signal: opts.signal });
       } catch (err) {
+        if (opts.signal?.aborted) break;
         report(err);
         await sleep(interval, opts.signal);
         continue;
       }
+      const batch = pulled.items;
       if (batch.length === 0) {
-        await sleep(interval, opts.signal);
+        if (!relayWaited(pulled)) await sleep(interval, opts.signal);
         continue;
       }
       // In order: a call's entries build on the ones before them.

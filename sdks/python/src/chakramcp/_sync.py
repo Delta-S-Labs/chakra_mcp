@@ -8,6 +8,8 @@ from __future__ import annotations
 import builtins
 import json
 import logging
+import math
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -52,6 +54,7 @@ from ._types import (
     NetworkPage,
     Notice,
     ProposeFriendshipRequest,
+    PullResult,
     Review,
     ReviewListResponse,
     ReviewTier,
@@ -87,6 +90,65 @@ def _default_on_draft(inv: Invocation, drafted: DraftedReply) -> None:
         f"[chakramcp] reply to {inv['id']} saved as a draft; your owner "
         f"confirms it before the caller sees it: {drafted['approve_url']}"
     )
+
+
+# ─── Waiting pulls ───────────────────────────────────────
+
+#: The response header in which a relay (0.7 and later) says how many
+#: seconds it honoured of a pull's ``wait``.
+WAIT_HEADER = "ChakraMCP-Wait"
+
+#: How long ``serve`` asks each pull to wait by default, the relay's cap.
+DEFAULT_WAIT_S = 25
+
+# Read time a waiting pull gets beyond its ``wait``, for the answer to
+# arrive.
+_WAIT_READ_SLACK_S = 10.0
+
+_INTEGER = re.compile(r"-?[0-9]+")
+
+
+def _waited(headers: httpx.Headers) -> int | None:
+    """The ``ChakraMCP-Wait`` header (any case) as an int, or ``None`` when
+    it's missing or isn't an integer."""
+    raw = headers.get(WAIT_HEADER)
+    if raw is None or not _INTEGER.fullmatch(raw.strip()):
+        return None
+    return int(raw)
+
+
+def _wait_timeout(timeout: httpx.Timeout, wait: int | None) -> httpx.Timeout | None:
+    """The timeout for a pull that waits ``wait`` seconds, or ``None`` to
+    keep the client's. Its read timeout must outlast the wait, and httpx's
+    default is 5 seconds."""
+    if wait is None or wait <= 0 or timeout.read is None:
+        return None
+    read = wait + _WAIT_READ_SLACK_S
+    if timeout.read >= read:
+        return None
+    return httpx.Timeout(
+        connect=timeout.connect, read=read, write=timeout.write, pool=timeout.pool
+    )
+
+
+def _serve_wait(wait_s: int, notices_due_in: float | None = None) -> int | None:
+    """The ``wait`` for one of ``serve``'s pulls: ``wait_s``, or ``None``
+    (don't ask) when it's 0. With notices on, it's capped to the seconds
+    until they're next due, at least 1, so they still come on time."""
+    if wait_s <= 0:
+        return None
+    if notices_due_in is None:
+        return wait_s
+    return min(wait_s, max(1, math.ceil(notices_due_in)))
+
+
+def _relay_waited(pulled: PullResult[Any]) -> bool:
+    """True when the relay held the pull open, so an empty answer can be
+    followed by the next pull straight away. Older relays send no
+    ``ChakraMCP-Wait``, and a relay that's full or shutting down sends 0:
+    then ``serve`` sleeps between pulls."""
+    waited = pulled["waited"]
+    return waited is not None and waited > 0
 
 
 class ChakraMCP:
@@ -141,18 +203,44 @@ class ChakraMCP:
 
     # ─── Internal request helpers ────────────────────
 
-    def _request(self, base_url: str, method: str, path: str, json: Any | None = None) -> Any:
-        resp = self._http.request(method, f"{base_url}{path}", json=json)
+    def _request_with_headers(
+        self,
+        base_url: str,
+        method: str,
+        path: str,
+        json: Any | None = None,
+        *,
+        timeout: httpx.Timeout | None = None,
+    ) -> tuple[Any, httpx.Headers]:
+        """The decoded body (``None`` when empty) and the response's
+        headers. An error answer raises, as in :meth:`_request`."""
+        resp = self._http.request(
+            method,
+            f"{base_url}{path}",
+            json=json,
+            timeout=httpx.USE_CLIENT_DEFAULT if timeout is None else timeout,
+        )
         raise_for_response(resp)
         if resp.status_code == 204 or not resp.content:
-            return None
-        return resp.json()
+            return None, resp.headers
+        return resp.json(), resp.headers
+
+    def _request(self, base_url: str, method: str, path: str, json: Any | None = None) -> Any:
+        return self._request_with_headers(base_url, method, path, json)[0]
 
     def _app(self, method: str, path: str, json: Any | None = None) -> Any:
         return self._request(self.app_url, method, path, json)
 
     def _relay(self, method: str, path: str, json: Any | None = None) -> Any:
         return self._request(self.relay_url, method, path, json)
+
+    def _pull_feed(self, path: str, wait: int | None) -> PullResult[Any]:
+        """GET one of the relay's pull feeds: its items, and the wait the
+        relay honoured."""
+        items, headers = self._request_with_headers(
+            self.relay_url, "GET", path, timeout=_wait_timeout(self._http.timeout, wait)
+        )
+        return {"items": items or [], "waited": _waited(headers)}
 
     # ─── Top-level ───────────────────────────────────
 
@@ -364,12 +452,42 @@ class InboxClient:
     def __init__(self, chakra: ChakraMCP) -> None:
         self._c = chakra
 
-    def pull(self, agent_id: str, *, limit: int | None = None) -> list[Invocation]:
-        params: dict[str, str] = {"agent_id": agent_id}
-        if limit is not None:
-            params["limit"] = str(limit)
-        suffix = "&".join(f"{k}={v}" for k, v in params.items())
-        return self._c._relay("GET", f"/v1/inbox?{suffix}")
+    def pull(
+        self,
+        agent_id: str,
+        *,
+        limit: int | None = None,
+        wait: int | None = None,
+        lease_secs: int | None = None,
+    ) -> list[Invocation]:
+        """Claim the agent's pending invocations, oldest first.
+
+        ``wait`` (seconds, 0-25; more is clamped) holds the request open
+        until work arrives or the time is up, then returns what there is,
+        possibly nothing. Relays before 0.7 don't wait: they answer at
+        once. ``lease_secs`` asks for a longer claim on what's pulled, for
+        handlers that run long; relays without leases ignore it. See
+        :meth:`pull_with_meta` to learn whether the relay waited."""
+        return self.pull_with_meta(
+            agent_id, limit=limit, wait=wait, lease_secs=lease_secs
+        )["items"]
+
+    def pull_with_meta(
+        self,
+        agent_id: str,
+        *,
+        limit: int | None = None,
+        wait: int | None = None,
+        lease_secs: int | None = None,
+    ) -> PullResult[Invocation]:
+        """:meth:`pull`, returning ``{"items", "waited"}``: ``waited`` is
+        the seconds of ``wait`` the relay honoured (``0`` if it didn't
+        wait), or ``None`` from a relay before 0.7, which doesn't wait.
+        For agents that run their own loop."""
+        query = _query(
+            {"agent_id": agent_id, "limit": limit, "wait": wait, "lease_secs": lease_secs}
+        )
+        return self._c._pull_feed(f"/v1/inbox{query}", wait)
 
     def respond(
         self, invocation_id: str, result: HandlerResult | dict[str, Any]
@@ -384,13 +502,17 @@ class InboxClient:
             "POST", f"/v1/invocations/{invocation_id}/result", dict(result)
         )
 
-    def notices(self, agent_id: str, *, limit: int | None = None) -> list[Notice]:
+    def notices(
+        self, agent_id: str, *, limit: int | None = None, wait: int | None = None
+    ) -> list[Notice]:
         """Claim the agent's notices, oldest first; each is delivered once.
 
         A ``consent_requested`` notice means a call waits for your owner's
-        approval: pass ``notice["consent_request"]["approve_url"]`` on."""
-        suffix = f"&limit={limit}" if limit else ""
-        return self._c._relay("GET", f"/v1/inbox/notices?agent_id={agent_id}{suffix}")
+        approval: pass ``notice["consent_request"]["approve_url"]`` on.
+        ``wait`` works as in :meth:`pull` (relays before 0.7 don't
+        wait)."""
+        query = _query({"agent_id": agent_id, "limit": limit or None, "wait": wait})
+        return self._c._pull_feed(f"/v1/inbox/notices{query}", wait)["items"]
 
     def serve(
         self,
@@ -403,6 +525,8 @@ class InboxClient:
         on_notice: Callable[[Notice], None] | None = None,
         notice_interval_s: float = 15.0,
         poll_interval_s: float = 2.0,
+        wait_s: int = DEFAULT_WAIT_S,
+        lease_secs: int | None = None,
         batch_size: int = 25,
         on_error: Callable[[BaseException, Invocation | None], None] | None = None,
         stop: Callable[[], bool] | None = None,
@@ -436,21 +560,40 @@ class InboxClient:
         the agent's notices and calls ``on_notice`` for each:
         ``consent_requested`` (a call waits for your owner's approval;
         the default prints the link) and what became of drafted replies.
+
+        Each pull asks the relay to wait up to ``wait_s`` seconds for work
+        (0 never waits), capped so notices still come on time. While the
+        relay says it waited, an empty pull is followed by the next one
+        straight away. Relays before 0.7 don't wait, so the loop sleeps
+        ``poll_interval_s`` between empty pulls, as it does after an
+        error. ``stop`` is checked once the pull in flight returns, so
+        stopping can take up to ``wait_s`` seconds. ``lease_secs`` goes
+        with each pull (see :meth:`pull`).
         """
         last_notices = 0.0
         while not (stop and stop()):
-            if notice_interval_s > 0 and time.monotonic() - last_notices >= notice_interval_s:
-                last_notices = time.monotonic()
-                self._dispatch_notices(agent_id, on_notice, on_error)
+            notices_due_in: float | None = None
+            if notice_interval_s > 0:
+                if time.monotonic() - last_notices >= notice_interval_s:
+                    last_notices = time.monotonic()
+                    self._dispatch_notices(agent_id, on_notice, on_error)
+                notices_due_in = notice_interval_s - (time.monotonic() - last_notices)
             try:
-                batch = self.pull(agent_id, limit=batch_size)
+                pulled = self.pull_with_meta(
+                    agent_id,
+                    limit=batch_size,
+                    wait=_serve_wait(wait_s, notices_due_in),
+                    lease_secs=lease_secs,
+                )
             except BaseException as err:
                 if on_error:
                     on_error(err, None)
                 time.sleep(poll_interval_s)
                 continue
+            batch = pulled["items"]
             if not batch:
-                time.sleep(poll_interval_s)
+                if not _relay_waited(pulled):
+                    time.sleep(poll_interval_s)
                 continue
             for inv in batch:
                 if stop and stop():
@@ -785,12 +928,25 @@ class CallsClient:
         )
 
     def pull(
-        self, agent_id: str, *, limit: int | None = None
+        self, agent_id: str, *, limit: int | None = None, wait: int | None = None
     ) -> builtins.list[CallFeedItem]:
         """Claim the agent's undelivered call entries, oldest first (at
-        most 25). Each is delivered once."""
-        query = _query({"agent_id": agent_id, "limit": limit})
-        return self._c._relay("GET", f"/v1/inbox/calls{query}")
+        most 25). Each is delivered once.
+
+        ``wait`` (seconds, 0-25; more is clamped) holds the request open
+        until an entry arrives or the time is up. Relays before 0.7 don't
+        wait. See :meth:`pull_with_meta` to learn whether the relay
+        waited."""
+        return self.pull_with_meta(agent_id, limit=limit, wait=wait)["items"]
+
+    def pull_with_meta(
+        self, agent_id: str, *, limit: int | None = None, wait: int | None = None
+    ) -> PullResult[CallFeedItem]:
+        """:meth:`pull`, returning ``{"items", "waited"}``: ``waited`` is
+        the seconds of ``wait`` the relay honoured (``0`` if it didn't
+        wait), or ``None`` from a relay before 0.7, which doesn't wait."""
+        query = _query({"agent_id": agent_id, "limit": limit, "wait": wait})
+        return self._c._pull_feed(f"/v1/inbox/calls{query}", wait)
 
     def serve(
         self,
@@ -800,6 +956,7 @@ class CallsClient:
         on_invite: Callable[[CallFeedItem], _InviteResult] | None = None,
         on_event: Callable[[CallFeedItem], None] | None = None,
         poll_interval_s: float = 2.0,
+        wait_s: int = DEFAULT_WAIT_S,
         batch_size: int = MAX_CALLS_BATCH,
         on_error: Callable[[BaseException, CallFeedItem | None], None] | None = None,
         stop: Callable[[], bool] | threading.Event | None = None,
@@ -807,6 +964,11 @@ class CallsClient:
         """Long-running loop for a pull agent on calls: pull the calls
         feed, handle each item in order, sleep ``poll_interval_s`` when
         there's nothing.
+
+        Each pull asks the relay to wait up to ``wait_s`` seconds (0 never
+        waits). While the relay says it waited, an empty pull is followed
+        by the next one straight away; relays before 0.7 don't wait, and
+        the loop sleeps as above.
 
         Each handler gets the feed item: ``{"call", "entry", "memory"?}``.
 
@@ -826,7 +988,8 @@ class CallsClient:
         the ``chakramcp`` logger) and the loop goes on. Pass
         ``stop=shutdown_event`` (a :class:`threading.Event`) or a
         predicate like ``stop=lambda: done``; the loop checks it between
-        pulls, after finishing the batch it claimed.
+        pulls, after finishing the batch it claimed, so stopping can take
+        up to ``wait_s`` seconds.
         """
         if isinstance(stop, threading.Event):
             event = stop
@@ -841,15 +1004,18 @@ class CallsClient:
             def pause() -> None:
                 time.sleep(poll_interval_s)
 
+        wait = _serve_wait(wait_s)
         while not stopped():
             try:
-                batch = self.pull(agent_id, limit=batch_size)
+                pulled = self.pull_with_meta(agent_id, limit=batch_size, wait=wait)
             except Exception as err:
                 _report_call_error(on_error, err, None)
                 pause()
                 continue
+            batch = pulled["items"]
             if not batch:
-                pause()
+                if not _relay_waited(pulled):
+                    pause()
                 continue
             for item in batch:
                 try:

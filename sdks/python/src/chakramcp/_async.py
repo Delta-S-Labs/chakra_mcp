@@ -16,6 +16,7 @@ import httpx
 from ._errors import ChakraMCPError, raise_for_response
 from ._sync import (
     _EVENT_KINDS,
+    DEFAULT_WAIT_S,
     MAX_CALLS_BATCH,
     _agent_ref_path,
     _default_on_draft,
@@ -24,10 +25,14 @@ from ._sync import (
     _InviteResult,
     _is_not_active,
     _query,
+    _relay_waited,
     _reply_of,
     _ReplyResult,
     _report_call_error,
     _search_query,
+    _serve_wait,
+    _wait_timeout,
+    _waited,
     _warn_no_human_handler,
     _without_none,
     is_drafted_reply,
@@ -65,6 +70,7 @@ from ._types import (
     NetworkPage,
     Notice,
     ProposeFriendshipRequest,
+    PullResult,
     Review,
     ReviewListResponse,
     ReviewTier,
@@ -132,20 +138,46 @@ class AsyncChakraMCP:
     async def __aexit__(self, *exc: object) -> None:
         await self.aclose()
 
+    async def _request_with_headers(
+        self,
+        base_url: str,
+        method: str,
+        path: str,
+        json: Any | None = None,
+        *,
+        timeout: httpx.Timeout | None = None,
+    ) -> tuple[Any, httpx.Headers]:
+        """The decoded body (``None`` when empty) and the response's
+        headers. An error answer raises, as in :meth:`_request`."""
+        resp = await self._http.request(
+            method,
+            f"{base_url}{path}",
+            json=json,
+            timeout=httpx.USE_CLIENT_DEFAULT if timeout is None else timeout,
+        )
+        raise_for_response(resp)
+        if resp.status_code == 204 or not resp.content:
+            return None, resp.headers
+        return resp.json(), resp.headers
+
     async def _request(
         self, base_url: str, method: str, path: str, json: Any | None = None
     ) -> Any:
-        resp = await self._http.request(method, f"{base_url}{path}", json=json)
-        raise_for_response(resp)
-        if resp.status_code == 204 or not resp.content:
-            return None
-        return resp.json()
+        return (await self._request_with_headers(base_url, method, path, json))[0]
 
     async def _app(self, method: str, path: str, json: Any | None = None) -> Any:
         return await self._request(self.app_url, method, path, json)
 
     async def _relay(self, method: str, path: str, json: Any | None = None) -> Any:
         return await self._request(self.relay_url, method, path, json)
+
+    async def _pull_feed(self, path: str, wait: int | None) -> PullResult[Any]:
+        """GET one of the relay's pull feeds: its items, and the wait the
+        relay honoured."""
+        items, headers = await self._request_with_headers(
+            self.relay_url, "GET", path, timeout=_wait_timeout(self._http.timeout, wait)
+        )
+        return {"items": items or [], "waited": _waited(headers)}
 
     async def me(self) -> MeResponse:
         return await self._app("GET", "/v1/me")
@@ -369,12 +401,38 @@ class AsyncInboxClient:
     def __init__(self, chakra: AsyncChakraMCP) -> None:
         self._c = chakra
 
-    async def pull(self, agent_id: str, *, limit: int | None = None) -> list[Invocation]:
-        params: dict[str, str] = {"agent_id": agent_id}
-        if limit is not None:
-            params["limit"] = str(limit)
-        suffix = "&".join(f"{k}={v}" for k, v in params.items())
-        return await self._c._relay("GET", f"/v1/inbox?{suffix}")
+    async def pull(
+        self,
+        agent_id: str,
+        *,
+        limit: int | None = None,
+        wait: int | None = None,
+        lease_secs: int | None = None,
+    ) -> list[Invocation]:
+        """Claim the agent's pending invocations, oldest first. ``wait``
+        (seconds, 0-25) holds the request open until work arrives;
+        relays before 0.7 don't wait. See
+        :meth:`chakramcp.ChakraMCP.inbox.pull`."""
+        pulled = await self.pull_with_meta(
+            agent_id, limit=limit, wait=wait, lease_secs=lease_secs
+        )
+        return pulled["items"]
+
+    async def pull_with_meta(
+        self,
+        agent_id: str,
+        *,
+        limit: int | None = None,
+        wait: int | None = None,
+        lease_secs: int | None = None,
+    ) -> PullResult[Invocation]:
+        """:meth:`pull`, returning ``{"items", "waited"}``: ``waited`` is
+        the seconds of ``wait`` the relay honoured (``0`` if it didn't
+        wait), or ``None`` from a relay before 0.7, which doesn't wait."""
+        query = _query(
+            {"agent_id": agent_id, "limit": limit, "wait": wait, "lease_secs": lease_secs}
+        )
+        return await self._c._pull_feed(f"/v1/inbox{query}", wait)
 
     async def respond(
         self, invocation_id: str, result: HandlerResult | dict[str, Any]
@@ -385,10 +443,14 @@ class AsyncInboxClient:
             "POST", f"/v1/invocations/{invocation_id}/result", dict(result)
         )
 
-    async def notices(self, agent_id: str, *, limit: int | None = None) -> list[Notice]:
-        """Claim the agent's notices, oldest first; each is delivered once."""
-        suffix = f"&limit={limit}" if limit else ""
-        return await self._c._relay("GET", f"/v1/inbox/notices?agent_id={agent_id}{suffix}")
+    async def notices(
+        self, agent_id: str, *, limit: int | None = None, wait: int | None = None
+    ) -> list[Notice]:
+        """Claim the agent's notices, oldest first; each is delivered once.
+        ``wait`` works as in :meth:`pull` (relays before 0.7 don't
+        wait)."""
+        query = _query({"agent_id": agent_id, "limit": limit or None, "wait": wait})
+        return (await self._c._pull_feed(f"/v1/inbox/notices{query}", wait))["items"]
 
     async def serve(
         self,
@@ -403,6 +465,8 @@ class AsyncInboxClient:
         on_notice: Callable[[Notice], None] | None = None,
         notice_interval_s: float = 15.0,
         poll_interval_s: float = 2.0,
+        wait_s: int = DEFAULT_WAIT_S,
+        lease_secs: int | None = None,
         batch_size: int = 25,
         on_error: Callable[[BaseException, Invocation | None], None] | None = None,
         stop_event: asyncio.Event | None = None,
@@ -418,8 +482,16 @@ class AsyncInboxClient:
         Notices are claimed every ``notice_interval_s`` and passed to
         ``on_notice``.
 
+        Each pull asks the relay to wait up to ``wait_s`` seconds for work
+        (0 never waits), capped so notices still come on time. While the
+        relay says it waited, an empty pull is followed by the next one
+        straight away; relays before 0.7 don't wait, so the loop sleeps
+        ``poll_interval_s`` between empty pulls. ``lease_secs`` goes with
+        each pull.
+
         Pass ``stop_event`` (an :class:`asyncio.Event`) to stop the
-        loop cleanly between batches. Handler exceptions are caught
+        loop cleanly between batches: once the pull in flight returns,
+        up to ``wait_s`` seconds. Handler exceptions are caught
         and reported as failed; cancellation propagates normally so
         ``task.cancel()`` works.
         """
@@ -429,18 +501,28 @@ class AsyncInboxClient:
         loop = asyncio.get_running_loop()
         last_notices = 0.0
         while not await _stopped():
-            if notice_interval_s > 0 and loop.time() - last_notices >= notice_interval_s:
-                last_notices = loop.time()
-                await self._dispatch_notices(agent_id, on_notice, on_error)
+            notices_due_in: float | None = None
+            if notice_interval_s > 0:
+                if loop.time() - last_notices >= notice_interval_s:
+                    last_notices = loop.time()
+                    await self._dispatch_notices(agent_id, on_notice, on_error)
+                notices_due_in = notice_interval_s - (loop.time() - last_notices)
             try:
-                batch = await self.pull(agent_id, limit=batch_size)
+                pulled = await self.pull_with_meta(
+                    agent_id,
+                    limit=batch_size,
+                    wait=_serve_wait(wait_s, notices_due_in),
+                    lease_secs=lease_secs,
+                )
             except BaseException as err:
                 if on_error:
                     on_error(err, None)
                 await asyncio.sleep(poll_interval_s)
                 continue
+            batch = pulled["items"]
             if not batch:
-                await asyncio.sleep(poll_interval_s)
+                if not _relay_waited(pulled):
+                    await asyncio.sleep(poll_interval_s)
                 continue
             await asyncio.gather(
                 *(
@@ -653,10 +735,15 @@ class AsyncCallsClient:
         )
 
     async def pull(
-        self, agent_id: str, *, limit: int | None = None
+        self, agent_id: str, *, limit: int | None = None, wait: int | None = None
     ) -> builtins.list[CallFeedItem]:
-        query = _query({"agent_id": agent_id, "limit": limit})
-        return await self._c._relay("GET", f"/v1/inbox/calls{query}")
+        return (await self.pull_with_meta(agent_id, limit=limit, wait=wait))["items"]
+
+    async def pull_with_meta(
+        self, agent_id: str, *, limit: int | None = None, wait: int | None = None
+    ) -> PullResult[CallFeedItem]:
+        query = _query({"agent_id": agent_id, "limit": limit, "wait": wait})
+        return await self._c._pull_feed(f"/v1/inbox/calls{query}", wait)
 
     async def serve(
         self,
@@ -668,6 +755,7 @@ class AsyncCallsClient:
         | None = None,
         on_event: Callable[[CallFeedItem], Awaitable[None] | None] | None = None,
         poll_interval_s: float = 2.0,
+        wait_s: int = DEFAULT_WAIT_S,
         batch_size: int = MAX_CALLS_BATCH,
         on_error: Callable[[BaseException, CallFeedItem | None], None] | None = None,
         stop_event: asyncio.Event | None = None,
@@ -678,12 +766,14 @@ class AsyncCallsClient:
         ``{"text", "data"?}``) or ``None``, ``on_event`` gets ``accepted``,
         ``declined``, ``ended`` and ``missed``.
         Handlers may be ``async def`` or plain functions. Items are
-        handled one at a time, in order.
+        handled one at a time, in order. Each pull waits up to ``wait_s``
+        seconds (0 never waits); relays before 0.7 don't wait, and the
+        loop sleeps ``poll_interval_s`` between empty pulls.
 
         Stop it by cancelling its task (``task.cancel()``; cancellation
         propagates), or with ``stop_event``, which is checked between
-        pulls. A handler that raises is reported to ``on_error`` (or
-        logged) and the loop goes on.
+        pulls (up to ``wait_s`` seconds apart). A handler that raises is
+        reported to ``on_error`` (or logged) and the loop goes on.
         """
 
         def stopped() -> bool:
@@ -696,15 +786,18 @@ class AsyncCallsClient:
             with contextlib.suppress(asyncio.TimeoutError):
                 await asyncio.wait_for(stop_event.wait(), poll_interval_s)
 
+        wait = _serve_wait(wait_s)
         while not stopped():
             try:
-                batch = await self.pull(agent_id, limit=batch_size)
+                pulled = await self.pull_with_meta(agent_id, limit=batch_size, wait=wait)
             except Exception as err:
                 _report_call_error(on_error, err, None)
                 await pause()
                 continue
+            batch = pulled["items"]
             if not batch:
-                await pause()
+                if not _relay_waited(pulled):
+                    await pause()
                 continue
             for item in batch:
                 try:

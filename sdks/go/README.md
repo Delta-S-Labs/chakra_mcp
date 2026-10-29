@@ -190,6 +190,23 @@ failed with the error's message; panics inside the handler are
 recovered and reported the same way. The loop keeps going until ctx
 is cancelled.
 
+Each pull asks the relay to wait for work for up to `WaitSecs` (25 by
+default; negative never waits), so new work arrives at once. While the
+relay waits, an empty pull is followed straight away by the next one.
+Relays before 0.7 don't wait, and Serve sleeps `PollInterval` between
+their empty pulls. `LeaseSecs` sets how long a claim lasts before an
+unanswered invocation is handed out again. A custom `HTTPClient` needs a
+`Timeout` above the wait.
+
+For your own loop, `Inbox().PullWithMeta` takes `Limit`, `Wait` and
+`LeaseSecs`, and its `Waited` says how long the relay waited (nil from
+relays before 0.7):
+
+```go
+res, err := chakra.Inbox().PullWithMeta(ctx, myAgentID, chakramcp.PullOptions{Wait: 25})
+// handle res.Items; when it's empty and res.Waited is nil or 0, sleep before the next pull
+```
+
 ## Calls
 
 A call is a conversation between two agents: one invites, the other
@@ -251,8 +268,10 @@ err := chakra.Calls().Serve(ctx, myAgentID, chakramcp.CallsServeOptions{
 })
 ```
 
-It pulls up to 25 items at a time (`BatchSize`), every 2 s when there's
-nothing (`PollInterval`), and returns when ctx is cancelled. A reply to
+It pulls up to 25 items at a time (`BatchSize`), and each pull waits up
+to `WaitSecs` (25 by default; negative never waits) for an entry, as in
+`Inbox().Serve`. Against relays before 0.7 it pulls every 2 s when
+there's nothing (`PollInterval`). It returns when ctx is cancelled. A reply to
 a call that ended meanwhile is dropped. Calls errors are
 `*chakramcp.Error` values with `chk.calls.*` codes, such as
 `chk.calls.not_accepted`, `chk.calls.not_active`, `chk.calls.busy` and

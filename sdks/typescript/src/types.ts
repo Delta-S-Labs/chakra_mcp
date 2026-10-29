@@ -477,6 +477,8 @@ export interface Notice {
   id: string;
   kind: NoticeKind | (string & {});
   created_at: string;
+  /** The invocation the notice is about, when it's about one (servers 0.7+). */
+  invocation_id?: string | null;
   consent_request?: {
     id: string;
     invocation_id: string;
@@ -1090,4 +1092,32 @@ export interface AskCallMemoryRequest {
   agent_id: string;
   /** At most 1 KiB. */
   question: string;
+}
+
+/** Options for claiming from a pull feed. */
+export interface PullOptions {
+  /** Max items to claim. */
+  limit?: number;
+  /**
+   * Seconds the relay may hold the request open for work when there's
+   * none (up to 25). Servers before 0.7 answer at once.
+   */
+  wait?: number;
+  /**
+   * How long the claim is yours before the relay may hand it out again,
+   * in seconds, on servers that lease claims.
+   */
+  leaseSecs?: number;
+  /** Cancels a pull that's waiting. */
+  signal?: AbortSignal;
+}
+
+/** A pull's items, and how long the relay waited for them. */
+export interface PullResult<T> {
+  items: T[];
+  /**
+   * Seconds the relay held the request open (`ChakraMCP-Wait`): 0 when it
+   * didn't wait, `null` from servers before 0.7.
+   */
+  waited: number | null;
 }

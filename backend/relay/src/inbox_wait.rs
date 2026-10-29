@@ -73,3 +73,98 @@ where
     state.heartbeats.record(agent);
     Ok(outcome)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    use chakramcp_shared::wake::{Wake, WakeSettings};
+
+    use super::*;
+
+    /// The load check (design §14): 2,000 pulls waiting at once, each on
+    /// its own agent, all woken together. No database: the claim is a
+    /// stand-in that finds work once its agent has been notified.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn two_thousand_waiting_pulls() {
+        const PULLS: usize = 2000;
+        let db = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://unused@localhost/unused")
+            .unwrap();
+        let state = RelayState::new(
+            db,
+            crate::handlers::invoke::legacy_v01_contract_tests::config(),
+        )
+        .with_wake(
+            Wake::new(PULLS),
+            WakeSettings {
+                max_wait_secs: 10,
+                max_waiters: PULLS,
+            },
+        );
+        let rss_mb = || {
+            let out = std::process::Command::new("ps")
+                .args(["-o", "rss=", "-p", &std::process::id().to_string()])
+                .output()
+                .unwrap();
+            String::from_utf8_lossy(&out.stdout)
+                .trim()
+                .parse::<u64>()
+                .unwrap_or(0)
+                / 1024
+        };
+        let before = rss_mb();
+        let agents: Vec<Uuid> = (0..PULLS).map(|_| Uuid::now_v7()).collect();
+        let ready = Arc::new(
+            (0..PULLS)
+                .map(|_| std::sync::atomic::AtomicBool::new(false))
+                .collect::<Vec<_>>(),
+        );
+        let claims = Arc::new(AtomicUsize::new(0));
+        let pulls: Vec<_> = agents
+            .iter()
+            .enumerate()
+            .map(|(i, agent)| {
+                let (state, ready, claims, agent) =
+                    (state.clone(), ready.clone(), claims.clone(), *agent);
+                tokio::spawn(async move {
+                    claim_waiting(&state, agent, Feed::Invocations, Some(10), || {
+                        claims.fetch_add(1, Ordering::Relaxed);
+                        let found = ready[i].load(Ordering::Acquire);
+                        async move { Ok::<_, ApiError>(if found { vec![i] } else { vec![] }) }
+                    })
+                    .await
+                    .unwrap()
+                })
+            })
+            .collect();
+        let started = Instant::now();
+        while state.wake.waiting() < PULLS && started.elapsed() < Duration::from_secs(5) {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        let settled = started.elapsed();
+        assert_eq!(state.wake.waiting(), PULLS);
+        let during = rss_mb();
+
+        let woken = Instant::now();
+        for (i, agent) in agents.iter().enumerate() {
+            ready[i].store(true, Ordering::Release);
+            state.wake.notify(*agent, Feed::Invocations);
+        }
+        for pull in pulls {
+            let (items, waited) = pull.await.unwrap();
+            assert_eq!(items.len(), 1);
+            assert_eq!(waited, 10);
+        }
+        let all_woken = woken.elapsed();
+        assert_eq!(state.wake.waiting(), 0);
+        // One claim before waiting, one after the wake.
+        assert_eq!(claims.load(Ordering::Relaxed), 2 * PULLS);
+        println!(
+            "{PULLS} waiting pulls: all waiting after {settled:?}; RSS {before} MB before, \
+             {during} MB while waiting; all {PULLS} woken and answered in {all_woken:?}"
+        );
+        assert!(all_woken < Duration::from_secs(2), "{all_woken:?}");
+    }
+}
