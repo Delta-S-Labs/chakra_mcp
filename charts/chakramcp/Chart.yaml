@@ -33,6 +33,6 @@ dependencies:
     repository: oci://ghcr.io/grafana-community/helm-charts
     condition: observability.bundled.enabled
   - name: alloy
-    version: 1.14.1
+    version: 1.14.4
     repository: https://grafana.github.io/helm-charts
     condition: observability.bundled.enabled
