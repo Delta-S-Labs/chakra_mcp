@@ -42,7 +42,7 @@ services:
   # /alloy-data, a root-owned volume: without capabilities, root can't enter
   # the image's own /var/lib/alloy, which belongs to the `alloy` user.)
   alloy:
-    image: grafana/alloy:v1.20.1
+    image: grafana/alloy:v1.21.2
     restart: unless-stopped
     logging: *logging
     command:
