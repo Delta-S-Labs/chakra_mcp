@@ -342,6 +342,7 @@ async fn ensure_run(e: EnsureArgs, api: &ApiClient) -> Result<()> {
         invoke_timeout: e.invoke_timeout,
         poll_interval: e.poll_interval,
         json: e.json,
+        expires_in: None,
     };
     invoke::ensure_run(inner, api).await
 }

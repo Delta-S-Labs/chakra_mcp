@@ -594,7 +594,12 @@ pub async fn approve(
     sqlx::query!(
         r#"
         WITH released AS (
-            UPDATE relay_invocations SET status = 'pending'
+            -- Its deadline starts now, for the length it was asked with
+            -- (waking pull agents §10); a row from before deadlines stays
+            -- NULL until the sweep gives it one.
+            UPDATE relay_invocations
+               SET status = 'pending',
+                   expires_at = now() + (expires_at - created_at)
              WHERE id = $1 AND status = 'awaiting_consent'
             RETURNING id
         )

@@ -85,6 +85,30 @@ pub struct SendArgs {
     /// Why you're asking, shown to the owner when they decide.
     #[arg(long)]
     pub purpose: Option<String>,
+    /// How long the call may wait to be answered before it times out:
+    /// seconds, or `<n>m`, `<n>h`, `<n>d`. At most the server's default
+    /// (24h; 7d for human_in_loop capabilities).
+    #[arg(long, value_parser = parse_expires_in, value_name = "DURATION")]
+    pub expires_in: Option<i64>,
+}
+
+/// `90`, `90s`, `30m`, `2h` or `1d` → seconds.
+fn parse_expires_in(raw: &str) -> Result<i64, String> {
+    let raw = raw.trim();
+    let bad = || format!("expected seconds or <n>s, <n>m, <n>h, <n>d, not {raw:?}");
+    let (num, unit) = match raw.char_indices().last() {
+        Some((i, c)) if c.is_ascii_alphabetic() => (&raw[..i], c),
+        _ => (raw, 's'),
+    };
+    let n: i64 = num.parse().map_err(|_| bad())?;
+    let per = match unit {
+        's' => 1,
+        'm' => 60,
+        'h' => 3600,
+        'd' => 86_400,
+        _ => return Err(bad()),
+    };
+    n.checked_mul(per).filter(|s| *s > 0).ok_or_else(bad)
 }
 
 impl SendArgs {
@@ -190,6 +214,11 @@ pub struct EnsureArgs {
     /// Emit a single JSON envelope on stdout instead of the relay rows.
     #[arg(long)]
     pub json: bool,
+
+    /// How long the call may wait to be answered before it times out:
+    /// seconds, or `<n>m`, `<n>h`, `<n>d`.
+    #[arg(long, value_parser = parse_expires_in, value_name = "DURATION")]
+    pub expires_in: Option<i64>,
 }
 
 const LEGACY_POLL_INTERVAL_MS: u64 = 1500;
@@ -240,6 +269,9 @@ async fn legacy_send(send: SendArgs, api: &ApiClient) -> Result<()> {
     };
     if let Some(terms) = consent_terms {
         body["consent_terms"] = terms;
+    }
+    if let Some(secs) = send.expires_in {
+        body["expires_in"] = json!(secs);
     }
     let resp: Value = api.post_relay("/v1/invoke", &body).await?;
     if resp.get("status").and_then(Value::as_str) == Some("awaiting_consent") {
@@ -750,11 +782,14 @@ fn with_via(mut envelope: Value, via: &Value) -> Value {
 async fn invoke_and_wait(
     api: &ApiClient,
     e: &EnsureArgs,
-    body: Value,
+    mut body: Value,
     peer_display: &str,
     via: Value,
     poll: Duration,
 ) -> Result<()> {
+    if let Some(secs) = e.expires_in {
+        body["expires_in"] = json!(secs);
+    }
     let invoke_resp: Value = api
         .post_relay("/v1/invoke", &body)
         .await
@@ -859,6 +894,22 @@ async fn invoke_and_wait(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn expires_in_takes_seconds_or_units() {
+        for (raw, secs) in [
+            ("90", 90),
+            ("90s", 90),
+            ("30m", 1800),
+            ("2h", 7200),
+            ("1d", 86_400),
+        ] {
+            assert_eq!(parse_expires_in(raw), Ok(secs), "{raw}");
+        }
+        for raw in ["", "h", "2w", "-5", "0", "1.5h"] {
+            assert!(parse_expires_in(raw).is_err(), "{raw}");
+        }
+    }
 
     #[test]
     fn consent_flags_become_consent_terms() {

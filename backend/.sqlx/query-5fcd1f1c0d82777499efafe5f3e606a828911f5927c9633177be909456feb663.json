@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT cr.id\n          FROM consent_requests cr\n          JOIN relay_invocations i ON i.id = cr.invocation_id\n         WHERE cr.kind = 'reply' AND cr.status = 'pending'\n           AND i.status IN ('pending', 'in_progress') AND i.expires_at < now()\n         LIMIT $1\n           FOR UPDATE OF cr SKIP LOCKED\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "consent_requests",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5fcd1f1c0d82777499efafe5f3e606a828911f5927c9633177be909456feb663"
+}

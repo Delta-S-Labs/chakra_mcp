@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE relay_invocations i\n           SET status = 'pending',\n               claimed_at = NULL,\n               claimed_by_user_id = NULL,\n               lease_until = NULL,\n               deliveries = GREATEST(i.deliveries - 1, 0)\n         WHERE i.id = $1 AND i.status = 'in_progress'\n           AND NOT EXISTS (\n               SELECT 1 FROM consent_requests cr\n                WHERE cr.invocation_id = i.id AND cr.kind = 'reply' AND cr.status = 'pending')\n        RETURNING i.granter_agent_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "granter_agent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "granter_agent_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "92bf583a13c9ec97e876039dc786cbe9a96d3996ba29be717adbfec31dc1c237"
+}

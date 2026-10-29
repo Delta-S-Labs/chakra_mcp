@@ -170,6 +170,7 @@ fn tools_list_result(calls: bool, discovery: bool) -> Value {
                         "input": { "type": "object" },
                         "wait_seconds": { "type": "integer", "minimum": 0, "maximum": 25, "description": "Wait up to this long for the result (default 0: return at once)." },
                         "call_id": { "type": "string", "format": "uuid", "description": "Make the request inside this call; the capability must be the other party's." },
+                        "expires_in": { "type": "integer", "minimum": 10, "description": "Seconds the call may wait to be answered before it times out. At most the server's default (24 hours; 7 days for human_in_loop capabilities), which also applies when absent." },
                         "consent_terms": {
                             "type": "object",
                             "description": "Only for capabilities that ask their owner first: what you're asking the owner to approve. The owner may narrow it, never widen it.",
@@ -191,14 +192,24 @@ fn tools_list_result(calls: bool, discovery: bool) -> Value {
                     }
                 })),
             tool("pull_inbox",
-                "Atomically claim the oldest pending invocations targeting one of your agents. Concurrent pullers get disjoint batches. With wait_seconds, waits for work to arrive instead of returning an empty list at once.",
+                "Atomically claim the oldest pending invocations targeting one of your agents. Concurrent pullers get disjoint batches. With wait_seconds, waits for work to arrive instead of returning an empty list at once. A claim holds for a lease (lease_secs, 10 minutes by default); unanswered by then, the call goes back to pending for another pull. To look without claiming, use list_invocations; to hand a claim back, release_invocation.",
                 json!({
                     "type": "object",
                     "required": ["agent_id"],
                     "properties": {
                         "agent_id": { "type": "string", "format": "uuid" },
                         "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 25 },
-                        "wait_seconds": { "type": "integer", "minimum": 0, "maximum": 60, "description": "Seconds to wait for new items when there are none, then return an empty list. The server waits at most 25 by default; 0 or absent returns at once." }
+                        "wait_seconds": { "type": "integer", "minimum": 0, "maximum": 60, "description": "Seconds to wait for new items when there are none, then return an empty list. The server waits at most 25 by default; 0 or absent returns at once." },
+                        "lease_secs": { "type": "integer", "minimum": 1, "maximum": 86400, "description": "How long the claim holds before an unanswered call goes back to pending. The server's default (10 minutes) when absent. human_in_loop calls have no lease." }
+                    }
+                })),
+            tool("release_invocation",
+                "Hand back an invocation you claimed with pull_inbox and won't answer: it goes back to pending for the next pull, and doesn't count as a delivery. Not for one with a reply waiting for its owner.",
+                json!({
+                    "type": "object",
+                    "required": ["invocation_id"],
+                    "properties": {
+                        "invocation_id": { "type": "string", "format": "uuid" }
                     }
                 })),
             tool("pull_notices",
@@ -532,6 +543,7 @@ async fn call_tool(
                 value
             }),
         "pull_inbox" => pull_inbox(state, user, p.arguments).await,
+        "release_invocation" => release_invocation(state, user, p.arguments).await,
         "pull_notices" => pull_notices(state, user, p.arguments).await,
         "consent_status" => consent_status(state, user, p.arguments).await,
         "list_invocations" => list_invocations(state, user, p.arguments).await,
@@ -988,6 +1000,8 @@ async fn invoke(
         call_id: Option<Uuid>,
         #[serde(default)]
         wait_seconds: u64,
+        #[serde(default)]
+        expires_in: Option<i64>,
     }
     let a: A = serde_json::from_value(args)
         .map_err(|e| ApiError::InvalidRequest(format!("bad invoke args: {e}")))?;
@@ -1026,6 +1040,7 @@ async fn invoke(
             consent_terms: a.consent_terms.as_ref(),
             call: a.call_id,
             limits_source: "mcp",
+            expires_in: a.expires_in,
         },
     )
     .await?;
@@ -1131,6 +1146,7 @@ pub(crate) async fn invocation_view(
         SELECT i.id, i.status, i.elapsed_ms, i.error_message,
                i.input_preview, i.output_preview, i.trust_snapshot,
                i.created_at, i.claimed_at, i.capability_name, i.call_id,
+               i.expires_at, i.lease_until, i.deliveries,
                i.granter_agent_id, i.grantee_agent_id,
                EXISTS(
                    SELECT 1 FROM account_memberships m
@@ -1186,6 +1202,9 @@ pub(crate) async fn invocation_view(
         "output_preview": r.output_preview,
         "created_at": r.created_at,
         "claimed_at": r.claimed_at,
+        "expires_at": r.expires_at,
+        "lease_until": r.lease_until,
+        "deliveries": r.deliveries,
     });
     if let Some(safety) = crate::handlers::invoke::safety_from_snapshot(
         r.trust_snapshot.as_ref(),
@@ -1215,6 +1234,23 @@ pub(crate) async fn invocation_view(
     Ok((out, hint))
 }
 
+/// `release_invocation`: hand a claim back, then the invocation as
+/// `poll_invocation` shows it.
+async fn release_invocation(
+    state: &RelayState,
+    user: &AuthUser,
+    args: Value,
+) -> Result<Value, ApiError> {
+    #[derive(Deserialize)]
+    struct A {
+        invocation_id: Uuid,
+    }
+    let a: A = serde_json::from_value(args)
+        .map_err(|e| ApiError::InvalidRequest(format!("bad release_invocation args: {e}")))?;
+    crate::handlers::invoke::release_claim(state, user, a.invocation_id).await?;
+    Ok(invocation_view(state, user, a.invocation_id).await?.0)
+}
+
 async fn pull_inbox(state: &RelayState, user: &AuthUser, args: Value) -> Result<Value, ApiError> {
     let db = &state.db;
     #[derive(Deserialize)]
@@ -1222,6 +1258,7 @@ async fn pull_inbox(state: &RelayState, user: &AuthUser, args: Value) -> Result<
         agent_id: Uuid,
         limit: Option<i64>,
         wait_seconds: Option<u32>,
+        lease_secs: Option<u32>,
     }
     let a: A = serde_json::from_value(args)
         .map_err(|e| ApiError::InvalidRequest(format!("bad pull_inbox args: {e}")))?;
@@ -1247,7 +1284,15 @@ async fn pull_inbox(state: &RelayState, user: &AuthUser, args: Value) -> Result<
         a.agent_id,
         chakramcp_shared::wake::Feed::Invocations,
         a.wait_seconds,
-        || crate::handlers::invoke::claim_invocations(db, a.agent_id, limit, user.user_id),
+        || {
+            crate::handlers::invoke::claim_invocations(
+                db,
+                a.agent_id,
+                limit,
+                user.user_id,
+                state.invocations.lease(a.lease_secs),
+            )
+        },
     )
     .await?;
     if ids.is_empty() {
@@ -1259,7 +1304,7 @@ async fn pull_inbox(state: &RelayState, user: &AuthUser, args: Value) -> Result<
     let rows = sqlx::query!(
         r#"
         SELECT i.id, i.capability_name, i.input_preview, i.status, i.trust_snapshot,
-               i.created_at, i.claimed_at, i.call_id,
+               i.created_at, i.claimed_at, i.call_id, i.expires_at, i.lease_until,
                i.grantee_agent_id, ea.display_name as "grantee_display_name?"
         FROM relay_invocations i
         LEFT JOIN agents ea ON ea.id = i.grantee_agent_id
@@ -1282,6 +1327,8 @@ async fn pull_inbox(state: &RelayState, user: &AuthUser, args: Value) -> Result<
                 "input": r.input_preview,
                 "created_at": r.created_at,
                 "claimed_at": r.claimed_at,
+                "expires_at": r.expires_at,
+                "lease_until": r.lease_until,
             });
             if let Some(consent) = consents.remove(&r.id) {
                 item["consent"] = json!(consent);

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT cap.id, cap.name, cap.description, cap.input_schema, cap.agent_id AS granter_agent_id,\n               cap.public_invoke, cap.public_monthly_quota_per_agent,\n               cap.consent_required, cap.consent_max_validity_secs, cap.consent_wait_secs,\n               ga.visibility AS granter_visibility, ga.mode AS granter_mode,\n               ga.slug AS granter_slug, gacc.slug AS granter_account_slug\n        FROM agent_capabilities cap\n        JOIN agents ga ON ga.id = cap.agent_id\n        JOIN accounts gacc ON gacc.id = ga.account_id\n        WHERE cap.id = $1\n          AND ga.tombstoned_at IS NULL\n          AND gacc.tombstoned_at IS NULL\n        ",
+  "query": "\n        SELECT cap.id, cap.name, cap.description, cap.input_schema, cap.agent_id AS granter_agent_id,\n               cap.semantics,\n               cap.public_invoke, cap.public_monthly_quota_per_agent,\n               cap.consent_required, cap.consent_max_validity_secs, cap.consent_wait_secs,\n               ga.visibility AS granter_visibility, ga.mode AS granter_mode,\n               ga.slug AS granter_slug, gacc.slug AS granter_account_slug\n        FROM agent_capabilities cap\n        JOIN agents ga ON ga.id = cap.agent_id\n        JOIN accounts gacc ON gacc.id = ga.account_id\n        WHERE cap.id = $1\n          AND ga.tombstoned_at IS NULL\n          AND gacc.tombstoned_at IS NULL\n        ",
   "describe": {
     "columns": [
       {
@@ -60,6 +60,17 @@
       },
       {
         "ordinal": 5,
+        "name": "semantics",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "semantics"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
         "name": "public_invoke",
         "type_info": "Bool",
         "origin": {
@@ -70,7 +81,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "public_monthly_quota_per_agent",
         "type_info": "Int4",
         "origin": {
@@ -81,7 +92,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "consent_required",
         "type_info": "Bool",
         "origin": {
@@ -92,7 +103,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "consent_max_validity_secs",
         "type_info": "Int4",
         "origin": {
@@ -103,7 +114,7 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "consent_wait_secs",
         "type_info": "Int4",
         "origin": {
@@ -114,7 +125,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "granter_visibility",
         "type_info": "Text",
         "origin": {
@@ -125,7 +136,7 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "granter_mode",
         "type_info": "Text",
         "origin": {
@@ -136,7 +147,7 @@
         }
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "granter_slug",
         "type_info": "Text",
         "origin": {
@@ -147,7 +158,7 @@
         }
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "granter_account_slug",
         "type_info": "Text",
         "origin": {
@@ -170,6 +181,7 @@
       false,
       false,
       false,
+      false,
       true,
       false,
       false,
@@ -180,5 +192,5 @@
       false
     ]
   },
-  "hash": "9f94b346f7b2e41a6d08a14c6fbac7d819d95d6357217fc1cbf53767d4543e45"
+  "hash": "397007b1cd7795e73ceae48a7d85758468208dffdb29a500447ca06bc6bdbb82"
 }

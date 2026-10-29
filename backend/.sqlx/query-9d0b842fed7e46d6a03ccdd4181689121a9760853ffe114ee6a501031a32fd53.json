@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH released AS (\n            -- Its deadline starts now, for the length it was asked with\n            -- (waking pull agents §10); a row from before deadlines stays\n            -- NULL until the sweep gives it one.\n            UPDATE relay_invocations\n               SET status = 'pending',\n                   expires_at = now() + (expires_at - created_at)\n             WHERE id = $1 AND status = 'awaiting_consent'\n            RETURNING id\n        )\n        INSERT INTO credit_charge_queue (invocation_id, account_id)\n        SELECT id, $2 FROM released\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9d0b842fed7e46d6a03ccdd4181689121a9760853ffe114ee6a501031a32fd53"
+}

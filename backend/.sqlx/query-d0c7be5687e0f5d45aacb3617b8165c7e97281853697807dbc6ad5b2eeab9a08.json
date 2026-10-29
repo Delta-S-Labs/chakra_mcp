@@ -1,0 +1,48 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH due AS (\n            SELECT i.id\n              FROM relay_invocations i\n             WHERE i.status IN ('pending', 'in_progress') AND i.expires_at < now()\n               AND NOT EXISTS (\n                   SELECT 1 FROM consent_requests cr\n                    WHERE cr.invocation_id = i.id AND cr.kind = 'reply'\n                      AND cr.status = 'pending' AND cr.id <> ALL($2))\n             ORDER BY i.expires_at\n             LIMIT $1\n               FOR UPDATE OF i SKIP LOCKED\n        )\n        UPDATE relay_invocations i\n           SET status = 'timeout',\n               error_message = CASE WHEN i.claimed_at IS NOT NULL\n                                    THEN 'picked up, never answered'\n                                    ELSE 'not picked up before its deadline' END,\n               elapsed_ms = LEAST(EXTRACT(EPOCH FROM (now() - i.created_at)) * 1000,\n                                  2147483647)::int,\n               lease_until = NULL\n          FROM due\n         WHERE i.id = due.id\n        RETURNING i.id, i.granter_agent_id, (i.claimed_at IS NOT NULL) AS \"claimed!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "granter_agent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "granter_agent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "claimed!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "d0c7be5687e0f5d45aacb3617b8165c7e97281853697807dbc6ad5b2eeab9a08"
+}

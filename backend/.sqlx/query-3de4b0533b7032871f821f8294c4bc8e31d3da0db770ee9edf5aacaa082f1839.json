@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT i.id, i.status, i.elapsed_ms, i.error_message,\n               i.input_preview, i.output_preview, i.trust_snapshot,\n               i.created_at, i.claimed_at, i.capability_name, i.call_id,\n               i.granter_agent_id, i.grantee_agent_id,\n               EXISTS(\n                   SELECT 1 FROM account_memberships m\n                   JOIN agents a ON a.account_id = m.account_id\n                   WHERE m.user_id = $1\n                     AND (a.id = i.granter_agent_id OR a.id = i.grantee_agent_id)\n               ) as \"may_view!\",\n               EXISTS(\n                   SELECT 1 FROM account_memberships m\n                   JOIN agents a ON a.account_id = m.account_id\n                   WHERE m.user_id = $1 AND a.id = i.granter_agent_id\n               ) as \"i_served!\",\n               EXISTS(\n                   SELECT 1 FROM account_memberships m\n                   JOIN agents a ON a.account_id = m.account_id\n                   WHERE m.user_id = $1 AND a.id = i.grantee_agent_id\n               ) as \"i_invoked!\",\n               cr.status as \"consent_status?\",\n               ga.mode as \"granter_mode?\",\n               ga.slug as \"granter_slug?\",\n               gacc.slug as \"granter_account_slug?\"\n        FROM relay_invocations i\n        -- Held input stays hidden from the target side (owner consent §4.3).\n        LEFT JOIN consent_requests cr ON cr.invocation_id = i.id AND cr.kind = 'request'\n        LEFT JOIN agents ga ON ga.id = i.granter_agent_id\n        LEFT JOIN accounts gacc ON gacc.id = ga.account_id\n        WHERE i.id = $2\n        ",
+  "query": "\n        SELECT i.id, i.status, i.elapsed_ms, i.error_message,\n               i.input_preview, i.output_preview, i.trust_snapshot,\n               i.created_at, i.claimed_at, i.capability_name, i.call_id,\n               i.expires_at, i.lease_until, i.deliveries,\n               i.granter_agent_id, i.grantee_agent_id,\n               EXISTS(\n                   SELECT 1 FROM account_memberships m\n                   JOIN agents a ON a.account_id = m.account_id\n                   WHERE m.user_id = $1\n                     AND (a.id = i.granter_agent_id OR a.id = i.grantee_agent_id)\n               ) as \"may_view!\",\n               EXISTS(\n                   SELECT 1 FROM account_memberships m\n                   JOIN agents a ON a.account_id = m.account_id\n                   WHERE m.user_id = $1 AND a.id = i.granter_agent_id\n               ) as \"i_served!\",\n               EXISTS(\n                   SELECT 1 FROM account_memberships m\n                   JOIN agents a ON a.account_id = m.account_id\n                   WHERE m.user_id = $1 AND a.id = i.grantee_agent_id\n               ) as \"i_invoked!\",\n               cr.status as \"consent_status?\",\n               ga.mode as \"granter_mode?\",\n               ga.slug as \"granter_slug?\",\n               gacc.slug as \"granter_account_slug?\"\n        FROM relay_invocations i\n        -- Held input stays hidden from the target side (owner consent §4.3).\n        LEFT JOIN consent_requests cr ON cr.invocation_id = i.id AND cr.kind = 'request'\n        LEFT JOIN agents ga ON ga.id = i.granter_agent_id\n        LEFT JOIN accounts gacc ON gacc.id = ga.account_id\n        WHERE i.id = $2\n        ",
   "describe": {
     "columns": [
       {
@@ -126,6 +126,39 @@
       },
       {
         "ordinal": 11,
+        "name": "expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "expires_at"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "lease_until",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "lease_until"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "deliveries",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "deliveries"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
         "name": "granter_agent_id",
         "type_info": "Uuid",
         "origin": {
@@ -136,7 +169,7 @@
         }
       },
       {
-        "ordinal": 12,
+        "ordinal": 15,
         "name": "grantee_agent_id",
         "type_info": "Uuid",
         "origin": {
@@ -147,25 +180,25 @@
         }
       },
       {
-        "ordinal": 13,
+        "ordinal": 16,
         "name": "may_view!",
         "type_info": "Bool",
         "origin": "Expression"
       },
       {
-        "ordinal": 14,
+        "ordinal": 17,
         "name": "i_served!",
         "type_info": "Bool",
         "origin": "Expression"
       },
       {
-        "ordinal": 15,
+        "ordinal": 18,
         "name": "i_invoked!",
         "type_info": "Bool",
         "origin": "Expression"
       },
       {
-        "ordinal": 16,
+        "ordinal": 19,
         "name": "consent_status?",
         "type_info": "Text",
         "origin": {
@@ -176,7 +209,7 @@
         }
       },
       {
-        "ordinal": 17,
+        "ordinal": 20,
         "name": "granter_mode?",
         "type_info": "Text",
         "origin": {
@@ -187,7 +220,7 @@
         }
       },
       {
-        "ordinal": 18,
+        "ordinal": 21,
         "name": "granter_slug?",
         "type_info": "Text",
         "origin": {
@@ -198,7 +231,7 @@
         }
       },
       {
-        "ordinal": 19,
+        "ordinal": 22,
         "name": "granter_account_slug?",
         "type_info": "Text",
         "origin": {
@@ -229,6 +262,9 @@
       true,
       true,
       true,
+      false,
+      true,
+      true,
       null,
       null,
       null,
@@ -238,5 +274,5 @@
       true
     ]
   },
-  "hash": "e6d428aa7af8af9f9514d36f6b3c6bf39cf83d00379fc9992d7413171d7d36e7"
+  "hash": "3de4b0533b7032871f821f8294c4bc8e31d3da0db770ee9edf5aacaa082f1839"
 }

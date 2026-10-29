@@ -22,7 +22,7 @@ use crate::agent_card::keys::KeyStore;
 use crate::forwarder::{forward_push, ForwardError, ForwardOutcome};
 use crate::inbox_bridge::{
     get_task, park, GetTaskError, ParkConsent, ParkError, CONSENT_TERMS_METADATA_KEY,
-    SAFETY_METADATA_KEY,
+    EXPIRES_IN_METADATA_KEY, SAFETY_METADATA_KEY,
 };
 use crate::policy::{evaluate, Authorized, Decision, DenyReason};
 use crate::state::RelayState;
@@ -148,6 +148,7 @@ async fn handle_send_message(
                 }
             }
             let cap_name = ctx.name;
+            let human_in_loop = ctx.human_in_loop;
             // Push agents can't require consent (owner consent §11), so the
             // gate only applies to parked calls.
             let consent = ctx.consent_required.then_some(ParkConsent {
@@ -174,6 +175,7 @@ async fn handle_send_message(
                     consent,
                     trust_snapshot,
                     safety_metadata,
+                    human_in_loop,
                 )
                 .await
             };
@@ -442,6 +444,7 @@ async fn handle_authorized_push(
 /// row up on its next poll of `/v1/inbox` and post the result back
 /// via `/v1/invocations/{id}/result` — both endpoints predate the
 /// migration and survive unchanged.
+#[allow(clippy::too_many_arguments)]
 async fn handle_authorized_pull(
     state: &RelayState,
     authz: Authorized,
@@ -450,6 +453,7 @@ async fn handle_authorized_pull(
     consent: Option<ParkConsent>,
     trust_snapshot: Option<serde_json::Value>,
     safety_metadata: Option<serde_json::Value>,
+    human_in_loop: bool,
 ) -> Response {
     match park(
         &state.db,
@@ -459,6 +463,7 @@ async fn handle_authorized_pull(
         body,
         consent,
         trust_snapshot,
+        (&state.invocations, human_in_loop),
     ).await {
         Ok(mut parked) => {
             // Parked for a pull agent: whether it's around (waking pull
@@ -504,6 +509,20 @@ async fn handle_authorized_pull(
             })),
         )
             .into_response(),
+        Err(ParkError::BadExpiresIn(detail)) => (
+            StatusCode::BAD_REQUEST,
+            [(header::CONTENT_TYPE, "application/json")],
+            Json(serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": null,
+                "error": {
+                    "code": -32602,
+                    "message": format!("bad params.metadata[\"{EXPIRES_IN_METADATA_KEY}\"]: {detail}"),
+                    "data": { "code": "chk.request.invalid_params" }
+                }
+            })),
+        )
+            .into_response(),
         Err(ParkError::Db(e)) => {
             tracing::error!(error = %e, "park failed");
             internal_error()
@@ -526,6 +545,8 @@ struct ComplianceContext {
     consent_required: bool,
     consent_max_validity_secs: i32,
     consent_wait_secs: i32,
+    /// `human_in_loop` capabilities get the longer default deadline.
+    human_in_loop: bool,
 }
 
 async fn compliance_context(
@@ -534,7 +555,7 @@ async fn compliance_context(
 ) -> Result<ComplianceContext, sqlx::Error> {
     let row = sqlx::query!(
         r#"
-        SELECT cap.name, cap.description,
+        SELECT cap.name, cap.description, cap.semantics,
                cap.consent_required, cap.consent_max_validity_secs, cap.consent_wait_secs,
                g.purpose           as "grant_purpose?",
                f.proposer_message  as "proposer_message?",
@@ -568,6 +589,7 @@ async fn compliance_context(
         consent_required: row.consent_required,
         consent_max_validity_secs: row.consent_max_validity_secs,
         consent_wait_secs: row.consent_wait_secs,
+        human_in_loop: row.semantics == "human_in_loop",
     })
 }
 
@@ -1848,6 +1870,56 @@ mod tests {
             arts[0]["parts"][0]["data"],
             serde_json::json!({"slots":[1,2,3]})
         );
+    }
+
+    /// A caller can shorten its task's deadline in the message metadata
+    /// (waking pull agents §10); too short is refused, nothing parked.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn expires_in_rides_in_the_metadata(pool: PgPool) {
+        let f = seed_full_fixture(&pool).await;
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config_v2_on()));
+        let send = |expires_in: serde_json::Value| {
+            req_with_body(
+                &path_for(&f),
+                Some(&f.api_key_plaintext),
+                Some(&f.caller_agent_id.to_string()),
+                Some(&f.capability_id.to_string()),
+                serde_json::json!({ "jsonrpc": "2.0", "id": 1, "method": "SendMessage",
+                    "params": { "metadata": { EXPIRES_IN_METADATA_KEY: expires_in } } }),
+            )
+        };
+        let res = app
+            .clone()
+            .oneshot(send(serde_json::json!(5)))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        let body = parse_body(res).await;
+        assert_eq!(
+            body["error"]["data"]["code"], "chk.request.invalid_params",
+            "{body}"
+        );
+        let res = app
+            .clone()
+            .oneshot(send(serde_json::json!("soon")))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        let n: i64 = sqlx::query_scalar("SELECT count(*) FROM relay_invocations")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(n, 0);
+
+        let res = app.oneshot(send(serde_json::json!(90))).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let ttl: i64 = sqlx::query_scalar(
+            "SELECT EXTRACT(EPOCH FROM expires_at - created_at)::bigint FROM relay_invocations",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(ttl, 90);
     }
 
     /// While a parked task is open its metadata says whether the target is

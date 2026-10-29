@@ -57,6 +57,9 @@ pub struct NewInvocation<'a> {
     pub charge_account_id: Uuid,
     /// The call it's made in, if any (calls spec §7).
     pub call_id: Option<Uuid>,
+    /// Seconds it may wait to be answered (waking pull agents §10). A held
+    /// request's clock restarts when it's approved.
+    pub ttl_secs: i64,
 }
 
 /// What the capability's settings and the caller's terms add.
@@ -140,11 +143,11 @@ pub async fn enqueue_consent_required(
             INSERT INTO relay_invocations
                 (id, grant_id, granter_agent_id, grantee_agent_id, capability_id,
                  capability_name, invoked_by_user_id, status, input_preview,
-                 api_key_id, minted_jti, trust_snapshot, call_id)
+                 api_key_id, minted_jti, trust_snapshot, call_id, expires_at)
             SELECT $1, $2, $3, $4, $5, $6, $7,
                    CASE WHEN EXISTS (SELECT 1 FROM used) THEN 'pending'
                         ELSE 'awaiting_consent' END,
-                   $8, $9, $10, $11, $17
+                   $8, $9, $10, $11, $17, now() + $18::bigint * interval '1 second'
             RETURNING id
         ),
         charge AS (
@@ -188,6 +191,7 @@ pub async fn enqueue_consent_required(
         gate.wait_secs,
         notice_id,
         inv.call_id,
+        inv.ttl_secs,
     )
     .fetch_one(db)
     .await?;

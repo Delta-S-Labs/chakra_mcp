@@ -288,6 +288,8 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
     // approval page and the relay queue work, the relay's pulls wait on it.
     let wait = chakramcp_shared::wake::WakeSettings::from_env()?;
     tracing::info!("{}", wait.summary());
+    let invocations = chakramcp_relay::invocation_sweep::InvocationSettings::from_env()?;
+    tracing::info!("{}", invocations.summary());
     let wake = chakramcp_shared::wake::Wake::new(wait.max_waiters);
     chakramcp_shared::wake::bus::spawn(pool.clone(), wake.clone());
     let app_state = AppState::new(pool.clone(), cfg.shared.clone())
@@ -323,7 +325,8 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
         .with_memory(chakramcp_relay::calls::memory::client(&calls))
         .with_mcp(chakramcp_relay::mcp::McpConfig::from_env()?)
         .with_outbound(outbound)
-        .with_wake(wake.clone(), wait);
+        .with_wake(wake.clone(), wait)
+        .with_invocations(invocations);
     // Who's been seen lately, for `peer` on invocations (waking pull
     // agents §8): loaded before serving, then kept by the flusher.
     if let Err(e) = relay_state.heartbeats.reload(&relay_state.db).await {
@@ -340,6 +343,12 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
     chakramcp_relay::consent::expiry::spawn_expiry_worker(
         relay_state.db.clone(),
         relay_state.wake.clone(),
+    );
+    // Lapsed claims and calls past their deadline.
+    chakramcp_relay::invocation_sweep::spawn(
+        relay_state.db.clone(),
+        relay_state.wake.clone(),
+        relay_state.invocations,
     );
     if relay_state.calls.enabled {
         tracing::info!("calls enabled");

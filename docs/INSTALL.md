@@ -418,6 +418,9 @@ are set:
 | Push agents may be on private or loopback addresses | (env only) | `OUTBOUND_ALLOW_PRIVATE` | `true` self-hosted, `false` managed; link-local and cloud metadata addresses are never called |
 | Longest wait on an inbox pull (seconds; keep any proxy read timeout above it) | (env only) | `INBOX_MAX_WAIT_SECS` | `25` (0–60; 0 turns waiting off) |
 | Inbox pulls waiting at once, per process | (env only) | `INBOX_MAX_WAITERS` | `2000` |
+| How long a claim holds before an unanswered call goes back to pending (seconds; the third lapse times it out) | (env only) | `CLAIM_LEASE_SECS` | `600` (30–86400) |
+| How long a call may wait to be answered before it times out | (env only) | `INVOCATION_DEFAULT_TTL` | `24h` (`<n>m`, `<n>h` or `<n>d`, 1m–30d) |
+| The same, for `human_in_loop` capabilities | (env only) | `INVOCATION_HITL_TTL` | `7d` |
 | Dodo Payments API key (chakramcp.com only) | (env only) | `DODO_PAYMENTS_API_KEY` | unset: no buying credits |
 | Dodo webhook key, `whsec_…` | (env only) | `DODO_PAYMENTS_WEBHOOK_KEY` | unset |
 | Dodo credits product, `pdt_…` | (env only) | `DODO_PAYMENTS_PRODUCT_ID` | unset |

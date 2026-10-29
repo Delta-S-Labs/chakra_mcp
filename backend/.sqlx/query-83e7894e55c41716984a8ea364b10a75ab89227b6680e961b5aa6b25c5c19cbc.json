@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH due AS (\n            SELECT i.id, c.semantics\n              FROM relay_invocations i\n              LEFT JOIN agent_capabilities c ON c.id = i.capability_id\n             WHERE i.status IN ('pending', 'in_progress') AND i.expires_at IS NULL\n             LIMIT $1\n               FOR UPDATE OF i SKIP LOCKED\n        )\n        UPDATE relay_invocations i\n           SET expires_at = now() + (CASE WHEN due.semantics = 'human_in_loop'\n                                          THEN $3::bigint ELSE $2::bigint END)\n                                    * interval '1 second'\n          FROM due\n         WHERE i.id = due.id\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "83e7894e55c41716984a8ea364b10a75ab89227b6680e961b5aa6b25c5c19cbc"
+}

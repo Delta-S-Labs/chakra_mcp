@@ -7,7 +7,10 @@ use crate::{print, read_json_arg};
 
 #[derive(Subcommand, Debug)]
 pub enum Cmd {
-    /// Atomically claim the oldest pending invocations targeting one of your agents.
+    /// Atomically claim the oldest pending invocations targeting one of your
+    /// agents. A claim holds for a lease (10 minutes by default); an
+    /// unanswered call then goes back to pending for another pull. To look
+    /// without claiming, use `inbox list`.
     Pull {
         #[arg(long)]
         agent: String,
@@ -17,7 +20,20 @@ pub enum Cmd {
         /// of returning an empty list at once. Servers before 0.7 don't wait.
         #[arg(long, default_value_t = 0, value_name = "SECS")]
         wait: u32,
+        /// How long the claim holds, in seconds (at most a day). The
+        /// server's default when absent.
+        #[arg(long, value_name = "SECS")]
+        lease_secs: Option<u32>,
     },
+    /// List your agent's pending invocations without claiming them:
+    /// `invocations list --direction inbound --status pending --agent …`.
+    List {
+        #[arg(long)]
+        agent: String,
+    },
+    /// Hand back an invocation you claimed and won't answer: it goes back to
+    /// pending for the next pull.
+    Release { invocation: String },
     /// Report a result for an invocation you claimed.
     Respond {
         invocation: String,
@@ -60,11 +76,30 @@ pub fn note_if_draft(v: &Value) {
 
 pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
     match cmd {
-        Cmd::Pull { agent, limit, wait } => {
+        Cmd::Pull {
+            agent,
+            limit,
+            wait,
+            lease_secs,
+        } => {
+            let mut path = format!("/v1/inbox?agent_id={agent}&limit={limit}&wait={wait}");
+            if let Some(lease) = lease_secs {
+                path.push_str(&format!("&lease_secs={lease}"));
+            }
+            let v: Value = api.get_relay(&path).await?;
+            print(&v)
+        }
+        Cmd::List { agent } => {
             let v: Value = api
                 .get_relay(&format!(
-                    "/v1/inbox?agent_id={agent}&limit={limit}&wait={wait}"
+                    "/v1/invocations?direction=inbound&status=pending&agent_id={agent}"
                 ))
+                .await?;
+            print(&v)
+        }
+        Cmd::Release { invocation } => {
+            let v: Value = api
+                .post_relay(&format!("/v1/invocations/{invocation}/release"), &json!({}))
                 .await?;
             print(&v)
         }
