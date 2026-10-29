@@ -21,6 +21,7 @@ use super::metrics;
 use super::reply::{self, Draft};
 use super::terms::{ConsentTerms, Validity};
 use crate::error::ApiError;
+use crate::wake::{Feed, Wake};
 
 /// Longest note an approver may leave when denying.
 pub const NOTE_MAX_CHARS: usize = 500;
@@ -475,6 +476,7 @@ pub struct Approved {
 /// Approve request `id`, as asked or narrowed.
 pub async fn approve(
     db: &PgPool,
+    wake: &Wake,
     actor: Actor,
     id: Uuid,
     narrowing: Narrowing,
@@ -482,7 +484,16 @@ pub async fn approve(
     let mut tx = db.begin().await?;
     let d = lock_for_decision(&mut tx, db, id, actor.user_id).await?;
     if d.kind == "reply" {
-        return approve_reply(db, tx, actor, id, &d, narrowing.draft_sha256.as_deref()).await;
+        return approve_reply(
+            db,
+            wake,
+            tx,
+            actor,
+            id,
+            &d,
+            narrowing.draft_sha256.as_deref(),
+        )
+        .await;
     }
 
     let requested: ConsentTerms = serde_json::from_value(d.terms.clone())
@@ -596,6 +607,8 @@ pub async fn approve(
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
+    // The request is in the agent's inbox now.
+    wake.notify(d.granter_agent_id, Feed::Invocations);
 
     metrics::record("approved", 1);
     audit(
@@ -619,6 +632,7 @@ pub async fn approve(
 /// then it's released as the invocation's result.
 async fn approve_reply(
     db: &PgPool,
+    wake: &Wake,
     mut tx: sqlx::Transaction<'_, sqlx::Postgres>,
     actor: Actor,
     id: Uuid,
@@ -653,6 +667,7 @@ async fn approve_reply(
     )
     .await?;
     tx.commit().await?;
+    wake.notify(d.granter_agent_id, Feed::Notices);
 
     metrics::record_kind("reply", "approved", 1);
     metrics::record_finished(&draft.status, elapsed);
@@ -682,6 +697,7 @@ pub struct Denied {
 /// Deny request `id`, with an optional note the requester sees.
 pub async fn deny(
     db: &PgPool,
+    wake: &Wake,
     actor: Actor,
     id: Uuid,
     note: Option<&str>,
@@ -728,6 +744,8 @@ pub async fn deny(
     tx.commit().await?;
 
     if is_reply {
+        // The agent was told with a `reply_rejected` notice.
+        wake.notify(d.granter_agent_id, Feed::Notices);
         metrics::record_ended("failed", ended);
         metrics::record_kind("reply", "denied", 1);
     } else {

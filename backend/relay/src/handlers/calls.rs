@@ -141,6 +141,7 @@ async fn inbox(
     State(state): State<RelayState>,
     user: AuthUser,
     Query(q): Query<feed::FeedQuery>,
-) -> ApiResult<Json<Vec<Value>>> {
-    Ok(Json(feed::claim(&state, &user, q).await?))
+) -> ApiResult<(crate::handlers::invoke::WaitHeader, Json<Vec<Value>>)> {
+    let (items, waited) = feed::claim(&state, &user, q).await?;
+    Ok((crate::inbox_wait::wait_header(waited), Json(items)))
 }

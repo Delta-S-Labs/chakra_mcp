@@ -19,7 +19,7 @@ pub mod read;
 pub mod workers;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 use axum::http::StatusCode;
 use chakramcp_shared::error::ApiError;
@@ -414,6 +414,16 @@ impl<'a> NewEntry<'a> {
             invocation_id: None,
             tag: false,
         }
+    }
+}
+
+/// Wake `to`'s waiting call pulls. Call it after the commit that delivered
+/// an entry to them.
+pub fn wake_parties(state: &crate::state::RelayState, to: &[Uuid]) {
+    for agent in to {
+        state
+            .wake
+            .notify(*agent, chakramcp_shared::wake::Feed::Calls);
     }
 }
 

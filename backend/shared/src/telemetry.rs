@@ -58,6 +58,9 @@ pub mod names {
     pub const CONSENT_PENDING: &str = "chakramcp_consent_pending";
     pub const SAFETY_FINDINGS_TOTAL: &str = "chakramcp_safety_findings_total";
     pub const SAFETY_SCREEN_SECONDS: &str = "chakramcp_safety_screen_seconds";
+    pub const INBOX_WAITERS: &str = "chakramcp_inbox_waiters";
+    pub const WAKE_NOTIFY_TOTAL: &str = "chakramcp_wake_notify_total";
+    pub const WAKE_LISTENER_RECONNECTS_TOTAL: &str = "chakramcp_wake_listener_reconnects_total";
 }
 
 /// `status` values of `chakramcp_credit_purchases_total`.
@@ -450,6 +453,21 @@ fn describe() {
         }
     }
     crate::safety::metrics::register();
+    describe_gauge!(
+        INBOX_WAITERS,
+        "Inbox pulls waiting for work in this process."
+    );
+    describe_counter!(
+        WAKE_NOTIFY_TOTAL,
+        "Work queued for a pull agent's feed (each wakes its waiting pulls)."
+    );
+    describe_counter!(
+        WAKE_LISTENER_RECONNECTS_TOTAL,
+        "Times the listener for other processes' wakes lost its connection."
+    );
+    gauge!(INBOX_WAITERS).set(0.0);
+    counter!(WAKE_NOTIFY_TOTAL).increment(0);
+    counter!(WAKE_LISTENER_RECONNECTS_TOTAL).increment(0);
 }
 
 // ─── HTTP ────────────────────────────────────────────────

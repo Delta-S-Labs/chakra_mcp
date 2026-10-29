@@ -66,15 +66,17 @@ pub fn approve_url(state: &RelayState, id: Uuid) -> String {
     )
 }
 
-/// Claim up to `limit` undelivered notices for `agent_id`, oldest first.
-/// The caller must be a member of the agent's account and allowed to
-/// manage it, as for its inbox.
+/// Claim up to `limit` undelivered notices for `agent_id`, oldest first,
+/// waiting up to `wait` seconds when there are none (waking pull agents
+/// §6). Returns them with the seconds honoured. The caller must be a member
+/// of the agent's account and allowed to manage it, as for its inbox.
 pub async fn claim(
     state: &RelayState,
     user: &AuthUser,
     agent_id: Uuid,
     limit: Option<i64>,
-) -> ApiResult<Vec<Notice>> {
+    wait: Option<u32>,
+) -> ApiResult<(Vec<Notice>, u32)> {
     let limit = limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
     let account = sqlx::query_scalar!(r#"SELECT account_id FROM agents WHERE id = $1"#, agent_id)
         .fetch_optional(&state.db)
@@ -86,6 +88,19 @@ pub async fn claim(
     crate::auth::require_scope(state, user, agent_id).await?;
     state.heartbeats.record(agent_id);
 
+    crate::inbox_wait::claim_waiting(
+        state,
+        agent_id,
+        chakramcp_shared::wake::Feed::Notices,
+        wait,
+        || claim_rows(state, agent_id, limit),
+    )
+    .await
+}
+
+/// Mark up to `limit` of `agent_id`'s undelivered notices delivered and
+/// return them.
+async fn claim_rows(state: &RelayState, agent_id: Uuid, limit: i64) -> ApiResult<Vec<Notice>> {
     let rows = sqlx::query!(
         r#"
         WITH claimed AS (

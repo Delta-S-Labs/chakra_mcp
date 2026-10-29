@@ -16,6 +16,7 @@ use super::decide::Actor;
 use super::hash::sha256_jcs;
 use super::metrics;
 use crate::error::ApiError;
+use crate::wake::{Feed, Wake};
 
 /// A draft must arrive whole, so the approver confirms exactly what the
 /// requester receives.
@@ -123,6 +124,7 @@ pub async fn store_draft(
 /// them and release it, in one transaction. Returns the elapsed time.
 pub async fn confirm_now(
     db: &PgPool,
+    wake: &Wake,
     actor: Actor,
     t: &ReplyTarget,
     draft: &Draft,
@@ -171,6 +173,7 @@ pub async fn confirm_now(
     )
     .await?;
     tx.commit().await?;
+    wake.notify(t.granter_agent_id, Feed::Notices);
     metrics::record_kind("reply", "approved", 1);
     metrics::record_finished(&draft.status, elapsed);
     Ok(elapsed)

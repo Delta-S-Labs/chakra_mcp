@@ -80,6 +80,10 @@ async fn main() -> Result<()> {
     let usage_retention =
         chakramcp_relay::retention::usage_retention_days(|key| env::var(key).ok())?;
     let calls = chakramcp_relay::calls::CallsConfig::from_env()?;
+    let wait = chakramcp_shared::wake::WakeSettings::from_env()?;
+    tracing::info!("{}", wait.summary());
+    let wake = chakramcp_shared::wake::Wake::new(wait.max_waiters);
+    chakramcp_shared::wake::bus::spawn(pool.clone(), wake.clone());
     let state = RelayState::new(pool, cfg.clone())
         .with_rate_limiter(chakramcp_relay::limits::RateLimiter::from_redis_url(
             env::var("REDIS_URL").ok().as_deref(),
@@ -99,16 +103,17 @@ async fn main() -> Result<()> {
         .with_calls(calls)
         .with_memory(chakramcp_relay::calls::memory::client(&calls))
         .with_mcp(chakramcp_relay::mcp::McpConfig::from_env()?)
-        .with_outbound(outbound);
+        .with_outbound(outbound)
+        .with_wake(wake.clone(), wait);
     state.heartbeats.clone().spawn_flusher(state.db.clone());
     if let Some(days) = usage_retention {
         chakramcp_relay::retention::spawn_usage_pruner(state.db.clone(), days);
     }
     // Owner consent: expire undecided requests and prune old notices.
-    chakramcp_relay::consent::expiry::spawn_expiry_worker(state.db.clone());
+    chakramcp_relay::consent::expiry::spawn_expiry_worker(state.db.clone(), state.wake.clone());
     if state.calls.enabled {
         tracing::info!("calls enabled");
-        chakramcp_relay::calls::workers::spawn_workers(state.db.clone());
+        chakramcp_relay::calls::workers::spawn_workers(state.db.clone(), state.wake.clone());
         if state.memory.is_some() {
             tracing::info!("calls memory enabled");
             chakramcp_relay::calls::memory::tagger::spawn_tagger(state.clone());
@@ -132,6 +137,11 @@ async fn main() -> Result<()> {
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
+    .with_graceful_shutdown(async move {
+        let _ = tokio::signal::ctrl_c().await;
+        // Waiting inbox pulls return now instead of holding the shutdown.
+        wake.close();
+    })
     .await;
 
     // On shutdown signal the refresh loop to exit cleanly so its

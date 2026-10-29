@@ -75,6 +75,11 @@ pub struct RelayState {
     /// The client that forwards calls to push agents, built under
     /// `outbound`. Shared so connections are reused.
     pub forward_http: reqwest::Client,
+    /// Wakes waiting inbox pulls when work is queued (design: waking pull
+    /// agents §4). `chakramcp-server` shares one with the app.
+    pub wake: chakramcp_shared::wake::Wake,
+    /// How long, and how many, inbox pulls may wait (`INBOX_MAX_*`).
+    pub wait: chakramcp_shared::wake::WakeSettings,
 }
 
 impl RelayState {
@@ -111,7 +116,20 @@ impl RelayState {
             )),
             outbound: crate::outbound::OutboundPolicy::default(),
             forward_http: forward_client(crate::outbound::OutboundPolicy::default()),
+            wake: chakramcp_shared::wake::Wake::default(),
+            wait: chakramcp_shared::wake::WakeSettings::default(),
         }
+    }
+
+    /// The wake hub and the wait settings.
+    pub fn with_wake(
+        mut self,
+        wake: chakramcp_shared::wake::Wake,
+        wait: chakramcp_shared::wake::WakeSettings,
+    ) -> Self {
+        self.wake = wake;
+        self.wait = wait;
+        self
     }
 
     /// Which addresses requests to agents may reach, and the forwarding

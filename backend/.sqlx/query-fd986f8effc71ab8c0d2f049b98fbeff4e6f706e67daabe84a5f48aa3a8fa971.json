@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH due AS (\n            SELECT id FROM calls\n             WHERE state = 'ringing' AND created_at <= now() - interval '24 hours'\n             ORDER BY created_at\n             LIMIT $1\n               FOR UPDATE SKIP LOCKED\n        ),\n        missed AS (\n            UPDATE calls c\n               SET state = 'missed', ended_at = now(), last_seq = c.last_seq + 1,\n                   purge_at = now() + make_interval(secs => c.ttl_secs)\n              FROM due\n             WHERE c.id = due.id\n            RETURNING c.id, c.last_seq, c.caller_agent_id\n        ),\n        entries AS (\n            INSERT INTO call_entries (id, call_id, seq, kind)\n            SELECT gen_random_uuid(), id, last_seq, 'missed' FROM missed\n            RETURNING id, call_id\n        ),\n        told AS (\n            INSERT INTO call_deliveries (entry_id, agent_id)\n            SELECT e.id, m.caller_agent_id\n              FROM entries e JOIN missed m ON m.id = e.call_id\n             WHERE m.caller_agent_id IS NOT NULL\n            RETURNING agent_id\n        )\n        SELECT (SELECT count(*) FROM missed) AS \"n!\",\n               ARRAY(SELECT agent_id FROM told) AS \"told!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "told!",
+        "type_info": "UuidArray",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "fd986f8effc71ab8c0d2f049b98fbeff4e6f706e67daabe84a5f48aa3a8fa971"
+}

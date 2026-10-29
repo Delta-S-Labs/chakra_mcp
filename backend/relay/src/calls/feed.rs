@@ -19,20 +19,41 @@ pub const MAX_ITEMS: i64 = 25;
 pub struct FeedQuery {
     pub agent_id: Uuid,
     pub limit: Option<i64>,
+    /// Seconds to wait for events when there are none (waking pull agents
+    /// §6). MCP's `pull_calls` names it `wait_seconds`.
+    #[serde(alias = "wait_seconds")]
+    pub wait: Option<u32>,
 }
 
+/// Claim the agent's undelivered entries, waiting up to `q.wait` seconds
+/// when there are none. Returns them with the seconds honoured.
 pub async fn claim(
     state: &RelayState,
     user: &AuthUser,
     q: FeedQuery,
-) -> Result<Vec<Value>, ApiError> {
+) -> Result<(Vec<Value>, u32), ApiError> {
     let acting = access::act_as(state, user, q.agent_id).await?;
     // Pulling calls counts as being online, as pulling the inbox does.
     state.heartbeats.record(acting.agent_id);
     let limit = q.limit.unwrap_or(MAX_ITEMS).clamp(1, MAX_ITEMS);
 
-    let mut tx = state.db.begin().await?;
-    let claimed: Vec<Uuid> = sqlx::query_scalar!(
+    let (claimed, waited) = crate::inbox_wait::claim_waiting(
+        state,
+        acting.agent_id,
+        chakramcp_shared::wake::Feed::Calls,
+        q.wait,
+        || claim_ids(state, acting.agent_id, limit),
+    )
+    .await?;
+    if claimed.is_empty() {
+        return Ok((Vec::new(), waited));
+    }
+    Ok((describe(state, &claimed).await?, waited))
+}
+
+/// Mark up to `limit` of `agent`'s undelivered entries delivered.
+async fn claim_ids(state: &RelayState, agent: Uuid, limit: i64) -> Result<Vec<Uuid>, ApiError> {
+    Ok(sqlx::query_scalar!(
         r#"
         WITH picked AS (
             SELECT d.entry_id
@@ -48,16 +69,15 @@ pub async fn claim(
          WHERE d.entry_id = p.entry_id AND d.agent_id = $1
         RETURNING d.entry_id
         "#,
-        acting.agent_id,
+        agent,
         limit,
     )
-    .fetch_all(&mut *tx)
-    .await?;
-    tx.commit().await?;
-    if claimed.is_empty() {
-        return Ok(Vec::new());
-    }
+    .fetch_all(&state.db)
+    .await?)
+}
 
+/// The claimed entries as feed items.
+async fn describe(state: &RelayState, claimed: &[Uuid]) -> Result<Vec<Value>, ApiError> {
     let entries = sqlx::query_as!(
         Entry,
         r#"
@@ -70,7 +90,7 @@ pub async fn claim(
          WHERE e.id = ANY($1)
          ORDER BY e.created_at, e.call_id, e.seq
         "#,
-        &claimed,
+        claimed,
     )
     .fetch_all(&state.db)
     .await?;

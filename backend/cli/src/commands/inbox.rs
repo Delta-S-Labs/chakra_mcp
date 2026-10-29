@@ -13,6 +13,10 @@ pub enum Cmd {
         agent: String,
         #[arg(long, default_value_t = 25)]
         limit: i64,
+        /// Wait up to this many seconds for work when there's none, instead
+        /// of returning an empty list at once. Servers before 0.7 don't wait.
+        #[arg(long, default_value_t = 0, value_name = "SECS")]
+        wait: u32,
     },
     /// Report a result for an invocation you claimed.
     Respond {
@@ -36,6 +40,10 @@ pub enum Cmd {
         agent: String,
         #[arg(long, default_value_t = 25)]
         limit: i64,
+        /// Wait up to this many seconds for work when there's none, instead
+        /// of returning an empty list at once. Servers before 0.7 don't wait.
+        #[arg(long, default_value_t = 0, value_name = "SECS")]
+        wait: u32,
     },
 }
 
@@ -52,9 +60,11 @@ pub fn note_if_draft(v: &Value) {
 
 pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
     match cmd {
-        Cmd::Pull { agent, limit } => {
+        Cmd::Pull { agent, limit, wait } => {
             let v: Value = api
-                .get_relay(&format!("/v1/inbox?agent_id={agent}&limit={limit}"))
+                .get_relay(&format!(
+                    "/v1/inbox?agent_id={agent}&limit={limit}&wait={wait}"
+                ))
                 .await?;
             print(&v)
         }
@@ -89,9 +99,11 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
                 .await?;
             print(&v)
         }
-        Cmd::Notices { agent, limit } => {
+        Cmd::Notices { agent, limit, wait } => {
             let v: Value = api
-                .get_relay(&format!("/v1/inbox/notices?agent_id={agent}&limit={limit}"))
+                .get_relay(&format!(
+                    "/v1/inbox/notices?agent_id={agent}&limit={limit}&wait={wait}"
+                ))
                 .await?;
             print(&v)
         }

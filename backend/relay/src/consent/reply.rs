@@ -190,7 +190,8 @@ pub async fn submit_result(
                 user_id: user.user_id,
                 minted_jti: user.minted_jti,
             };
-            let elapsed_ms = reply::confirm_now(&state.db, actor, &target, &draft).await?;
+            let elapsed_ms =
+                reply::confirm_now(&state.db, &state.wake, actor, &target, &draft).await?;
             return Ok(Submitted::Finished {
                 status: draft.status,
                 elapsed_ms,

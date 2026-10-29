@@ -451,7 +451,15 @@ async fn handle_authorized_pull(
     trust_snapshot: Option<serde_json::Value>,
     safety_metadata: Option<serde_json::Value>,
 ) -> Response {
-    match park(&state.db, &authz, &capability_name, body, consent, trust_snapshot).await {
+    match park(
+        &state.db,
+        &state.wake,
+        &authz,
+        &capability_name,
+        body,
+        consent,
+        trust_snapshot,
+    ).await {
         Ok(mut parked) => {
             parked.task.metadata = safety_metadata;
             (

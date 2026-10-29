@@ -191,13 +191,14 @@ fn tools_list_result(calls: bool, discovery: bool) -> Value {
                     }
                 })),
             tool("pull_inbox",
-                "Atomically claim the oldest pending invocations targeting one of your agents. Concurrent pullers get disjoint batches.",
+                "Atomically claim the oldest pending invocations targeting one of your agents. Concurrent pullers get disjoint batches. With wait_seconds, waits for work to arrive instead of returning an empty list at once.",
                 json!({
                     "type": "object",
                     "required": ["agent_id"],
                     "properties": {
                         "agent_id": { "type": "string", "format": "uuid" },
-                        "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 25 }
+                        "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 25 },
+                        "wait_seconds": { "type": "integer", "minimum": 0, "maximum": 60, "description": "Seconds to wait for new items when there are none, then return an empty list. The server waits at most 25 by default; 0 or absent returns at once." }
                     }
                 })),
             tool("pull_notices",
@@ -207,7 +208,8 @@ fn tools_list_result(calls: bool, discovery: bool) -> Value {
                     "required": ["agent_id"],
                     "properties": {
                         "agent_id": { "type": "string", "format": "uuid" },
-                        "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 25 }
+                        "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 25 },
+                        "wait_seconds": { "type": "integer", "minimum": 0, "maximum": 60, "description": "Seconds to wait for new items when there are none, then return an empty list. The server waits at most 25 by default; 0 or absent returns at once." }
                     }
                 })),
             tool("consent_status",
@@ -1155,6 +1157,7 @@ async fn pull_inbox(state: &RelayState, user: &AuthUser, args: Value) -> Result<
     struct A {
         agent_id: Uuid,
         limit: Option<i64>,
+        wait_seconds: Option<u32>,
     }
     let a: A = serde_json::from_value(args)
         .map_err(|e| ApiError::InvalidRequest(format!("bad pull_inbox args: {e}")))?;
@@ -1175,34 +1178,17 @@ async fn pull_inbox(state: &RelayState, user: &AuthUser, args: Value) -> Result<
     // The agent is online (in memory; flushed in batches).
     state.heartbeats.record(a.agent_id);
 
-    let mut tx = db.begin().await?;
-    let claimed = sqlx::query!(
-        r#"
-        WITH picked AS (
-            SELECT id FROM relay_invocations
-            WHERE granter_agent_id = $1 AND status = 'pending'
-            ORDER BY created_at ASC
-            LIMIT $2
-            FOR UPDATE SKIP LOCKED
-        )
-        UPDATE relay_invocations i
-        SET status = 'in_progress', claimed_at = now(), claimed_by_user_id = $3
-        FROM picked
-        WHERE i.id = picked.id
-        RETURNING i.id
-        "#,
+    let (ids, _) = crate::inbox_wait::claim_waiting(
+        state,
         a.agent_id,
-        limit,
-        user.user_id,
+        chakramcp_shared::wake::Feed::Invocations,
+        a.wait_seconds,
+        || crate::handlers::invoke::claim_invocations(db, a.agent_id, limit, user.user_id),
     )
-    .fetch_all(&mut *tx)
     .await?;
-    tx.commit().await?;
-
-    if claimed.is_empty() {
+    if ids.is_empty() {
         return Ok(json!([]));
     }
-    let ids: Vec<Uuid> = claimed.into_iter().map(|r| r.id).collect();
     // Consent tokens for approved requests, minted on first delivery.
     let mut consents = crate::consent::deliver::deliver(state, &ids).await?;
 
@@ -1256,10 +1242,12 @@ async fn pull_notices(state: &RelayState, user: &AuthUser, args: Value) -> Resul
     struct A {
         agent_id: Uuid,
         limit: Option<i64>,
+        wait_seconds: Option<u32>,
     }
     let a: A = serde_json::from_value(args)
         .map_err(|e| ApiError::InvalidRequest(format!("bad pull_notices args: {e}")))?;
-    let notices = crate::consent::notices::claim(state, user, a.agent_id, a.limit).await?;
+    let (notices, _) =
+        crate::consent::notices::claim(state, user, a.agent_id, a.limit, a.wait_seconds).await?;
     Ok(json!(notices))
 }
 

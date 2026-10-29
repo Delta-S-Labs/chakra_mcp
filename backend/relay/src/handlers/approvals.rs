@@ -320,6 +320,7 @@ pub async fn approve(
     let req: ApproveRequest = optional_body(&body)?;
     let approved = decide::approve(
         &state.db,
+        &state.wake,
         actor(&user),
         id,
         decide::Narrowing {
@@ -357,7 +358,7 @@ pub async fn deny(
         },
     )
     .await?;
-    let denied = decide::deny(&state.db, actor(&user), id, note.as_deref()).await?;
+    let denied = decide::deny(&state.db, &state.wake, actor(&user), id, note.as_deref()).await?;
     Ok(Json(json!({
         "id": denied.id,
         "status": "denied",

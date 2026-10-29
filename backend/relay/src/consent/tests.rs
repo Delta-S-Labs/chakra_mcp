@@ -707,7 +707,9 @@ async fn undecided_requests_expire(pool: PgPool) {
     ask_first(&pool, &f, 0).await;
     let (inv, req) = hold(&pool, &f, None).await;
     assert_eq!(
-        crate::consent::expiry::expire_once(&pool).await.unwrap(),
+        crate::consent::expiry::expire_once(&pool, &chakramcp_shared::wake::Wake::default())
+            .await
+            .unwrap(),
         (0, 0)
     );
     sqlx::query(
@@ -718,7 +720,9 @@ async fn undecided_requests_expire(pool: PgPool) {
     .await
     .unwrap();
     assert_eq!(
-        crate::consent::expiry::expire_once(&pool).await.unwrap(),
+        crate::consent::expiry::expire_once(&pool, &chakramcp_shared::wake::Wake::default())
+            .await
+            .unwrap(),
         (1, 1)
     );
     assert_eq!(request_status(&pool, req).await, "expired");
@@ -1320,7 +1324,9 @@ async fn rejected_or_unconfirmed_replies_fail_the_call(pool: PgPool) {
     .execute(&pool)
     .await
     .unwrap();
-    crate::consent::expiry::expire_once(&pool).await.unwrap();
+    crate::consent::expiry::expire_once(&pool, &chakramcp_shared::wake::Wake::default())
+        .await
+        .unwrap();
     assert_eq!(
         invocation_status(&pool, inv).await,
         ("failed".into(), Some("Reply not confirmed in time".into()))
