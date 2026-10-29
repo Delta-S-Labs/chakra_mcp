@@ -42,7 +42,7 @@ services:
   # /alloy-data, a root-owned volume: without capabilities, root can't enter
   # the image's own /var/lib/alloy, which belongs to the `alloy` user.)
   alloy:
-    image: grafana/alloy:v1.20.1
+    image: grafana/alloy:v1.21.2
     restart: unless-stopped
     logging: *logging
     command:
@@ -83,7 +83,7 @@ services:
 
   # Stores and queries metrics; Alloy remote-writes into it.
   prometheus:
-    image: prom/prometheus:v3.15.0
+    image: prom/prometheus:v3.15.1
     restart: unless-stopped
     logging: *logging
     command:
@@ -110,7 +110,7 @@ services:
 
   # Stores logs (14 days).
   loki:
-    image: grafana/loki:3.7.8
+    image: grafana/loki:3.7.9
     restart: unless-stopped
     logging: *logging
     command: ["-config.file=/etc/loki/loki.yml"]

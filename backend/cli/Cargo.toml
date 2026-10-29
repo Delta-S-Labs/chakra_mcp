@@ -39,4 +39,4 @@ indicatif = "0.18"
 # sleeps.
 tokio = { version = "1", features = ["full", "test-util"] }
 # Splits documented command lines like a shell (documented_commands test).
-shlex = "1"
+shlex = "2"

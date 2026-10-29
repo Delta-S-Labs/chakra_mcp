@@ -46,6 +46,7 @@ async function main() {
   });
 
   const agent = new Agent({
+    id: "example-typescript",
     name: "example-typescript",
     instructions: SYSTEM_PROMPT,
     model: provider(modelId),

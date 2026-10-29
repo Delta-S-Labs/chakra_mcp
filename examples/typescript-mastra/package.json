@@ -9,10 +9,10 @@
     "build": "tsc --noEmit"
   },
   "dependencies": {
-    "@mastra/core": "^0.10.0",
-    "@ai-sdk/openai-compatible": "^0.2.0",
+    "@mastra/core": "^1.80.0",
+    "@ai-sdk/openai-compatible": "^2.0.88",
     "dotenv": "^16.4.5",
-    "zod": "^3.23.0"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
