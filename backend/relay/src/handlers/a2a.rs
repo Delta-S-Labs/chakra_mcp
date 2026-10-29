@@ -229,7 +229,7 @@ async fn handle_get_task(
         );
     };
 
-    match get_task(&state.db, task_id, caller_agent_id).await {
+    match get_task(&state.db, &state.heartbeats, task_id, caller_agent_id).await {
         Ok(task) => (
             StatusCode::OK,
             [(header::CONTENT_TYPE, "application/json")],
@@ -461,7 +461,10 @@ async fn handle_authorized_pull(
         trust_snapshot,
     ).await {
         Ok(mut parked) => {
-            parked.task.metadata = safety_metadata;
+            // Parked for a pull agent: whether it's around (waking pull
+            // agents §8).
+            let peer = state.heartbeats.peer(authz.target_agent_id, "pull");
+            parked.task.metadata = crate::inbox_bridge::with_peer(safety_metadata, Some(peer));
             (
             StatusCode::OK,
             [(header::CONTENT_TYPE, "application/json")],
@@ -1847,6 +1850,55 @@ mod tests {
         );
     }
 
+    /// While a parked task is open its metadata says whether the target is
+    /// around (waking pull agents §8); once it settles, it doesn't.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn open_tasks_carry_peer(pool: PgPool) {
+        let f = seed_full_fixture(&pool).await;
+        let state = crate::state::RelayState::new(pool.clone(), config_v2_on());
+        let app = crate::router(state.clone());
+        let send = |id: i32, method: &str, params: serde_json::Value, capability: bool| {
+            req_with_body(
+                &path_for(&f),
+                Some(&f.api_key_plaintext),
+                Some(&f.caller_agent_id.to_string()),
+                capability.then(|| f.capability_id.to_string()).as_deref(),
+                serde_json::json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }),
+            )
+        };
+
+        let sent = parse_body(
+            app.clone()
+                .oneshot(send(1, "SendMessage", serde_json::json!({}), true))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(
+            sent["result"]["metadata"]["chakramcp.peer"],
+            serde_json::json!({ "delivery": "pull", "online": false, "last_seen_at": null }),
+            "{sent}"
+        );
+        let task_id = sent["result"]["id"].as_str().unwrap().to_string();
+
+        state.heartbeats.record(f.target_agent_id);
+        let get = || send(2, "tasks/get", serde_json::json!({ "id": task_id }), false);
+        let polled = parse_body(app.clone().oneshot(get()).await.unwrap()).await;
+        assert_eq!(
+            polled["result"]["metadata"]["chakramcp.peer"]["online"], true,
+            "{polled}"
+        );
+
+        sqlx::query("UPDATE relay_invocations SET status = 'succeeded' WHERE id = $1")
+            .bind(task_id.parse::<Uuid>().unwrap())
+            .execute(&pool)
+            .await
+            .unwrap();
+        let done = parse_body(app.oneshot(get()).await.unwrap()).await;
+        assert_eq!(done["result"]["status"]["state"], "completed");
+        assert!(done["result"].get("metadata").is_none(), "{done}");
+    }
+
     #[sqlx::test(migrations = "../migrations")]
     async fn get_task_returns_failed_state_with_error_message(pool: PgPool) {
         let f = seed_full_fixture(&pool).await;
@@ -2209,7 +2261,10 @@ mod tests {
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
         let body = parse_body(res).await;
-        assert!(body["result"].get("metadata").is_none(), "{body}");
+        assert!(
+            body["result"]["metadata"].get("chakramcp.safety").is_none(),
+            "{body}"
+        );
         let (_, input, snap) = only_row(&pool).await;
         // Unchanged message, today's report.
         assert_eq!(input["text"], SAFE_TEXT);

@@ -28,6 +28,8 @@ pub mod jwt_mint;
 pub mod limits;
 pub mod mcp;
 pub mod outbound;
+#[cfg(test)]
+mod peer_tests;
 pub mod policy;
 pub mod retention;
 pub mod scope_cache;

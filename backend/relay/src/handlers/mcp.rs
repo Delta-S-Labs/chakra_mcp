@@ -496,6 +496,9 @@ async fn call_tool(
     params: Value,
 ) -> Result<(Value, crate::limits::LimitSignals), RpcError> {
     let mut signals = crate::limits::LimitSignals::default();
+    // A sentence about a target that may not be around (waking pull agents
+    // §8), added to the text after the JSON, never to the JSON.
+    let mut hint: Option<String> = None;
     let p: CallParams = serde_json::from_value(params)
         .map_err(|e| rpc_err(ERR_INVALID_PARAMS, format!("malformed call params: {e}")))?;
 
@@ -515,11 +518,19 @@ async fn call_tool(
         }
         "list_grants" => list_grants(state, user, p.arguments).await,
         "list_friendships" => list_friendships(state, user, p.arguments).await,
-        "invoke" => invoke(state, user, p.arguments).await.map(|(value, sig)| {
-            signals = sig;
-            value
-        }),
-        "poll_invocation" => poll_invocation(state, user, p.arguments).await,
+        "invoke" => invoke(state, user, p.arguments)
+            .await
+            .map(|(value, sig, h)| {
+                signals = sig;
+                hint = h;
+                value
+            }),
+        "poll_invocation" => poll_invocation(state, user, p.arguments)
+            .await
+            .map(|(value, h)| {
+                hint = h;
+                value
+            }),
         "pull_inbox" => pull_inbox(state, user, p.arguments).await,
         "pull_notices" => pull_notices(state, user, p.arguments).await,
         "consent_status" => consent_status(state, user, p.arguments).await,
@@ -561,6 +572,9 @@ async fn call_tool(
     };
 
     let (mut envelope, ok) = tool_result(result);
+    if let (true, Some(hint), Some(content)) = (ok, hint, envelope["content"].as_array_mut()) {
+        content.push(json!({ "type": "text", "text": hint }));
+    }
     if ok && signals.credits_low {
         envelope["_meta"] = json!({ "chakramcp/credits": "low" });
     }
@@ -754,7 +768,12 @@ async fn list_invocations(
                    SELECT 1 FROM account_memberships m
                    WHERE m.user_id = $1 AND m.account_id = ga.account_id
                ) as "i_served!",
-               cr.status as "consent_status?"
+               EXISTS(
+                   SELECT 1 FROM account_memberships m
+                   WHERE m.user_id = $1 AND m.account_id = ea.account_id
+               ) as "i_invoked!",
+               cr.status as "consent_status?",
+               ga.mode as "granter_mode?"
         FROM relay_invocations i
         LEFT JOIN agents ga ON ga.id = i.granter_agent_id
         LEFT JOIN agents ea ON ea.id = i.grantee_agent_id
@@ -810,6 +829,15 @@ async fn list_invocations(
             }
             if let Some(call_id) = r.call_id {
                 item["call_id"] = json!(call_id);
+            }
+            if let Some(peer) = crate::handlers::invoke::read_peer(
+                state,
+                r.i_invoked,
+                &r.status,
+                r.granter_agent_id,
+                r.granter_mode.as_deref(),
+            ) {
+                item["peer"] = json!(peer);
             }
             item
         })
@@ -939,11 +967,13 @@ async fn list_friendships(
 /// The most `invoke`'s `wait_seconds` waits.
 const MAX_INVOKE_WAIT_SECS: u64 = 25;
 
+/// `invoke`: the result, the caller's limit signals, and a hint when the
+/// target may not be around.
 async fn invoke(
     state: &RelayState,
     user: &AuthUser,
     args: Value,
-) -> Result<(Value, crate::limits::LimitSignals), ApiError> {
+) -> Result<(Value, crate::limits::LimitSignals, Option<String>), ApiError> {
     #[derive(Deserialize)]
     struct A {
         grant_id: Option<Uuid>,
@@ -1005,13 +1035,17 @@ async fn invoke(
             consent_request_id,
             signals,
             safety,
+            mut called,
         } => {
             let wait = std::time::Duration::from_secs(a.wait_seconds.min(MAX_INVOKE_WAIT_SECS));
             if !wait.is_zero() {
                 let status = crate::mcp::wait::wait_for(state, invocation_id, wait).await?;
                 if crate::mcp::wait::settled(&status) {
-                    return Ok((invocation_view(state, user, invocation_id).await?, signals));
+                    let (view, hint) = invocation_view(state, user, invocation_id).await?;
+                    return Ok((view, signals, hint));
                 }
+                // Seen again while it waited, perhaps.
+                called.peer = state.heartbeats.peer(called.agent_id, "pull");
             }
             let mut out = json!({ "invocation_id": invocation_id, "status": "pending" });
             if let Some(id) = consent_request_id {
@@ -1020,7 +1054,8 @@ async fn invoke(
             if let Some(safety) = safety {
                 out["safety"] = json!(safety);
             }
-            Ok((out, signals))
+            out["peer"] = json!(called.peer);
+            Ok((out, signals, called.peer.hint(&called.handle)))
         }
         // The capability asks its owner first: held until an approver
         // decides (owner consent §4). Returned at once, waiting or not.
@@ -1029,6 +1064,7 @@ async fn invoke(
             consent_request_id,
             signals,
             safety,
+            called,
         } => {
             let mut out = json!({
                 "invocation_id": invocation_id,
@@ -1038,7 +1074,8 @@ async fn invoke(
             if let Some(safety) = safety {
                 out["safety"] = json!(safety);
             }
-            Ok((out, signals))
+            out["peer"] = json!(called.peer);
+            Ok((out, signals, called.peer.hint(&called.handle)))
         }
         // The rejection is already recorded; surface it as a tool error.
         Outcome::Rejected {
@@ -1066,7 +1103,7 @@ async fn poll_invocation(
     state: &RelayState,
     user: &AuthUser,
     args: Value,
-) -> Result<Value, ApiError> {
+) -> Result<(Value, Option<String>), ApiError> {
     #[derive(Deserialize)]
     struct A {
         invocation_id: Uuid,
@@ -1076,12 +1113,14 @@ async fn poll_invocation(
     invocation_view(state, user, a.invocation_id).await
 }
 
-/// An invocation as `poll_invocation` shows it, for a caller who may see it.
+/// An invocation as `poll_invocation` shows it, for a caller who may see it,
+/// and a hint when it's open and its target may not be around (waking pull
+/// agents §8).
 pub(crate) async fn invocation_view(
     state: &RelayState,
     user: &AuthUser,
     invocation_id: Uuid,
-) -> Result<Value, ApiError> {
+) -> Result<(Value, Option<String>), ApiError> {
     let db = &state.db;
     // Only rows touching an agent the credential may act as (MCP and
     // discovery spec §4.2), as REST's reads are.
@@ -1104,10 +1143,20 @@ pub(crate) async fn invocation_view(
                    JOIN agents a ON a.account_id = m.account_id
                    WHERE m.user_id = $1 AND a.id = i.granter_agent_id
                ) as "i_served!",
-               cr.status as "consent_status?"
+               EXISTS(
+                   SELECT 1 FROM account_memberships m
+                   JOIN agents a ON a.account_id = m.account_id
+                   WHERE m.user_id = $1 AND a.id = i.grantee_agent_id
+               ) as "i_invoked!",
+               cr.status as "consent_status?",
+               ga.mode as "granter_mode?",
+               ga.slug as "granter_slug?",
+               gacc.slug as "granter_account_slug?"
         FROM relay_invocations i
         -- Held input stays hidden from the target side (owner consent §4.3).
         LEFT JOIN consent_requests cr ON cr.invocation_id = i.id AND cr.kind = 'request'
+        LEFT JOIN agents ga ON ga.id = i.granter_agent_id
+        LEFT JOIN accounts gacc ON gacc.id = ga.account_id
         WHERE i.id = $2
         "#,
         user.user_id,
@@ -1148,7 +1197,22 @@ pub(crate) async fn invocation_view(
     if let Some(call_id) = r.call_id {
         out["call_id"] = json!(call_id);
     }
-    Ok(out)
+    let peer = crate::handlers::invoke::read_peer(
+        state,
+        r.i_invoked,
+        &r.status,
+        r.granter_agent_id,
+        r.granter_mode.as_deref(),
+    );
+    let hint = peer.as_ref().and_then(|peer| {
+        out["peer"] = json!(peer);
+        let handle = match (&r.granter_account_slug, &r.granter_slug) {
+            (Some(account), Some(agent)) => format!("{account}/{agent}"),
+            _ => "The agent".to_owned(),
+        };
+        peer.hint(&handle)
+    });
+    Ok((out, hint))
 }
 
 async fn pull_inbox(state: &RelayState, user: &AuthUser, args: Value) -> Result<Value, ApiError> {

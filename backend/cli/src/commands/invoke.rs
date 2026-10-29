@@ -262,9 +262,11 @@ async fn legacy_send(send: SendArgs, api: &ApiClient) -> Result<()> {
         .to_string();
 
     eprintln!("Enqueued {id}. Waiting for terminal status…");
+    let hinted = std::sync::atomic::AtomicBool::new(false);
     for attempt in 0..LEGACY_POLL_MAX_ATTEMPTS {
         tokio::time::sleep(Duration::from_millis(LEGACY_POLL_INTERVAL_MS)).await;
         let row: Value = api.get_relay(&format!("/v1/invocations/{id}")).await?;
+        waiters::say_peer_hint(&row, &hinted);
         let status = row.get("status").and_then(|v| v.as_str()).unwrap_or("");
         if matches!(status, "succeeded" | "failed" | "rejected" | "timeout") {
             return print(&row);

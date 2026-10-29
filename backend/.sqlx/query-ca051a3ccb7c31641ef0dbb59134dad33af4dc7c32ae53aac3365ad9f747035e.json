@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT agent_id, last_polled_at FROM agent_heartbeats\n             WHERE last_polled_at > now() - make_interval(days => $1)\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "agent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "agent_heartbeats",
+            "name": "agent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "last_polled_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "agent_heartbeats",
+            "name": "last_polled_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "ca051a3ccb7c31641ef0dbb59134dad33af4dc7c32ae53aac3365ad9f747035e"
+}

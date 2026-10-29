@@ -73,6 +73,7 @@ use crate::consent::deliver::{self as consent_deliver, ConsentDto, HumanConfirme
 use crate::consent::enqueue::{self as consent_enqueue, Enqueued, NewInvocation};
 use crate::consent::terms::ConsentTerms;
 use crate::consent::visibility::shown_input;
+use crate::heartbeats::Peer;
 use crate::state::RelayState;
 
 const PREVIEW_BYTE_LIMIT: usize = 16 * 1024;
@@ -126,6 +127,10 @@ pub struct InvokeResponse {
     /// What message safety found and did (removed contacts, flags).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub safety: Option<Safety>,
+    /// Whether the target is around (waking pull agents §8), on a queued
+    /// or held invocation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peer: Option<Peer>,
 }
 
 #[derive(Debug, Serialize)]
@@ -202,6 +207,10 @@ pub struct InvocationDto {
     /// `reply` for the reply (shown to the caller once it's released).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub safety: Option<Safety>,
+    /// Whether the target is around (waking pull agents §8): to the calling
+    /// side, while the invocation is open.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peer: Option<Peer>,
 }
 
 /// Friendship details the relay verified before queuing this
@@ -496,6 +505,7 @@ fn respond(outcome: Outcome) -> axum::response::Response {
             consent_request_id,
             signals,
             safety,
+            called,
         } => {
             let mut response = (
                 StatusCode::ACCEPTED,
@@ -506,6 +516,7 @@ fn respond(outcome: Outcome) -> axum::response::Response {
                     consent_request_id,
                     code: None,
                     safety,
+                    peer: Some(called.peer),
                 }),
             )
                 .into_response();
@@ -517,6 +528,7 @@ fn respond(outcome: Outcome) -> axum::response::Response {
             consent_request_id,
             signals,
             safety,
+            called,
         } => {
             let mut response = (
                 StatusCode::ACCEPTED,
@@ -527,6 +539,7 @@ fn respond(outcome: Outcome) -> axum::response::Response {
                     consent_request_id: Some(consent_request_id),
                     code: None,
                     safety,
+                    peer: Some(called.peer),
                 }),
             )
                 .into_response();
@@ -548,6 +561,7 @@ fn respond(outcome: Outcome) -> axum::response::Response {
                 consent_request_id: None,
                 code,
                 safety,
+                peer: None,
             }),
         )
             .into_response(),
@@ -682,6 +696,7 @@ pub(crate) enum Outcome {
         consent_request_id: Option<Uuid>,
         signals: crate::limits::LimitSignals,
         safety: Option<Safety>,
+        called: Called,
     },
     /// Held as `awaiting_consent` until the owner's approver decides (the
     /// capability asks first; owner consent §4).
@@ -690,6 +705,7 @@ pub(crate) enum Outcome {
         consent_request_id: Uuid,
         signals: crate::limits::LimitSignals,
         safety: Option<Safety>,
+        called: Called,
     },
     /// Recorded as `rejected`. `status` is the HTTP status the REST
     /// surface returns; other surfaces map it onto their own errors.
@@ -707,6 +723,18 @@ pub(crate) enum Outcome {
         quota: i32,
         resets_at: DateTime<Utc>,
     },
+}
+
+/// Who a queued or held invocation went to, for `peer` and its hint
+/// (waking pull agents §8). Built from memory and the rows the checks
+/// already read.
+#[derive(Debug, Clone)]
+pub(crate) struct Called {
+    /// The target, a pull agent (push targets are refused before queuing).
+    pub agent_id: Uuid,
+    pub peer: Peer,
+    /// `account/agent`.
+    pub handle: String,
 }
 
 /// Resolve `grant_id`, run every trusted-path check, and enqueue the
@@ -751,6 +779,8 @@ pub(crate) async fn authorize_and_enqueue_trusted(
             g.expires_at, g.granted_at, g.purpose as grant_purpose,
             ga.account_id as granter_account_id,
             ga.mode as granter_mode,
+            ga.slug as granter_slug,
+            gacc.slug as granter_account_slug,
             ea.account_id as grantee_account_id,
             cap.name as capability_name,
             cap.visibility as capability_visibility,
@@ -769,6 +799,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
             f.decided_at as "friendship_decided_at?"
         FROM grants g
         JOIN agents ga ON ga.id = g.granter_agent_id
+        JOIN accounts gacc ON gacc.id = ga.account_id
         JOIN agents ea ON ea.id = g.grantee_agent_id
         JOIN agent_capabilities cap ON cap.id = g.capability_id
         LEFT JOIN friendships f
@@ -880,6 +911,13 @@ pub(crate) async fn authorize_and_enqueue_trusted(
     if row.granter_mode == "push" {
         return reject(StatusCode::CONFLICT, PUSH_TARGET_ERROR.into()).await;
     }
+    let called = Called {
+        agent_id: row.granter_agent_id,
+        peer: state
+            .heartbeats
+            .peer(row.granter_agent_id, &row.granter_mode),
+        handle: format!("{}/{}", row.granter_account_slug, row.granter_slug),
+    };
 
     // A capability that asks first must receive its input whole.
     if row.consent_required {
@@ -1071,12 +1109,14 @@ pub(crate) async fn authorize_and_enqueue_trusted(
                 consent_request_id: Some(consent_request_id),
                 signals,
                 safety,
+                called,
             },
             Enqueued::Held { consent_request_id } => Outcome::Held {
                 invocation_id: id,
                 consent_request_id,
                 signals,
                 safety,
+                called,
             },
         });
     }
@@ -1119,6 +1159,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
         consent_request_id: None,
         signals,
         safety,
+        called,
     })
 }
 
@@ -1155,7 +1196,8 @@ pub(crate) async fn authorize_and_enqueue_public(
         SELECT cap.id, cap.name, cap.description, cap.input_schema, cap.agent_id AS granter_agent_id,
                cap.public_invoke, cap.public_monthly_quota_per_agent,
                cap.consent_required, cap.consent_max_validity_secs, cap.consent_wait_secs,
-               ga.visibility AS granter_visibility, ga.mode AS granter_mode
+               ga.visibility AS granter_visibility, ga.mode AS granter_mode,
+               ga.slug AS granter_slug, gacc.slug AS granter_account_slug
         FROM agent_capabilities cap
         JOIN agents ga ON ga.id = cap.agent_id
         JOIN accounts gacc ON gacc.id = ga.account_id
@@ -1209,6 +1251,13 @@ pub(crate) async fn authorize_and_enqueue_public(
     if cap.granter_mode == "push" {
         return Err(ApiError::Conflict(PUSH_TARGET_ERROR.into()));
     }
+    let called = Called {
+        agent_id: cap.granter_agent_id,
+        peer: state
+            .heartbeats
+            .peer(cap.granter_agent_id, &cap.granter_mode),
+        handle: format!("{}/{}", cap.granter_account_slug, cap.granter_slug),
+    };
 
     // A capability that asks first must receive its input whole.
     if cap.consent_required {
@@ -1394,12 +1443,14 @@ pub(crate) async fn authorize_and_enqueue_public(
                 consent_request_id: Some(consent_request_id),
                 signals: decision.signals,
                 safety,
+                called,
             },
             Enqueued::Held { consent_request_id } => Outcome::Held {
                 invocation_id: id,
                 consent_request_id,
                 signals: decision.signals,
                 safety,
+                called,
             },
         });
     }
@@ -1441,6 +1492,7 @@ pub(crate) async fn authorize_and_enqueue_public(
         consent_request_id: None,
         signals: decision.signals,
         safety,
+        called,
     })
 }
 
@@ -1606,6 +1658,7 @@ pub async fn inbox(
 
                     let safety = safety_from_snapshot(r.trust_snapshot.as_ref(), true, &r.status);
                     InvocationDto {
+                        peer: None,
                         safety,
                         id: r.id,
                         grant_id: r.grant_id,
@@ -1769,6 +1822,7 @@ pub async fn list(
             i.elapsed_ms, i.error_message, i.input_preview, i.output_preview,
             i.created_at, i.claimed_at, i.trust_snapshot, i.call_id,
             ga.display_name as "granter_display_name?",
+            ga.mode         as "granter_mode?",
             ea.display_name as "grantee_display_name?",
             cap.semantics   as "capability_semantics?",
             cr.id           as "cr_id?",
@@ -1853,7 +1907,16 @@ pub async fn list(
                 r.cr_terms.clone(),
                 r.cr_token.clone(),
             );
+            let i_invoked = r.i_invoked.unwrap_or(false);
+            let peer = read_peer(
+                &state,
+                i_invoked,
+                &r.status,
+                r.granter_agent_id,
+                r.granter_mode.as_deref(),
+            );
             InvocationDto {
+                peer,
                 safety,
                 id: r.id,
                 grant_id: r.grant_id,
@@ -1874,7 +1937,7 @@ pub async fn list(
                 claimed_at: r.claimed_at,
                 call_id: r.call_id,
                 i_served,
-                i_invoked: r.i_invoked.unwrap_or(false),
+                i_invoked,
                 tier: if r.grant_id.is_some() {
                     "friend".into()
                 } else {
@@ -1893,6 +1956,21 @@ pub async fn list(
         .collect::<Vec<_>>();
     fill_reply_tokens(&state, &mut dtos).await?;
     Ok(Json(dtos))
+}
+
+/// `peer` on a read: for the calling side while the invocation is open
+/// (waking pull agents §8), from memory. None when the target is gone.
+pub(crate) fn read_peer(
+    state: &RelayState,
+    i_invoked: bool,
+    status: &str,
+    granter: Option<Uuid>,
+    mode: Option<&str>,
+) -> Option<Peer> {
+    if !i_invoked || !crate::heartbeats::open(status) {
+        return None;
+    }
+    Some(state.heartbeats.peer(granter?, mode?))
 }
 
 /// Mint the reply tokens confirmed replies don't have yet (gate 2).
@@ -1946,6 +2024,7 @@ async fn fetch_one(state: &RelayState, user_id: Uuid, id: Uuid) -> Result<Invoca
             i.elapsed_ms, i.error_message, i.input_preview, i.output_preview,
             i.created_at, i.claimed_at, i.trust_snapshot, i.call_id,
             ga.display_name as "granter_display_name?",
+            ga.mode         as "granter_mode?",
             ea.display_name as "grantee_display_name?",
             cap.semantics   as "capability_semantics?",
             cr.id           as "cr_id?",
@@ -2001,7 +2080,15 @@ async fn fetch_one(state: &RelayState, user_id: Uuid, id: Uuid) -> Result<Invoca
         r.cr_token,
     );
 
+    let peer = read_peer(
+        state,
+        i_invoked,
+        &r.status,
+        r.granter_agent_id,
+        r.granter_mode.as_deref(),
+    );
     InvocationDto {
+        peer,
         safety,
         id: r.id,
         grant_id: r.grant_id,
