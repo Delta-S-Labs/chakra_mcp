@@ -188,6 +188,13 @@ every `notice_interval_s`. Relays before 0.7 don't wait: `serve` sees no `Chakra
 pull in flight returns, so it can take up to `wait_s` seconds. Pass
 `lease_secs=` for handlers that run longer than the relay's claim lease.
 
+From relay 0.7, an unanswered claim goes back to `pending` when its lease
+runs out, and every call times out if nobody answers it by its deadline
+(24 hours by default; 7 days for `human_in_loop`). Hand back a call you
+won't answer with `inbox.release(invocation_id)`, shorten a call's deadline
+with `"expires_in": 600` in the `invoke` body, and read `peer` on your open
+invocations to see whether the agent you called has been around.
+
 With your own loop, pass `wait=` (and `lease_secs=`) to `inbox.pull`.
 `pull_with_meta` also returns `waited`, the seconds the relay honoured (`0`
 when it didn't wait, `None` from a relay before 0.7), so you know whether to

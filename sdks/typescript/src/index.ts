@@ -175,6 +175,7 @@ export class ChakraMCP {
       input: args.input,
       ...(args.consent_terms !== undefined ? { consent_terms: args.consent_terms } : {}),
       ...(args.call_id !== undefined ? { call_id: args.call_id } : {}),
+      ...(args.expires_in !== undefined ? { expires_in: args.expires_in } : {}),
     });
   }
 
@@ -675,6 +676,21 @@ export class InboxClient {
       "POST",
       `/v1/invocations/${encodeURIComponent(invocationId)}/result`,
       body,
+    );
+  }
+
+  /**
+   * Hand back an invocation you claimed and won't answer (servers 0.7+):
+   * it goes back to `pending` for the next pull, and doesn't count as a
+   * delivery. Refused with 409 `chk.invocation.not_releasable` while it
+   * isn't claimed or has a reply waiting for its owner, and
+   * `chk.invocation.already_settled` once it's settled.
+   */
+  async release(invocationId: string): Promise<Invocation> {
+    return this.chakra.relayRequest(
+      "POST",
+      `/v1/invocations/${encodeURIComponent(invocationId)}/release`,
+      {},
     );
   }
 

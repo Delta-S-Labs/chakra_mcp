@@ -107,6 +107,20 @@ impl<'a> InboxClient<'a> {
         .await
     }
 
+    /// Hand back an invocation you claimed and won't answer (relays 0.7+):
+    /// it goes back to pending for the next pull, and doesn't count as a
+    /// delivery. Refused with 409 `chk.invocation.not_releasable` while it
+    /// isn't claimed or has a reply waiting for its owner, and
+    /// `chk.invocation.already_settled` once it's settled.
+    pub async fn release(&self, invocation_id: &str) -> Result<Invocation> {
+        self.parent
+            .relay_post(
+                &format!("/v1/invocations/{}/release", urlencode(invocation_id)),
+                &json!({}),
+            )
+            .await
+    }
+
     async fn respond(&self, invocation_id: &str, body: &Value) -> Result<RespondOutcome> {
         let v: Value = self
             .parent

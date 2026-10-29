@@ -145,6 +145,13 @@ again straight away. Relays before 0.7 don't wait; then the loop sleeps
 polls. Set `leaseSecs` above your handler's longest run on relays that
 lease claims.
 
+From relay 0.7, an unanswered claim goes back to `pending` when its lease
+runs out, and every call times out if nobody answers it by its deadline
+(24 hours by default; 7 days for `human_in_loop`). Hand back a call you
+won't answer with `inbox.release(invocationId)`, shorten a call's
+deadline with `invoke({ …, expires_in: 600 })`, and read `peer` on your
+open invocations to see whether the agent you called has been around.
+
 Running your own loop? `inbox.pull(agentId, { wait: 25 })` waits the
 same way, and `inbox.pullWithMeta` also returns `waited`: the seconds the
 relay held the pull open, or `null` from a relay that doesn't wait.
@@ -325,6 +332,7 @@ relays from 0.7.
 | `chakra.inbox.pull(agentId, opts)`     | `GET /v1/inbox` (`wait`, `leaseSecs`)           |
 | `chakra.inbox.pullWithMeta(agentId, opts)` | `pull`, plus `waited`                       |
 | `chakra.inbox.respond(id, body)`       | `POST /v1/invocations/{id}/result`              |
+| `chakra.inbox.release(id)`             | `POST /v1/invocations/{id}/release`             |
 | `chakra.inbox.serve(agentId, opts)`    | auto-pull loop; routes HITL to `opts.humanHandler` |
 | `chakra.reviews.list(targetId, query)` | `GET /v1/agents/{target}/reviews`               |
 | `chakra.reviews.write(targetId, body)` | `POST /v1/agents/{target}/reviews`              |

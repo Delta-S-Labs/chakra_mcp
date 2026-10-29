@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -839,5 +840,66 @@ func TestNoticeCarriesInvocationID(t *testing.T) {
 	}
 	if len(notices) != 2 || notices[0].InvocationID == nil || *notices[0].InvocationID != "inv7" || notices[1].InvocationID != nil {
 		t.Errorf("notices = %+v", notices)
+	}
+}
+
+func TestReleasePostsAndReturnsTheInvocation(t *testing.T) {
+	var method, path, body string
+	_, c := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		method, path = r.Method, r.URL.Path
+		b, _ := io.ReadAll(r.Body)
+		body = string(b)
+		_, _ = w.Write([]byte(`{"id":"inv-1","status":"pending","deliveries":0,"lease_until":null}`))
+	})
+	inv, err := c.Inbox().Release(context.Background(), "inv-1")
+	if err != nil {
+		t.Fatalf("Release: %v", err)
+	}
+	if method != http.MethodPost || path != "/v1/invocations/inv-1/release" || body != "{}" {
+		t.Errorf("sent %s %s %s", method, path, body)
+	}
+	if inv.Status != InvocationPending || inv.Deliveries != 0 || inv.LeaseUntil != nil {
+		t.Errorf("got %+v", inv)
+	}
+}
+
+func TestARefusedReleaseCarriesTheCode(t *testing.T) {
+	_, c := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"error":{"code":"chk.invocation.not_releasable","message":"only a claimed invocation can be released"}}`))
+	})
+	_, err := c.Inbox().Release(context.Background(), "inv-1")
+	var apiErr *Error
+	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusConflict || apiErr.Code != "chk.invocation.not_releasable" {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestInvokeSendsExpiresInAndReadsPeer(t *testing.T) {
+	var bodies []map[string]any
+	_, c := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		var b map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&b)
+		bodies = append(bodies, b)
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"invocation_id":"inv-1","status":"pending","error":null,
+			"peer":{"delivery":"pull","online":false,"last_seen_at":"2026-10-29T09:12:03Z"}}`))
+	})
+	ctx := context.Background()
+	res, err := c.Invoke(ctx, &InvokeRequest{GrantID: "g-1", GranteeAgentID: "a-1", Input: json.RawMessage(`{}`), ExpiresIn: 600})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if res.Peer == nil || res.Peer.Delivery != "pull" || res.Peer.Online || res.Peer.LastSeenAt == nil {
+		t.Errorf("peer = %+v", res.Peer)
+	}
+	if _, err := c.Invoke(ctx, &InvokeRequest{GrantID: "g-1", GranteeAgentID: "a-1", Input: json.RawMessage(`{}`)}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if bodies[0]["expires_in"] != float64(600) {
+		t.Errorf("first body = %v", bodies[0])
+	}
+	if _, set := bodies[1]["expires_in"]; set {
+		t.Errorf("second body = %v", bodies[1])
 	}
 }
