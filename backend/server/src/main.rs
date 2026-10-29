@@ -324,6 +324,11 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
         .with_mcp(chakramcp_relay::mcp::McpConfig::from_env()?)
         .with_outbound(outbound)
         .with_wake(wake.clone(), wait);
+    // Who's been seen lately, for `peer` on invocations (waking pull
+    // agents §8): loaded before serving, then kept by the flusher.
+    if let Err(e) = relay_state.heartbeats.reload(&relay_state.db).await {
+        tracing::warn!(error = %e, "agent presence load failed; the flusher retries");
+    }
     relay_state
         .heartbeats
         .clone()

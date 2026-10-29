@@ -469,11 +469,19 @@ impl Endpoint<'_> {
         if let Err(e) = super::wait::wait_for(self.state, invocation_id, wait).await {
             return refused(e, Some(invocation_id));
         }
-        let view = match crate::handlers::mcp::invocation_view(self.state, self.user, invocation_id)
-            .await
-        {
-            Ok(view) => view,
-            Err(e) => return refused(e, Some(invocation_id)),
+        let (view, hint) =
+            match crate::handlers::mcp::invocation_view(self.state, self.user, invocation_id).await
+            {
+                Ok(view) => view,
+                Err(e) => return refused(e, Some(invocation_id)),
+            };
+        // Whether the target is around, while it's open (waking pull agents
+        // §8).
+        let with_peer = |mut structured: Value| {
+            if let Some(peer) = view.get("peer") {
+                structured["peer"] = peer.clone();
+            }
+            structured
         };
         let status = view["status"].as_str().unwrap_or_default();
         let id = invocation_id.to_string();
@@ -495,7 +503,7 @@ impl Endpoint<'_> {
                 "content": [{ "type": "text", "text": format!(
                     "The agent's owner approves this request first. Check back with {GET_RESULT} (invocation_id {id})."
                 ) }],
-                "structuredContent": { "status": "awaiting_consent", "invocation_id": id },
+                "structuredContent": with_peer(json!({ "status": "awaiting_consent", "invocation_id": id })),
                 "isError": false,
             }),
             "failed" | "timeout" => {
@@ -513,13 +521,17 @@ impl Endpoint<'_> {
                 view.get("safety").cloned(),
             ),
             // pending, in_progress
-            other => json!({
-                "content": [{ "type": "text", "text": format!(
-                    "Still running. Call {GET_RESULT} with invocation_id {id}."
-                ) }],
-                "structuredContent": { "status": other, "invocation_id": id },
-                "isError": false,
-            }),
+            other => {
+                let mut text = format!("Still running. Call {GET_RESULT} with invocation_id {id}.");
+                if let Some(hint) = hint {
+                    text = format!("{text} {hint}");
+                }
+                json!({
+                    "content": [{ "type": "text", "text": text }],
+                    "structuredContent": with_peer(json!({ "status": other, "invocation_id": id })),
+                    "isError": false,
+                })
+            }
         }
     }
 }
@@ -585,7 +597,8 @@ fn output_schema(capability_output: &Value) -> Value {
             "output": capability_output,
             "code": { "type": "string" },
             "error": { "type": "string" },
-            "safety": { "type": "object" }
+            "safety": { "type": "object" },
+            "peer": { "type": "object" }
         }
     })
 }

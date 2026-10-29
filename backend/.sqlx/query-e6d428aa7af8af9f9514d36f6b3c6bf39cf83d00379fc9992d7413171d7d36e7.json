@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT i.id, i.status, i.elapsed_ms, i.error_message,\n               i.input_preview, i.output_preview, i.trust_snapshot,\n               i.created_at, i.claimed_at, i.capability_name, i.call_id,\n               i.granter_agent_id, i.grantee_agent_id,\n               EXISTS(\n                   SELECT 1 FROM account_memberships m\n                   JOIN agents a ON a.account_id = m.account_id\n                   WHERE m.user_id = $1\n                     AND (a.id = i.granter_agent_id OR a.id = i.grantee_agent_id)\n               ) as \"may_view!\",\n               EXISTS(\n                   SELECT 1 FROM account_memberships m\n                   JOIN agents a ON a.account_id = m.account_id\n                   WHERE m.user_id = $1 AND a.id = i.granter_agent_id\n               ) as \"i_served!\",\n               cr.status as \"consent_status?\"\n        FROM relay_invocations i\n        -- Held input stays hidden from the target side (owner consent §4.3).\n        LEFT JOIN consent_requests cr ON cr.invocation_id = i.id AND cr.kind = 'request'\n        WHERE i.id = $2\n        ",
+  "query": "\n        SELECT i.id, i.status, i.elapsed_ms, i.error_message,\n               i.input_preview, i.output_preview, i.trust_snapshot,\n               i.created_at, i.claimed_at, i.capability_name, i.call_id,\n               i.granter_agent_id, i.grantee_agent_id,\n               EXISTS(\n                   SELECT 1 FROM account_memberships m\n                   JOIN agents a ON a.account_id = m.account_id\n                   WHERE m.user_id = $1\n                     AND (a.id = i.granter_agent_id OR a.id = i.grantee_agent_id)\n               ) as \"may_view!\",\n               EXISTS(\n                   SELECT 1 FROM account_memberships m\n                   JOIN agents a ON a.account_id = m.account_id\n                   WHERE m.user_id = $1 AND a.id = i.granter_agent_id\n               ) as \"i_served!\",\n               EXISTS(\n                   SELECT 1 FROM account_memberships m\n                   JOIN agents a ON a.account_id = m.account_id\n                   WHERE m.user_id = $1 AND a.id = i.grantee_agent_id\n               ) as \"i_invoked!\",\n               cr.status as \"consent_status?\",\n               ga.mode as \"granter_mode?\",\n               ga.slug as \"granter_slug?\",\n               gacc.slug as \"granter_account_slug?\"\n        FROM relay_invocations i\n        -- Held input stays hidden from the target side (owner consent §4.3).\n        LEFT JOIN consent_requests cr ON cr.invocation_id = i.id AND cr.kind = 'request'\n        LEFT JOIN agents ga ON ga.id = i.granter_agent_id\n        LEFT JOIN accounts gacc ON gacc.id = ga.account_id\n        WHERE i.id = $2\n        ",
   "describe": {
     "columns": [
       {
@@ -160,12 +160,51 @@
       },
       {
         "ordinal": 15,
+        "name": "i_invoked!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 16,
         "name": "consent_status?",
         "type_info": "Text",
         "origin": {
           "Table": {
             "table": "consent_requests",
             "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "granter_mode?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "mode"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "granter_slug?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "granter_account_slug?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "slug"
           }
         }
       }
@@ -192,8 +231,12 @@
       true,
       null,
       null,
+      null,
+      true,
+      true,
+      true,
       true
     ]
   },
-  "hash": "03c9715078fa9836e98df0af7562f8b48852b12ec2e520e2c7f737fc78227cd5"
+  "hash": "e6d428aa7af8af9f9514d36f6b3c6bf39cf83d00379fc9992d7413171d7d36e7"
 }

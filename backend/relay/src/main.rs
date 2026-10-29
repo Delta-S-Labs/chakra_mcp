@@ -105,6 +105,11 @@ async fn main() -> Result<()> {
         .with_mcp(chakramcp_relay::mcp::McpConfig::from_env()?)
         .with_outbound(outbound)
         .with_wake(wake.clone(), wait);
+    // Who's been seen lately, for `peer` on invocations (waking pull
+    // agents §8): loaded before serving, then kept by the flusher.
+    if let Err(e) = state.heartbeats.reload(&state.db).await {
+        tracing::warn!(error = %e, "agent presence load failed; the flusher retries");
+    }
     state.heartbeats.clone().spawn_flusher(state.db.clone());
     if let Some(days) = usage_retention {
         chakramcp_relay::retention::spawn_usage_pruner(state.db.clone(), days);

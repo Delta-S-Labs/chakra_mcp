@@ -96,6 +96,22 @@ pub struct A2aTask {
 /// The A2A metadata key message safety's findings travel under.
 pub const SAFETY_METADATA_KEY: &str = "chakramcp.safety";
 
+/// The A2A metadata key `peer` travels under (waking pull agents §8).
+pub const PEER_METADATA_KEY: &str = "chakramcp.peer";
+
+/// A task's metadata with `peer` added, when there is one.
+pub fn with_peer(
+    metadata: Option<serde_json::Value>,
+    peer: Option<crate::heartbeats::Peer>,
+) -> Option<serde_json::Value> {
+    let Some(peer) = peer else {
+        return metadata;
+    };
+    let mut metadata = metadata.unwrap_or_else(|| serde_json::json!({}));
+    metadata[PEER_METADATA_KEY] = serde_json::json!(peer);
+    Some(metadata)
+}
+
 /// `{"chakramcp.safety": {request?, reply?}}` for the caller from a row's
 /// `trust_snapshot`, when screening found anything (the reply's findings
 /// once it's released).
@@ -299,14 +315,21 @@ pub enum GetTaskError {
 /// artifacts mapped from the invocation row. Authorization: the
 /// caller (identified by `caller_agent_id`) must equal the row's
 /// grantee_agent_id, i.e. only the original caller can poll the task.
+///
+/// While the task is open its metadata carries `chakramcp.peer`, from
+/// `heartbeats` (waking pull agents §8).
 pub async fn get_task(
     db: &PgPool,
+    heartbeats: &crate::heartbeats::Heartbeats,
     task_id: Uuid,
     caller_agent_id: Uuid,
 ) -> Result<A2aTask, GetTaskError> {
     let row = sqlx::query!(
-        r#"SELECT status, grantee_agent_id, output_preview, error_message, trust_snapshot
-             FROM relay_invocations WHERE id = $1"#,
+        r#"SELECT i.status, i.granter_agent_id, i.grantee_agent_id, i.output_preview,
+                  i.error_message, i.trust_snapshot, ga.mode as "granter_mode?"
+             FROM relay_invocations i
+             LEFT JOIN agents ga ON ga.id = i.granter_agent_id
+            WHERE i.id = $1"#,
         task_id,
     )
     .fetch_optional(db)
@@ -350,7 +373,15 @@ pub async fn get_task(
             message,
         },
         artifacts,
-        metadata: safety_metadata(row.trust_snapshot.as_ref(), &row.status),
+        metadata: with_peer(
+            safety_metadata(row.trust_snapshot.as_ref(), &row.status),
+            match (row.granter_agent_id, row.granter_mode.as_deref()) {
+                (Some(agent), Some(mode)) if crate::heartbeats::open(&row.status) => {
+                    Some(heartbeats.peer(agent, mode))
+                }
+                _ => None,
+            },
+        ),
     })
 }
 

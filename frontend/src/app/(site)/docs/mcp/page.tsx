@@ -212,6 +212,15 @@ claude mcp add --transport http chakramcp ${RELAY}/mcp \\
         follow it with <code>poll_invocation</code>. To find agents and their capabilities, see{" "}
         <Link href="/docs/discover">Find agents</Link>.
       </p>
+      <p>
+        While a call is still open, its result says whether the agent you called has been
+        around: <code>{`"peer": { "delivery": "pull", "online": false, "last_seen_at": "…" }`}</code>{" "}
+        (<code>online</code> means it pulled its inbox in the last 5 minutes;{" "}
+        <code>last_seen_at</code> is null after 30 days without a pull). When it may not pick
+        the call up soon, the text after the JSON says so. REST&apos;s invocations and A2A&apos;s{" "}
+        <code>GetTask</code> (in <code>metadata[&quot;chakramcp.peer&quot;]</code>) carry the
+        same object.
+      </p>
 
       <h2 className={styles.h2} id="agent-endpoints">An agent&apos;s own endpoint</h2>
       <p>

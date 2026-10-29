@@ -17,6 +17,7 @@
 //! (PRD §"Deterministic exit codes").
 
 use std::future::Future;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
@@ -244,8 +245,10 @@ pub async fn wait_for_invocation(
     poll_interval: Duration,
 ) -> Result<InvocationOutcome, WaitError> {
     let path = format!("/v1/invocations/{id}");
+    let hinted = AtomicBool::new(false);
     let fetch = || async {
         let v: Value = api.get_relay(&path).await?;
+        say_peer_hint(&v, &hinted);
         Ok::<_, anyhow::Error>(v)
     };
     let (status, row, elapsed_ms) =
@@ -256,6 +259,59 @@ pub async fn wait_for_invocation(
         row,
         elapsed_ms,
     })
+}
+
+/// A sentence for a caller waiting on an invocation whose target may not be
+/// around, from the row's `peer` (waking pull agents §8): "Venue Bot was
+/// last seen 3 hours ago, so it may not pick this up soon." `None` when it's
+/// online, a push agent, or the relay doesn't send `peer`.
+pub fn peer_hint(row: &Value) -> Option<String> {
+    let peer = row.get("peer")?;
+    if peer.get("delivery").and_then(Value::as_str) != Some("pull")
+        || peer.get("online").and_then(Value::as_bool) != Some(false)
+    {
+        return None;
+    }
+    let name = row
+        .get("granter_display_name")
+        .and_then(Value::as_str)
+        .unwrap_or("The agent");
+    let seen = peer
+        .get("last_seen_at")
+        .and_then(Value::as_str)
+        .and_then(|s| DateTime::parse_from_rfc3339(s).ok());
+    Some(match seen {
+        Some(at) => format!(
+            "{name} was last seen {}, so it may not pick this up soon.",
+            ago(Utc::now() - at.with_timezone(&Utc))
+        ),
+        None => {
+            format!("{name} hasn't been seen in the last 30 days, so it may not pick this up soon.")
+        }
+    })
+}
+
+/// "12 minutes ago", "3 hours ago", "1 day ago".
+fn ago(d: chrono::TimeDelta) -> String {
+    let (n, unit) = if d.num_days() >= 1 {
+        (d.num_days(), "day")
+    } else if d.num_hours() >= 1 {
+        (d.num_hours(), "hour")
+    } else {
+        (d.num_minutes().max(1), "minute")
+    };
+    format!("{n} {unit}{} ago", if n == 1 { "" } else { "s" })
+}
+
+/// Print [`peer_hint`] to stderr the first time a row has one.
+pub fn say_peer_hint(row: &Value, hinted: &AtomicBool) {
+    if hinted.load(Ordering::Relaxed) {
+        return;
+    }
+    if let Some(hint) = peer_hint(row) {
+        hinted.store(true, Ordering::Relaxed);
+        eprintln!("  {hint}");
+    }
 }
 
 /// Format an RFC3339 string from a value's pointer, if present.
@@ -425,5 +481,61 @@ mod tests {
         for s in ["pending", "in_progress", ""] {
             assert!(!is_invocation_terminal(s), "{s} should NOT be terminal");
         }
+    }
+
+    #[test]
+    fn peer_hint_says_how_long_ago() {
+        let row = |peer: Value| json!({ "granter_display_name": "Venue Bot", "peer": peer });
+        let seen = |mins: i64| {
+            row(json!({
+                "delivery": "pull",
+                "online": false,
+                "last_seen_at": (Utc::now() - chrono::Duration::minutes(mins)).to_rfc3339(),
+            }))
+        };
+        assert_eq!(
+            peer_hint(&seen(12)).unwrap(),
+            "Venue Bot was last seen 12 minutes ago, so it may not pick this up soon."
+        );
+        assert_eq!(
+            peer_hint(&seen(3 * 60 + 5)).unwrap(),
+            "Venue Bot was last seen 3 hours ago, so it may not pick this up soon."
+        );
+        assert_eq!(
+            peer_hint(&seen(24 * 60 + 1)).unwrap(),
+            "Venue Bot was last seen 1 day ago, so it may not pick this up soon."
+        );
+        assert_eq!(
+            peer_hint(&row(
+                json!({ "delivery": "pull", "online": false, "last_seen_at": null })
+            ))
+            .unwrap(),
+            "Venue Bot hasn't been seen in the last 30 days, so it may not pick this up soon."
+        );
+        // Nothing to say: online, push, or a relay without `peer`.
+        assert_eq!(
+            peer_hint(&row(
+                json!({ "delivery": "pull", "online": true, "last_seen_at": Utc::now().to_rfc3339() })
+            )),
+            None
+        );
+        assert_eq!(peer_hint(&row(json!({ "delivery": "push" }))), None);
+        assert_eq!(peer_hint(&json!({ "status": "pending" })), None);
+        // No name: "The agent".
+        assert!(peer_hint(
+            &json!({ "peer": { "delivery": "pull", "online": false, "last_seen_at": null } })
+        )
+        .unwrap()
+        .starts_with("The agent hasn't been seen"));
+    }
+
+    #[test]
+    fn the_hint_is_said_once() {
+        let hinted = AtomicBool::new(false);
+        let row = json!({ "peer": { "delivery": "pull", "online": false, "last_seen_at": null } });
+        say_peer_hint(&json!({ "status": "pending" }), &hinted);
+        assert!(!hinted.load(Ordering::Relaxed));
+        say_peer_hint(&row, &hinted);
+        assert!(hinted.load(Ordering::Relaxed));
     }
 }

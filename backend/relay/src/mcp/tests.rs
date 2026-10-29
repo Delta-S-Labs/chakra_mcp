@@ -966,7 +966,7 @@ mod agent_endpoints {
         for (k, v) in s {
             match k.as_str() {
                 "status" | "invocation_id" | "code" | "error" => assert!(v.is_string(), "{k}: {v}"),
-                "safety" => assert!(v.is_object(), "{k}: {v}"),
+                "safety" | "peer" => assert!(v.is_object(), "{k}: {v}"),
                 "output" => {}
                 other => panic!("unexpected field {other}"),
             }
@@ -1219,10 +1219,19 @@ mod agent_endpoints {
         conforms(&running);
         assert_eq!(running["structuredContent"]["status"], "pending");
         assert_eq!(running["isError"], false);
-        assert!(running["content"][0]["text"]
-            .as_str()
-            .unwrap()
-            .contains("chakramcp_get_result"));
+        let text = running["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("chakramcp_get_result"));
+        // The venue agent has never pulled (waking pull agents §8).
+        assert_eq!(
+            running["structuredContent"]["peer"],
+            json!({ "delivery": "pull", "online": false, "last_seen_at": null })
+        );
+        assert!(
+            text.ends_with(
+                "hasn't been seen in the last 30 days, so it may not pick this up soon."
+            ),
+            "{text}"
+        );
         let pending_id = running["structuredContent"]["invocation_id"]
             .as_str()
             .unwrap()
@@ -1231,6 +1240,7 @@ mod agent_endpoints {
         let held = call(&s, PATH, token, "book", json!({})).await;
         conforms(&held);
         assert_eq!(held["structuredContent"]["status"], "awaiting_consent");
+        assert_eq!(held["structuredContent"]["peer"]["delivery"], "pull");
 
         sqlx::query("UPDATE relay_invocations SET status = 'failed', error_message = 'no rooms' WHERE id = $1")
             .bind(Uuid::parse_str(&pending_id).unwrap())

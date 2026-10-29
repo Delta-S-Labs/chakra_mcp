@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT cap.id, cap.name, cap.description, cap.input_schema, cap.agent_id AS granter_agent_id,\n               cap.public_invoke, cap.public_monthly_quota_per_agent,\n               cap.consent_required, cap.consent_max_validity_secs, cap.consent_wait_secs,\n               ga.visibility AS granter_visibility, ga.mode AS granter_mode\n        FROM agent_capabilities cap\n        JOIN agents ga ON ga.id = cap.agent_id\n        JOIN accounts gacc ON gacc.id = ga.account_id\n        WHERE cap.id = $1\n          AND ga.tombstoned_at IS NULL\n          AND gacc.tombstoned_at IS NULL\n        ",
+  "query": "\n        SELECT cap.id, cap.name, cap.description, cap.input_schema, cap.agent_id AS granter_agent_id,\n               cap.public_invoke, cap.public_monthly_quota_per_agent,\n               cap.consent_required, cap.consent_max_validity_secs, cap.consent_wait_secs,\n               ga.visibility AS granter_visibility, ga.mode AS granter_mode,\n               ga.slug AS granter_slug, gacc.slug AS granter_account_slug\n        FROM agent_capabilities cap\n        JOIN agents ga ON ga.id = cap.agent_id\n        JOIN accounts gacc ON gacc.id = ga.account_id\n        WHERE cap.id = $1\n          AND ga.tombstoned_at IS NULL\n          AND gacc.tombstoned_at IS NULL\n        ",
   "describe": {
     "columns": [
       {
@@ -134,6 +134,28 @@
             "name": "mode"
           }
         }
+      },
+      {
+        "ordinal": 12,
+        "name": "granter_slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "granter_account_slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "slug"
+          }
+        }
       }
     ],
     "parameters": {
@@ -153,8 +175,10 @@
       false,
       false,
       false,
+      false,
+      false,
       false
     ]
   },
-  "hash": "8728b25d30c3a357a45a8379700ccedaf730bce613e78ebb9f8e1dc84721eaa0"
+  "hash": "9f94b346f7b2e41a6d08a14c6fbac7d819d95d6357217fc1cbf53767d4543e45"
 }
