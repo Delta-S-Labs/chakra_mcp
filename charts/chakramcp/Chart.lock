@@ -7,9 +7,9 @@ dependencies:
   version: 18.17.1
 - name: grafana
   repository: oci://ghcr.io/grafana-community/helm-charts
-  version: 14.0.1
+  version: 14.1.0
 - name: alloy
   repository: https://grafana.github.io/helm-charts
   version: 1.14.1
-digest: sha256:c8c27eb03625ffd0fdab8308eaa24ba1f4f6a9eb9162c3cbd11d4155125b2e8a
-generated: "2026-10-22T15:26:14.735362+05:30"
+digest: sha256:bd9b48cc940e17874e58eb8b0d11aa10423bf7fe3370c643a000d75788da7174
+generated: "2026-10-29T14:13:03.384694665Z"
