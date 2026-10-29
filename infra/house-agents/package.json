@@ -14,7 +14,7 @@
     "test": "tsc -p tsconfig.json && node --disable-warning=ExperimentalWarning --test \"dist/**/*.test.js\""
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "0.135.0",
+    "@anthropic-ai/sdk": "1.3.0",
     "@chakramcp/sdk": "0.6.0"
   },
   "devDependencies": {

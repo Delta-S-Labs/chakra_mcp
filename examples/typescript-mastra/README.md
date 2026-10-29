@@ -6,7 +6,7 @@ Talks to NVIDIA NIM via its OpenAI-compatible endpoint.
 
 ## Prerequisites
 
-- Node.js 20+ and pnpm 9+
+- Node.js 22.13+ (Mastra 1.x needs it) and pnpm 9+
 - An `NVIDIA_API_KEY` in the repo's `.env.local`
 
 ## Run
