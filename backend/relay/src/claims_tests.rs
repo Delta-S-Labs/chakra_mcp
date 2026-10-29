@@ -165,7 +165,16 @@ async fn release_hands_a_claim_back(pool: PgPool) {
     let (status, _) = post(&state, &w.alice.key, &release, json!({})).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
-    // A pull waiting meanwhile gets it straight back.
+    let (status, body) = post(&state, &w.bob.key, &release, json!({})).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["status"], "pending");
+    assert_eq!(body["deliveries"], 0, "a hand-back isn't a delivery");
+    assert!(body["lease_until"].is_null());
+
+    // Released again with a pull waiting: the pull gets it straight back
+    // (perhaps before the release's own answer reads it, so that answer
+    // isn't checked here).
+    claim(&state, &w, "").await;
     let waiting = {
         let (state, key, b) = (state.clone(), w.bob.key.clone(), w.b);
         tokio::spawn(
@@ -175,9 +184,6 @@ async fn release_hands_a_claim_back(pool: PgPool) {
     tokio::time::sleep(Duration::from_millis(300)).await;
     let (status, body) = post(&state, &w.bob.key, &release, json!({})).await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["status"], "pending");
-    assert_eq!(body["deliveries"], 0, "a hand-back isn't a delivery");
-    assert!(body["lease_until"].is_null());
     let (_, pulled) = tokio::time::timeout(Duration::from_secs(3), waiting)
         .await
         .expect("the waiting pull was woken")
