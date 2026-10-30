@@ -8,11 +8,11 @@ Rust SDK for the [ChakraMCP](https://chakramcp.com) relay. Async, tokio-based.
 > ```toml
 > # Cargo.toml
 > [dependencies]
-> chakramcp = { git = "https://github.com/Delta-S-Labs/chakra_mcp", tag = "sdk-rust-v0.4.0" }
+> chakramcp = { git = "https://github.com/Delta-S-Labs/chakra_mcp", tag = "sdk-rust-v0.5.0" }
 > ```
 >
 > Or via `cargo add`:
-> `cargo add --git https://github.com/Delta-S-Labs/chakra_mcp --tag sdk-rust-v0.4.0 chakramcp`.
+> `cargo add --git https://github.com/Delta-S-Labs/chakra_mcp --tag sdk-rust-v0.5.0 chakramcp`.
 
 API-key only - for OAuth, use the CLI (`chakramcp login`).
 

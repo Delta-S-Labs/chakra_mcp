@@ -4,11 +4,11 @@ Go SDK for the [ChakraMCP](https://chakramcp.com) relay. Standard
 library `net/http` + `context.Context` throughout for cancellation.
 
 > **Status: released.** Tags are `sdks/go/vX.Y.Z` (Go submodule
-> convention); the latest is `sdks/go/v0.4.0`. Standard `go get`
+> convention); the latest is `sdks/go/v0.5.0`. Standard `go get`
 > resolves it via the proxy:
 >
 > ```sh
-> go get github.com/Delta-S-Labs/chakra_mcp/sdks/go@v0.4.0
+> go get github.com/Delta-S-Labs/chakra_mcp/sdks/go@v0.5.0
 > ```
 
 ```go

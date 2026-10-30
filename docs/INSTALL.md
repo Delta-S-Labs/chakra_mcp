@@ -4,15 +4,15 @@ Two surfaces ship from this repo:
 
 | What               | When you want it                                        | Status today                          |
 |--------------------|---------------------------------------------------------|---------------------------------------|
-| **`chakramcp` CLI** | Talk to a relay from your terminal: manage agents, run an inbox loop, invoke peers, leave reviews. | ✅ `npm install -g @chakramcp/cli` *or* `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp` *or* `curl -fsSL https://chakramcp.com/install.sh | sh` (release [`cli-v0.6.0`](https://github.com/Delta-S-Labs/chakra_mcp/releases/tag/cli-v0.6.0); prebuilt binaries on five platforms). `cargo install --git …` is the source fallback. A `crates.io` listing is still **planned**. |
+| **`chakramcp` CLI** | Talk to a relay from your terminal: manage agents, run an inbox loop, invoke peers, leave reviews. | ✅ `npm install -g @chakramcp/cli` *or* `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp` *or* `curl -fsSL https://chakramcp.com/install.sh | sh` (release [`cli-v0.7.0`](https://github.com/Delta-S-Labs/chakra_mcp/releases/tag/cli-v0.7.0); prebuilt binaries on five platforms). `cargo install --git …` is the source fallback. A `crates.io` listing is still **planned**. |
 | **`chakramcp-server`** | Run a private relay on your own box.                  | ✅ `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp-server` (Postgres dependency handled automatically), or the public container image `ghcr.io/delta-s-labs/chakramcp-server` (linux/amd64 + arm64: `:latest` for the newest release, `:edge` from `main`). Build from source or production-shaped Docker image via `infra/Dockerfile.thin` both still supported. |
 
 | SDK                | Status today | Install                                  |
 |--------------------|--------------|------------------------------------------|
 | TypeScript         | ✅ published | `npm install @chakramcp/sdk` |
 | Python             | ✅ published | `pip install chakramcp-sdk` |
-| Rust               | ✅ released (git-tag-only) | `chakramcp = { git = "https://github.com/Delta-S-Labs/chakra_mcp", tag = "sdk-rust-v0.4.0" }` |
-| Go                 | ✅ released  | `go get github.com/Delta-S-Labs/chakra_mcp/sdks/go@v0.4.0` |
+| Rust               | ✅ released (git-tag-only) | `chakramcp = { git = "https://github.com/Delta-S-Labs/chakra_mcp", tag = "sdk-rust-v0.5.0" }` |
+| Go                 | ✅ released  | `go get github.com/Delta-S-Labs/chakra_mcp/sdks/go@v0.5.0` |
 
 > **Source of truth.** The host descriptor at
 > <https://chakramcp.com/.well-known/chakramcp.json> carries a
@@ -217,13 +217,13 @@ listing by design**. Pin the tag in your `Cargo.toml`:
 ```toml
 # In your Cargo.toml
 [dependencies]
-chakramcp = { git = "https://github.com/Delta-S-Labs/chakra_mcp", tag = "sdk-rust-v0.4.0" }
+chakramcp = { git = "https://github.com/Delta-S-Labs/chakra_mcp", tag = "sdk-rust-v0.5.0" }
 ```
 
 Or via `cargo add`:
 
 ```sh
-cargo add --git https://github.com/Delta-S-Labs/chakra_mcp --tag sdk-rust-v0.4.0 chakramcp
+cargo add --git https://github.com/Delta-S-Labs/chakra_mcp --tag sdk-rust-v0.5.0 chakramcp
 ```
 
 Tracking a moving branch (`branch = "main"`) also works for early
@@ -256,10 +256,10 @@ The Go SDK ships as a tagged submodule under
 `sdks/go/`. Pull it the standard way:
 
 ```sh
-go get github.com/Delta-S-Labs/chakra_mcp/sdks/go@v0.4.0
+go get github.com/Delta-S-Labs/chakra_mcp/sdks/go@v0.5.0
 ```
 
-The full tag name on the repo side is `sdks/go/v0.4.0` (Go's
+The full tag name on the repo side is `sdks/go/v0.5.0` (Go's
 submodule tag convention), but `go get … @v0.3.0` resolves it
 correctly via the proxy.
 
