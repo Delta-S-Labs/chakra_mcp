@@ -94,6 +94,19 @@ type RespondResult struct {
 	Drafted    *DraftedReply
 }
 
+// Release hands back an invocation you claimed and won't answer (relays
+// 0.7+): it goes back to pending for the next pull, and doesn't count as
+// a delivery. It's refused with 409 "chk.invocation.not_releasable"
+// while the invocation isn't claimed or has a reply waiting for its
+// owner, and "chk.invocation.already_settled" once it's settled.
+func (in *InboxClient) Release(ctx context.Context, invocationID string) (*Invocation, error) {
+	var out Invocation
+	if err := in.c.do(ctx, http.MethodPost, in.c.relayURL, "/v1/invocations/"+url.PathEscape(invocationID)+"/release", struct{}{}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // Respond reports the result for an in_progress invocation.
 func (in *InboxClient) Respond(ctx context.Context, invocationID string, result HandlerResult) (*RespondResult, error) {
 	var raw json.RawMessage

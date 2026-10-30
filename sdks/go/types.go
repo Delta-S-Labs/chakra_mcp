@@ -499,6 +499,9 @@ const (
 	NoticeReplyConfirmed   = "reply_confirmed"
 	NoticeReplyRejected    = "reply_rejected"
 	NoticeReplyExpired     = "reply_expired"
+	// NoticeInvocationExpired: an invocation to your agent timed out
+	// (relays 0.7+), so stop working on it. InvocationID says which.
+	NoticeInvocationExpired = "invocation_expired"
 )
 
 // Notice is something an agent is told out of band of its inbox. A
@@ -591,6 +594,18 @@ type InvokeResponse struct {
 	Code string `json:"code,omitempty"`
 	// Safety is what message safety removed, flagged or blocked.
 	Safety *Safety `json:"safety,omitempty"`
+	// Peer says whether the agent you called is around (relays 0.7+).
+	Peer *Peer `json:"peer,omitempty"`
+}
+
+// Peer says whether the agent you called is around (relays 0.7+), on
+// your open invocations. Delivery is "pull" or "push". A pull agent is
+// Online when it pulled its inbox in the last 5 minutes; LastSeenAt is
+// nil after 30 days without a pull. A push agent has nothing to wait for.
+type Peer struct {
+	Delivery   string     `json:"delivery"`
+	Online     bool       `json:"online,omitempty"`
+	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
 }
 
 // SafetyFinding is one thing message safety found, and what it did. It
@@ -671,6 +686,18 @@ type Invocation struct {
 	Safety *Safety `json:"safety,omitempty"`
 	// CallID is the call this invocation was made in, if any.
 	CallID *string `json:"call_id,omitempty"`
+	// ExpiresAt is when it times out if nobody answers it (relays 0.7+);
+	// nil on a request held for its owner until it's approved.
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	// LeaseUntil is when the current claim lapses and the invocation
+	// goes back to pending for another pull (relays 0.7+); nil unless
+	// claimed, and for human_in_loop capabilities.
+	LeaseUntil *time.Time `json:"lease_until,omitempty"`
+	// Deliveries is how many times it has been claimed (relays 0.7+).
+	Deliveries int `json:"deliveries,omitempty"`
+	// Peer, to the caller while it's open: whether the agent called is
+	// around (relays 0.7+).
+	Peer *Peer `json:"peer,omitempty"`
 }
 
 type FriendshipContext struct {
@@ -785,6 +812,11 @@ type InvokeRequest struct {
 	// agent must be a party to it, and the capability the other
 	// party's.
 	CallID string `json:"call_id,omitempty"`
+	// ExpiresIn is how many seconds the call may wait to be answered
+	// before it times out: at least 10, at most the relay's default (24
+	// hours; 7 days for human_in_loop capabilities). Zero leaves the
+	// default. Relays 0.7+.
+	ExpiresIn int `json:"expires_in,omitempty"`
 }
 
 // HandlerResult is what an inbox.serve handler returns.

@@ -416,8 +416,9 @@ class Notice(TypedDict, total=False):
     """Something an agent is told out of band of its inbox. A
     ``consent_requested`` notice means a call waits for your owner's
     approval: pass ``notice["consent_request"]["approve_url"]`` on. Others:
-    ``reply_confirmed``, ``reply_rejected``, ``reply_expired``. Never
-    includes the call's input."""
+    ``reply_confirmed``, ``reply_rejected``, ``reply_expired``, and
+    ``invocation_expired`` (relays 0.7+: a call to your agent timed out, so
+    stop working on it). Never includes the call's input."""
 
     id: str
     kind: str
@@ -496,6 +497,17 @@ class Grant(TypedDict):
     i_received: bool
 
 
+class Peer(TypedDict, total=False):
+    """Whether the agent you called is around (relays 0.7+), on your open
+    invocations. ``delivery`` is ``"pull"`` or ``"push"``; a pull agent's
+    ``online`` means it pulled its inbox in the last 5 minutes, and
+    ``last_seen_at`` is ``None`` after 30 days without a pull."""
+
+    delivery: str
+    online: bool
+    last_seen_at: str | None
+
+
 class InvokeResponse(TypedDict, total=False):
     invocation_id: str
     status: InvocationStatus
@@ -508,6 +520,8 @@ class InvokeResponse(TypedDict, total=False):
     code: str
     # What message safety removed, flagged or blocked in the request.
     safety: Safety
+    # Whether the agent you called is around (relays 0.7+).
+    peer: Peer
 
 
 class FriendshipContext(TypedDict):
@@ -597,6 +611,16 @@ class Invocation(TypedDict, total=False):
     safety: Safety
     # The call this invocation was made in, if any.
     call_id: str | None
+    # Relays 0.7+: when it times out if nobody answers it (``None`` on a
+    # request held for its owner until it's approved); when the current
+    # claim lapses and it goes back to ``pending`` (``None`` unless
+    # claimed, and for ``human_in_loop``); how many times it was claimed;
+    # and, to the caller while it's open, whether the agent called is
+    # around.
+    expires_at: str | None
+    lease_until: str | None
+    deliveries: int
+    peer: Peer
 
 
 # ─── Request bodies ──────────────────────────────────────
@@ -615,6 +639,10 @@ class InvokeRequest(TypedDict, total=False):
     # Make the request in this call: the invoking agent must be a party to
     # it, and the capability the other party's.
     call_id: str
+    # Seconds the call may wait to be answered before it times out: at
+    # least 10, at most the relay's default (24 hours; 7 days for
+    # ``human_in_loop`` capabilities). Relays 0.7+.
+    expires_in: int
 
 
 class CreateAgentRequest(TypedDict, total=False):

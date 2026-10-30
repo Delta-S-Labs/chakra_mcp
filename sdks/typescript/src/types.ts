@@ -382,6 +382,8 @@ export interface InvokeResponse {
   code?: string;
   /** What message safety removed, flagged or blocked in the request. */
   safety?: Safety;
+  /** Whether the agent you called is around (servers 0.7+). */
+  peer?: Peer;
 }
 
 /** The kinds a message safety finding can have. */
@@ -465,7 +467,19 @@ export type NoticeKind =
   | "consent_requested"
   | "reply_confirmed"
   | "reply_rejected"
-  | "reply_expired";
+  | "reply_expired"
+  /** An invocation to your agent timed out (servers 0.7+): stop working on it. */
+  | "invocation_expired";
+
+/**
+ * Whether the agent you called is around (servers 0.7+): on your open
+ * invocations. `online` means it pulled its inbox in the last 5 minutes;
+ * `last_seen_at` is null after 30 days without a pull. A push agent has
+ * nothing to wait for.
+ */
+export type Peer =
+  | { delivery: "pull"; online: boolean; last_seen_at: string | null }
+  | { delivery: "push" };
 
 /**
  * Something an agent is told out of band of its inbox. A
@@ -559,6 +573,21 @@ export interface Invocation {
   safety?: Safety;
   /** The call this invocation was made in, if any (`invoke` with `call_id`). */
   call_id?: string;
+  /**
+   * When it times out if nobody answers it (servers 0.7+). Null on a
+   * request held for its owner until it's approved.
+   */
+  expires_at?: string | null;
+  /**
+   * When the current claim lapses and the invocation goes back to
+   * `pending` for another pull (servers 0.7+). Null unless claimed, and
+   * for `human_in_loop` capabilities.
+   */
+  lease_until?: string | null;
+  /** How many times it has been claimed (servers 0.7+). */
+  deliveries?: number;
+  /** To the caller, while it's open: whether the agent called is around (servers 0.7+). */
+  peer?: Peer;
 }
 
 export interface FriendshipContext {
@@ -713,6 +742,12 @@ export type InvokeRequest =
        * (403 `chk.calls.not_a_party` otherwise).
        */
       call_id?: string;
+      /**
+       * Seconds the call may wait to be answered before it times out:
+       * at least 10, at most the server's default (24 hours; 7 days for
+       * `human_in_loop` capabilities). Servers 0.7+.
+       */
+      expires_in?: number;
     }
   | {
       grant_id?: never;
@@ -721,6 +756,7 @@ export type InvokeRequest =
       input: unknown;
       consent_terms?: ConsentTerms;
       call_id?: string;
+      expires_in?: number;
     };
 
 export type HandlerResult =

@@ -597,6 +597,23 @@ pub struct InvokeResponse {
     /// What message safety removed, flagged or blocked in the request.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub safety: Option<Safety>,
+    /// Whether the agent you called is around (relays 0.7+).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub peer: Option<Peer>,
+}
+
+/// Whether the agent you called is around (relays 0.7+), on your open
+/// invocations. `delivery` is `"pull"` or `"push"`. A pull agent is
+/// `online` when it pulled its inbox in the last 5 minutes;
+/// `last_seen_at` is `None` after 30 days without a pull. A push agent
+/// has nothing to wait for.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Peer {
+    pub delivery: String,
+    #[serde(default)]
+    pub online: bool,
+    #[serde(default)]
+    pub last_seen_at: Option<DateTime<Utc>>,
 }
 
 /// One thing message safety found, and what it did. Never the removed
@@ -692,6 +709,22 @@ pub struct Invocation {
     /// The call this invocation was made in, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub call_id: Option<String>,
+    /// When it times out if nobody answers it (relays 0.7+); `None` on a
+    /// request held for its owner until it's approved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<DateTime<Utc>>,
+    /// When the current claim lapses and the invocation goes back to
+    /// pending for another pull (relays 0.7+); `None` unless claimed, and
+    /// for `human_in_loop` capabilities.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lease_until: Option<DateTime<Utc>>,
+    /// How many times it has been claimed (relays 0.7+).
+    #[serde(default)]
+    pub deliveries: u32,
+    /// To the caller while it's open: whether the agent called is around
+    /// (relays 0.7+).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub peer: Option<Peer>,
 }
 
 /// What a caller proposes when a capability asks its owner first. The
@@ -744,8 +777,9 @@ pub struct DraftedReply {
 /// Something an agent is told out of band of its inbox. A
 /// `consent_requested` notice means a call waits for your owner's
 /// approval: pass `consent_request.approve_url` to them. The other kinds
-/// are `reply_confirmed`, `reply_rejected` and `reply_expired`. Never
-/// includes the call's input.
+/// are `reply_confirmed`, `reply_rejected`, `reply_expired`, and
+/// `invocation_expired` (relays 0.7+: a call to your agent timed out, so
+/// stop working on it). Never includes the call's input.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Notice {
     pub id: String,
@@ -986,6 +1020,11 @@ pub struct InvokeRequest {
     /// (`chk.calls.not_a_party` otherwise).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub call_id: Option<String>,
+    /// Seconds the call may wait to be answered before it times out: at
+    /// least 10, at most the relay's default (24 hours; 7 days for
+    /// `human_in_loop` capabilities). Relays 0.7+.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_in: Option<u32>,
 }
 
 // ─── Calls ─────────────────────────────────────────────────

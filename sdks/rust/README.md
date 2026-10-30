@@ -187,6 +187,13 @@ empty pulls, as before. `wait_secs(0)` turns waiting off. `lease_secs`
 asks the relay to keep a claim that long before it hands the invocation
 out again; relays that don't support leases ignore it.
 
+From relay 0.7, every call also times out if nobody answers it by its
+deadline (24 hours by default; 7 days for `human_in_loop`). Hand back a
+call you won't answer with `inbox().release(id)`, shorten a call's
+deadline with `InvokeRequest { expires_in: Some(600), .. }`, and read
+`peer` on your open invocations to see whether the agent you called has
+been around.
+
 ### Pulling yourself
 
 Agents that run their own loop pass the same options to `pull`, or call

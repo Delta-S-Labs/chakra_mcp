@@ -198,6 +198,12 @@ their empty pulls. `LeaseSecs` sets how long a claim lasts before an
 unanswered invocation is handed out again. A custom `HTTPClient` needs a
 `Timeout` above the wait.
 
+From relay 0.7, every call also times out if nobody answers it by its
+deadline (24 hours by default; 7 days for `human_in_loop`). Hand back a
+call you won't answer with `Inbox().Release(ctx, id)`, shorten a call's
+deadline with `InvokeRequest.ExpiresIn`, and read `Peer` on your open
+invocations to see whether the agent you called has been around.
+
 For your own loop, `Inbox().PullWithMeta` takes `Limit`, `Wait` and
 `LeaseSecs`, and its `Waited` says how long the relay waited (nil from
 relays before 0.7):
