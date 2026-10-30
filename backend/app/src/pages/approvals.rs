@@ -277,13 +277,13 @@ fn signin(
     )
 }
 
-fn when(at: DateTime<Utc>) -> String {
+pub(super) fn when(at: DateTime<Utc>) -> String {
     at.format("%-d %b %Y, %H:%M UTC").to_string()
 }
 
 /// The input's top-level fields, as text: strings as they are, anything
 /// else as JSON. A non-object input is one field.
-fn input_fields(input: Option<&Value>) -> Vec<Field> {
+pub(super) fn input_fields(input: Option<&Value>) -> Vec<Field> {
     let text = |v: &Value| match v {
         Value::String(s) => s.clone(),
         other => other.to_string(),

@@ -4,16 +4,19 @@
 //! For a `human_in_loop` capability, a reply is a draft until an approver
 //! confirms it on the web; `confirmed_by_human` from the caller is ignored.
 //! An approver answering from the web app (an interactive session) is
-//! confirmed at once. Other capabilities finish as they always have.
+//! confirmed at once, whether or not the agent had claimed the call
+//! (`shared::consent::reply::answer_as_owner`). Other capabilities finish
+//! as they always have.
 
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 use uuid::Uuid;
 
 use chakramcp_shared::consent::decide::Actor;
-use chakramcp_shared::consent::reply::{self, Draft, ReplyTarget};
+pub use chakramcp_shared::consent::reply::already_settled;
+use chakramcp_shared::consent::reply::{self, Draft, ReplyAbout, ReplyTarget};
 use chakramcp_shared::error::ApiError;
-use chakramcp_shared::safety::{Channel, Safety};
+use chakramcp_shared::safety::Safety;
 
 use crate::auth::{user_is_member, AuthUser};
 use crate::state::RelayState;
@@ -82,8 +85,6 @@ pub async fn submit_result(
     .await?
     .ok_or(ApiError::NotFound)?;
 
-    let human_in_loop = row.capability_semantics.as_deref() == Some("human_in_loop");
-    check_answerable(&row.status, row.deliveries, human_in_loop)?;
     // Auth: caller must be a member of the granter's account. The agent
     // could be deleted in the meantime; if so, no one can report a result.
     let granter_account = row.granter_account_id.ok_or(ApiError::Forbidden)?;
@@ -95,58 +96,57 @@ pub async fn submit_result(
     if let Some(agent) = row.granter_agent_id {
         crate::auth::require_scope(state, user, agent).await?;
     }
+    let draft = Draft {
+        status: status.to_owned(),
+        output,
+        error,
+    };
 
+    // One of the owner's approvers, signed in to the web, answers a
+    // `human_in_loop` call themselves: released at once, claimed or not
+    // (waking pull agents §9). Checked before screening, so a reply from
+    // anyone else becomes a draft below and is screened once.
+    let human_in_loop = row.capability_semantics.as_deref() == Some("human_in_loop");
+    if human_in_loop
+        && crate::auth::is_interactive(state, user).await?
+        && chakramcp_shared::consent::approvers::may_decide(
+            &state.db,
+            user.user_id,
+            granter_account,
+            row.approvers.as_deref().unwrap_or_default(),
+        )
+        .await?
+    {
+        let answered = reply::answer_as_owner(
+            &state.db,
+            &state.wake,
+            state.compliance.as_deref(),
+            Actor {
+                user_id: user.user_id,
+                minted_jti: user.minted_jti,
+            },
+            id,
+            draft,
+        )
+        .await?;
+        return Ok(Submitted::Finished {
+            status: answered.status,
+            elapsed_ms: answered.elapsed_ms,
+            safety: answered.safety,
+        });
+    }
+
+    check_answerable(&row.status, row.deliveries, human_in_loop)?;
     // Message safety (when on): screen the reply before anything below
     // stores or releases it, so drafts, confirmations and tokens all cover
     // what the caller will see.
-    let (mut output, mut error) = (output, error);
-    let mut safety = None;
-    if let Some(checker) = state.compliance.as_deref().filter(|c| c.safety_enabled()) {
-        let mut sent = serde_json::json!({ "status": status });
-        if let Some(o) = &output {
-            sent["output"] = o.clone();
-        }
-        if let Some(e) = &error {
-            sent["error"] = serde_json::json!(e);
-        }
-        let subject = crate::compliance::Subject {
-            capability_name: row.capability_name.as_deref().unwrap_or("(deleted)"),
-            capability_description: row
-                .capability_description
-                .as_deref()
-                .filter(|d| !d.trim().is_empty()),
-            grant_purpose: None,
-            relationship: None,
-            input: &sent,
-        };
-        let screened = checker
-            .screen(
-                Channel::Reply,
-                &subject,
-                "",
-                row.capability_output_schema.as_ref(),
-                "/output",
-            )
-            .await
-            .map_err(|_| crate::handlers::invoke::too_large_to_screen())?;
-        store_reply_report(&state.db, id, &screened.report).await?;
-        if let Some(block) = screened.block {
-            return Err(ApiError::Policy {
-                code: block.code,
-                message: block.reason,
-            });
-        }
-        if output.is_some() {
-            output = screened.value.get("output").cloned();
-        }
-        if error.is_some() {
-            error = screened.value["error"].as_str().map(str::to_owned);
-        }
-        safety = (!screened.findings.is_empty()).then_some(Safety {
-            request: None,
-            reply: Some(screened.findings),
-        });
-    }
+    let about = ReplyAbout {
+        capability_name: row.capability_name.as_deref().unwrap_or("(deleted)"),
+        capability_description: row.capability_description.as_deref(),
+        output_schema: row.capability_output_schema.as_ref(),
+    };
+    let (draft, safety) =
+        reply::screen_reply(&state.db, state.compliance.as_deref(), id, &about, draft).await?;
 
     if human_in_loop {
         let (Some(capability_id), Some(granter), Some(grantee), Some(grantee_account)) = (
@@ -167,33 +167,6 @@ pub async fn submit_result(
             grantee_account_id: grantee_account,
             wait_secs: row.wait_secs.unwrap_or(86_400),
         };
-        let draft = Draft {
-            status: status.to_owned(),
-            output,
-            error,
-        };
-        let approvers = row.approvers.unwrap_or_default();
-        let may_decide = crate::auth::is_interactive(state, user).await?
-            && chakramcp_shared::consent::approvers::may_decide(
-                &state.db,
-                user.user_id,
-                granter_account,
-                &approvers,
-            )
-            .await?;
-        if may_decide {
-            let actor = Actor {
-                user_id: user.user_id,
-                minted_jti: user.minted_jti,
-            };
-            let elapsed_ms =
-                reply::confirm_now(&state.db, &state.wake, actor, &target, &draft).await?;
-            return Ok(Submitted::Finished {
-                status: draft.status,
-                elapsed_ms,
-                safety,
-            });
-        }
         let stored = reply::store_draft(&state.db, &target, &draft).await?;
         return Ok(Submitted::Drafted {
             consent_request_id: stored.consent_request_id,
@@ -207,6 +180,7 @@ pub async fn submit_result(
     let elapsed_ms = (Utc::now() - row.created_at)
         .num_milliseconds()
         .clamp(0, i32::MAX as i64) as i32;
+    let Draft { output, error, .. } = draft;
     let output = match preview {
         Preview::Truncate => output
             .as_ref()
@@ -251,16 +225,6 @@ pub async fn submit_result(
     })
 }
 
-/// `409 chk.invocation.already_settled`: the call has its result, timed
-/// out, or was refused (waking pull agents §11).
-pub fn already_settled() -> ApiError {
-    ApiError::coded(
-        axum::http::StatusCode::CONFLICT,
-        "chk.invocation.already_settled",
-        "this invocation is already settled",
-    )
-}
-
 /// Whether a call in `status`, claimed `deliveries` times, takes a result
 /// (waking pull agents §9): a claimed one, or one claimed before whose lease
 /// ran out (a late answer). A `human_in_loop` reply needs the claim, since
@@ -279,27 +243,6 @@ fn check_answerable(status: &str, deliveries: i32, human_in_loop: bool) -> Resul
             "invocation is {other}; only in_progress can be completed"
         ))),
     }
-}
-
-/// Keep a reply's screening report (message safety §5), drafts and blocked
-/// replies included: `trust_snapshot.system_one.reply_safety`.
-async fn store_reply_report(db: &sqlx::PgPool, id: Uuid, report: &Value) -> Result<(), ApiError> {
-    sqlx::query!(
-        r#"
-        UPDATE relay_invocations
-           SET trust_snapshot = COALESCE(trust_snapshot, '{}'::jsonb)
-               || jsonb_build_object(
-                    'system_one',
-                    COALESCE(trust_snapshot->'system_one', '{}'::jsonb)
-                        || jsonb_build_object('reply_safety', $2::jsonb))
-         WHERE id = $1
-        "#,
-        id,
-        report,
-    )
-    .execute(db)
-    .await?;
-    Ok(())
 }
 
 impl Submitted {

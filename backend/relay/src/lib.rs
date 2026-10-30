@@ -32,6 +32,8 @@ pub mod limits;
 pub mod mcp;
 pub mod outbound;
 #[cfg(test)]
+mod owner_reply_tests;
+#[cfg(test)]
 mod peer_tests;
 pub mod policy;
 pub mod retention;
@@ -233,6 +235,10 @@ pub fn router(state: RelayState) -> Router {
         .route(
             "/v1/invocations/{id}/release",
             post(handlers::invoke::release),
+        )
+        .route(
+            "/v1/approvals/messages/{id}",
+            get(handlers::approvals::message),
         )
         // ─── Audit + usage (migration 0025) ────────────
         .route("/v1/audit", get(handlers::events_read::audit_list))

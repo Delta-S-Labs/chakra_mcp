@@ -32,6 +32,17 @@ pub use walk::{At, Item, TooLarge};
 /// The most text a message may carry while screening is on: above it the
 /// message is refused (`chk.safety.too_large`), never screened in part.
 pub const MAX_WALK_BYTES: usize = 1024 * 1024;
+
+/// `413 chk.safety.too_large`: a message with more text than screening
+/// reads is refused, never cut.
+pub fn too_large_to_screen() -> crate::error::ApiError {
+    crate::error::ApiError::PayloadTooLarge {
+        code: "chk.safety.too_large",
+        message: format!(
+            "the message is over {MAX_WALK_BYTES} bytes of text, the most safety screening reads"
+        ),
+    }
+}
 /// The largest encoded span decoded.
 pub const MAX_DECODE_BYTES: usize = 64 * 1024;
 /// Layers of encoding decoded (base64 inside hex is two).

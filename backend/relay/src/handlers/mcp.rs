@@ -1167,12 +1167,14 @@ pub(crate) async fn invocation_view(
                cr.status as "consent_status?",
                ga.mode as "granter_mode?",
                ga.slug as "granter_slug?",
-               gacc.slug as "granter_account_slug?"
+               gacc.slug as "granter_account_slug?",
+               cap.semantics as "semantics?"
         FROM relay_invocations i
         -- Held input stays hidden from the target side (owner consent §4.3).
         LEFT JOIN consent_requests cr ON cr.invocation_id = i.id AND cr.kind = 'request'
         LEFT JOIN agents ga ON ga.id = i.granter_agent_id
         LEFT JOIN accounts gacc ON gacc.id = ga.account_id
+        LEFT JOIN agent_capabilities cap ON cap.id = i.capability_id
         WHERE i.id = $2
         "#,
         user.user_id,
@@ -1215,6 +1217,14 @@ pub(crate) async fn invocation_view(
     }
     if let Some(call_id) = r.call_id {
         out["call_id"] = json!(call_id);
+    }
+    if let Some(url) = crate::handlers::invoke::owner_reply_url_for(
+        state,
+        r.id,
+        r.i_served,
+        r.semantics.as_deref(),
+    ) {
+        out["owner_reply_url"] = json!(url);
     }
     let peer = crate::handlers::invoke::read_peer(
         state,
@@ -1305,9 +1315,11 @@ async fn pull_inbox(state: &RelayState, user: &AuthUser, args: Value) -> Result<
         r#"
         SELECT i.id, i.capability_name, i.input_preview, i.status, i.trust_snapshot,
                i.created_at, i.claimed_at, i.call_id, i.expires_at, i.lease_until,
-               i.grantee_agent_id, ea.display_name as "grantee_display_name?"
+               i.grantee_agent_id, ea.display_name as "grantee_display_name?",
+               cap.semantics as "semantics?"
         FROM relay_invocations i
         LEFT JOIN agents ea ON ea.id = i.grantee_agent_id
+        LEFT JOIN agent_capabilities cap ON cap.id = i.capability_id
         WHERE i.id = ANY($1)
         ORDER BY i.created_at ASC
         "#,
@@ -1330,6 +1342,14 @@ async fn pull_inbox(state: &RelayState, user: &AuthUser, args: Value) -> Result<
                 "expires_at": r.expires_at,
                 "lease_until": r.lease_until,
             });
+            if let Some(url) = crate::handlers::invoke::owner_reply_url_for(
+                state,
+                r.id,
+                true,
+                r.semantics.as_deref(),
+            ) {
+                item["owner_reply_url"] = json!(url);
+            }
             if let Some(consent) = consents.remove(&r.id) {
                 item["consent"] = json!(consent);
             }

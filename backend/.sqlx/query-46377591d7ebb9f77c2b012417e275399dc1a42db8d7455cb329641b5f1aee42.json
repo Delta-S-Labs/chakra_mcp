@@ -1,0 +1,137 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT i.id, i.status, i.capability_name, i.created_at, i.expires_at,\n               i.granter_agent_id AS \"granter_agent_id!\", ga.display_name AS granter_display_name,\n               i.grantee_agent_id, ea.display_name AS \"grantee_display_name?\",\n               eacc.display_name AS \"grantee_account_display_name?\"\n          FROM relay_invocations i\n          JOIN agent_capabilities cap\n            ON cap.id = i.capability_id AND cap.semantics = 'human_in_loop'\n          JOIN agents ga ON ga.id = i.granter_agent_id\n          JOIN account_memberships m ON m.account_id = ga.account_id AND m.user_id = $1\n          LEFT JOIN agents ea ON ea.id = i.grantee_agent_id\n          LEFT JOIN accounts eacc ON eacc.id = ea.account_id\n         WHERE i.status IN ('pending', 'in_progress')\n           AND NOT EXISTS (\n               SELECT 1 FROM consent_requests cr\n                WHERE cr.invocation_id = i.id AND cr.kind = 'reply'\n                  AND cr.status IN ('pending', 'approved'))\n           AND (m.user_id = ANY(COALESCE(cap.consent_approvers, '{}'))\n                OR (m.role IN ('owner', 'admin')\n                    AND NOT EXISTS (\n                        SELECT 1 FROM account_memberships listed\n                         WHERE listed.account_id = ga.account_id\n                           AND listed.user_id = ANY(COALESCE(cap.consent_approvers, '{}')))))\n         ORDER BY i.created_at DESC\n         LIMIT $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "capability_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "capability_name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "expires_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "granter_agent_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "granter_agent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "granter_display_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "grantee_agent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "grantee_agent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "grantee_display_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "grantee_account_display_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "display_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "46377591d7ebb9f77c2b012417e275399dc1a42db8d7455cb329641b5f1aee42"
+}

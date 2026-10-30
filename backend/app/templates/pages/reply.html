@@ -1,0 +1,35 @@
+{% extends "pages/base.html" %}
+{% block content %}
+<h1>{{ heading }}</h1>
+<p class="lead"><strong>{{ requester }}</strong>{% if verified %} <span class="muted">(verified)</span>{% endif %} called <strong>{{ capability }}</strong> on your agent <strong>{{ target }}</strong>.{% if answerable %} Your answer goes straight back to them.{% endif %}</p>
+<dl class="facts">
+  <dt>Who's asking</dt><dd>{{ requester }}{% if let Some(account) = requester_account %} <span class="muted">{{ account }}</span>{% endif %}</dd>
+  <dt>What</dt><dd>{{ capability }}{% if let Some(description) = capability_description %}<br><span class="muted">{{ description }}</span>{% endif %}</dd>
+  <dt>Sent</dt><dd>{{ created_at }}</dd>
+  {% if answerable %}{% if let Some(expires_at) = expires_at %}<dt>Answer by</dt><dd>{{ expires_at }}</dd>{% endif %}{% endif %}
+</dl>
+{% if !input.is_empty() %}
+<h2 class="aside">What they sent</h2>
+<dl class="facts">
+  {% for field in input %}<dt>{{ field.name }}</dt><dd><code>{{ field.value }}</code></dd>
+  {% endfor %}
+</dl>
+{% endif %}
+{% if let Some(error) = error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+{% if answerable %}
+<form method="post" action="{{ action }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label>{% if json %}Your reply, as JSON <span class="muted">this capability's output</span>{% else %}Your reply{% endif %}<textarea name="reply" rows="6" maxlength="16000">{{ reply }}</textarea></label>
+  <label>Reason if you decline <span class="muted">the caller sees it</span><input name="reason" maxlength="500" value="{{ reason }}"></label>
+  <div class="actions">
+    <button type="submit" name="step" value="reply">Send reply</button>
+    <button type="submit" name="step" value="decline" class="secondary">Decline</button>
+  </div>
+</form>
+{% else if let Some(draft_link) = draft_link %}
+<p>Your agent drafted a reply. <a href="{{ draft_link }}">Confirm or reject it</a>.</p>
+{% else %}
+<p>{{ outcome }}</p>
+{% endif %}
+<p class="muted">Signed in as {{ user_email }}.</p>
+{% endblock %}

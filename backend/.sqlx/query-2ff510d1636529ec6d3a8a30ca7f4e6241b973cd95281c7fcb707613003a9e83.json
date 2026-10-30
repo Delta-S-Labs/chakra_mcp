@@ -1,0 +1,222 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT i.id, i.status, i.capability_name, i.input_preview, i.output_preview,\n               i.error_message, i.created_at, i.expires_at,\n               ga.account_id AS \"granter_account_id?\", ga.display_name AS \"target?\",\n               ea.display_name AS \"requester?\",\n               eacc.display_name AS \"requester_account?\",\n               (eacc.verified_at IS NOT NULL) AS \"requester_verified?\",\n               c.semantics AS \"semantics?\", c.description AS \"capability_description?\",\n               c.output_schema AS \"output_schema?\", c.consent_approvers AS \"approvers?\",\n               (SELECT cr.id FROM consent_requests cr\n                 WHERE cr.invocation_id = i.id AND cr.kind = 'reply' AND cr.status = 'pending')\n                   AS \"draft_request_id?\"\n          FROM relay_invocations i\n          LEFT JOIN agents ga ON ga.id = i.granter_agent_id\n          LEFT JOIN agents ea ON ea.id = i.grantee_agent_id\n          LEFT JOIN accounts eacc ON eacc.id = ea.account_id\n          LEFT JOIN agent_capabilities c ON c.id = i.capability_id\n         WHERE i.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "capability_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "capability_name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "input_preview",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "input_preview"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "output_preview",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "output_preview"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "error_message",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "error_message"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "relay_invocations",
+            "name": "expires_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "granter_account_id?",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "target?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "requester?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agents",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "requester_account?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "requester_verified?",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 13,
+        "name": "semantics?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "semantics"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "capability_description?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "output_schema?",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "output_schema"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "approvers?",
+        "type_info": "UuidArray",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "consent_approvers"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "draft_request_id?",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      null,
+      true,
+      true,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "2ff510d1636529ec6d3a8a30ca7f4e6241b973cd95281c7fcb707613003a9e83"
+}
