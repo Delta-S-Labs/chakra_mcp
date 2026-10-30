@@ -5,8 +5,10 @@ import { describeTerms, timeLeft } from "@/lib/consent";
 import {
   listActiveConsents,
   listApprovals,
+  listMessages,
   type ApprovalSummary,
   type ConsentSummary,
+  type MessageSummary,
 } from "@/lib/relay";
 import { redirectIfUnauthorized } from "@/lib/session-expired";
 import { LocalTime } from "../audit/LocalTime";
@@ -27,6 +29,7 @@ const TABS: { id: Tab; label: string }[] = [
 
 /**
  * /app/approvals — requests to your agents that wait for your approval,
+ * messages to them that wait for your answer (`human_in_loop` calls),
  * the standing consents you've granted (revocable), and the last 90 days
  * of decisions.
  */
@@ -44,11 +47,18 @@ export default async function ApprovalsPage({
   }
 
   let requests: ApprovalSummary[] = [];
+  let messages: MessageSummary[] = [];
   let consents: ConsentSummary[] = [];
   let error: string | null = null;
   try {
     if (tab === "active") consents = await listActiveConsents(token);
-    else requests = await listApprovals(token, tab);
+    else if (tab === "waiting") {
+      [requests, messages] = await Promise.all([
+        listApprovals(token, tab),
+        // Relays before 0.7 don't list messages.
+        listMessages(token).catch(() => []),
+      ]);
+    } else requests = await listApprovals(token, tab);
   } catch (err) {
     redirectIfUnauthorized(err, `/app/approvals?tab=${tab}`);
     error = err instanceof Error ? err.message : "Couldn't load approvals.";
@@ -103,7 +113,7 @@ export default async function ApprovalsPage({
             ))}
           </ul>
         )
-      ) : requests.length === 0 ? (
+      ) : requests.length === 0 && messages.length === 0 ? (
         <p className={styles.empty}>
           {tab === "waiting"
             ? "Nothing is waiting for you."
@@ -111,6 +121,23 @@ export default async function ApprovalsPage({
         </p>
       ) : (
         <ul className={styles.list}>
+          {messages.map((m) => (
+            <li key={m.invocation_id}>
+              <Link
+                href={`/app/messages/${m.invocation_id}`}
+                className={`${styles.row} ${styles.rowMain}`}
+              >
+                <span className={styles.rowTitle}>
+                  Message from {m.requester_display_name ?? "an agent"} → {m.target.display_name ?? "your agent"}
+                </span>
+                <span className={styles.rowMeta}>
+                  {m.requester_account_display_name && <>{m.requester_account_display_name} · </>}
+                  {m.capability_name} · waiting for your answer
+                  {m.expires_at ? <> · {timeLeft(m.expires_at)}</> : null}
+                </span>
+              </Link>
+            </li>
+          ))}
           {requests.map((r) => (
             <li key={r.id}>
               <Link href={`/app/approvals/${r.id}`} className={`${styles.row} ${styles.rowMain}`}>

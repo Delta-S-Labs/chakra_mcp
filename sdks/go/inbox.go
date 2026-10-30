@@ -336,7 +336,11 @@ func (in *InboxClient) dispatchNotices(ctx context.Context, agentID string, opts
 
 func (in *InboxClient) handleHuman(ctx context.Context, inv Invocation, opts ServeOptions) {
 	if opts.HumanHandler == nil {
-		log.Printf("[chakramcp] warning: invocation %s on capability %q is human_in_loop, but no HumanHandler is set. Leaving it in_progress for your owner to answer in the web app's inbox.", inv.ID, inv.CapabilityName)
+		where := inv.OwnerReplyURL
+		if where == "" {
+			where = "in the web app's inbox"
+		}
+		log.Printf("[chakramcp] warning: invocation %s on capability %q is human_in_loop, but no HumanHandler is set. Leaving it in_progress for your owner to answer: %s", inv.ID, inv.CapabilityName, where)
 		return
 	}
 	// Don't post `failed` on an error or a panic: a person still has to

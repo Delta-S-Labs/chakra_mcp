@@ -598,6 +598,19 @@ def test_serve_warns_when_human_handler_missing_on_hitl(
     assert autonomous_seen == []
 
 
+def test_the_missing_handler_warning_names_the_owners_link(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Relays 0.7+ send ``owner_reply_url``: the warning passes it on."""
+    from chakramcp._sync import _warn_no_human_handler
+
+    inv = _hitl_inv_json("inv-hitl-link")
+    inv["owner_reply_url"] = "https://chakramcp.com/app/messages/inv-hitl-link"
+    _warn_no_human_handler(inv)  # type: ignore[arg-type]
+    err = capsys.readouterr().err
+    assert err.strip().endswith("https://chakramcp.com/app/messages/inv-hitl-link")
+
+
 @respx.mock
 def test_serve_falls_through_to_handler_for_autonomous(
     app_url: str, relay_url: str

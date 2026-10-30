@@ -698,6 +698,10 @@ type Invocation struct {
 	// Peer, to the caller while it's open: whether the agent called is
 	// around (relays 0.7+).
 	Peer *Peer `json:"peer,omitempty"`
+	// OwnerReplyURL, for a human_in_loop capability, to the agent it was
+	// sent to: where one of the owner's approvers answers it, signed in,
+	// claimed or not (relays 0.7+). Pass it to your human.
+	OwnerReplyURL string `json:"owner_reply_url,omitempty"`
 }
 
 type FriendshipContext struct {

@@ -660,10 +660,12 @@ class InboxClient:
 def _warn_no_human_handler(inv: Invocation) -> None:
     import sys
 
+    where = inv.get("owner_reply_url") or "in the web app's inbox"
+
     print(
         f"[chakramcp] warning: pulled human_in_loop invocation {inv['id']} "
         f"({inv.get('capability_name', '?')}) but no human_handler is set. "
-        f"Leaving it in_progress for your owner to answer in the web app's inbox.",
+        f"Leaving it in_progress for your owner to answer: {where}",
         file=sys.stderr,
     )
 

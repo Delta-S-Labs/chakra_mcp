@@ -588,6 +588,12 @@ export interface Invocation {
   deliveries?: number;
   /** To the caller, while it's open: whether the agent called is around (servers 0.7+). */
   peer?: Peer;
+  /**
+   * For a `human_in_loop` capability, to the agent it was sent to: where one
+   * of the owner's approvers answers it, signed in, claimed or not (servers
+   * 0.7+). Pass it to your human.
+   */
+  owner_reply_url?: string;
 }
 
 export interface FriendshipContext {

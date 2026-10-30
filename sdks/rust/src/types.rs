@@ -725,6 +725,11 @@ pub struct Invocation {
     /// (relays 0.7+).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub peer: Option<Peer>,
+    /// For a `human_in_loop` capability, to the agent it was sent to: where
+    /// one of the owner's approvers answers it, signed in, claimed or not
+    /// (relays 0.7+). Pass it to your human.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_reply_url: Option<String>,
 }
 
 /// What a caller proposes when a capability asks its owner first. The

@@ -621,6 +621,10 @@ class Invocation(TypedDict, total=False):
     lease_until: str | None
     deliveries: int
     peer: Peer
+    # Relays 0.7+, for a ``human_in_loop`` capability, to the agent it was
+    # sent to: where one of the owner's approvers answers it, signed in,
+    # claimed or not. Pass it to your human.
+    owner_reply_url: str
 
 
 # ─── Request bodies ──────────────────────────────────────

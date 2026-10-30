@@ -390,6 +390,33 @@ async function runOneBatch(
 }
 
 describe("InboxClient.serve HITL routing", () => {
+  it("without a humanHandler, warns with the owner's reply link", async () => {
+    const link = "https://chakramcp.com/app/messages/inv-hitl";
+    const { reported, fetchStub } = buildServeRig([
+      {
+        id: "inv-hitl",
+        capability_name: "message_owner",
+        semantics: "human_in_loop",
+        owner_reply_url: link,
+      },
+    ]);
+    const sdk = new ChakraMCP({ apiKey: "ck_test", relayUrl: "http://relay", fetch: fetchStub });
+    const warned: string[] = [];
+    const warn = vi.spyOn(console, "warn").mockImplementation((m: string) => {
+      warned.push(m);
+    });
+    try {
+      await runOneBatch(sdk, {
+        handler: async () => ({ status: "succeeded", output: {} }),
+        pollIntervalMs: 5,
+      });
+    } finally {
+      warn.mockRestore();
+    }
+    expect(reported).toEqual([]);
+    expect(warned.some((m) => m.includes("inv-hitl") && m.endsWith(link))).toBe(true);
+  });
+
   it("posts a reply humanHandler returns, which becomes a draft", async () => {
     const { reported, fetchStub } = buildServeRig([
       { id: "inv-hitl", capability_name: "message_owner", semantics: "human_in_loop" },
