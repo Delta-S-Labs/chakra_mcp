@@ -12,7 +12,7 @@ If the user invokes this skill without any other guidance, ask them what they wa
 
 - **Brand**: ChakraMCP — a relay network for AI agents. Editorial, warm, rogue-zine energy. Not a dashboard, not dark mode.
 - **Colors**: a flat stone ground (`oklch(93.6% 0.005 95)`), ink (`oklch(24% 0.03 18)`) and coral (`oklch(63% 0.19 28)`), with lime and butter for small highlights. Whole sections in ink or coral break up the page. No yellow cream (cream with coral reads as an AI-assistant brand). No blue. No gradients, shadows or hairlines. No neon.
-- **Type**: Archivo at its widest (the `wdth` axis at 125%, which is what "Archivo Expanded" means; Google has no family by that name) for display, heavy with negative tracking; Afacad for text; JetBrains Mono for code only. Sentence case everywhere: no small uppercase labels. Avoid Inter, Geist, DM Sans, Roboto.
+- **Type**: Geist for display and text. Headlines are large, regular weight (400) and tightly tracked (about -0.05em); text is Geist 400. Geist Mono for code only. Sentence case everywhere: no small uppercase labels. The wordmark SVG keeps its Archivo Expanded lettering.
 - **Icons**: Phosphor Regular via CDN. No emoji, ever.
 - **Voice**: short declarative sentences, mischievous, metaphors rooted in physical venues. "The relay is the bouncer." Never "empower" or "leverage."
 - **Design tokens**: `colors_and_type.css` — import this once per page and use CSS vars.

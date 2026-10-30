@@ -1,5 +1,5 @@
 /* Shared prose styling for /docs/* pages, in the site's look: a flat
- * stone ground, Archivo (wide) headings, Afacad text, ink code blocks.
+ * stone ground, Geist headings and text, ink code blocks.
  * No hairlines, gradients, shadows, pills or uppercase labels.
  */
 
@@ -22,7 +22,7 @@
   /* `width: 100%` + `min-width: 0` keep a wide <pre> from stretching the
    * grid item past a phone's viewport; `max-width` sets the measure. */
   width: 100%;
-  max-width: 74ch;
+  max-width: 44rem;
   margin: 0 auto;
   padding: 3.5rem 0 7rem;
   font-family: var(--font-body);
@@ -32,7 +32,7 @@
 }
 
 .shell.wide {
-  max-width: 94ch;
+  max-width: 58rem;
 }
 
 /* The breadcrumb above each page's title (Trail.tsx). It's navigation,
@@ -60,10 +60,9 @@
 
 .title {
   font-family: var(--font-display);
-  font-stretch: 112%;
-  font-weight: 780;
-  font-size: clamp(2.1rem, 3.4vw, 3rem);
-  letter-spacing: -0.035em;
+  font-weight: 450;
+  font-size: clamp(2.2rem, 3.8vw, 3.4rem);
+  letter-spacing: -0.045em;
   line-height: 1.02;
   margin: 0 0 1.25rem;
   color: var(--ink);
@@ -80,9 +79,9 @@
 
 .h2 {
   font-family: var(--font-display);
-  font-weight: 740;
-  font-size: 1.75rem;
-  letter-spacing: -0.03em;
+  font-weight: 500;
+  font-size: 1.85rem;
+  letter-spacing: -0.035em;
   line-height: 1.1;
   margin: 3.5rem 0 1rem;
   color: var(--ink);
@@ -97,10 +96,9 @@
 
 .h3 {
   font-family: var(--font-display);
-  font-stretch: 100%;
-  font-weight: 700;
+  font-weight: 600;
   font-size: 1.25rem;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.02em;
   margin: 2.4rem 0 0.6rem;
   color: var(--ink);
   scroll-margin-top: 1.5rem;
@@ -272,10 +270,9 @@
 
 .cardTitle {
   font-family: var(--font-display);
-  font-stretch: 100%;
-  font-weight: 720;
+  font-weight: 600;
   font-size: 1.25rem;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.02em;
   margin: 0 0 0.4rem;
   color: var(--ink);
 }
@@ -479,13 +476,8 @@
     padding: 2rem 0 calc(4rem + env(safe-area-inset-bottom, 0px));
   }
 
-  .title {
-    font-stretch: 100%;
-  }
-
   .h2 {
     font-size: 1.5rem;
-    font-stretch: 100%;
     margin: 2.6rem 0 0.8rem;
   }
 

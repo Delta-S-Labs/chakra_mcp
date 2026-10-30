@@ -1,15 +1,13 @@
 /* ChakraMCP - colors & type */
 /* Fonts are loaded by next/font in app/layout.tsx, which sets the
- * --font-archivo / --font-afacad / --font-jetbrains-mono variables. The
- * brand's expanded display face is Archivo's width axis at 125%, asked
- * for by `font-stretch` on html below; Afacad and JetBrains Mono have one
- * width and ignore it. */
+ * --font-geist / --font-geist-mono variables. Geist does the display and
+ * the text: headlines at regular weight with tight tracking. */
 
 :root {
   /* --- Type families --- */
-  --font-display: var(--font-archivo), 'Archivo', system-ui, sans-serif;
-  --font-body: var(--font-afacad), 'Afacad', system-ui, sans-serif;
-  --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-display: var(--font-geist), 'Geist', system-ui, sans-serif;
+  --font-body: var(--font-geist), 'Geist', system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   /* --- Color - paper (backgrounds) --- */
   --paper:       oklch(93.6% 0.005 95); /* stone - default page bg */
@@ -85,17 +83,15 @@ html, body {
   background: var(--paper);
   color: var(--ink);
   font: 1.0625rem/1.6 var(--font-body);
-  /* after the shorthand, which resets it: Archivo's wide cut */
-  font-stretch: 125%;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 
-/* --- Display / headlines (Archivo Expanded, tight negative tracking) --- */
+/* --- Display / headlines (Geist, tight negative tracking) --- */
 .h-display, h1.h-display {
   font-family: var(--font-display);
-  font-weight: 800;
+  font-weight: 500;
   font-size: clamp(3.3rem, 7vw, 7rem);
   line-height: 0.92;
   letter-spacing: -0.05em;
@@ -103,7 +99,7 @@ html, body {
 }
 h1, .h1 {
   font-family: var(--font-display);
-  font-weight: 800;
+  font-weight: 500;
   font-size: clamp(2.4rem, 5vw, 4.2rem);
   line-height: 0.96;
   letter-spacing: -0.045em;
@@ -112,7 +108,7 @@ h1, .h1 {
 }
 h2, .h2 {
   font-family: var(--font-display);
-  font-weight: 700;
+  font-weight: 500;
   font-size: clamp(1.9rem, 3vw, 3.1rem);
   line-height: 1.02;
   letter-spacing: -0.04em;

@@ -1,14 +1,13 @@
 /* ChakraMCP — colors & type */
-/* Fonts from Google Fonts. "Archivo Expanded" is Archivo's width axis at
-   125%: load Archivo with `wdth` and set `font-stretch: 125%`. Keep this
-   @import first in the stylesheet, or browsers ignore it. */
-@import url('https://fonts.googleapis.com/css2?family=Afacad:wght@400..700&family=Archivo:wdth,wght@62..125,400..900&family=JetBrains+Mono:wght@400;500&display=swap');
+/* Fonts from Google Fonts: Geist for display and text, Geist Mono for
+   code. Keep this @import first in the stylesheet, or browsers ignore it. */
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@100..900&display=swap');
 
 :root {
   /* ——— Type families ——— */
-  --font-display: 'Archivo', system-ui, sans-serif; /* with font-stretch: 125% */
-  --font-body: 'Afacad', 'Inter', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-display: 'Geist', system-ui, sans-serif;
+  --font-body: 'Geist', system-ui, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   /* ——— Color — paper (backgrounds) ——— */
   --paper:       oklch(93.6% 0.005 95); /* stone — default page bg */
@@ -79,16 +78,15 @@ html, body {
   background: var(--paper);
   color: var(--ink);
   font: 1.0625rem/1.6 var(--font-body);
-  font-stretch: 125%; /* after the shorthand: Archivo's wide cut */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 
-/* ——— Display / headlines (Archivo Expanded, tight negative tracking) ——— */
+/* ——— Display / headlines (Geist, regular weight, tight negative tracking) ——— */
 .h-display, h1.h-display {
   font-family: var(--font-display);
-  font-weight: 800;
+  font-weight: 400;
   font-size: clamp(3.3rem, 7vw, 7rem);
   line-height: 0.92;
   letter-spacing: -0.05em;
@@ -96,7 +94,7 @@ html, body {
 }
 h1, .h1 {
   font-family: var(--font-display);
-  font-weight: 800;
+  font-weight: 400;
   font-size: clamp(2.4rem, 5vw, 4.2rem);
   line-height: 0.96;
   letter-spacing: -0.045em;
@@ -105,7 +103,7 @@ h1, .h1 {
 }
 h2, .h2 {
   font-family: var(--font-display);
-  font-weight: 700;
+  font-weight: 500;
   font-size: clamp(1.9rem, 3vw, 3.1rem);
   line-height: 1.02;
   letter-spacing: -0.04em;
