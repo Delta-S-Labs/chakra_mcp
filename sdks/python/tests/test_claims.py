@@ -67,7 +67,12 @@ async def test_async_release() -> None:
 
 @respx.mock
 def test_invoke_sends_expires_in_and_reads_peer() -> None:
-    peer = {"delivery": "pull", "online": False, "last_seen_at": "2026-10-29T09:12:03Z"}
+    peer = {
+        "delivery": "pull",
+        "online": False,
+        "last_seen_at": "2026-10-29T09:12:03Z",
+        "wake": True,
+    }
     route = respx.post(f"{RELAY}/v1/invoke").respond(
         202, json={"invocation_id": "inv-1", "status": "pending", "error": None, "peer": peer}
     )

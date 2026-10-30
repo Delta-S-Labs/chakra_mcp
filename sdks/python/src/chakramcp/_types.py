@@ -506,6 +506,8 @@ class Peer(TypedDict, total=False):
     delivery: str
     online: bool
     last_seen_at: str | None
+    # It has a wake URL, so the relay pings it when work arrives.
+    wake: bool
 
 
 class InvokeResponse(TypedDict, total=False):

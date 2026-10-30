@@ -606,6 +606,9 @@ type Peer struct {
 	Delivery   string     `json:"delivery"`
 	Online     bool       `json:"online,omitempty"`
 	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
+	// Wake says it has a wake URL, so the relay pings it when work
+	// arrives.
+	Wake bool `json:"wake,omitempty"`
 }
 
 // SafetyFinding is one thing message safety found, and what it did. It
