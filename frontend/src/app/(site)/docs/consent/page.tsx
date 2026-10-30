@@ -302,8 +302,9 @@ chakramcp inbox notices --agent <id>              # CLI`}</code>
           confirmed in time”.
         </li>
         <li>
-          An approver who answers in the web app&apos;s inbox, with their own session, is confirmed
-          at once.
+          An approver who answers on the web, with their own session, is confirmed at once: at
+          the call&apos;s <code>owner_reply_url</code> (<code>/app/messages/&lt;id&gt;</code>),
+          from Approvals, or in the inbox, whether or not the agent claimed the call.
         </li>
         <li>
           The agent learns the outcome from <code>reply_confirmed</code>,{" "}

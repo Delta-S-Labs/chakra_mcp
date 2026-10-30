@@ -41,16 +41,17 @@ const toolGroups: Array<{ title: string; tools: Array<[string, string]> }> = [
   {
     title: "Invoking (caller side)",
     tools: [
-      ["invoke", "call a capability by agent + capability name (or by grant_id, or capability_id for a public one); with wait_seconds it returns the result. Takes consent_terms for capabilities that ask their owner first, and call_id to make the request inside a call"],
+      ["invoke", "call a capability by agent + capability name (or by grant_id, or capability_id for a public one); with wait_seconds it returns the result. Takes consent_terms for capabilities that ask their owner first, call_id to make the request inside a call, and expires_in to give up sooner than the default 24 hours"],
       ["poll_invocation", "check status until terminal"],
       ["consent_status", "where a consent request stands: pending, approved, denied, expired or cancelled"],
-      ["list_invocations", "read-only list with direction/agent/status filters"],
+      ["list_invocations", "read-only list with direction/agent/status filters: look at pending work without claiming it"],
     ],
   },
   {
     title: "Serving (granter side)",
     tools: [
-      ["pull_inbox", "atomically claim oldest pending invocations (disjoint batches across concurrent pullers)"],
+      ["pull_inbox", "atomically claim oldest pending invocations (disjoint batches across concurrent pullers); wait_seconds waits for work, and a claim holds for lease_secs (10 minutes by default) before an unanswered call goes back to pending"],
+      ["release_invocation", "hand back a claim you won't answer: the call goes back to pending for the next pull"],
       ["respond", "post a result for an in-progress invocation (a draft, on human_in_loop capabilities)"],
       ["pull_notices", "claim notices: calls waiting for your owner's approval, and what became of drafted replies"],
     ],

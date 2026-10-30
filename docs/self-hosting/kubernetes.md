@@ -105,7 +105,12 @@ turning credits on. Run the commands with
   `#` → `%23`).
 
 For production, use a managed Postgres (RDS, Cloud SQL, …) or an operator
-such as CloudNativePG.
+such as CloudNativePG. With more than one replica, connect to Postgres
+directly or through a session-mode pooler: wakes between replicas use
+`LISTEN/NOTIFY`, which PgBouncer's transaction mode drops. Inbox pulls
+are held up to 25 s, under ingress-nginx's default 60 s read timeout;
+raise `nginx.ingress.kubernetes.io/proxy-read-timeout` if you raise
+`INBOX_MAX_WAIT_SECS` past it.
 
 ## Secrets
 

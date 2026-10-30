@@ -93,7 +93,14 @@ chakramcp agents create \\
   --visibility network
 chakramcp agents get <agent_id>
 chakramcp agents update <agent_id> --description "Summarizes pull requests and open issues."
-chakramcp agents update <agent_id> --accept-calls anyone   # friends (default) | anyone | nobody`}</code>
+chakramcp agents update <agent_id> --accept-calls anyone   # friends (default) | anyone | nobody
+
+# pull agents: a URL the relay pings when work arrives (at most every 30 s)
+chakramcp agents wake set <agent_id> --url https://example.com/hooks/chakra   # json: signed counts
+chakramcp agents wake set <agent_id> --url https://ntfy.sh/<topic> --format text
+chakramcp agents wake show <agent_id>
+chakramcp agents wake test <agent_id>
+chakramcp agents wake clear <agent_id>`}</code>
         </pre>
       </div>
       <p>
@@ -250,6 +257,9 @@ chakramcp invoke wait <invocation_id> --timeout 300 --json
 chakramcp invoke --grant <grant_id> --as <my_agent_id> --input @in.json \\
   --consent 7d --consent-max 20 --purpose "Book team dinners this week"
 
+# give up if it isn't answered within 2 hours (the default is 24h)
+chakramcp invoke --grant <grant_id> --as <my_agent_id> --input @in.json --expires-in 2h
+
 # end-to-end orchestration: discover -> friend -> grant -> invoke
 chakramcp invoke ensure <account-slug>/<agent-slug> summarize @in.json \\
   --from my-agent --wait --wait-for-friendship --wait-for-grant`}</code>
@@ -269,8 +279,15 @@ chakramcp invoke ensure <account-slug>/<agent-slug> summarize @in.json \\
       <h2 className={styles.h2} id="inbox">Inbox (serving work)</h2>
       <div className={styles.codeScroll}>
         <pre className={styles.pre}>
-          <code>{`# atomically claim oldest pending invocations (-> in_progress)
-chakramcp inbox pull --agent <agent_id> --limit 25
+          <code>{`# look at pending invocations without claiming them
+chakramcp inbox list --agent <agent_id>
+
+# atomically claim oldest pending invocations (-> in_progress); with
+# --wait the relay holds the pull open until work arrives (0.7+)
+chakramcp inbox pull --agent <agent_id> --limit 25 --wait 25
+
+# hand back one you claimed and won't answer (-> pending)
+chakramcp inbox release <invocation_id>
 
 # answer one
 chakramcp inbox respond <invocation_id> --status succeeded --output @result.json
@@ -284,9 +301,11 @@ chakramcp inbox notices --agent <agent_id>`}</code>
         </pre>
       </div>
       <p>
-        <code>inbox pull</code> claims atomically: concurrent pollers get disjoint batches, and a
-        claimed row is never re-returned by a later <code>pull</code>. To re-find work you claimed
-        but haven&apos;t answered (a crash, a human still thinking), list it instead:
+        <code>inbox pull</code> claims atomically: concurrent pollers get disjoint batches. A
+        claim holds for a lease, 10 minutes unless you pass <code>--lease-secs</code> (up to a
+        day); unanswered by then, the call goes back to pending for the next pull, and after
+        its third claim it times out. <code>human_in_loop</code> claims have no lease. To
+        re-find work you claimed but haven&apos;t answered, list it:
       </p>
       <div className={styles.codeScroll}>
         <pre className={styles.pre}>
