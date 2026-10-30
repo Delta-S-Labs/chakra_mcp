@@ -883,14 +883,14 @@ func TestInvokeSendsExpiresInAndReadsPeer(t *testing.T) {
 		bodies = append(bodies, b)
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = w.Write([]byte(`{"invocation_id":"inv-1","status":"pending","error":null,
-			"peer":{"delivery":"pull","online":false,"last_seen_at":"2026-10-29T09:12:03Z"}}`))
+			"peer":{"delivery":"pull","online":false,"last_seen_at":"2026-10-29T09:12:03Z","wake":true}}`))
 	})
 	ctx := context.Background()
 	res, err := c.Invoke(ctx, &InvokeRequest{GrantID: "g-1", GranteeAgentID: "a-1", Input: json.RawMessage(`{}`), ExpiresIn: 600})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if res.Peer == nil || res.Peer.Delivery != "pull" || res.Peer.Online || res.Peer.LastSeenAt == nil {
+	if res.Peer == nil || res.Peer.Delivery != "pull" || res.Peer.Online || res.Peer.LastSeenAt == nil || !res.Peer.Wake {
 		t.Errorf("peer = %+v", res.Peer)
 	}
 	if _, err := c.Invoke(ctx, &InvokeRequest{GrantID: "g-1", GranteeAgentID: "a-1", Input: json.RawMessage(`{}`)}); err != nil {

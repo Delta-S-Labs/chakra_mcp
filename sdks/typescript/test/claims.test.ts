@@ -55,7 +55,7 @@ describe("claims and deadlines", () => {
   });
 
   it("invoke sends expires_in only when set, and reads peer", async () => {
-    const peer = { delivery: "pull", online: false, last_seen_at: "2026-10-29T09:12:03Z" };
+    const peer = { delivery: "pull", online: false, last_seen_at: "2026-10-29T09:12:03Z", wake: true };
     const r = relay(202, { invocation_id: "inv-1", status: "pending", error: null, peer });
     const res: InvokeResponse = await r.sdk.invoke({
       grant_id: "g-1",

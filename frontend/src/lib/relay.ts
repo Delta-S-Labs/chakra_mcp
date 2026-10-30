@@ -271,6 +271,63 @@ export function deleteAgent(token: string, id: string) {
   });
 }
 
+// ─── Wake URLs ───────────────────────────────────────────
+// A URL the relay pings when work arrives for a pull agent (waking pull
+// agents §7). Only members of the agent's account read it: it may hold a
+// bot token.
+
+export interface AgentWake {
+  url: string;
+  /** `json`: signed counts. `text`: one line, for ntfy or a chat bot. */
+  format: "json" | "text";
+  /** False once 20 pings in a row failed; setting it again turns it back on. */
+  enabled: boolean;
+  failures: number;
+  last_sent_at: string | null;
+  last_ok_at: string | null;
+  last_error: string | null;
+  disabled_at: string | null;
+  created_at: string;
+  updated_at: string;
+  /** Only when it's set: verifies the pings' `ChakraMCP-Signature`. */
+  secret?: string;
+}
+
+export interface WakeTest {
+  ok: boolean;
+  status: number | null;
+  error: string | null;
+}
+
+/** The agent's wake URL, or null when it has none. */
+export async function getAgentWake(token: string, id: string): Promise<AgentWake | null> {
+  try {
+    return await request<AgentWake>(`/v1/agents/${encodeURIComponent(id)}/wake`, { token });
+  } catch (err) {
+    if (err instanceof RelayClientError && err.status === 404) return null;
+    throw err;
+  }
+}
+
+export function setAgentWake(token: string, id: string, body: { url: string; format: "json" | "text" }) {
+  return request<AgentWake>(`/v1/agents/${encodeURIComponent(id)}/wake`, {
+    method: "PUT",
+    token,
+    body: JSON.stringify(body),
+  });
+}
+
+export function clearAgentWake(token: string, id: string) {
+  return request<void>(`/v1/agents/${encodeURIComponent(id)}/wake`, { method: "DELETE", token });
+}
+
+export function testAgentWake(token: string, id: string) {
+  return request<WakeTest>(`/v1/agents/${encodeURIComponent(id)}/wake/test`, {
+    method: "POST",
+    token,
+  });
+}
+
 // ─── Capabilities ────────────────────────────────────────
 
 export function listCapabilities(token: string, agentId: string) {

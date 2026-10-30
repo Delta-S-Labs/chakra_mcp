@@ -614,6 +614,9 @@ pub struct Peer {
     pub online: bool,
     #[serde(default)]
     pub last_seen_at: Option<DateTime<Utc>>,
+    /// It has a wake URL, so the relay pings it when work arrives.
+    #[serde(default)]
+    pub wake: bool,
 }
 
 /// One thing message safety found, and what it did. Never the removed

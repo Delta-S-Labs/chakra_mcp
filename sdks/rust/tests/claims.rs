@@ -78,7 +78,7 @@ async fn invoke_sends_expires_in_and_reads_peer() {
             then.status(202).json_body(json!({
                 "invocation_id": "inv-1", "status": "pending", "error": null,
                 "peer": { "delivery": "pull", "online": false,
-                          "last_seen_at": "2026-10-29T09:12:03Z" } }));
+                          "last_seen_at": "2026-10-29T09:12:03Z", "wake": true } }));
         })
         .await;
     let res = build(&server)
@@ -96,6 +96,7 @@ async fn invoke_sends_expires_in_and_reads_peer() {
     assert_eq!(peer.delivery, "pull");
     assert!(!peer.online);
     assert!(peer.last_seen_at.is_some());
+    assert!(peer.wake);
 }
 
 #[tokio::test]

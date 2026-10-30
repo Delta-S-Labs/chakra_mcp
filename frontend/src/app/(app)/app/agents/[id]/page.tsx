@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import {
   callsEnabled,
   getAgent,
+  getAgentWake,
   listCapabilities,
   listReviews,
   getReviewEligibility,
@@ -15,6 +16,7 @@ import { StarRating } from "@/components/StarRating";
 import { listMembers } from "@/lib/api";
 import { redirectIfUnauthorized } from "@/lib/session-expired";
 import { EditAgentForm } from "./EditAgentForm";
+import { WakePanel } from "./WakePanel";
 import { CapabilitiesPanel } from "./CapabilitiesPanel";
 import { ReviewsPanel } from "./ReviewsPanel";
 import styles from "../agents.module.css";
@@ -130,7 +132,17 @@ export default async function AgentDetailPage({
       </header>
 
       {agent.is_mine ? (
-        <EditAgentForm token={token} agent={agent} callsOn={await callsEnabled(token)} />
+        <>
+          <EditAgentForm token={token} agent={agent} callsOn={await callsEnabled(token)} />
+          {agent.mode !== "push" && (
+            <WakePanel
+              token={token}
+              agentId={agent.id}
+              // Relays before wake URLs answer 404 here too: no URL set.
+              initial={await getAgentWake(token, agent.id).catch(() => null)}
+            />
+          )}
+        </>
       ) : (
         <div className={styles.notice}>
           You&apos;re viewing this agent as a network visitor. Editing is

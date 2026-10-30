@@ -478,7 +478,13 @@ export type NoticeKind =
  * nothing to wait for.
  */
 export type Peer =
-  | { delivery: "pull"; online: boolean; last_seen_at: string | null }
+  | {
+      delivery: "pull";
+      online: boolean;
+      last_seen_at: string | null;
+      /** It has a wake URL, so the relay pings it when work arrives. */
+      wake?: boolean;
+    }
   | { delivery: "push" };
 
 /**
