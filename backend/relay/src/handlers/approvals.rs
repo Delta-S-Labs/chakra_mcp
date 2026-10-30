@@ -1,6 +1,7 @@
 //! Owner consent decisions (spec §4.4, §7, §8).
 //!
 //! GET  /v1/approvals?state=waiting|active|history|messages
+//! GET  /v1/approvals/messages/{invocation_id}
 //! GET  /v1/approvals/{id}
 //! POST /v1/approvals/{id}/approve   {valid_for?, max_requests?}
 //! POST /v1/approvals/{id}/deny      {note?}
@@ -186,6 +187,31 @@ async fn waiting(state: &RelayState, user_id: Uuid) -> ApiResult<Vec<ApprovalSum
             covered: false,
         })
         .collect())
+}
+
+// ─── GET /v1/approvals/messages/{invocation_id} ──────────
+
+/// A call to a `human_in_loop` capability, for one of its approvers to
+/// answer (waking pull agents §9): what chakramcp.com's `/app/messages/{id}`
+/// shows. 404 for anyone else. The answer goes to
+/// `POST /v1/invocations/{id}/result`.
+pub async fn message(
+    State(state): State<RelayState>,
+    InteractiveUser(user): InteractiveUser,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<Value>> {
+    use chakramcp_shared::consent::owner_reply::{self, ReplyShape};
+    let view = owner_reply::load(&state.db, user.user_id, id).await?;
+    let mut body = json!(view);
+    body["reply_shape"] = json!(ReplyShape::of(&view.output_schema));
+    body["answerable"] = json!(view.answerable());
+    if let Some(request) = view
+        .draft_request_id
+        .filter(|_| matches!(view.status.as_str(), "pending" | "in_progress"))
+    {
+        body["draft_approve_url"] = json!(crate::consent::notices::approve_url(&state, request));
+    }
+    Ok(Json(body))
 }
 
 /// Open calls to `human_in_loop` capabilities the user may answer, with no

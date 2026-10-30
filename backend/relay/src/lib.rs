@@ -236,6 +236,10 @@ pub fn router(state: RelayState) -> Router {
             "/v1/invocations/{id}/release",
             post(handlers::invoke::release),
         )
+        .route(
+            "/v1/approvals/messages/{id}",
+            get(handlers::approvals::message),
+        )
         // ─── Audit + usage (migration 0025) ────────────
         .route("/v1/audit", get(handlers::events_read::audit_list))
         .route("/v1/usage/events", get(handlers::events_read::usage_list))

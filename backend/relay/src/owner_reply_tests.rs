@@ -291,3 +291,51 @@ async fn agents_get_the_link_to_pass_on(pool: PgPool) {
     .await;
     assert_eq!(polled["structuredContent"]["owner_reply_url"], link);
 }
+
+#[sqlx::test(migrations = "../migrations")]
+async fn approvers_read_the_call_they_answer(pool: PgPool) {
+    let w = world(&pool).await;
+    let g = grant(&pool, w.b, w.a, "message_owner").await;
+    sqlx::query(
+        "UPDATE agent_capabilities SET semantics = 'human_in_loop', output_schema = $2
+          WHERE agent_id = $1",
+    )
+    .bind(w.b)
+    .bind(json!({ "type": "object", "properties": {
+        "status": { "type": "string", "enum": ["replied"] }, "reply": { "type": "string" } } }))
+    .execute(&pool)
+    .await
+    .unwrap();
+    let state = calls_on(&pool);
+    let carol = member(&pool, &w).await;
+    let id = message(&state, &w, g).await;
+    let path = format!("/v1/approvals/messages/{id}");
+
+    let (status, view) = get(&state, &w.bob.web, &path).await;
+    assert_eq!(status, StatusCode::OK, "{view}");
+    assert_eq!(view["status"], "pending");
+    assert_eq!(view["reply_shape"], "replied");
+    assert_eq!(view["answerable"], true);
+    assert_eq!(view["input"]["message"], "Lunch?");
+    assert_eq!(view["capability_name"], "message_owner");
+    assert!(view.get("draft_approve_url").is_none());
+    // Not an approver: no such message. An agent key: not a person.
+    assert_eq!(
+        get(&state, &carol.web, &path).await.0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        get(&state, &w.bob.key, &path).await.0,
+        StatusCode::FORBIDDEN
+    );
+
+    // Its agent drafts a reply: confirmed on the approval page instead.
+    get(&state, &w.bob.key, &format!("/v1/inbox?agent_id={}", w.b)).await;
+    answer(&state, &w.bob.key, id).await;
+    let (_, view) = get(&state, &w.bob.web, &path).await;
+    assert_eq!(view["answerable"], false);
+    assert!(view["draft_approve_url"]
+        .as_str()
+        .unwrap()
+        .starts_with("http://localhost:3000/app/approvals/"));
+}

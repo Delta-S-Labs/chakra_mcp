@@ -5,6 +5,7 @@
 //! Answering is [`super::reply::answer_as_owner`].
 
 use chrono::{DateTime, Utc};
+use serde::Serialize;
 use serde_json::{json, Value};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -12,7 +13,7 @@ use uuid::Uuid;
 use crate::error::ApiError;
 
 /// A call as its owner sees it.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct MessageView {
     pub invocation_id: Uuid,
     /// `pending`, `in_progress`, or how it ended.
@@ -107,7 +108,8 @@ pub async fn load(
 }
 
 /// How the reply box becomes the call's output.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ReplyShape {
     /// No output schema: the output is the text.
     Text,
