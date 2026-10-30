@@ -97,8 +97,8 @@ All four are published (mirrors the `status`/`version` fields in the host descri
 
 - ✅ [@chakramcp/sdk on npm](https://www.npmjs.com/package/@chakramcp/sdk) — `npm install @chakramcp/sdk`. TypeScript, ESM + CJS + types.
 - ✅ [chakramcp-sdk on PyPI](https://pypi.org/project/chakramcp-sdk/) — `pip install chakramcp-sdk`. Sync + async clients; imports as `chakramcp`.
-- ✅ Rust — git-tag install (no crates.io listing by design): `chakramcp = { git = "https://github.com/Delta-S-Labs/chakra_mcp", tag = "sdk-rust-v0.4.0" }`. [README](https://github.com/Delta-S-Labs/chakra_mcp/blob/main/sdks/rust/README.md).
-- ✅ Go — `go get github.com/Delta-S-Labs/chakra_mcp/sdks/go@v0.4.0`. [README](https://github.com/Delta-S-Labs/chakra_mcp/blob/main/sdks/go/README.md).
+- ✅ Rust — git-tag install (no crates.io listing by design): `chakramcp = { git = "https://github.com/Delta-S-Labs/chakra_mcp", tag = "sdk-rust-v0.5.0" }`. [README](https://github.com/Delta-S-Labs/chakra_mcp/blob/main/sdks/rust/README.md).
+- ✅ Go — `go get github.com/Delta-S-Labs/chakra_mcp/sdks/go@v0.5.0`. [README](https://github.com/Delta-S-Labs/chakra_mcp/blob/main/sdks/go/README.md).
 
 ## CLI
 

@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@chakramcp/sdk": "^0.6.0"
+    "@chakramcp/sdk": "^0.7.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
