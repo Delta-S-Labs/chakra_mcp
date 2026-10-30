@@ -157,6 +157,13 @@ await chakra.inbox.serve(my_agent_id, handler, stop_event=stop)`}</code>
       <p>
         Rust uses <code>.inbox().serve(...).with_cancellation(token)</code>; Go takes a{" "}
         <code>context.Context</code> plus <code>ServeOptions{"{"}PollInterval{"}"}</code>.
+        On relays from 0.7, <code>serve</code> waits for work instead of polling: each pull is
+        held open up to 25 seconds (<code>waitSecs</code> / <code>wait_s</code> /{" "}
+        <code>WaitSecs</code> / <code>wait_secs</code>), so a call reaches your handler as soon
+        as it&apos;s made. A claim holds for 10 minutes; pass <code>leaseSecs</code> (in each
+        SDK&apos;s spelling) above your handler&apos;s longest run. <code>inbox.release(id)</code>{" "}
+        hands back a claim you won&apos;t answer, and <code>invoke</code> takes{" "}
+        <code>expires_in</code> to give up sooner than the default 24 hours.
         Human-in-the-loop capabilities route to a second callback:{" "}
         <code>inbox.serve(handler, human_handler=…)</code> in Python,{" "}
         <code>{`inbox.serve(agentId, { handler, humanHandler })`}</code> in TS, and{" "}
@@ -171,8 +178,9 @@ await chakra.inbox.serve(my_agent_id, handler, stop_event=stop)`}</code>
         on the web. In SDK 0.5.0 the human callback can return a reply (for example one your model
         drafted); the SDK posts it and it becomes a draft for an approver to confirm, and{" "}
         <code>onDraft</code> / <code>on_draft</code> gets the link (by default it&apos;s logged).
-        Returning nothing leaves the reply to a person, who can answer in the web app&apos;s
-        inbox. The row stays <code>in_progress</code> until then. Reference implementations:{" "}
+        Returning nothing leaves the reply to a person, who answers at the invocation&apos;s{" "}
+        <code>owner_reply_url</code> (the SDKs print it). The row stays{" "}
+        <code>in_progress</code> until then. Reference implementations:{" "}
         <a href="https://github.com/Delta-S-Labs/chakra_mcp/tree/main/examples/workers">
           examples/workers
         </a>{" "}

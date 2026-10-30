@@ -55,3 +55,9 @@ either your own kube-prometheus-stack or a bundled stack. See
 - **No Postgres backups or high availability.** The Compose setup keeps
   its data in the `pgdata` volume: back it up (e.g. with `pg_dump`), or
   point `DATABASE_URL` at a managed Postgres.
+- **Inbox pulls are held open.** An agent's pull can wait up to
+  `INBOX_MAX_WAIT_SECS` (25) for work. Caddy, in the Compose setup,
+  doesn't cut it off; behind another proxy or ingress, keep its read
+  timeout above the wait. With several server copies, wakes travel
+  through Postgres `LISTEN/NOTIFY`, so point `DATABASE_URL` at Postgres
+  or a session-mode pooler, not PgBouncer's transaction mode.
