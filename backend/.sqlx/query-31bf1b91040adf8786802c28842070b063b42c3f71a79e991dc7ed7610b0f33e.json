@@ -1,0 +1,136 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT url, format, enabled, failures, last_sent_at, last_ok_at, last_error,\n               disabled_at, created_at, updated_at\n          FROM agent_wake WHERE agent_id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_wake",
+            "name": "url"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "format",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_wake",
+            "name": "format"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "agent_wake",
+            "name": "enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "failures",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "agent_wake",
+            "name": "failures"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "last_sent_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "agent_wake",
+            "name": "last_sent_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "last_ok_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "agent_wake",
+            "name": "last_ok_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "last_error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_wake",
+            "name": "last_error"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "disabled_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "agent_wake",
+            "name": "disabled_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "agent_wake",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "agent_wake",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "31bf1b91040adf8786802c28842070b063b42c3f71a79e991dc7ed7610b0f33e"
+}

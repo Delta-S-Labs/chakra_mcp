@@ -1948,7 +1948,7 @@ mod tests {
         .await;
         assert_eq!(
             sent["result"]["metadata"]["chakramcp.peer"],
-            serde_json::json!({ "delivery": "pull", "online": false, "last_seen_at": null }),
+            serde_json::json!({ "delivery": "pull", "online": false, "last_seen_at": null, "wake": false }),
             "{sent}"
         );
         let task_id = sent["result"]["id"].as_str().unwrap().to_string();

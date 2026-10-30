@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT w.agent_id FROM agent_wake w\n              JOIN agents a ON a.id = w.agent_id\n             WHERE w.enabled AND a.tombstoned_at IS NULL\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "agent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "agent_wake",
+            "name": "agent_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "03741f434def9bbddaf3c1bdca68058c6ea54c71926e068d42bd0b4cc8e9c0e3"
+}

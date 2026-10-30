@@ -1,0 +1,36 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT last_sent_at AS \"last_sent_at!\",\n                   EXTRACT(EPOCH FROM (last_sent_at + $2::float8 * interval '1 second' - now()))\n                       ::float8 AS \"left!\"\n              FROM agent_wake\n             WHERE agent_id = $1 AND enabled AND last_sent_at IS NOT NULL\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "last_sent_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "agent_wake",
+            "name": "last_sent_at"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "left!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      true,
+      null
+    ]
+  },
+  "hash": "118d37a459a27d0cc0057fd82f6673d9a6a90b157beccbdf526eb00c05018124"
+}

@@ -38,6 +38,10 @@ const SPREAD_GAP: Duration = Duration::from_millis(50);
 struct Payload {
     /// The sending process.
     o: Uuid,
+    /// The sender runs no wake-URL dispatcher (the standalone app), so the
+    /// receivers' dispatchers ping for these (design §5, §7).
+    #[serde(default)]
+    d: bool,
     /// `[agent, feed code]` pairs.
     w: Vec<(Uuid, String)>,
 }
@@ -56,7 +60,7 @@ async fn send_loop(pool: PgPool, wake: Wake) {
         if keys.is_empty() {
             continue;
         }
-        let mut batches = payloads(wake.process(), &keys).into_iter();
+        let mut batches = payloads(wake.process(), !wake.dispatching(), &keys).into_iter();
         while let Some((payload, batch)) = batches.next() {
             if let Err(e) = sqlx::query("SELECT pg_notify($1, $2)")
                 .bind(CHANNEL)
@@ -76,12 +80,14 @@ async fn send_loop(pool: PgPool, wake: Wake) {
 }
 
 /// Split `keys` into payloads under [`MAX_PAYLOAD`], each with its keys.
-fn payloads(process: Uuid, keys: &[Key]) -> Vec<(String, Vec<Key>)> {
+/// `undispatched`: this process runs no wake-URL dispatcher.
+fn payloads(process: Uuid, undispatched: bool, keys: &[Key]) -> Vec<(String, Vec<Key>)> {
     let mut out = Vec::new();
     let mut batch: Vec<Key> = Vec::new();
     let encode = |batch: &[Key]| {
         serde_json::to_string(&Payload {
             o: process,
+            d: undispatched,
             w: batch
                 .iter()
                 .map(|(agent, feed)| (*agent, feed.code().to_owned()))
@@ -162,6 +168,10 @@ fn receive(wake: &Wake, raw: &str) {
     for (agent, code) in payload.w {
         if let Some(feed) = Feed::from_code(&code) {
             wake.signal_local(agent, feed);
+            // Wakes from a process with a dispatcher were dispatched there.
+            if payload.d {
+                wake.queue_dispatch(agent);
+            }
         }
     }
 }
@@ -193,7 +203,7 @@ mod tests {
                 (Uuid::now_v7(), feed)
             })
             .collect();
-        let batches = payloads(Uuid::now_v7(), &keys);
+        let batches = payloads(Uuid::now_v7(), false, &keys);
         assert!(batches.len() > 1);
         let mut seen = Vec::new();
         for (payload, batch) in &batches {
@@ -210,7 +220,7 @@ mod tests {
         let wake = Wake::new(10);
         let agent = Uuid::now_v7();
         let waiter = wake.try_wait(agent, Feed::Invocations).unwrap();
-        let mine = payloads(wake.process(), &[(agent, Feed::Invocations)]);
+        let mine = payloads(wake.process(), false, &[(agent, Feed::Invocations)]);
         receive(&wake, &mine[0].0);
         receive(&wake, "not json");
         receive(
@@ -218,9 +228,37 @@ mod tests {
             r#"{"o":"00000000-0000-0000-0000-000000000000","w":[["x","i"]]}"#,
         );
         assert!(!waiter.changes.as_ref().unwrap().has_changed().unwrap());
-        let theirs = payloads(Uuid::now_v7(), &[(agent, Feed::Invocations)]);
+        let theirs = payloads(Uuid::now_v7(), false, &[(agent, Feed::Invocations)]);
         receive(&wake, &theirs[0].0);
         assert!(waiter.changes.as_ref().unwrap().has_changed().unwrap());
+    }
+
+    #[test]
+    fn only_wakes_from_a_process_without_a_dispatcher_are_dispatched_here() {
+        let wake = Wake::new(10);
+        let (agent, other) = (Uuid::now_v7(), Uuid::now_v7());
+        // Not dispatching yet: nothing is gathered, local or remote.
+        wake.notify(agent, Feed::Invocations);
+        assert!(wake.take_dispatch().is_empty());
+
+        wake.start_dispatching();
+        wake.notify(agent, Feed::Notices);
+        assert_eq!(wake.take_dispatch(), [agent]);
+        // Another relay dispatched its own wake: not again here.
+        let relays = payloads(Uuid::now_v7(), false, &[(other, Feed::Invocations)]);
+        receive(&wake, &relays[0].0);
+        assert!(wake.take_dispatch().is_empty());
+        // The standalone app has no dispatcher: its wakes are ours to ping.
+        let app = payloads(Uuid::now_v7(), true, &[(other, Feed::Invocations)]);
+        assert!(app[0].0.contains(r#""d":true"#));
+        receive(&wake, &app[0].0);
+        assert_eq!(wake.take_dispatch(), [other]);
+        // Payloads from before `d` existed parse, and aren't dispatched.
+        receive(
+            &wake,
+            &format!(r#"{{"o":"{}","w":[["{other}","i"]]}}"#, Uuid::now_v7()),
+        );
+        assert!(wake.take_dispatch().is_empty());
     }
 
     #[sqlx::test(migrations = false)]

@@ -166,6 +166,11 @@ chakramcp api-keys create --name laptop   # a key for SDKs`}</code>
           capabilities get the longer one, and a caller may set a shorter{" "}
           <code>expires_in</code>.
         </li>
+        <li>
+          <code>WAKE_URLS_ENABLED</code> (true): a pull agent may give a wake URL that the
+          server pings when work arrives for it, at most every 30 seconds, through the same
+          outbound guard as push agents. <code>false</code> turns the pings off.
+        </li>
       </ul>
       <p>
         The full table (base URLs, survey flag, log filter) lives in{" "}

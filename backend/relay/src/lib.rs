@@ -42,6 +42,9 @@ pub mod scope_cache;
 mod scope_tests;
 pub mod state;
 pub mod telemetry;
+#[cfg(test)]
+mod wake_url_tests;
+pub mod wake_urls;
 
 pub use state::RelayState;
 
@@ -147,6 +150,16 @@ pub fn router(state: RelayState) -> Router {
             get(handlers::agents::get_one)
                 .patch(handlers::agents::update)
                 .delete(handlers::agents::delete),
+        )
+        .route(
+            "/v1/agents/{id}/wake",
+            get(handlers::agent_wake::get)
+                .put(handlers::agent_wake::set)
+                .delete(handlers::agent_wake::clear),
+        )
+        .route(
+            "/v1/agents/{id}/wake/test",
+            post(handlers::agent_wake::test),
         )
         // ─── Capabilities ──────────────────────────────
         .route(

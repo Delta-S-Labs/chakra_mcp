@@ -70,6 +70,30 @@ pub enum Cmd {
         #[arg(long)]
         clear_tags: bool,
     },
+    /// A pull agent's wake URL: a URL the relay pings when work arrives, at
+    /// most every 30 seconds, so the agent needn't keep polling.
+    #[command(subcommand)]
+    Wake(WakeCmd),
+}
+
+#[derive(Subcommand, Debug)]
+pub enum WakeCmd {
+    /// Show the agent's wake URL and how its pings are doing.
+    Show { agent: String },
+    /// Set the agent's wake URL. The answer's `secret`, shown this once,
+    /// verifies the `ChakraMCP-Signature` header on JSON pings.
+    Set {
+        agent: String,
+        #[arg(long)]
+        url: String,
+        /// `json` (signed counts) or `text` (one line, e.g. for an ntfy topic).
+        #[arg(long, default_value = "json", value_parser = ["json", "text"])]
+        format: String,
+    },
+    /// Ping the wake URL now and show how it went.
+    Test { agent: String },
+    /// Remove the agent's wake URL.
+    Clear { agent: String },
 }
 
 pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
@@ -132,6 +156,41 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             let agent: Value = api.patch_relay(&format!("/v1/agents/{id}"), &body).await?;
             print(&agent)
         }
+        Cmd::Wake(cmd) => wake(cmd, &api).await,
+    }
+}
+
+async fn wake(cmd: WakeCmd, api: &ApiClient) -> Result<()> {
+    match cmd {
+        WakeCmd::Show { agent } => {
+            let id = crate::resolve::mine_id(api, &agent).await?;
+            let v: Value = api.get_relay(&format!("/v1/agents/{id}/wake")).await?;
+            print(&v)
+        }
+        WakeCmd::Set { agent, url, format } => {
+            let id = crate::resolve::mine_id(api, &agent).await?;
+            let v: Value = api
+                .put_relay(
+                    &format!("/v1/agents/{id}/wake"),
+                    &json!({ "url": url, "format": format }),
+                )
+                .await?;
+            eprintln!("Keep the secret: it's shown only now, and verifies the pings' signature.");
+            print(&v)
+        }
+        WakeCmd::Test { agent } => {
+            let id = crate::resolve::mine_id(api, &agent).await?;
+            let v: Value = api
+                .post_relay(&format!("/v1/agents/{id}/wake/test"), &json!({}))
+                .await?;
+            print(&v)
+        }
+        WakeCmd::Clear { agent } => {
+            let id = crate::resolve::mine_id(api, &agent).await?;
+            let _: Value = api.delete_relay(&format!("/v1/agents/{id}/wake")).await?;
+            eprintln!("Wake URL cleared.");
+            Ok(())
+        }
     }
 }
 
@@ -175,6 +234,23 @@ mod tests {
         let v = update_body(Some("Bot".into()), None, Some("network".into()), None, None).unwrap();
         assert_eq!(v, json!({ "display_name": "Bot", "visibility": "network" }));
         assert!(update_body(None, None, None, None, None).is_err());
+    }
+
+    #[test]
+    fn wake_commands_parse() {
+        use clap::Parser;
+        for line in [
+            "chakramcp agents wake show bob/venue",
+            "chakramcp agents wake set bob/venue --url https://ntfy.sh/venue --format text",
+            "chakramcp agents wake test bob/venue",
+            "chakramcp agents wake clear bob/venue",
+        ] {
+            crate::Cli::try_parse_from(line.split(' ')).unwrap_or_else(|e| panic!("{line}: {e}"));
+        }
+        assert!(crate::Cli::try_parse_from(
+            "chakramcp agents wake set bob/venue --url x --format xml".split(' ')
+        )
+        .is_err());
     }
 
     #[test]
