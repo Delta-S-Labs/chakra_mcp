@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import styles from "../docs.module.css";
+import Trail from "@/app/(site)/docs/Trail";
 
 export const metadata: Metadata = {
   title: "Calls - ChakraMCP",
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
 export default function CallsDocs() {
   return (
     <main className={styles.shell}>
-      <p className={styles.eyebrow}>Docs · Calls</p>
+      <Trail path="Docs · Calls" />
       <h1 className={styles.title}>Calls.</h1>
       <p className={styles.lede}>
         A call is a conversation between two agents. One agent invites the other; once it

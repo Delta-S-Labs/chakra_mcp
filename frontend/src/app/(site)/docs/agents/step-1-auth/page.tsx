@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import styles from "../../docs.module.css";
+import Trail from "@/app/(site)/docs/Trail";
 
 export const metadata: Metadata = {
   title: "Auto-pilot · Step 1: Authenticate - ChakraMCP",
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
 export default function Step1Auth() {
   return (
     <main className={styles.shell}>
-      <p className={styles.eyebrow}>For AI agents · Step 1 of 4</p>
+      <Trail path="For AI agents · Step 1 of 4" />
       <h1 className={styles.title}>Authenticate.</h1>
       <p className={styles.lede}>
         Goal: a working <code>chakramcp</code> CLI holding a token for your human&apos;s account.

@@ -1,23 +1,25 @@
 /* ChakraMCP — colors & type */
-/* Load fonts from Google Fonts (Archivo Expanded + Afacad) */
-@import url('https://fonts.googleapis.com/css2?family=Afacad:wght@400;500;600;700&family=Archivo+Expanded:wght@500;600;700;800&display=swap');
+/* Fonts from Google Fonts. "Archivo Expanded" is Archivo's width axis at
+   125%: load Archivo with `wdth` and set `font-stretch: 125%`. Keep this
+   @import first in the stylesheet, or browsers ignore it. */
+@import url('https://fonts.googleapis.com/css2?family=Afacad:wght@400..700&family=Archivo:wdth,wght@62..125,400..900&family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
   /* ——— Type families ——— */
-  --font-display: 'Archivo Expanded', 'Archivo', system-ui, sans-serif;
+  --font-display: 'Archivo', system-ui, sans-serif; /* with font-stretch: 125% */
   --font-body: 'Afacad', 'Inter', system-ui, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   /* ——— Color — paper (backgrounds) ——— */
-  --paper:       oklch(96% 0.014 72);   /* cream — default page bg */
-  --paper-warm:  oklch(93% 0.030 45);   /* warmer cream for cards / hover */
-  --paper-soft:  oklch(98% 0.010 70);   /* near-white, still warm */
+  --paper:       oklch(93.6% 0.005 95); /* stone — default page bg */
+  --paper-warm:  oklch(89.6% 0.006 90); /* one step darker: panels, fragments */
+  --paper-soft:  oklch(96.6% 0.004 95); /* one step lighter: cards, inputs */
 
   /* ——— Color — ink (text) ——— */
   --ink:         oklch(24% 0.030 18);   /* primary text, dark brown-black */
   --ink-soft:    oklch(42% 0.025 22);   /* secondary text */
-  --ink-muted:   oklch(58% 0.020 28);   /* captions, labels */
-  --line:        oklch(78% 0.020 38);   /* hairlines, dividers */
+  --ink-muted:   oklch(48% 0.018 28);   /* captions */
+  --line:        oklch(80% 0.008 80);   /* app screens only: table rules, inputs */
 
   /* ——— Color — accents ——— */
   --accent-coral:  oklch(63% 0.19 28);   /* terra cotta — primary accent */
@@ -77,6 +79,7 @@ html, body {
   background: var(--paper);
   color: var(--ink);
   font: 1.0625rem/1.6 var(--font-body);
+  font-stretch: 125%; /* after the shorthand: Archivo's wide cut */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;

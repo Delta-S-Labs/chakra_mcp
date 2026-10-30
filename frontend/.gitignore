@@ -57,3 +57,6 @@ next-env.d.ts
 /e2e/screenshots/
 # Unit test runs (`pnpm test`) leave the runner's state here.
 /test-results/
+
+# Working files from the design-taste skill (screenshots, direction sheets)
+.taste-skill/

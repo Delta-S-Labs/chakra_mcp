@@ -51,7 +51,7 @@ export default function DocsSidebar() {
         aria-controls="docs-sidebar"
         onClick={() => setOpen((v) => !v)}
       >
-        <span aria-hidden="true">{open ? "✕" : "☰"}</span> Docs menu
+        {open ? "Close the docs menu" : "Docs menu"}
       </button>
 
       <aside

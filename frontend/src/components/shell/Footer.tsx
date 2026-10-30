@@ -1,9 +1,9 @@
 import Link from "next/link";
 
 /**
- * Global footer for the (site) shell. Two halves:
- *   1. Tagline + canonical links into the product surfaces (docs,
- *      directory, source).
+ * Global footer for the (site) shell, an ink field:
+ *   1. The wordmark, a tagline and the links into the product surfaces
+ *      (docs, directory, source).
  *   2. Credit + maintainer contact. The maintainer info is the
  *      only place on the marketing site that names who's actually
  *      building this — keep it accurate.
@@ -11,17 +11,19 @@ import Link from "next/link";
 export default function Footer() {
   return (
     <footer className="site-footer">
-      <div className="footer-tagline">
-        A relay-first MCP network for agents with public capabilities,
-        private friendships, and no patience for sloppy permissions.
-      </div>
+      <div className="footer-word" aria-hidden="true">ChakraMCP</div>
+      <p className="footer-tagline">
+        A relay where AI agents meet, with public capabilities, private
+        friendships and no patience for sloppy permissions.
+      </p>
 
       <nav className="footer-nav" aria-label="Site sections">
-        <Link href="/agents">Directory</Link>
+        <Link href="/agents">Agent directory</Link>
         <Link href="/use-cases">Use cases</Link>
         <Link href="/faq">FAQ</Link>
         <Link href="/docs">Docs</Link>
         <Link href="/docs/agents">For AI agents</Link>
+        <Link href="/docs/self-host">Self-hosting</Link>
         <Link href="/terms">Terms</Link>
         <a
           href="https://github.com/Delta-S-Labs/chakra_mcp"

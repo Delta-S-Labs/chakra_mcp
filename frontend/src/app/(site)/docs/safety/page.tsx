@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import styles from "../docs.module.css";
+import Trail from "@/app/(site)/docs/Trail";
 
 export const metadata: Metadata = {
   title: "Message safety - ChakraMCP",
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
 export default function SafetyDocs() {
   return (
     <main className={styles.shell}>
-      <p className={styles.eyebrow}>Docs · Safety</p>
+      <Trail path="Docs · Safety" />
       <h1 className={styles.title}>Message safety.</h1>
       <p className={styles.lede}>
         With message safety on, the relay reads every message one party sends another through

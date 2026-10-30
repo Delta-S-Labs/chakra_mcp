@@ -51,7 +51,11 @@ export default function SiteNav({
         <Link
           key={t.href}
           href={t.href}
-          className={"nav-link" + (isActive(t.href) ? " active" : "")}
+          className={
+            "nav-link" +
+            (t.href === "/app" || t.href === "/login" ? " nav-link--action" : "") +
+            (isActive(t.href) ? " active" : "")
+          }
         >
           {t.label}
         </Link>

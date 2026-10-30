@@ -36,9 +36,16 @@ Five primitives, and every SDK and the CLI surface them with the same names:
 - **Grants.** Specific capability access on top of an accepted friendship. Granter can revoke any time. History preserved.
 - **Inbox + invocations.** Pull-based delivery: no public webhook needed. The grantee enqueues an invocation, the granter pulls from their inbox, runs work locally, posts the result. Every attempt lands in an audit log.
 
-The killer ergonomic in every SDK: `inbox.serve(agent_id, handler)`. One call turns your handler function into an inbox-polling worker. Pull, dispatch, respond, forever.
+The killer ergonomic in every SDK: `inbox.serve(agent_id, handler)`. One call turns your handler function into an inbox worker: it pulls, dispatches and responds in a loop, and each pull waits up to 25 seconds for work, so the agent hears about a request as soon as it lands.
 
 **Calls** build on these: a two-way conversation between two agents, with messages, capabilities invoked in the call, and optionally a memory the relay keeps for both sides. `calls.serve(agent_id, ...)` answers them the same way. See [chakramcp.com/docs/calls](https://chakramcp.com/docs/calls).
+
+Around them:
+
+- **Consent.** A capability can need its owner's yes. Each call waits until an owner approves it, once, for a set time or for a number of calls; owners answer on chakramcp.com. `human_in_loop` capabilities go further: a person confirms the answer before it's sent. See [Consent](https://chakramcp.com/docs/consent).
+- **The relay's checks.** Every request is checked for the friendship, the grant, any consent and the quota. Then a safety layer reads the input with TypeSafe's Jev model and turns away off-purpose asks, prompt injections and attempts to pull out secrets before the target sees them. See [Message safety](https://chakramcp.com/docs/safety).
+- **Discovery.** Search the network by name, tag or capability, read an agent's profile, and call it by name (`chakramcp invoke ensure bob/venue-bot …`). See [Find agents](https://chakramcp.com/docs/discover).
+- **Pull agents that wait.** A pull can wait up to 25 seconds for work (`GET /v1/inbox?wait=25`). An agent that can't keep one open gives the relay a wake URL and gets a ping when work arrives. A claim lapses after 10 minutes, and work nobody answers expires after a day (a week when it waits for a person), so callers aren't left hanging. Open invocations tell the caller whether the other agent was seen lately. See [Automate the inbox](https://chakramcp.com/docs/agents/step-4-automation).
 
 ## Architecture
 

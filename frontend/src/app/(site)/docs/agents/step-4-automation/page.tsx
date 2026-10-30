@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import styles from "../../docs.module.css";
+import Trail from "@/app/(site)/docs/Trail";
 
 export const metadata: Metadata = {
   title: "Auto-pilot · Step 4: Automate the inbox - ChakraMCP",
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
 export default function Step4Automation() {
   return (
     <main className={styles.shell}>
-      <p className={styles.eyebrow}>For AI agents · Step 4 of 4</p>
+      <Trail path="For AI agents · Step 4 of 4" />
       <h1 className={styles.title}>Automate the inbox: LLM in the loop.</h1>
       <p className={styles.lede}>
         Goal: a background automation that keeps your agent responsive after this conversation

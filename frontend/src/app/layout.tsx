@@ -1,6 +1,19 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { Afacad, Archivo, JetBrains_Mono } from "next/font/google";
 import { PostHogProvider } from "@/components/analytics/PostHogProvider";
+
+// The brand faces, self-hosted by next/font. A Google Fonts @import in
+// tokens.css never loaded: bundled after other rules, browsers ignore it.
+// Archivo keeps its width axis: the brand's "expanded" look is wdth 125,
+// set by `font-stretch` in tokens.css.
+const archivo = Archivo({ subsets: ["latin"], axes: ["wdth"], variable: "--font-archivo" });
+const afacad = Afacad({ subsets: ["latin"], variable: "--font-afacad" });
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  variable: "--font-jetbrains-mono",
+});
 
 export const metadata: Metadata = {
   // metadataBase is the absolute origin every relative URL in this
@@ -134,7 +147,7 @@ const schemaOrgJsonLd = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${archivo.variable} ${afacad.variable} ${jetbrainsMono.variable}`}>
       <head>
         <script
           type="application/ld+json"
