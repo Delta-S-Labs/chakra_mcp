@@ -1224,11 +1224,11 @@ mod agent_endpoints {
         // The venue agent has never pulled (waking pull agents §8).
         assert_eq!(
             running["structuredContent"]["peer"],
-            json!({ "delivery": "pull", "online": false, "last_seen_at": null })
+            json!({ "delivery": "pull", "online": false, "last_seen_at": null, "wake": false })
         );
         assert!(
             text.ends_with(
-                "hasn't been seen in the last 30 days, so it may not pick this up soon."
+                "hasn't been seen in the last 30 days and has no wake URL, so it may not pick this up soon."
             ),
             "{text}"
         );

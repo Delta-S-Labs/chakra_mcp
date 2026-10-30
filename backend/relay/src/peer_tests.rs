@@ -166,7 +166,7 @@ async fn a_pull_on_another_copy_shows_after_a_reload(pool: PgPool) {
     let (one, _) = read(&here, &w.alice.key, &id).await;
     assert_eq!(
         one["peer"],
-        json!({ "delivery": "pull", "online": false, "last_seen_at": null })
+        json!({ "delivery": "pull", "online": false, "last_seen_at": null, "wake": false })
     );
 
     // Bob's agent pulls from the other copy, which flushes.
@@ -196,7 +196,9 @@ async fn mcp_shows_peer_and_says_when_the_target_may_not_be_around(pool: PgPool)
     .fetch_one(&pool)
     .await
     .unwrap();
-    let hint = format!("{handle} was last seen 3 hours ago, so it may not pick this up soon.");
+    let hint = format!(
+        "{handle} was last seen 3 hours ago and has no wake URL, so it may not pick this up soon."
+    );
     let call = |name: &str, arguments: Value| {
         mcp(
             &state,

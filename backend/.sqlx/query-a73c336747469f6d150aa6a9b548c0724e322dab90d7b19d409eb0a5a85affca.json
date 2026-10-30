@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO agent_wake (agent_id, url, format, secret)\n        VALUES ($1, $2, $3, $4)\n        ON CONFLICT (agent_id) DO UPDATE\n           SET url = EXCLUDED.url, format = EXCLUDED.format, secret = EXCLUDED.secret,\n               enabled = true, failures = 0, last_error = NULL, disabled_at = NULL,\n               updated_at = now()\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a73c336747469f6d150aa6a9b548c0724e322dab90d7b19d409eb0a5a85affca"
+}

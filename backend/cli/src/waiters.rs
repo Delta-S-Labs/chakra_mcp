@@ -276,18 +276,22 @@ pub fn peer_hint(row: &Value) -> Option<String> {
         .get("granter_display_name")
         .and_then(Value::as_str)
         .unwrap_or("The agent");
-    let seen = peer
+    let seen = match peer
         .get("last_seen_at")
         .and_then(Value::as_str)
-        .and_then(|s| DateTime::parse_from_rfc3339(s).ok());
-    Some(match seen {
+        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+    {
         Some(at) => format!(
-            "{name} was last seen {}, so it may not pick this up soon.",
+            "{name} was last seen {}",
             ago(Utc::now() - at.with_timezone(&Utc))
         ),
-        None => {
-            format!("{name} hasn't been seen in the last 30 days, so it may not pick this up soon.")
-        }
+        None => format!("{name} hasn't been seen in the last 30 days"),
+    };
+    // `wake` (relays with wake URLs): whether it's pinged when work arrives.
+    Some(match peer.get("wake").and_then(Value::as_bool) {
+        Some(true) => format!("{seen}; it has a wake URL, so ChakraMCP pings it."),
+        Some(false) => format!("{seen} and has no wake URL, so it may not pick this up soon."),
+        None => format!("{seen}, so it may not pick this up soon."),
     })
 }
 
@@ -504,6 +508,18 @@ mod tests {
         assert_eq!(
             peer_hint(&seen(24 * 60 + 1)).unwrap(),
             "Venue Bot was last seen 1 day ago, so it may not pick this up soon."
+        );
+        // Relays with wake URLs say whether it has one.
+        let with = |wake: bool| {
+            row(json!({ "delivery": "pull", "online": false, "last_seen_at": null, "wake": wake }))
+        };
+        assert_eq!(
+            peer_hint(&with(true)).unwrap(),
+            "Venue Bot hasn't been seen in the last 30 days; it has a wake URL, so ChakraMCP pings it."
+        );
+        assert_eq!(
+            peer_hint(&with(false)).unwrap(),
+            "Venue Bot hasn't been seen in the last 30 days and has no wake URL, so it may not pick this up soon."
         );
         assert_eq!(
             peer_hint(&row(

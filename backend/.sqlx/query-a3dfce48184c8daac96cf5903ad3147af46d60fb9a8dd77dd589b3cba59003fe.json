@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO agent_notices (id, agent_id, kind, payload)\n            VALUES ($1, $2, 'wake_url_disabled', '{}'::jsonb)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a3dfce48184c8daac96cf5903ad3147af46d60fb9a8dd77dd589b3cba59003fe"
+}

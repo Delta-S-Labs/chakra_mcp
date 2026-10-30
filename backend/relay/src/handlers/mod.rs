@@ -1,4 +1,5 @@
 pub mod a2a;
+pub mod agent_wake;
 pub mod agents;
 pub mod approvals;
 pub mod calls;

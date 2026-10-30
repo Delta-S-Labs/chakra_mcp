@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE agent_wake w SET last_sent_at = now()\n          FROM agents a JOIN accounts acc ON acc.id = a.account_id\n         WHERE w.agent_id = $1 AND a.id = w.agent_id AND a.tombstoned_at IS NULL\n        RETURNING w.url, w.format, w.secret, acc.slug || '/' || a.slug AS \"handle!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_wake",
+            "name": "url"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "format",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_wake",
+            "name": "format"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "secret",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_wake",
+            "name": "secret"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "handle!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "58ff135c62df3c8b64326f249bcb356258d3e503d4994c76f13f59759c1fe06e"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE agent_wake\n               SET failures = 0, last_ok_at = now(), last_error = NULL\n             WHERE agent_id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "72a1eb0909a11dd6b4dab5c94be5b54a053a9239505ef540a76303d1078a2a83"
+}

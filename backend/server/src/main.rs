@@ -290,6 +290,9 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
     tracing::info!("{}", wait.summary());
     let invocations = chakramcp_relay::invocation_sweep::InvocationSettings::from_env()?;
     tracing::info!("{}", invocations.summary());
+    let wake_urls =
+        chakramcp_relay::wake_urls::WakeUrlSettings::from_env(cfg.hosting.is_managed())?;
+    tracing::info!("{}", wake_urls.summary());
     let wake = chakramcp_shared::wake::Wake::new(wait.max_waiters);
     chakramcp_shared::wake::bus::spawn(pool.clone(), wake.clone());
     let app_state = AppState::new(pool.clone(), cfg.shared.clone())
@@ -326,7 +329,8 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
         .with_mcp(chakramcp_relay::mcp::McpConfig::from_env()?)
         .with_outbound(outbound)
         .with_wake(wake.clone(), wait)
-        .with_invocations(invocations);
+        .with_invocations(invocations)
+        .with_wake_urls(wake_urls);
     // Who's been seen lately, for `peer` on invocations (waking pull
     // agents §8): loaded before serving, then kept by the flusher.
     if let Err(e) = relay_state.heartbeats.reload(&relay_state.db).await {
@@ -350,6 +354,11 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
         relay_state.wake.clone(),
         relay_state.invocations,
     );
+    // Pings to pull agents' wake URLs when work arrives (the app's wakes
+    // too: the two share the hub).
+    if relay_state.wake_urls.enabled {
+        chakramcp_relay::wake_urls::spawn(relay_state.clone());
+    }
     if relay_state.calls.enabled {
         tracing::info!("calls enabled");
         chakramcp_relay::calls::workers::spawn_workers(

@@ -315,7 +315,7 @@ fn tools_list_result(calls: bool, discovery: bool) -> Value {
                     }
                 })),
             tool("update_agent",
-                "Patch one of your agents' metadata (display_name, description, visibility, endpoint_url, agent_card_url, tags) or who may call it (accept_calls).",
+                "Patch one of your agents' metadata (display_name, description, visibility, endpoint_url, agent_card_url, tags), who may call it (accept_calls), or its wake URL (wake_url): a URL the relay pings when work arrives for a pull agent, so it needn't keep polling.",
                 json!({
                     "type": "object",
                     "required": ["agent_id"],
@@ -329,7 +329,11 @@ fn tools_list_result(calls: bool, discovery: bool) -> Value {
                         "accept_calls": { "type": "string", "enum": ["friends", "anyone", "nobody"],
                                           "description": "Who may call this agent: its friends (the default), anyone, or nobody. Push agents only take nobody." },
                         "tags":         { "type": "array", "items": { "type": "string" },
-                                          "description": "Replace its directory tags: at most 10, each 1-32 lowercase letters, digits or hyphens." }
+                                          "description": "Replace its directory tags: at most 10, each 1-32 lowercase letters, digits or hyphens." },
+                        "wake_url":     { "type": ["string", "null"],
+                                          "description": "Pull agents: a URL the relay POSTs to when work arrives, at most every 30 s (null clears it). The answer's wake.secret, shown once, verifies the ChakraMCP-Signature header on JSON pings." },
+                        "wake_format":  { "type": "string", "enum": ["json", "text"],
+                                          "description": "json (default): signed counts. text: one line, e.g. for an ntfy topic or a chat bot's sendMessage URL." }
                     }
                 })),
             tool("delete_agent",
@@ -1866,11 +1870,48 @@ async fn bridge_get_agent(
 async fn bridge_update_agent(
     state: &RelayState,
     user: &AuthUser,
-    args: Value,
+    mut args: Value,
 ) -> Result<Value, ApiError> {
     let id = arg_uuid(&args, "agent_id")?;
-    let req: agents::UpdateRequest = from_args(args)?;
-    dto_value(agents::update(State(state.clone()), user.clone(), Path(id), Json(req)).await)
+    // The wake URL (waking pull agents §7): a string sets it, null clears it.
+    let fields = args
+        .as_object_mut()
+        .ok_or_else(|| ApiError::InvalidRequest("update_agent takes an object".into()))?;
+    let wake_url = fields.remove("wake_url");
+    let wake_format = fields.remove("wake_format");
+    let wake_format = match &wake_format {
+        None | Some(Value::Null) => None,
+        Some(Value::String(f)) => Some(f.as_str()),
+        Some(_) => {
+            return Err(ApiError::InvalidRequest(
+                "wake_format must be a string".into(),
+            ))
+        }
+    };
+    let patches_agent = fields.keys().any(|k| k != "agent_id");
+    let mut out = if patches_agent || wake_url.is_none() {
+        let req: agents::UpdateRequest = from_args(args)?;
+        dto_value(agents::update(State(state.clone()), user.clone(), Path(id), Json(req)).await)?
+    } else {
+        dto_value(agents::get_one(State(state.clone()), user.clone(), Path(id)).await)?
+    };
+    match wake_url {
+        None => {}
+        Some(Value::Null) => {
+            crate::handlers::agent_wake::clear_wake(state, user, id).await?;
+            out["wake"] = Value::Null;
+        }
+        Some(Value::String(url)) => {
+            out["wake"] =
+                crate::handlers::agent_wake::set_wake(state, user, id, &url, wake_format).await?;
+        }
+        Some(_) => {
+            return Err(ApiError::InvalidRequest(
+                "wake_url must be a URL, or null to clear it".into(),
+            ))
+        }
+    }
+    Ok(out)
 }
 
 async fn bridge_delete_agent(

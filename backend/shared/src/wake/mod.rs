@@ -15,7 +15,7 @@
 pub mod bus;
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use anyhow::bail;
@@ -142,6 +142,11 @@ struct Inner {
     waiters: AtomicUsize,
     max_waiters: usize,
     closed: watch::Sender<bool>,
+    /// A wake-URL dispatcher runs here (design §7): notified agents are
+    /// gathered for it, and other processes' wakes marked `d` too.
+    dispatching: AtomicBool,
+    dispatch: Mutex<HashSet<Uuid>>,
+    dispatch_ready: Notify,
 }
 
 impl std::fmt::Debug for Wake {
@@ -169,6 +174,9 @@ impl Wake {
             waiters: AtomicUsize::new(0),
             max_waiters,
             closed: watch::Sender::new(false),
+            dispatching: AtomicBool::new(false),
+            dispatch: Mutex::new(HashSet::new()),
+            dispatch_ready: Notify::new(),
         }))
     }
 
@@ -179,7 +187,37 @@ impl Wake {
         self.signal_local(agent, feed);
         lock(&self.0.outbound).insert((agent, feed));
         self.0.outbound_ready.notify_one();
+        self.queue_dispatch(agent);
         counter!(names::WAKE_NOTIFY_TOTAL).increment(1);
+    }
+
+    /// This process runs a wake-URL dispatcher: gather notified agents for
+    /// it from now on, and other processes' wakes marked `d`.
+    pub fn start_dispatching(&self) {
+        self.0.dispatching.store(true, Ordering::Relaxed);
+    }
+
+    /// Whether a wake-URL dispatcher runs here.
+    pub fn dispatching(&self) -> bool {
+        self.0.dispatching.load(Ordering::Relaxed)
+    }
+
+    /// Hand `agent` to this process's dispatcher, if one runs. No I/O.
+    fn queue_dispatch(&self, agent: Uuid) {
+        if self.dispatching() {
+            lock(&self.0.dispatch).insert(agent);
+            self.0.dispatch_ready.notify_one();
+        }
+    }
+
+    /// Wait until agents are gathered for the dispatcher.
+    pub async fn dispatch_ready(&self) {
+        self.0.dispatch_ready.notified().await;
+    }
+
+    /// Take the agents gathered for the dispatcher.
+    pub fn take_dispatch(&self) -> Vec<Uuid> {
+        lock(&self.0.dispatch).drain().collect()
     }
 
     /// Wake `agent`'s pulls on `feed` in this process only. For wakes that

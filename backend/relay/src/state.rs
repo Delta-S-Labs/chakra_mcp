@@ -83,6 +83,8 @@ pub struct RelayState {
     /// Claim leases and call deadlines (`CLAIM_LEASE_SECS`,
     /// `INVOCATION_*_TTL`; waking pull agents §9, §10).
     pub invocations: crate::invocation_sweep::InvocationSettings,
+    /// Wake URLs (`WAKE_URLS_ENABLED`; https only on a managed server).
+    pub wake_urls: crate::wake_urls::WakeUrlSettings,
 }
 
 impl RelayState {
@@ -122,6 +124,7 @@ impl RelayState {
             wake: chakramcp_shared::wake::Wake::default(),
             wait: chakramcp_shared::wake::WakeSettings::default(),
             invocations: crate::invocation_sweep::InvocationSettings::default(),
+            wake_urls: crate::wake_urls::WakeUrlSettings::default(),
         }
     }
 
@@ -133,6 +136,12 @@ impl RelayState {
     ) -> Self {
         self.wake = wake;
         self.wait = wait;
+        self
+    }
+
+    /// Wake URL settings, as read at startup.
+    pub fn with_wake_urls(mut self, wake_urls: crate::wake_urls::WakeUrlSettings) -> Self {
+        self.wake_urls = wake_urls;
         self
     }
 

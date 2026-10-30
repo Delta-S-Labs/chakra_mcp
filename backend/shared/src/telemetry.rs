@@ -62,7 +62,12 @@ pub mod names {
     pub const WAKE_NOTIFY_TOTAL: &str = "chakramcp_wake_notify_total";
     pub const WAKE_LISTENER_RECONNECTS_TOTAL: &str = "chakramcp_wake_listener_reconnects_total";
     pub const INVOCATION_EXPIRED_TOTAL: &str = "chakramcp_invocation_expired_total";
+    pub const WAKE_SENT_TOTAL: &str = "chakramcp_wake_sent_total";
 }
+
+/// `result` values of `chakramcp_wake_sent_total`: answered 2xx, didn't, not
+/// sent because the last ping was too recent, or because nothing waits.
+pub const WAKE_SENT_RESULTS: [&str; 4] = ["ok", "failed", "throttled", "nothing_pending"];
 
 /// `reason` values of `chakramcp_invocation_expired_total`: never claimed
 /// before its deadline, claimed and never answered before it, or claimed
@@ -481,6 +486,13 @@ fn describe() {
     );
     for reason in INVOCATION_EXPIRED_REASONS {
         counter!(INVOCATION_EXPIRED_TOTAL, "reason" => reason).increment(0);
+    }
+    describe_counter!(
+        WAKE_SENT_TOTAL,
+        "Wake URL pings for pull agents, by result."
+    );
+    for result in WAKE_SENT_RESULTS {
+        counter!(WAKE_SENT_TOTAL, "result" => result).increment(0);
     }
 }
 

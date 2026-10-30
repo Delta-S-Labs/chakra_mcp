@@ -10,7 +10,7 @@
 //! it from `agent_heartbeats`, so every relay copy agrees within about
 //! 30 s.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -42,6 +42,8 @@ struct Inner {
     unflushed: HashMap<Uuid, DateTime<Utc>>,
     /// Last seen, from this process and every copy's flushes.
     presence: HashMap<Uuid, DateTime<Utc>>,
+    /// Agents with an enabled wake URL (waking pull agents §7, §8).
+    wake: HashSet<Uuid>,
 }
 
 /// Whether an invocation's target is around, for its caller (waking pull
@@ -54,6 +56,9 @@ pub enum Peer {
     Pull {
         online: bool,
         last_seen_at: Option<DateTime<Utc>>,
+        /// It has an enabled wake URL, so the relay pings it when work
+        /// arrives.
+        wake: bool,
     },
     /// Reached at its A2A endpoint; there's nothing to wait for.
     Push,
@@ -65,22 +70,21 @@ impl Peer {
     /// this up soon". `None` when it's online or a push agent. Text only,
     /// never JSON.
     pub fn hint(&self, name: &str) -> Option<String> {
-        match self {
-            Peer::Pull { online: true, .. } | Peer::Push => None,
+        let (last_seen_at, wake) = match self {
+            Peer::Pull { online: true, .. } | Peer::Push => return None,
             Peer::Pull {
-                last_seen_at: Some(at),
-                ..
-            } => Some(format!(
-                "{name} was last seen {}, so it may not pick this up soon.",
-                ago(Utc::now() - *at)
-            )),
-            Peer::Pull {
-                last_seen_at: None, ..
-            } => Some(format!(
-                "{name} hasn't been seen in the last {PRESENCE_DAYS} days, so it may not \
-                 pick this up soon."
-            )),
-        }
+                last_seen_at, wake, ..
+            } => (last_seen_at, *wake),
+        };
+        let seen = match last_seen_at {
+            Some(at) => format!("{name} was last seen {}", ago(Utc::now() - *at)),
+            None => format!("{name} hasn't been seen in the last {PRESENCE_DAYS} days"),
+        };
+        Some(if wake {
+            format!("{seen}; it has a wake URL, so ChakraMCP pings it.")
+        } else {
+            format!("{seen} and has no wake URL, so it may not pick this up soon.")
+        })
     }
 }
 
@@ -131,6 +135,23 @@ impl Heartbeats {
         Peer::Pull {
             online: last_seen_at.is_some_and(|at| Utc::now() - at < ONLINE_WINDOW),
             last_seen_at,
+            wake: self.has_wake(agent),
+        }
+    }
+
+    /// Whether `agent` has an enabled wake URL. A lookup, no I/O.
+    pub fn has_wake(&self, agent: Uuid) -> bool {
+        self.lock().wake.contains(&agent)
+    }
+
+    /// Note here, before the next reload, that `agent`'s wake URL was set,
+    /// cleared or switched off.
+    pub fn set_wake(&self, agent: Uuid, enabled: bool) {
+        let mut inner = self.lock();
+        if enabled {
+            inner.wake.insert(agent);
+        } else {
+            inner.wake.remove(&agent);
         }
     }
 
@@ -167,6 +188,17 @@ impl Heartbeats {
             .into_iter()
             .map(|r| (r.agent_id, r.last_polled_at))
             .collect();
+        let wake: HashSet<Uuid> = sqlx::query_scalar!(
+            r#"
+            SELECT w.agent_id FROM agent_wake w
+              JOIN agents a ON a.id = w.agent_id
+             WHERE w.enabled AND a.tombstoned_at IS NULL
+            "#
+        )
+        .fetch_all(db)
+        .await?
+        .into_iter()
+        .collect();
         let cutoff = Utc::now() - chrono::TimeDelta::days(PRESENCE_DAYS.into());
         let mut inner = self.lock();
         for (agent, at) in inner.presence.drain() {
@@ -178,6 +210,7 @@ impl Heartbeats {
             }
         }
         inner.presence = presence;
+        inner.wake = wake;
         Ok(inner.presence.len())
     }
 
@@ -287,7 +320,8 @@ mod tests {
             beats.peer(a, "pull"),
             Peer::Pull {
                 online: false,
-                last_seen_at: None
+                last_seen_at: None,
+                wake: false,
             }
         );
         beats.record(a);
@@ -295,13 +329,22 @@ mod tests {
             beats.peer(a, "pull"),
             Peer::Pull {
                 online: true,
-                last_seen_at: Some(_)
+                last_seen_at: Some(_),
+                wake: false,
             }
         ));
         assert_eq!(beats.peer(a, "push"), Peer::Push);
         // Draining for a flush leaves presence alone.
         beats.drain();
         assert!(beats.last_seen(a).is_some());
+        // A wake URL set here shows at once.
+        beats.set_wake(a, true);
+        assert!(matches!(
+            beats.peer(a, "pull"),
+            Peer::Pull { wake: true, .. }
+        ));
+        beats.set_wake(a, false);
+        assert!(!beats.has_wake(a));
     }
 
     #[test]
@@ -310,18 +353,21 @@ mod tests {
         assert_eq!(
             serde_json::to_value(Peer::Pull {
                 online: false,
-                last_seen_at: Some(at)
+                last_seen_at: Some(at),
+                wake: true,
             })
             .unwrap(),
-            serde_json::json!({ "delivery": "pull", "online": false, "last_seen_at": "2026-10-28T09:12:03Z" })
+            serde_json::json!({ "delivery": "pull", "online": false,
+                                "last_seen_at": "2026-10-28T09:12:03Z", "wake": true })
         );
         assert_eq!(
             serde_json::to_value(Peer::Pull {
                 online: false,
-                last_seen_at: None
+                last_seen_at: None,
+                wake: false,
             })
             .unwrap(),
-            serde_json::json!({ "delivery": "pull", "online": false, "last_seen_at": null })
+            serde_json::json!({ "delivery": "pull", "online": false, "last_seen_at": null, "wake": false })
         );
         assert_eq!(
             serde_json::to_value(Peer::Push).unwrap(),
@@ -330,40 +376,48 @@ mod tests {
     }
 
     #[test]
-    fn hints_name_how_long_ago() {
-        let seen = |mins: i64| Peer::Pull {
+    fn hints_name_how_long_ago_and_the_wake_url() {
+        let seen = |mins: i64, wake: bool| Peer::Pull {
             online: false,
             last_seen_at: Some(Utc::now() - chrono::Duration::minutes(mins)),
+            wake,
         };
         assert_eq!(
-            seen(12).hint("bob/venue-bot").unwrap(),
-            "bob/venue-bot was last seen 12 minutes ago, so it may not pick this up soon."
+            seen(12, false).hint("bob/venue-bot").unwrap(),
+            "bob/venue-bot was last seen 12 minutes ago and has no wake URL, so it may not \
+             pick this up soon."
         );
         assert_eq!(
-            seen(61).hint("b").unwrap(),
-            "b was last seen 1 hour ago, so it may not pick this up soon."
+            seen(61, false).hint("b").unwrap(),
+            "b was last seen 1 hour ago and has no wake URL, so it may not pick this up soon."
         );
         assert_eq!(
-            seen(3 * 60 + 5).hint("b").unwrap(),
-            "b was last seen 3 hours ago, so it may not pick this up soon."
+            seen(3 * 60 + 5, true).hint("b").unwrap(),
+            "b was last seen 3 hours ago; it has a wake URL, so ChakraMCP pings it."
         );
         assert_eq!(
-            seen(2 * 24 * 60).hint("b").unwrap(),
-            "b was last seen 2 days ago, so it may not pick this up soon."
+            seen(2 * 24 * 60, false).hint("b").unwrap(),
+            "b was last seen 2 days ago and has no wake URL, so it may not pick this up soon."
+        );
+        let never = |wake: bool| Peer::Pull {
+            online: false,
+            last_seen_at: None,
+            wake,
+        };
+        assert_eq!(
+            never(false).hint("b").unwrap(),
+            "b hasn't been seen in the last 30 days and has no wake URL, so it may not pick \
+             this up soon."
         );
         assert_eq!(
-            Peer::Pull {
-                online: false,
-                last_seen_at: None
-            }
-            .hint("b")
-            .unwrap(),
-            "b hasn't been seen in the last 30 days, so it may not pick this up soon."
+            never(true).hint("b").unwrap(),
+            "b hasn't been seen in the last 30 days; it has a wake URL, so ChakraMCP pings it."
         );
         assert_eq!(
             Peer::Pull {
                 online: true,
-                last_seen_at: Some(Utc::now())
+                last_seen_at: Some(Utc::now()),
+                wake: false,
             }
             .hint("b"),
             None
