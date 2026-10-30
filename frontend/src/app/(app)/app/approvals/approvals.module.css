@@ -145,7 +145,8 @@
   color: var(--ink);
 }
 
-.field input {
+.field input,
+.field textarea {
   font-family: var(--font-body);
   font-size: 0.95rem;
   font-weight: 400;
@@ -156,7 +157,13 @@
   color: var(--ink);
 }
 
-.field input:focus {
+.field textarea {
+  resize: vertical;
+  min-height: 7rem;
+}
+
+.field input:focus,
+.field textarea:focus {
   outline: none;
   border-color: var(--accent-coral);
 }

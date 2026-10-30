@@ -903,3 +903,16 @@ func TestInvokeSendsExpiresInAndReadsPeer(t *testing.T) {
 		t.Errorf("second body = %v", bodies[1])
 	}
 }
+
+func TestPullReadsTheOwnersReplyLink(t *testing.T) {
+	_, c := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`[{"id":"inv1","capability_name":"message_owner","status":"in_progress","elapsed_ms":0,"input_preview":{},"created_at":"2026-01-01T00:00:00Z","i_served":true,"i_invoked":false,"semantics":"human_in_loop","owner_reply_url":"https://chakramcp.com/app/messages/inv1"}]`))
+	})
+	invs, err := c.Inbox().Pull(context.Background(), "a1", 0)
+	if err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+	if len(invs) != 1 || invs[0].OwnerReplyURL != "https://chakramcp.com/app/messages/inv1" {
+		t.Errorf("got %+v", invs)
+	}
+}

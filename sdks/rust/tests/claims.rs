@@ -97,3 +97,32 @@ async fn invoke_sends_expires_in_and_reads_peer() {
     assert!(!peer.online);
     assert!(peer.last_seen_at.is_some());
 }
+
+#[tokio::test]
+async fn pulls_carry_the_owners_reply_link() {
+    let server = MockServer::start_async().await;
+    server
+        .mock_async(|when, then| {
+            when.method(GET).path("/v1/inbox");
+            then.status(200).json_body(json!([{
+                "id": "inv-1", "grant_id": null, "granter_agent_id": null,
+                "granter_display_name": null, "grantee_agent_id": null,
+                "grantee_display_name": null, "capability_id": null,
+                "capability_name": "message_owner", "status": "in_progress", "elapsed_ms": 0,
+                "error_message": null, "input_preview": {}, "output_preview": null,
+                "created_at": "2026-01-01T00:00:00Z", "claimed_at": null,
+                "i_served": true, "i_invoked": false, "semantics": "human_in_loop",
+                "owner_reply_url": "https://chakramcp.com/app/messages/inv-1",
+            }]));
+        })
+        .await;
+    let pulled = build(&server)
+        .inbox()
+        .pull("agent", None)
+        .await
+        .expect("pulls");
+    assert_eq!(
+        pulled[0].owner_reply_url.as_deref(),
+        Some("https://chakramcp.com/app/messages/inv-1")
+    );
+}

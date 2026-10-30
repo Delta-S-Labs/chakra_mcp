@@ -813,7 +813,8 @@ export class InboxClient {
           `[@chakramcp/sdk] invocation ${inv.id} on capability ` +
             `"${inv.capability_name}" is human_in_loop, but no ` +
             `humanHandler was provided to serve(). Leaving it ` +
-            `in_progress for your owner to answer in the web app's inbox.`,
+            `in_progress for your owner to answer: ` +
+            (inv.owner_reply_url ?? "in the web app's inbox"),
         );
         return;
       }

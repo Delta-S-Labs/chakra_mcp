@@ -219,8 +219,13 @@ function Row({
 
   // The respond form only applies INBOUND (work you serve). For outbound
   // calls you're the caller — you can't (and shouldn't) post a result;
-  // just watch the status until the other side answers.
-  const isOpen = direction === "inbound" && item.status === "in_progress";
+  // just watch the status until the other side answers. A `human_in_loop`
+  // call can be answered before its agent claims it: its approvers answer
+  // for the agent (relays 0.7+).
+  const isOpen =
+    direction === "inbound" &&
+    (item.status === "in_progress" ||
+      (item.status === "pending" && item.semantics === "human_in_loop"));
 
   async function submit(status: "succeeded" | "failed") {
     if (!token) {

@@ -586,6 +586,12 @@ export interface Invocation {
   /** What message safety removed, flagged or blocked: the request's, and
    *  the reply's once it's released. Absent when there's nothing. */
   safety?: Safety;
+  /** The capability's semantics: a `human_in_loop` one is answered by a
+   *  person. */
+  semantics?: "autonomous" | "human_in_loop" | null;
+  /** For a `human_in_loop` capability, to the served side: where one of
+   *  its approvers answers it, claimed or not. */
+  owner_reply_url?: string;
 }
 
 /** One thing message safety found, and what it did. Never the removed
@@ -1004,6 +1010,57 @@ export interface ConsentSummary {
 
 export function listApprovals(token: string, state: "waiting" | "history") {
   return request<ApprovalSummary[]>(`/v1/approvals?state=${state}`, { token });
+}
+
+/** How the owner's reply box becomes the call's output: plain text (no
+ *  output schema), `message_owner`'s `{status: "replied", reply}`, or JSON. */
+export type ReplyShape = "text" | "replied" | "json";
+
+/** `GET /v1/approvals/messages/{id}`: a call to a `human_in_loop`
+ *  capability, for one of its approvers to answer. */
+export interface MessageView {
+  invocation_id: string;
+  status: InvocationStatus;
+  capability_name: string;
+  capability_description: string | null;
+  output_schema: unknown;
+  /** The called agent. */
+  target: string | null;
+  requester: string | null;
+  requester_account: string | null;
+  requester_verified: boolean;
+  input: unknown;
+  output: unknown;
+  error_message: string | null;
+  created_at: string;
+  expires_at: string | null;
+  reply_shape: ReplyShape;
+  /** Open, with no reply draft from the agent waiting. */
+  answerable: boolean;
+  /** The agent's draft, when it wrote one: confirmed on its approval page. */
+  draft_approve_url?: string;
+}
+
+/** A call waiting for its owner's answer, in the messages list. */
+export interface MessageSummary {
+  invocation_id: string;
+  status: "pending" | "in_progress";
+  capability_name: string;
+  target: ConsentAgentRef;
+  requester_agent_id: string | null;
+  requester_display_name: string | null;
+  requester_account_display_name: string | null;
+  created_at: string;
+  expires_at: string | null;
+  owner_reply_url: string;
+}
+
+export function listMessages(token: string) {
+  return request<MessageSummary[]>("/v1/approvals?state=messages", { token });
+}
+
+export function getMessage(token: string, id: string) {
+  return request<MessageView>(`/v1/approvals/messages/${encodeURIComponent(id)}`, { token });
 }
 
 export function listActiveConsents(token: string) {
