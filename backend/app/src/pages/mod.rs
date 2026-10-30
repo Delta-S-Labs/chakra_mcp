@@ -7,6 +7,8 @@
 //! - `/app/pair` and `/qr`: approving a device pairing, and its QR handoff;
 //! - `/app/approvals/{id}`: approving a request held for the owner's
 //!   consent;
+//! - `/app/messages/{id}`: the owner answering a call to a `human_in_loop`
+//!   capability;
 //! - `POST /logout`.
 //!
 //! They sit on the same paths as chakramcp.com's web UI, so the discovery
@@ -22,6 +24,7 @@
 mod approvals;
 mod authorize;
 mod csrf;
+mod messages;
 mod pair;
 mod qr;
 mod security;
@@ -50,6 +53,10 @@ pub fn router() -> Router<AppState> {
         .route(
             "/app/approvals/{id}",
             get(approvals::show).post(approvals::submit),
+        )
+        .route(
+            "/app/messages/{id}",
+            get(messages::show).post(messages::submit),
         )
         .route("/qr", get(qr::show))
         .route("/logout", post(session::logout))

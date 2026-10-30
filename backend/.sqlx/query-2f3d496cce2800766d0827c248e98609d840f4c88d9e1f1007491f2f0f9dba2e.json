@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE relay_invocations\n           SET status = 'in_progress', claimed_at = now(), claimed_by_user_id = $2,\n               deliveries = deliveries + 1\n         WHERE id = $1 AND status = 'pending'\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2f3d496cce2800766d0827c248e98609d840f4c88d9e1f1007491f2f0f9dba2e"
+}

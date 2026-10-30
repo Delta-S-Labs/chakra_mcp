@@ -225,6 +225,11 @@ pub struct InvocationDto {
     /// side, while the invocation is open.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub peer: Option<Peer>,
+    /// For a `human_in_loop` capability, to the served side: where one of
+    /// the owner's approvers answers it, signed in, claimed or not (waking
+    /// pull agents §9). Pass it to your human.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner_reply_url: Option<String>,
 }
 
 /// Friendship details the relay verified before queuing this
@@ -345,13 +350,7 @@ pub(crate) async fn screen_request(
 
 /// A message over the screening cap: refused, never screened in part.
 pub(crate) fn too_large_to_screen() -> ApiError {
-    ApiError::PayloadTooLarge {
-        code: "chk.safety.too_large",
-        message: format!(
-            "the message is over {} bytes of text, the most safety screening reads",
-            safety::MAX_WALK_BYTES
-        ),
-    }
+    safety::too_large_to_screen()
 }
 
 pub(crate) fn truncate_for_audit(value: &Value) -> Value {
@@ -1712,6 +1711,12 @@ pub async fn inbox(
                         grantee_account_id: r.grantee_account_id,
                         capability_id: r.capability_id,
                         capability_name: r.capability_name,
+                        owner_reply_url: owner_reply_url_for(
+                            &state,
+                            r.id,
+                            true,
+                            r.capability_semantics.as_deref(),
+                        ),
                         semantics: r.capability_semantics,
                         status: r.status,
                         elapsed_ms: r.elapsed_ms,
@@ -2064,6 +2069,12 @@ pub async fn list(
                 grantee_account_id: None,
                 capability_id: r.capability_id,
                 capability_name: r.capability_name,
+                owner_reply_url: owner_reply_url_for(
+                    &state,
+                    r.id,
+                    i_served,
+                    r.capability_semantics.as_deref(),
+                ),
                 semantics: r.capability_semantics,
                 status: r.status,
                 elapsed_ms: r.elapsed_ms,
@@ -2096,6 +2107,18 @@ pub async fn list(
         .collect::<Vec<_>>();
     fill_reply_tokens(&state, &mut dtos).await?;
     Ok(Json(dtos))
+}
+
+/// `owner_reply_url` on a read: for a `human_in_loop` capability, to the
+/// served side.
+pub(crate) fn owner_reply_url_for(
+    state: &RelayState,
+    id: Uuid,
+    i_served: bool,
+    semantics: Option<&str>,
+) -> Option<String> {
+    (i_served && semantics == Some("human_in_loop"))
+        .then(|| crate::consent::notices::owner_reply_url(state, id))
 }
 
 /// `peer` on a read: for the calling side while the invocation is open
@@ -2240,6 +2263,12 @@ async fn fetch_one(state: &RelayState, user_id: Uuid, id: Uuid) -> Result<Invoca
         grantee_account_id: None,
         capability_id: r.capability_id,
         capability_name: r.capability_name,
+        owner_reply_url: owner_reply_url_for(
+            state,
+            r.id,
+            i_served,
+            r.capability_semantics.as_deref(),
+        ),
         semantics: r.capability_semantics,
         status: r.status,
         elapsed_ms: r.elapsed_ms,

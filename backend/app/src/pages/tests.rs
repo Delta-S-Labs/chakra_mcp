@@ -800,6 +800,7 @@ async fn managed_servers_serve_no_pages(pool: PgPool) {
         "/signup",
         "/app/pair",
         "/app/approvals/0199f1f0-0000-7000-8000-000000000000",
+        "/app/messages/0199f1f0-0000-7000-8000-000000000000",
         "/qr",
         "/assets/pages.css",
     ] {
@@ -1242,4 +1243,192 @@ fn return_to_stays_on_this_server() {
     ] {
         assert_eq!(state_less.return_path(trick), None, "{trick:?}");
     }
+}
+
+/// Ada's agent gets a call to a `human_in_loop` capability with
+/// `output_schema`, nobody has claimed it yet. Returns the invocation.
+async fn message_for_ada(pool: &PgPool, ada: Uuid, output_schema: Value) -> Uuid {
+    let (request, invocation) = held_request(pool, ada, serde_json::json!({})).await;
+    sqlx::query(
+        "UPDATE agent_capabilities SET semantics = 'human_in_loop', consent_required = false,
+                output_schema = $2
+          WHERE id = (SELECT capability_id FROM relay_invocations WHERE id = $1)",
+    )
+    .bind(invocation)
+    .bind(output_schema)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query("DELETE FROM consent_requests WHERE id = $1")
+        .bind(request)
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE relay_invocations SET status = 'pending', expires_at = now() + interval '1 day'
+          WHERE id = $1",
+    )
+    .bind(invocation)
+    .execute(pool)
+    .await
+    .unwrap();
+    invocation
+}
+
+async fn signed_in_at(pool: &PgPool, path: &str, email: &str) -> (Browser, Page) {
+    let mut browser = Browser::new(state(pool));
+    let signin = browser.get(path).await;
+    assert!(signin.body.contains("answer a message"), "{}", signin.body);
+    let done = browser
+        .submit(path, &signin, &[("email", email), ("password", PASSWORD)])
+        .await;
+    assert_eq!(done.status, StatusCode::SEE_OTHER, "{}", done.body);
+    let page = browser.get(path).await;
+    (browser, page)
+}
+
+async fn outcome(
+    pool: &PgPool,
+    invocation: Uuid,
+) -> (String, Option<Value>, Option<String>, Option<Uuid>) {
+    sqlx::query_as(
+        "SELECT status, output_preview, error_message, claimed_by_user_id
+           FROM relay_invocations WHERE id = $1",
+    )
+    .bind(invocation)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+#[sqlx::test(migrations = "../migrations")]
+async fn the_owner_answers_a_message_nobody_claimed(pool: PgPool) {
+    let ada = seed(&pool).await;
+    let message_owner = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "status": { "type": "string", "enum": ["replied", "acknowledged"] },
+            "reply": { "type": "string" }
+        }
+    });
+    let invocation = message_for_ada(&pool, ada, message_owner).await;
+    let path = format!("/app/messages/{invocation}");
+    let (mut browser, page) = signed_in_at(&pool, &path, "ada@example.test").await;
+    assert_eq!(page.status, StatusCode::OK, "{}", page.body);
+    assert!(page.body.contains("Answer a message?"), "{}", page.body);
+    assert!(page.body.contains("Bob Booker"));
+    assert!(page.body.contains("2026-10-24"), "the input");
+    assert!(
+        !page.body.contains("as JSON"),
+        "message_owner's owners type text"
+    );
+
+    let blank = browser
+        .submit(&path, &page, &[("step", "reply"), ("reply", " ")])
+        .await;
+    assert_eq!(blank.status, StatusCode::BAD_REQUEST);
+    assert!(blank.body.contains("Write a reply first."));
+
+    let sent = browser
+        .submit(
+            &path,
+            &page,
+            &[("step", "reply"), ("reply", "Tuesday works")],
+        )
+        .await;
+    assert_eq!(sent.status, StatusCode::OK, "{}", sent.body);
+    assert!(sent.body.contains("Sent"));
+    let (status, output, _, claimed_by) = outcome(&pool, invocation).await;
+    let output = output.unwrap();
+    assert_eq!(status, "succeeded");
+    assert_eq!(output["status"], "replied");
+    assert_eq!(output["reply"], "Tuesday works");
+    assert!(output["responded_at"].is_string());
+    assert_eq!(claimed_by, Some(ada));
+
+    // Answered: the page says so, with no form.
+    let after = browser.get(&path).await;
+    assert!(after.body.contains("been answered"), "{}", after.body);
+    assert!(!after.body.contains("Send reply"));
+}
+
+#[sqlx::test(migrations = "../migrations")]
+async fn json_replies_are_checked_and_owners_can_decline(pool: PgPool) {
+    let ada = seed(&pool).await;
+    let invocation = message_for_ada(
+        &pool,
+        ada,
+        serde_json::json!({ "type": "object", "properties": { "slot": { "type": "string" } } }),
+    )
+    .await;
+    let path = format!("/app/messages/{invocation}");
+    let (mut browser, page) = signed_in_at(&pool, &path, "ada@example.test").await;
+    assert!(page.body.contains("as JSON"), "{}", page.body);
+
+    let bad = browser
+        .submit(&path, &page, &[("step", "reply"), ("reply", "{nope")])
+        .await;
+    assert_eq!(bad.status, StatusCode::BAD_REQUEST);
+    assert!(bad.body.contains("must be JSON"), "{}", bad.body);
+    assert_eq!(outcome(&pool, invocation).await.0, "pending");
+
+    let declined = browser
+        .submit(
+            &path,
+            &page,
+            &[("step", "decline"), ("reason", "Busy that week")],
+        )
+        .await;
+    assert_eq!(declined.status, StatusCode::OK, "{}", declined.body);
+    assert!(declined.body.contains("Declined"));
+    let (status, _, error, _) = outcome(&pool, invocation).await;
+    assert_eq!(status, "failed");
+    assert_eq!(error.as_deref(), Some("Busy that week"));
+}
+
+#[sqlx::test(migrations = "../migrations")]
+async fn only_the_agents_approvers_see_its_messages(pool: PgPool) {
+    let ada = seed(&pool).await;
+    let invocation = message_for_ada(&pool, ada, serde_json::json!({})).await;
+    accounts::create_user(
+        &pool,
+        NewUser {
+            email: "eve@example.test",
+            name: "Eve",
+            password: PASSWORD,
+            is_admin: false,
+        },
+    )
+    .await
+    .unwrap();
+    let path = format!("/app/messages/{invocation}");
+    let mut browser = Browser::new(state(&pool));
+    let signin = browser.get(&path).await;
+    browser
+        .submit(
+            &path,
+            &signin,
+            &[("email", "eve@example.test"), ("password", PASSWORD)],
+        )
+        .await;
+    let page = browser.get(&path).await;
+    assert_eq!(page.status, StatusCode::NOT_FOUND, "{}", page.body);
+    // Nor can she post an answer, with a good form token.
+    let posted = browser
+        .submit(&path, &signin, &[("step", "reply"), ("reply", "Hi")])
+        .await;
+    assert_eq!(posted.status, StatusCode::NOT_FOUND, "{}", posted.body);
+    assert_eq!(outcome(&pool, invocation).await.0, "pending");
+
+    // An autonomous capability's calls are its agent's: not here either.
+    sqlx::query(
+        "UPDATE agent_capabilities SET semantics = 'autonomous'
+          WHERE id = (SELECT capability_id FROM relay_invocations WHERE id = $1)",
+    )
+    .bind(invocation)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (_, page) = signed_in_at(&pool, &path, "ada@example.test").await;
+    assert_eq!(page.status, StatusCode::NOT_FOUND);
 }

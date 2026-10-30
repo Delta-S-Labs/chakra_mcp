@@ -1,6 +1,6 @@
 //! Owner consent decisions (spec §4.4, §7, §8).
 //!
-//! GET  /v1/approvals?state=waiting|active|history
+//! GET  /v1/approvals?state=waiting|active|history|messages
 //! GET  /v1/approvals/{id}
 //! POST /v1/approvals/{id}/approve   {valid_for?, max_requests?}
 //! POST /v1/approvals/{id}/deny      {note?}
@@ -62,6 +62,24 @@ pub struct ApprovalSummary {
     pub covered: bool,
 }
 
+/// A call to a `human_in_loop` capability waiting for an answer, in the
+/// messages list (waking pull agents §9).
+#[derive(Debug, Serialize)]
+pub struct MessageSummary {
+    pub invocation_id: Uuid,
+    /// `pending` (nobody claimed it) or `in_progress`.
+    pub status: String,
+    pub capability_name: String,
+    pub target: AgentRef,
+    pub requester_agent_id: Option<Uuid>,
+    pub requester_display_name: Option<String>,
+    pub requester_account_display_name: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
+    /// Where the approver answers it.
+    pub owner_reply_url: String,
+}
+
 /// A row in the active consents list.
 #[derive(Debug, Serialize)]
 pub struct ConsentSummary {
@@ -103,8 +121,9 @@ pub async fn list(
         "waiting" => Ok(Json(json!(waiting(&state, user.user_id).await?))),
         "active" => Ok(Json(json!(active(&state, user.user_id).await?))),
         "history" => Ok(Json(json!(history(&state, user.user_id).await?))),
+        "messages" => Ok(Json(json!(messages(&state, user.user_id).await?))),
         _ => Err(ApiError::InvalidRequest(
-            "state must be waiting|active|history".into(),
+            "state must be waiting|active|history|messages".into(),
         )),
     }
 }
@@ -165,6 +184,62 @@ async fn waiting(state: &RelayState, user_id: Uuid) -> ApiResult<Vec<ApprovalSum
             decision_note: r.decision_note,
             decided_by_display_name: None,
             covered: false,
+        })
+        .collect())
+}
+
+/// Open calls to `human_in_loop` capabilities the user may answer, with no
+/// reply draft waiting (a drafted one shows in `waiting`, as its draft),
+/// newest first. The approver rule is `waiting`'s.
+async fn messages(state: &RelayState, user_id: Uuid) -> ApiResult<Vec<MessageSummary>> {
+    let rows = sqlx::query!(
+        r#"
+        SELECT i.id, i.status, i.capability_name, i.created_at, i.expires_at,
+               i.granter_agent_id AS "granter_agent_id!", ga.display_name AS granter_display_name,
+               i.grantee_agent_id, ea.display_name AS "grantee_display_name?",
+               eacc.display_name AS "grantee_account_display_name?"
+          FROM relay_invocations i
+          JOIN agent_capabilities cap
+            ON cap.id = i.capability_id AND cap.semantics = 'human_in_loop'
+          JOIN agents ga ON ga.id = i.granter_agent_id
+          JOIN account_memberships m ON m.account_id = ga.account_id AND m.user_id = $1
+          LEFT JOIN agents ea ON ea.id = i.grantee_agent_id
+          LEFT JOIN accounts eacc ON eacc.id = ea.account_id
+         WHERE i.status IN ('pending', 'in_progress')
+           AND NOT EXISTS (
+               SELECT 1 FROM consent_requests cr
+                WHERE cr.invocation_id = i.id AND cr.kind = 'reply'
+                  AND cr.status IN ('pending', 'approved'))
+           AND (m.user_id = ANY(COALESCE(cap.consent_approvers, '{}'))
+                OR (m.role IN ('owner', 'admin')
+                    AND NOT EXISTS (
+                        SELECT 1 FROM account_memberships listed
+                         WHERE listed.account_id = ga.account_id
+                           AND listed.user_id = ANY(COALESCE(cap.consent_approvers, '{}')))))
+         ORDER BY i.created_at DESC
+         LIMIT $2
+        "#,
+        user_id,
+        LIST_LIMIT,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| MessageSummary {
+            owner_reply_url: crate::consent::notices::owner_reply_url(state, r.id),
+            invocation_id: r.id,
+            status: r.status,
+            capability_name: r.capability_name,
+            target: AgentRef {
+                id: r.granter_agent_id,
+                display_name: Some(r.granter_display_name),
+            },
+            requester_agent_id: r.grantee_agent_id,
+            requester_display_name: r.grantee_display_name,
+            requester_account_display_name: r.grantee_account_display_name,
+            created_at: r.created_at,
+            expires_at: r.expires_at,
         })
         .collect())
 }

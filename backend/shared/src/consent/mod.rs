@@ -15,5 +15,6 @@ pub mod approvers;
 pub mod decide;
 pub mod hash;
 pub mod metrics;
+pub mod owner_reply;
 pub mod reply;
 pub mod terms;

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT i.id, i.capability_name, i.input_preview, i.status, i.trust_snapshot,\n               i.created_at, i.claimed_at, i.call_id, i.expires_at, i.lease_until,\n               i.grantee_agent_id, ea.display_name as \"grantee_display_name?\"\n        FROM relay_invocations i\n        LEFT JOIN agents ea ON ea.id = i.grantee_agent_id\n        WHERE i.id = ANY($1)\n        ORDER BY i.created_at ASC\n        ",
+  "query": "\n        SELECT i.id, i.capability_name, i.input_preview, i.status, i.trust_snapshot,\n               i.created_at, i.claimed_at, i.call_id, i.expires_at, i.lease_until,\n               i.grantee_agent_id, ea.display_name as \"grantee_display_name?\",\n               cap.semantics as \"semantics?\"\n        FROM relay_invocations i\n        LEFT JOIN agents ea ON ea.id = i.grantee_agent_id\n        LEFT JOIN agent_capabilities cap ON cap.id = i.capability_id\n        WHERE i.id = ANY($1)\n        ORDER BY i.created_at ASC\n        ",
   "describe": {
     "columns": [
       {
@@ -134,6 +134,17 @@
             "name": "display_name"
           }
         }
+      },
+      {
+        "ordinal": 12,
+        "name": "semantics?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "agent_capabilities",
+            "name": "semantics"
+          }
+        }
       }
     ],
     "parameters": {
@@ -153,8 +164,9 @@
       true,
       true,
       true,
+      false,
       false
     ]
   },
-  "hash": "c9594070f8d4adf1641e95dea1bec06609ed13f1ecb1b623f8c3c437a4be3066"
+  "hash": "41f296cbbddbfb5a2be392bfe85b261fb0e8517d1fafa491b97401284a714509"
 }

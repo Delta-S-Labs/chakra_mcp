@@ -32,6 +32,8 @@ pub mod limits;
 pub mod mcp;
 pub mod outbound;
 #[cfg(test)]
+mod owner_reply_tests;
+#[cfg(test)]
 mod peer_tests;
 pub mod policy;
 pub mod retention;

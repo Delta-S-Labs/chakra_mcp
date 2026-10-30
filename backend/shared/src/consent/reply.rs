@@ -16,6 +16,8 @@ use super::decide::Actor;
 use super::hash::sha256_jcs;
 use super::metrics;
 use crate::error::ApiError;
+use crate::safety::{Channel, Safety};
+use crate::system_one::{ComplianceChecker, Subject};
 use crate::wake::{Feed, Wake};
 
 /// A draft must arrive whole, so the approver confirms exactly what the
@@ -120,17 +122,207 @@ pub async fn store_draft(
     })
 }
 
-/// An approver's own reply (in the web inbox): store it as confirmed by
-/// them and release it, in one transaction. Returns the elapsed time.
-pub async fn confirm_now(
+/// What a reply is about, for screening it.
+#[derive(Debug, Clone, Copy)]
+pub struct ReplyAbout<'a> {
+    pub capability_name: &'a str,
+    pub capability_description: Option<&'a str>,
+    /// The capability's output schema: which parts of `output` are free text.
+    pub output_schema: Option<&'a Value>,
+}
+
+/// Screen a reply before anything stores or releases it (message safety
+/// §5), when `checker` has safety on: the report is kept on the
+/// invocation, a block refuses the reply, and otherwise it comes back as
+/// the requester will see it, with what was found. Without safety the reply
+/// is unchanged.
+pub async fn screen_reply(
+    db: &PgPool,
+    checker: Option<&ComplianceChecker>,
+    invocation_id: Uuid,
+    about: &ReplyAbout<'_>,
+    mut draft: Draft,
+) -> Result<(Draft, Option<Safety>), ApiError> {
+    let Some(checker) = checker.filter(|c| c.safety_enabled()) else {
+        return Ok((draft, None));
+    };
+    let mut sent = json!({ "status": draft.status });
+    if let Some(o) = &draft.output {
+        sent["output"] = o.clone();
+    }
+    if let Some(e) = &draft.error {
+        sent["error"] = json!(e);
+    }
+    let subject = Subject {
+        capability_name: about.capability_name,
+        capability_description: about
+            .capability_description
+            .filter(|d| !d.trim().is_empty()),
+        grant_purpose: None,
+        relationship: None,
+        input: &sent,
+    };
+    let screened = checker
+        .screen(Channel::Reply, &subject, "", about.output_schema, "/output")
+        .await
+        .map_err(|_| crate::safety::too_large_to_screen())?;
+    store_reply_report(db, invocation_id, &screened.report).await?;
+    if let Some(block) = screened.block {
+        return Err(ApiError::Policy {
+            code: block.code,
+            message: block.reason,
+        });
+    }
+    if draft.output.is_some() {
+        draft.output = screened.value.get("output").cloned();
+    }
+    if draft.error.is_some() {
+        draft.error = screened.value["error"].as_str().map(str::to_owned);
+    }
+    let safety = (!screened.findings.is_empty()).then_some(Safety {
+        request: None,
+        reply: Some(screened.findings),
+    });
+    Ok((draft, safety))
+}
+
+/// Keep a reply's screening report (message safety §5), drafts and blocked
+/// replies included: `trust_snapshot.system_one.reply_safety`.
+async fn store_reply_report(db: &PgPool, id: Uuid, report: &Value) -> Result<(), ApiError> {
+    sqlx::query!(
+        r#"
+        UPDATE relay_invocations
+           SET trust_snapshot = COALESCE(trust_snapshot, '{}'::jsonb)
+               || jsonb_build_object(
+                    'system_one',
+                    COALESCE(trust_snapshot->'system_one', '{}'::jsonb)
+                        || jsonb_build_object('reply_safety', $2::jsonb))
+         WHERE id = $1
+        "#,
+        id,
+        report,
+    )
+    .execute(db)
+    .await?;
+    Ok(())
+}
+
+/// An owner's answer, as it was released.
+#[derive(Debug, Clone)]
+pub struct OwnerAnswer {
+    pub status: String,
+    pub elapsed_ms: i32,
+    /// What message safety removed or flagged in it.
+    pub safety: Option<Safety>,
+}
+
+/// One of the called agent's approvers answers a call to a `human_in_loop`
+/// capability on the web (waking pull agents §9): screened, stored as
+/// confirmed by them and released, whether or not the agent had claimed
+/// it. The caller has already checked the session is a person's.
+///
+/// A call nobody claimed is claimed for the owner in the same transaction,
+/// and its agent, which never saw it, isn't told. A claimed one's agent
+/// gets `reply_confirmed`, as when an approver confirms its draft. If any
+/// step fails, nothing is committed.
+pub async fn answer_as_owner(
     db: &PgPool,
     wake: &Wake,
+    checker: Option<&ComplianceChecker>,
     actor: Actor,
-    t: &ReplyTarget,
-    draft: &Draft,
-) -> Result<i32, ApiError> {
+    invocation_id: Uuid,
+    draft: Draft,
+) -> Result<OwnerAnswer, ApiError> {
+    if !matches!(draft.status.as_str(), "succeeded" | "failed") {
+        return Err(ApiError::InvalidRequest(
+            "status must be 'succeeded' or 'failed'".into(),
+        ));
+    }
     draft.check_size()?;
+    let row = sqlx::query!(
+        r#"
+        SELECT i.status, i.capability_id, i.granter_agent_id, i.grantee_agent_id,
+               ga.account_id AS "granter_account_id?",
+               ea.account_id AS "grantee_account_id?",
+               c.semantics AS "semantics?",
+               c.name AS "capability_name?",
+               c.description AS "capability_description?",
+               c.output_schema AS "output_schema?",
+               c.consent_approvers AS "approvers?"
+          FROM relay_invocations i
+          LEFT JOIN agents ga ON ga.id = i.granter_agent_id
+          LEFT JOIN agents ea ON ea.id = i.grantee_agent_id
+          LEFT JOIN agent_capabilities c ON c.id = i.capability_id
+         WHERE i.id = $1
+        "#,
+        invocation_id,
+    )
+    .fetch_optional(db)
+    .await?
+    .ok_or(ApiError::NotFound)?;
+    let granter_account = row.granter_account_id.ok_or(ApiError::NotFound)?;
+    let approvers = row.approvers.clone().unwrap_or_default();
+    if !super::approvers::may_decide(db, actor.user_id, granter_account, &approvers).await? {
+        return Err(ApiError::Forbidden);
+    }
+    if row.semantics.as_deref() != Some("human_in_loop") {
+        return Err(ApiError::Conflict(
+            "only calls to human_in_loop capabilities are answered by their owner; \
+             others are answered by the agent that claims them"
+                .into(),
+        ));
+    }
+    match row.status.as_str() {
+        "pending" | "in_progress" => {}
+        "succeeded" | "failed" | "rejected" | "timeout" => return Err(already_settled()),
+        other => {
+            return Err(ApiError::Conflict(format!(
+                "this call is {other}, so it can't be answered yet"
+            )))
+        }
+    }
+    let (
+        Some(capability_id),
+        Some(granter),
+        Some(grantee),
+        Some(grantee_account),
+        Some(capability_name),
+    ) = (
+        row.capability_id,
+        row.granter_agent_id,
+        row.grantee_agent_id,
+        row.grantee_account_id,
+        row.capability_name.as_deref(),
+    )
+    else {
+        return Err(ApiError::Conflict(
+            "the invocation's agents or capability no longer exist".into(),
+        ));
+    };
+    let about = ReplyAbout {
+        capability_name,
+        capability_description: row.capability_description.as_deref(),
+        output_schema: row.output_schema.as_ref(),
+    };
+    let (draft, safety) = screen_reply(db, checker, invocation_id, &about, draft).await?;
+
     let mut tx = db.begin().await?;
+    // Nobody claimed it: claim it for the owner. If its agent claimed it
+    // since we looked, it's the agent's, and the agent is told below.
+    let claimed_here = sqlx::query!(
+        r#"
+        UPDATE relay_invocations
+           SET status = 'in_progress', claimed_at = now(), claimed_by_user_id = $2,
+               deliveries = deliveries + 1
+         WHERE id = $1 AND status = 'pending'
+        "#,
+        invocation_id,
+        actor.user_id,
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected()
+        == 1;
     let request_id = sqlx::query_scalar!(
         r#"
         INSERT INTO consent_requests
@@ -149,11 +341,11 @@ pub async fn confirm_now(
         RETURNING id
         "#,
         Uuid::now_v7(),
-        t.invocation_id,
-        t.capability_id,
-        t.granter_agent_id,
-        t.grantee_agent_id,
-        t.grantee_account_id,
+        invocation_id,
+        capability_id,
+        granter,
+        grantee,
+        grantee_account,
         draft.to_value(),
         draft.sha256(),
         actor.user_id,
@@ -161,22 +353,40 @@ pub async fn confirm_now(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| ApiError::Conflict("this reply was already decided".into()))?;
-    let elapsed = release(&mut tx, t.invocation_id, draft)
+    let elapsed_ms = release(&mut tx, invocation_id, &draft)
         .await?
-        .ok_or_else(|| ApiError::Conflict("the invocation is no longer in progress".into()))?;
-    notify(
-        &mut tx,
-        t.granter_agent_id,
-        "reply_confirmed",
-        request_id,
-        t.invocation_id,
-    )
-    .await?;
+        .ok_or_else(already_settled)?;
+    if !claimed_here {
+        notify(
+            &mut tx,
+            granter,
+            "reply_confirmed",
+            request_id,
+            invocation_id,
+        )
+        .await?;
+    }
     tx.commit().await?;
-    wake.notify(t.granter_agent_id, Feed::Notices);
+    if !claimed_here {
+        wake.notify(granter, Feed::Notices);
+    }
     metrics::record_kind("reply", "approved", 1);
-    metrics::record_finished(&draft.status, elapsed);
-    Ok(elapsed)
+    metrics::record_finished(&draft.status, elapsed_ms);
+    Ok(OwnerAnswer {
+        status: draft.status,
+        elapsed_ms,
+        safety,
+    })
+}
+
+/// `409 chk.invocation.already_settled`: the call has its result, timed
+/// out, or was refused (waking pull agents §11).
+pub fn already_settled() -> ApiError {
+    ApiError::coded(
+        axum::http::StatusCode::CONFLICT,
+        "chk.invocation.already_settled",
+        "this invocation is already settled",
+    )
 }
 
 /// Release `draft` as the invocation's result. `None` if the invocation

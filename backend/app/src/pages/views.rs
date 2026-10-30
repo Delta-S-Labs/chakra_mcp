@@ -112,6 +112,37 @@ pub(crate) struct MessagePage {
     pub link: Option<Link>,
 }
 
+/// A call to a `human_in_loop` capability, for its owner to answer.
+#[derive(Template)]
+#[template(path = "pages/reply.html")]
+pub(crate) struct ReplyPage {
+    pub title: String,
+    pub host: String,
+    pub heading: String,
+    pub action: String,
+    pub csrf: String,
+    pub user_email: String,
+    pub requester: String,
+    pub requester_account: Option<String>,
+    pub verified: bool,
+    pub capability: String,
+    pub capability_description: Option<String>,
+    pub target: String,
+    pub created_at: String,
+    pub expires_at: Option<String>,
+    pub input: Vec<Field>,
+    pub answerable: bool,
+    /// The box holds JSON (the capability has an output schema).
+    pub json: bool,
+    pub reply: String,
+    pub reason: String,
+    pub error: Option<String>,
+    /// The agent's draft waiting for confirmation, on its approval page.
+    pub draft_link: Option<String>,
+    /// How it ended, when it's settled.
+    pub outcome: String,
+}
+
 /// A choice on the approval page.
 pub(crate) struct Choice {
     pub value: String,

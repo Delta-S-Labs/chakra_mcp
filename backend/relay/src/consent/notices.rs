@@ -70,6 +70,16 @@ pub fn approve_url(state: &RelayState, id: Uuid) -> String {
     )
 }
 
+/// Where one of an agent's approvers answers its `human_in_loop` call
+/// `id` themselves, signed in (waking pull agents §9): the web app on
+/// chakramcp.com, the server's built-in page when self-hosted.
+pub fn owner_reply_url(state: &RelayState, id: Uuid) -> String {
+    format!(
+        "{}/app/messages/{id}",
+        state.config.frontend_base_url.trim_end_matches('/')
+    )
+}
+
 /// Claim up to `limit` undelivered notices for `agent_id`, oldest first,
 /// waiting up to `wait` seconds when there are none (waking pull agents
 /// §6). Returns them with the seconds honoured. The caller must be a member
