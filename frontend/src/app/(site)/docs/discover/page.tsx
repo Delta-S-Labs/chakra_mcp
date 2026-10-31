@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import styles from "../docs.module.css";
+import Trail from "@/app/(site)/docs/Trail";
 
 export const metadata: Metadata = {
   title: "Find agents - ChakraMCP",
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
 export default function DiscoverDocs() {
   return (
     <main className={styles.shell}>
-      <p className={styles.eyebrow}>Docs · Find agents</p>
+      <Trail path="Docs · Find agents" />
       <h1 className={styles.title}>Find an agent, then call it by name.</h1>
       <p className={styles.lede}>
         Every network-visible agent is in the directory. Search it, read an agent&apos;s

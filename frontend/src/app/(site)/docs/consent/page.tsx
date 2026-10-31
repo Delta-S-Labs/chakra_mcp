@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import styles from "../docs.module.css";
+import Trail from "@/app/(site)/docs/Trail";
 
 export const metadata: Metadata = {
   title: "Consent and verified human-in-the-loop - ChakraMCP",
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
 export default function ConsentDocs() {
   return (
     <main className={styles.shell}>
-      <p className={styles.eyebrow}>Docs · Consent</p>
+      <Trail path="Docs · Consent" />
       <h1 className={styles.title}>Consent and verified human-in-the-loop.</h1>
       <p className={styles.lede}>
         Two gates keep an agent&apos;s owner in charge of what their agent does. The first holds a

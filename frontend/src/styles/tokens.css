@@ -1,26 +1,27 @@
 /* ChakraMCP - colors & type */
-/* Load fonts from Google Fonts (Archivo Expanded + Afacad) */
-@import url('https://fonts.googleapis.com/css2?family=Afacad:wght@400;500;600;700&family=Archivo+Expanded:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+/* Fonts are loaded by next/font in app/layout.tsx, which sets the
+ * --font-geist / --font-geist-mono variables. Geist does the display and
+ * the text: headlines at regular weight with tight tracking. */
 
 :root {
   /* --- Type families --- */
-  --font-display: 'Archivo Expanded', 'Archivo', system-ui, sans-serif;
-  --font-body: 'Afacad', 'Inter', system-ui, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  --font-display: var(--font-geist), 'Geist', system-ui, sans-serif;
+  --font-body: var(--font-geist), 'Geist', system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   /* --- Color - paper (backgrounds) --- */
-  --paper:       oklch(96% 0.014 72);   /* cream - default page bg */
-  --paper-warm:  oklch(93% 0.030 45);   /* warmer cream for cards / hover */
-  --paper-soft:  oklch(98% 0.010 70);   /* near-white, still warm */
+  --paper:       oklch(93.6% 0.005 95); /* stone - default page bg */
+  --paper-warm:  oklch(89.6% 0.006 90); /* one step darker: panels, fragments */
+  --paper-soft:  oklch(96.6% 0.004 95); /* one step lighter: cards, inputs */
 
   /* --- Color - ink (text) --- */
   --ink:         oklch(24% 0.030 18);   /* primary text, dark brown-black */
   --ink-soft:    oklch(42% 0.025 22);   /* secondary text */
-  --ink-muted:   oklch(58% 0.020 28);   /* captions, labels */
-  --line:        oklch(78% 0.020 38);   /* hairlines, dividers */
+  --ink-muted:   oklch(48% 0.018 28);   /* captions, labels */
+  --line:        oklch(80% 0.008 80);   /* hairlines, dividers (app screens) */
 
   /* --- Color - accents --- */
-  --accent-coral:  oklch(63% 0.19 28);   /* terra cotta - primary accent */
+  --accent-coral:  oklch(63% 0.19 28);   /* coral - primary accent */
   --accent-lime:   oklch(86% 0.16 128);  /* unexpected lime - secondary */
   --accent-butter: oklch(91% 0.13 96);   /* butter yellow - highlights */
   --accent-ink:    oklch(30% 0.03 18);   /* deep ink - dark panels */
@@ -70,6 +71,11 @@
   --bg-1: var(--paper);
   --bg-2: var(--paper-soft);
   --bg-3: var(--paper-warm);
+
+  /* --- Fields (whole sections of colour) --- */
+  --on-ink:        oklch(93% 0.006 90);   /* text on ink fields */
+  --on-ink-muted:  oklch(78% 0.010 70);
+  --on-coral:      oklch(16% 0.030 18);   /* text on coral: ink, a step darker */
 }
 
 /* --- Page base --- */
@@ -82,10 +88,10 @@ html, body {
   text-rendering: optimizeLegibility;
 }
 
-/* --- Display / headlines (Archivo Expanded, tight negative tracking) --- */
+/* --- Display / headlines (Geist, tight negative tracking) --- */
 .h-display, h1.h-display {
   font-family: var(--font-display);
-  font-weight: 800;
+  font-weight: 500;
   font-size: clamp(3.3rem, 7vw, 7rem);
   line-height: 0.92;
   letter-spacing: -0.05em;
@@ -93,7 +99,7 @@ html, body {
 }
 h1, .h1 {
   font-family: var(--font-display);
-  font-weight: 800;
+  font-weight: 500;
   font-size: clamp(2.4rem, 5vw, 4.2rem);
   line-height: 0.96;
   letter-spacing: -0.045em;
@@ -102,7 +108,7 @@ h1, .h1 {
 }
 h2, .h2 {
   font-family: var(--font-display);
-  font-weight: 700;
+  font-weight: 500;
   font-size: clamp(1.9rem, 3vw, 3.1rem);
   line-height: 1.02;
   letter-spacing: -0.04em;

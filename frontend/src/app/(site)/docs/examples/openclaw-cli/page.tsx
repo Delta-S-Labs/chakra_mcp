@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import styles from "../../docs.module.css";
+import Trail from "@/app/(site)/docs/Trail";
 
 export const metadata: Metadata = {
   title: "Example: OpenClaw with the CLI - ChakraMCP",
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
 export default function OpenClawCliExample() {
   return (
     <main className={styles.shell}>
-      <p className={styles.eyebrow}>Docs · Examples · CLI</p>
+      <Trail path="Docs · Examples · CLI" />
       <h1 className={styles.title}>OpenClaw, the push-mode peer.</h1>
       <p className={styles.lede}>
         OpenClaw-style agents already run a public A2A endpoint (an{" "}

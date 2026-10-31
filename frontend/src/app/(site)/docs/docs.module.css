@@ -1,47 +1,30 @@
-/* Shared prose styling for /docs/* pages. Mirrors the marketing chrome
- * but tuned for long-form content: tighter measure, denser line-height,
- * code blocks that don't fight the cream background.
+/* Shared prose styling for /docs/* pages, in the site's look: a flat
+ * stone ground, Geist headings and text, ink code blocks.
+ * No hairlines, gradients, shadows, pills or uppercase labels.
  */
 
-/* Embedded demo video — used on /docs/quickstart. Was inline-styled
-   before; promoted to a real class so it's reusable + reviewable. */
+/* Embedded demo video, used on /docs/quickstart. */
 .demoVideo {
   width: 100%;
-  border-radius: 12px;
+  border-radius: 10px;
   display: block;
 }
 
-/* Small, slightly-muted paragraph that follows a primary CTA — used
-   on /docs/agents for the "older split-skill version" footnote. Was
-   inline-styled before. Selector is scoped to `.shell` so it beats
-   the `.shell p { margin: 0 0 1.05rem }` reset later in this file
-   (same single-class specificity → source order would otherwise
-   silently strip the margin-top). */
+/* Small paragraph after a primary link, used on /docs/agents. Scoped to
+   `.shell` so it beats `.shell p` below. */
 .shell p.smallNote {
   margin-top: 0.5em;
-  font-size: 0.92em;
-  color: var(--ink-muted);
+  font-size: 0.95em;
+  color: var(--ink-soft);
 }
 
 .shell {
-  /* `<main class="site-main">` is a grid container; grid items default
-   * to `min-width: auto` (their min-content size). A wide `<pre>` with
-   * `white-space: pre` then forces .shell to stretch to the longest
-   * line — verified on phone, .shell measured 865px inside a 375px
-   * viewport, and the body's `overflow-x: hidden` hid the resulting
-   * page scroll but visually clipped the right edge of every card,
-   * code block, and image.
-   *
-   * `min-width: 0` *alone* doesn't tame this in Chrome — grid-item
-   * `width: auto` still resolves to max-content when the item's
-   * intrinsic min-content exceeds the track. Explicit `width: 100%`
-   * forces the item to fit its track; `max-width: 72ch` still applies
-   * on desktop where 100% > 72ch and `margin: 0 auto` re-centers the
-   * extra space. */
+  /* `width: 100%` + `min-width: 0` keep a wide <pre> from stretching the
+   * grid item past a phone's viewport; `max-width` sets the measure. */
   width: 100%;
-  max-width: 72ch;
+  max-width: 44rem;
   margin: 0 auto;
-  padding: 4rem 1.5rem 6rem;
+  padding: 3.5rem 0 7rem;
   font-family: var(--font-body);
   color: var(--ink);
   min-width: 0;
@@ -49,311 +32,284 @@
 }
 
 .shell.wide {
-  max-width: 92ch;
+  max-width: 58rem;
 }
 
-.eyebrow {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 0.74rem;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+/* The breadcrumb above each page's title (Trail.tsx). It's navigation,
+   so it lives in a <nav>; set in the text face at reading size. */
+.eyebrow,
+.trail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  margin: 0 0 1.25rem;
+  font: 500 1rem/1.4 var(--font-body);
+  color: var(--ink-soft);
+}
+.shell .trail a {
+  color: var(--ink-soft);
+  text-decoration-color: transparent;
+}
+.shell .trail a:hover {
+  color: var(--ink);
+  text-decoration-color: var(--accent-coral);
+}
+.trailSep {
   color: var(--ink-muted);
-  margin: 0 0 0.7rem;
 }
 
 .title {
   font-family: var(--font-display);
-  font-weight: 800;
-  font-size: clamp(2rem, 4.5vw, 3.4rem);
-  letter-spacing: -0.04em;
-  line-height: 1.05;
-  margin: 0 0 1rem;
+  font-weight: 450;
+  font-size: clamp(2.2rem, 3.8vw, 3.4rem);
+  letter-spacing: -0.045em;
+  line-height: 1.02;
+  margin: 0 0 1.25rem;
   color: var(--ink);
+  text-wrap: balance;
+  max-width: none;
 }
 
 .lede {
-  font-size: 1.1rem;
-  line-height: 1.6;
-  color: var(--ink-soft);
-  margin: 0 0 2.4rem;
+  font-size: 1.25rem;
+  line-height: 1.5;
+  color: var(--ink);
+  margin: 0 0 2.75rem;
 }
 
 .h2 {
   font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 1.55rem;
-  letter-spacing: -0.02em;
-  margin: 3rem 0 0.8rem;
+  font-weight: 500;
+  font-size: 1.85rem;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
+  margin: 3.5rem 0 1rem;
   color: var(--ink);
-  scroll-margin-top: 5rem;
+  scroll-margin-top: 1.5rem;
+  max-width: none;
+  text-wrap: balance;
 }
+
 .h2:first-of-type {
-  margin-top: 1.4rem;
+  margin-top: 1.5rem;
 }
 
 .h3 {
   font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 1.15rem;
-  margin: 2.2rem 0 0.5rem;
+  font-weight: 600;
+  font-size: 1.25rem;
+  letter-spacing: -0.02em;
+  margin: 2.4rem 0 0.6rem;
   color: var(--ink);
-  scroll-margin-top: 5rem;
+  scroll-margin-top: 1.5rem;
 }
 
 .shell p {
-  font-size: 1rem;
-  line-height: 1.7;
-  margin: 0 0 1.05rem;
+  font-size: 1.0625rem;
+  line-height: 1.65;
+  margin: 0 0 1.1rem;
+  max-width: none;
 }
 
 .shell ul,
 .shell ol {
-  font-size: 1rem;
-  line-height: 1.7;
-  padding-left: 1.5rem;
-  margin: 0 0 1.05rem;
+  font-size: 1.0625rem;
+  line-height: 1.65;
+  padding-left: 1.4rem;
+  margin: 0 0 1.1rem;
+  list-style-position: outside;
 }
+
+.shell ul { list-style-type: disc; }
+.shell ol { list-style-type: decimal; }
 
 .shell li {
-  margin: 0.25rem 0;
+  margin: 0.3rem 0;
+  max-width: none;
 }
 
+.shell li::marker {
+  color: var(--accent-coral);
+}
+
+/* Inline code. */
 .shell code {
   font-family: var(--font-mono);
-  font-size: 0.88em;
-  padding: 0.05rem 0.36rem;
-  border-radius: 0.32rem;
-  background: color-mix(in oklab, var(--accent-butter) 38%, transparent);
-  color: oklch(33% 0.06 70);
-  /* Long identifiers (verification_uri_complete, urn:ietf:params:oauth:..., file
-   * paths) must fold inside narrow containers — without this they create
-   * horizontal page-scroll on phones. `anywhere` is the strongest break;
-   * `break-word` is the safer fallback on engines that ignore it. */
+  font-size: 0.86em;
+  padding: 0.08rem 0.36rem;
+  border-radius: 4px;
+  background: var(--paper-warm);
+  color: var(--ink);
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 
-/* `.codeScroll` wraps every <pre> on /docs/*. The <pre> itself keeps the
- * monospaced rendering; the wrapper owns the horizontal scroll + iOS momentum
- * + right-edge fade affordance. Extracted as a primitive so the four pages
- * don't each copy/paste these rules. */
+/* Code blocks: ink panels that scroll sideways on their own. */
 .codeScroll {
   position: relative;
   margin: 0 0 1.5rem;
-  /* Subtle fade on the right edge — only visible when content overflows,
-   * because the wrapper sits flush against an opaque <pre>. Mask works at
-   * desktop too but is a no-op when the content fits. */
-  -webkit-mask-image: linear-gradient(
-    to right,
-    black calc(100% - 1.5rem),
-    transparent
-  );
-          mask-image: linear-gradient(
-    to right,
-    black calc(100% - 1.5rem),
-    transparent
-  );
 }
-/* When inside .codeScroll the <pre> loses its own bottom margin (the wrapper
- * owns spacing) and picks up touch-momentum scrolling. */
+
 .codeScroll .pre {
   margin: 0;
 }
 
 .pre {
   font-family: var(--font-mono);
-  font-size: 0.84rem;
-  line-height: 1.55;
-  padding: 1rem 1.4rem 1rem 1.1rem;
-  border: 1px solid var(--line);
-  border-radius: 0.7rem;
-  background: var(--paper);
-  color: var(--ink);
+  font-size: 0.875rem;
+  line-height: 1.65;
+  padding: 1.1rem 1.25rem;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--on-ink);
   margin: 0 0 1.5rem;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   white-space: pre;
 }
-.pre code {
+
+.shell .pre code {
   background: transparent;
   padding: 0;
   font-size: inherit;
   color: inherit;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .kbd {
   font-family: var(--font-mono);
   font-size: 0.84em;
   padding: 0.04rem 0.45rem;
-  border: 1px solid var(--line);
-  border-radius: 0.32rem;
-  background: var(--paper);
+  border-radius: 4px;
+  background: var(--paper-warm);
   color: var(--ink);
-  box-shadow: 0 1px 0 0 var(--line);
 }
 
+/* Callouts: a step in tone, no rule down the side. */
 .callout {
-  margin: 1rem 0 1.5rem;
-  padding: 0.85rem 1rem;
-  border-left: 3px solid var(--accent-coral);
-  background: color-mix(in oklab, var(--accent-coral) 8%, var(--paper-soft));
-  border-radius: 0 0.5rem 0.5rem 0;
-  font-size: 0.94rem;
+  margin: 1.25rem 0 1.75rem;
+  padding: 1rem 1.25rem;
+  background: var(--paper-warm);
+  border-radius: 8px;
+  font-size: 1rem;
 }
 
 .callout.note {
-  border-left-color: color-mix(in oklab, var(--accent-butter) 70%, var(--ink));
-  background: color-mix(in oklab, var(--accent-butter) 28%, var(--paper-soft));
+  background: color-mix(in oklab, var(--accent-butter) 55%, var(--paper));
 }
 
 .callout p:last-child {
   margin-bottom: 0;
 }
 
+/* Links in prose: ink, with a coral underline. */
 .shell a {
-  color: var(--accent-coral);
-  text-decoration: none;
-  border-bottom: 1px dashed currentColor;
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: var(--accent-coral);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.22em;
+  transition: text-decoration-color 160ms var(--ease-out-quart);
 }
 
 .shell a:hover {
-  border-bottom-style: solid;
+  text-decoration-color: currentColor;
 }
 
-/* ─── Cards (used on /docs landing) ───────────────────── */
-
+/* The link lists on /docs and the "next" links at the foot of pages:
+   whole blocks you can click, flat, in two columns. */
 .cardGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
-  gap: 1rem;
-  margin: 1rem 0 2.5rem;
-  /* Each grid item defaults to `min-width: auto`; a card with a long
-   * unbreakable `<code>` inside would push the column wider than its
-   * track. Forcing 0 lets the grid honour `minmax(min(260px,100%), …)`
-   * — i.e. a single column at narrow widths instead of two cards
-   * burst-cropped against the right edge of the viewport. */
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  gap: 8px;
+  margin: 1rem 0 2.75rem;
   min-width: 0;
-  /* The grid is a <ul>; kill the list markers (the stray bullet dots
-   * that floated above each card). The global `ul { list-style-position:
-   * inside }` rendered the <li> markers as dots at the top of each grid
-   * cell. */
   list-style: none;
   padding: 0;
 }
+
+.shell .cardGrid {
+  padding-left: 0;
+}
+
 .cardGrid > li {
   list-style: none;
+  margin: 0;
 }
+
 .card { min-width: 0; }
 
+.shell a.card,
 .card {
   display: block;
-  padding: 1.2rem 1.3rem;
-  border: 1px solid var(--line);
-  border-radius: 1rem;
-  background: var(--paper-soft);
-  text-decoration: none !important;
-  border-bottom: 1px solid var(--line) !important;
-  color: var(--ink) !important;
-  transition: border-color 120ms ease, transform 120ms ease;
+  height: 100%;
+  padding: 1.25rem 1.35rem;
+  border-radius: 10px;
+  background: var(--paper-warm);
+  text-decoration: none;
+  color: var(--ink);
+  font-weight: 400;
+  transition: background-color 160ms var(--ease-out-quart);
 }
 
-.card:hover {
-  border-color: color-mix(in oklab, var(--accent-coral) 60%, var(--line)) !important;
-  transform: translate3d(0, -1px, 0);
+.shell a.card:hover {
+  background: color-mix(in oklab, var(--paper-warm) 82%, var(--ink));
 }
 
-/* Icon chip at the top of each card — a rounded square in a soft coral
- * tint with a line icon centered in it. Replaces the stray list bullet
- * as the card's visual anchor. */
 .cardIcon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.4rem;
-  height: 2.4rem;
-  margin: 0 0 0.9rem;
-  border-radius: 0.7rem;
-  background: color-mix(in oklab, var(--accent-coral) 12%, var(--paper-warm));
-  border: 1px solid color-mix(in oklab, var(--accent-coral) 22%, var(--line));
-  color: var(--accent-coral);
-}
-.cardIcon svg {
-  display: block;
-}
-.card:hover .cardIcon {
-  background: color-mix(in oklab, var(--accent-coral) 20%, var(--paper-warm));
-  border-color: color-mix(in oklab, var(--accent-coral) 45%, var(--line));
+  display: none;
 }
 
 .cardLabel {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 0.66rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--ink-muted);
-  margin: 0 0 0.4rem;
+  font: 500 0.95rem/1.3 var(--font-body);
+  color: var(--ink-soft);
+  margin: 0 0 0.3rem;
 }
 
 .cardTitle {
   font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 1.1rem;
-  letter-spacing: -0.01em;
-  margin: 0 0 0.45rem;
+  font-weight: 600;
+  font-size: 1.25rem;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.4rem;
   color: var(--ink);
 }
 
 .cardBody {
-  font-size: 0.92rem;
+  font-size: 1rem;
   line-height: 1.5;
-  color: var(--ink-soft);
+  color: var(--ink);
   margin: 0;
 }
 
-/* ─── Side-by-side language panels (for /docs/agents) ─── */
-
+/* Language tabs above SDK snippets: a flat segmented control. */
 .langTabs {
   display: flex;
-  gap: 0.4rem;
+  gap: 4px;
   margin: 0 0 0.5rem;
   flex-wrap: wrap;
 }
 
 .langTab {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 0.7rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  padding: 0.35rem 0.75rem;
-  border-radius: 999px;
-  background: transparent;
-  border: 1px solid var(--line);
-  color: var(--ink-muted);
+  font: 600 0.95rem/1 var(--font-body);
+  padding: 0.6rem 0.85rem;
+  border-radius: 6px;
+  background: var(--paper-warm);
+  color: var(--ink);
   cursor: pointer;
 }
+
 .langTab.active {
-  background: var(--accent-coral);
-  color: var(--paper-soft);
-  border-color: color-mix(in oklab, var(--accent-coral) 70%, var(--ink));
+  background: var(--ink);
+  color: var(--on-ink);
 }
 
-/* ─── Docs shell: left nav sidebar + content column ─────────
- * Owned by docs/layout.tsx + DocsSidebar.tsx. Desktop gets a sticky
- * 250px rail; below 960px the rail collapses behind the .menuToggle
- * disclosure button (mobile-friendly, no horizontal squeeze). */
+/* ─── The two-column frame (sidebar + prose) ─── */
 
 .docsLayout {
-  width: min(1240px, calc(100% - 1.5rem));
-  margin: 0 auto;
-  /* .docsLayout is itself a grid item of `.site-main` (display: grid).
-   * Grid items default to `min-width: auto`, so a wide <pre> inside the
-   * prose column inflates the implicit track past the viewport and the
-   * body's overflow-x: hidden clips every line — same trap documented
-   * on `.shell` above. min-width: 0 lets the track stay at viewport
-   * width and the inner code blocks scroll instead. */
+  padding-inline: var(--gutter);
   min-width: 0;
   max-width: 100%;
   box-sizing: border-box;
@@ -364,10 +320,9 @@
 }
 
 .sidebar {
-  display: none; /* mobile default: closed */
-  border: 1px solid var(--line);
-  border-radius: 1rem;
-  background: color-mix(in oklab, var(--paper-soft) 92%, white 8%);
+  display: none; /* phones: closed until the menu button opens it */
+  border-radius: 10px;
+  background: var(--paper-warm);
   padding: 1rem;
   margin: 0 0 1rem;
 }
@@ -380,84 +335,79 @@
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
+  min-height: 2.75rem;
   margin: 1rem 0 0.75rem;
-  padding: 0.5rem 0.9rem;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: color-mix(in oklab, var(--paper-soft) 88%, white 12%);
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 0.72rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ink);
+  padding: 0 1rem;
+  border-radius: 7px;
+  background: var(--ink);
+  color: var(--on-ink);
+  font: 600 1rem/1 var(--font-body);
   cursor: pointer;
 }
 
+/* Audience tabs (People / AI agents): segmented, flat. */
 .tabRow {
   display: flex;
-  gap: 0.4rem;
+  gap: 4px;
   margin: 0 0 0.75rem;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--paper);
 }
 
 .tabBtn {
   flex: 1;
   text-align: center;
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 0.7rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  padding: 0.45rem 0.6rem;
-  border-radius: 999px;
-  border: 1px solid var(--line) !important;
-  color: var(--ink-muted) !important;
-  text-decoration: none !important;
+  font: 600 0.95rem/1 var(--font-body);
+  padding: 0.6rem 0.5rem;
+  border-radius: 6px;
+  color: var(--ink);
+  text-decoration: none;
   background: transparent;
 }
 
 .tabBtnActive {
-  background: var(--accent-coral);
-  color: var(--paper-soft) !important;
-  border-color: color-mix(in oklab, var(--accent-coral) 70%, var(--ink)) !important;
+  background: var(--ink);
+  color: var(--on-ink);
 }
 
 .search {
   width: 100%;
   box-sizing: border-box;
-  font-family: var(--font-body);
-  font-size: 0.88rem;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--line);
-  border-radius: 0.6rem;
-  background: var(--paper);
+  font: 400 1rem/1.3 var(--font-body);
+  min-height: 2.75rem;
+  padding: 0 0.85rem;
+  border: 0;
+  border-radius: 7px;
+  background: var(--paper-soft);
   color: var(--ink);
-  margin: 0 0 0.9rem;
+  margin: 0 0 1rem;
+}
+
+.search::placeholder {
+  color: var(--ink-muted);
 }
 
 .search:focus {
-  outline: 2px solid color-mix(in oklab, var(--accent-coral) 55%, transparent);
-  outline-offset: 1px;
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
 }
 
 .searchEmpty {
-  font-size: 0.85rem;
-  color: var(--ink-muted);
+  font-size: 0.95rem;
+  color: var(--ink-soft);
   margin: 0.25rem 0 0.75rem;
 }
 
 .group {
-  margin: 0 0 1rem;
+  margin: 0 0 1.1rem;
 }
 
 .groupLabel {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 0.64rem;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
-  color: var(--ink-muted);
-  margin: 0 0 0.4rem;
+  font: 650 0.95rem/1.3 var(--font-body);
+  color: var(--ink);
+  margin: 0 0 0.35rem;
+  padding: 0 0.6rem;
 }
 
 .navList {
@@ -472,134 +422,86 @@
 
 .navLink {
   display: block;
-  padding: 0.32rem 0.6rem;
-  border-radius: 0.5rem;
-  font-size: 0.9rem;
-  line-height: 1.45;
-  color: var(--ink-soft) !important;
-  text-decoration: none !important;
-  border-bottom: none !important;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  font-size: 1rem;
+  line-height: 1.35;
+  color: var(--ink-soft);
+  text-decoration: none;
+  transition: background-color 140ms var(--ease-out-quart), color 140ms var(--ease-out-quart);
 }
 
 .navLink:hover {
-  background: color-mix(in oklab, var(--accent-butter) 30%, transparent);
-  color: var(--ink) !important;
+  background: var(--paper-soft);
+  color: var(--ink);
 }
 
 .navLinkActive {
-  background: var(--accent-butter);
-  color: var(--ink) !important;
-  font-weight: 600;
+  background: var(--paper-soft);
+  color: var(--ink);
+  font-weight: 650;
 }
 
 @media (min-width: 960px) {
   .docsLayout {
     display: grid;
-    grid-template-columns: 250px minmax(0, 1fr);
-    gap: 2rem;
+    grid-template-columns: 270px minmax(0, 1fr);
+    gap: clamp(2rem, 4vw, 4.5rem);
     align-items: start;
   }
+
   .menuToggle {
     display: none;
   }
+
   .sidebar {
     display: block;
     position: sticky;
-    top: 5.2rem; /* clears the floating site header */
-    max-height: calc(100vh - 6.2rem);
+    top: 5.5rem; /* under the site's sticky bar */
+    max-height: calc(100vh - 6.5rem);
     overflow-y: auto;
-    margin: 1rem 0 0;
+    margin: 1.5rem 0 3rem;
   }
-  /* Inside the two-column frame the prose column hugs the rail
-   * instead of centering in the remaining space. */
+
+  /* Inside the two-column frame the prose column hugs the rail. */
   .docsContent .shell {
     margin: 0;
   }
 }
 
-/* TOC sidebar at >960px */
-
-@media (min-width: 960px) {
-  .layout {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 220px;
-    gap: 3rem;
-    max-width: 92ch;
-    margin: 0 auto;
-  }
-  .toc {
-    align-self: start;
-    position: sticky;
-    top: 5rem;
-    font-size: 0.86rem;
-  }
-  .tocTitle {
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 0.66rem;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--ink-muted);
-    margin: 0 0 0.6rem;
-  }
-  .tocList {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-  }
-  .tocList li {
-    margin: 0.25rem 0;
-  }
-  .tocList a {
-    color: var(--ink-soft);
-    text-decoration: none !important;
-    border-bottom: none !important;
-  }
-  .tocList a:hover {
-    color: var(--accent-coral);
-  }
-}
-
-/* ─── Narrow-width tuning (phones, ≤ 720px) ─────────────
- * Tighten horizontal padding, scale down headings + pre font-size,
- * and respect iOS safe-area on the bottom. All changes here are
- * no-ops above 720px — desktop is untouched. */
+/* ─── Phones (≤ 720px) ─── */
 
 @media (max-width: 720px) {
   .shell {
-    padding: 2.4rem 1rem calc(4rem + env(safe-area-inset-bottom, 0px));
+    padding: 2rem 0 calc(4rem + env(safe-area-inset-bottom, 0px));
   }
 
   .h2 {
-    font-size: 1.4rem;
-    margin: 2.4rem 0 0.7rem;
+    font-size: 1.5rem;
+    margin: 2.6rem 0 0.8rem;
   }
 
   .h3 {
-    font-size: 1.05rem;
-    margin: 1.8rem 0 0.45rem;
+    font-size: 1.15rem;
+    margin: 1.9rem 0 0.5rem;
   }
 
   .lede {
-    font-size: 1.02rem;
-    margin: 0 0 1.8rem;
+    font-size: 1.125rem;
+    margin: 0 0 2rem;
   }
 
-  /* Smaller font lets more shell text fit before horizontal scroll kicks
-   * in. Still legible at 14px-ish equivalent on a phone. */
   .pre {
-    font-size: 0.78rem;
-    padding: 0.85rem 1.2rem 0.85rem 0.95rem;
-    border-radius: 0.55rem;
+    font-size: 0.8rem;
+    padding: 0.9rem 1rem;
   }
 
   .callout {
-    padding: 0.75rem 0.9rem;
-    font-size: 0.92rem;
+    padding: 0.85rem 1rem;
   }
 
-  /* Card padding can tighten on phones where every horizontal pixel matters. */
-  .card {
-    padding: 1rem 1.05rem;
+  .card,
+  .shell a.card {
+    padding: 1.05rem 1.1rem;
   }
 }

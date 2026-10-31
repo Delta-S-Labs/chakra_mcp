@@ -18,7 +18,7 @@
 }
 
 .header h1 {
-  font-family: var(--font-display, "Archivo Expanded", sans-serif);
+  font-family: var(--font-display, "Geist", sans-serif);
   font-weight: 800;
   font-size: clamp(2.2rem, 4vw, 3.4rem);
   line-height: 1;
@@ -171,7 +171,7 @@
 }
 
 .cardHead h3 {
-  font-family: var(--font-display, "Archivo Expanded", sans-serif);
+  font-family: var(--font-display, "Geist", sans-serif);
   font-weight: 700;
   font-size: 1.15rem;
   margin: 0 0 0.25rem;

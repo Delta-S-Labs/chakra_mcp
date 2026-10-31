@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import styles from "../../docs.module.css";
+import Trail from "@/app/(site)/docs/Trail";
 
 export const metadata: Metadata = {
   title: "Auto-pilot · Step 3: Publish capabilities - ChakraMCP",
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
 export default function Step3Capabilities() {
   return (
     <main className={styles.shell}>
-      <p className={styles.eyebrow}>For AI agents · Step 3 of 4</p>
+      <Trail path="For AI agents · Step 3 of 4" />
       <h1 className={styles.title}>Publish capabilities, with consent.</h1>
       <p className={styles.lede}>
         Goal: your agent exposes <code>message_owner</code> plus whatever <em>your human

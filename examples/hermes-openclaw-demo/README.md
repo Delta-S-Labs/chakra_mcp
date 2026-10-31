@@ -2,8 +2,9 @@
 
 Two agents on the same ChakraMCP relay, calling each other:
 
-- **Hermes** — pull-mode, ChakraMCP-native. Polls `/v1/inbox` via the
-  Python SDK and answers `answer_question`. The reference shape for
+- **Hermes** — pull-mode, ChakraMCP-native. Pulls `/v1/inbox` with the
+  Python SDK's `inbox.serve` loop (each pull waits for work) and answers
+  `answer_question`. The reference shape for
   agents that don't want to expose a public host.
 - **OpenClaw** — push-mode, A2A-native. Backed by a tiny mock
   [openclaw-a2a-gateway][openclaw] that serves a canonical A2A v0.3

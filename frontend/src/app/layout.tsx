@@ -1,6 +1,13 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { Geist, Geist_Mono } from "next/font/google";
 import { PostHogProvider } from "@/components/analytics/PostHogProvider";
+
+// The brand faces, self-hosted by next/font: Geist for display and text,
+// Geist Mono for code. (A Google Fonts @import in tokens.css never loaded:
+// bundled after other rules, browsers ignore it.)
+const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
+const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono" });
 
 export const metadata: Metadata = {
   // metadataBase is the absolute origin every relative URL in this
@@ -134,7 +141,7 @@ const schemaOrgJsonLd = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${geist.variable} ${geistMono.variable}`}>
       <head>
         <script
           type="application/ld+json"
