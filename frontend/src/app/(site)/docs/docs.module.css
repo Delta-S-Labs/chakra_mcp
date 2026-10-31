@@ -457,8 +457,8 @@
   .sidebar {
     display: block;
     position: sticky;
-    top: 1rem;
-    max-height: calc(100vh - 2rem);
+    top: 5.5rem; /* under the site's sticky bar */
+    max-height: calc(100vh - 6.5rem);
     overflow-y: auto;
     margin: 1.5rem 0 3rem;
   }

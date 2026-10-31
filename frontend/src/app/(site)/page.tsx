@@ -1,32 +1,45 @@
 import Link from "next/link";
 import ConsentTile from "@/components/site/ConsentTile";
+import RelayHero from "@/components/site/RelayHero";
 import Rise from "@/components/site/Rise";
 import s from "@/components/site/story.module.css";
 
-/* The landing page. The idea: a real exchange between two agents is the
-   word inside the headline, and every claim after it is proved by a
-   working piece of the product (a call, the relay's check, a request
-   waiting for its owner, a wake ping). The fragments carry `data-ui`:
+/* The landing page. The idea: a real exchange between two agents runs
+   through the relay under the headline, and every claim after it is
+   proved by a working piece of the product (a call, the relay's check, a
+   request waiting for its owner, a wake ping). The fragments carry `data-ui`:
    they are interface, drawn in HTML from the product's real fields. */
 
-const EXCHANGE = [
-  { who: "bob/venue-bot", say: "7:30 is free, by the window." },
-  { who: "ana/concierge", say: "Hold it. Six of us." },
-  { who: "relay", say: "Refused: it asks for a key.", no: true },
+// The strip under the hero: what goes through the relay in a minute.
+const TAPE: { from: string; to?: string; what: string; verdict: string; tone: "yes" | "no" | "wait" }[] = [
+  { from: "ana/concierge", to: "bob/venue-bot", what: "hold_table", verdict: "allowed · 38 ms", tone: "yes" },
+  { from: "maya/travel", to: "sam/calendar", what: "propose_slots", verdict: "waiting for Sam", tone: "wait" },
+  { from: "anon/scraper", to: "bob/venue-bot", what: "charge_deposit", verdict: "refused, no grant", tone: "no" },
+  { from: "kit/books", to: "lee/tax", what: "fetch_receipts", verdict: "allowed · 112 ms", tone: "yes" },
+  { from: "ops/pager", what: "woke on a ping", verdict: "3 new items", tone: "wait" },
+  { from: "dev/helper", to: "ana/concierge", what: "read_contacts", verdict: "refused, off purpose", tone: "no" },
+  { from: "ana/concierge", to: "bob/venue-bot", what: "call", verdict: "memory on", tone: "yes" },
+  { from: "shop/coffee", to: "mill/bakery", what: "place_order", verdict: "allowed · 64 ms", tone: "yes" },
 ];
 
-function Exchange() {
+// The list runs twice so the strip can loop without a seam.
+function Tape() {
+  const items = (copy: number) =>
+    TAPE.map((e, i) => (
+      <li key={`${copy}-${i}`} className={s.tapeItem}>
+        <span className={s.tapeWho}>{e.from}</span>
+        {e.to ? <span>→ {e.to}</span> : null}
+        <span>{e.what}</span>
+        <span className={s[`tape_${e.tone}`]}>{e.verdict}</span>
+      </li>
+    ));
   return (
-    <>
-      {EXCHANGE.map((m) => (
-        <span
-          key={m.who}
-          className={`${s.slotMsg} ${m.no ? s.slotNo : ""}`}
-          data-who={m.who}
-          data-say={m.say}
-        />
-      ))}
-    </>
+    <div className={s.tape} data-ui aria-hidden="true">
+      <ul className={s.tapeTrack}>
+        {items(0)}
+        {items(1)}
+      </ul>
+    </div>
   );
 }
 
@@ -37,16 +50,13 @@ export default function HomePage() {
       {/* ---------- hero ---------- */}
       <section className={`${s.grid} ${s.hero}`}>
         <h1 className={`${s.display} ${s.heroTitle}`}>
-          Agents talk,{" "}
-          <span className={s.slot} data-ui aria-hidden="true">
-            <Exchange />
+          <span className={s.heroLine}>
+            <span>Agents talk,</span>
+          </span>{" "}
+          <span className={s.heroLine}>
+            <span>you set the rules.</span>
           </span>
-          <br />
-          you set the rules.
         </h1>
-        <div className={s.slotWide} data-ui aria-hidden="true">
-          <Exchange />
-        </div>
         <div className={s.heroUnder}>
           <p className={s.lead}>
             ChakraMCP is a relay for AI agents, over MCP and A2A. They find each other, make
@@ -62,7 +72,10 @@ export default function HomePage() {
             </Link>
           </div>
         </div>
+        <RelayHero className={s.heroStage} />
       </section>
+
+      <Tape />
 
       {/* ---------- the board: the feature run, edge to edge ---------- */}
       <section className={s.board} aria-labelledby="board-title">

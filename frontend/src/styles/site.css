@@ -1,6 +1,7 @@
 /* Website UI kit for the public site. The look: a flat stone ground, ink
-   and coral fields, Geist for display and text, no gradients, shadows or
-   hairlines. */
+   and coral fields, Geist for display and text. Glass in two places only,
+   the sticky bar and the hero's relay card; otherwise no gradients,
+   shadows or hairlines. */
 :root { --gutter: clamp(16px, 3.4vw, 56px); }
 body {
   margin: 0;
@@ -17,7 +18,30 @@ body {
 .closing-panel, .concept-at-a-glance, .concept-stage { width: min(1180px, calc(100% - 1.5rem)); margin: 0 auto; }
 
 /* A plain bar: the wordmark, a few text links, one action. */
-.site-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem 1.5rem; padding: 1.25rem var(--gutter); position: relative; z-index: 20; }
+.site-header {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem 1.5rem;
+  padding: 0.85rem var(--gutter);
+  position: sticky; top: 0; z-index: 40;
+  /* Frosted glass: the page shows through, blurred, as it scrolls under. */
+  background: color-mix(in oklab, var(--paper) 72%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  backdrop-filter: blur(18px) saturate(160%);
+}
+/* The bar's lower edge shows once the page has moved under it. */
+@supports (animation-timeline: scroll()) {
+  .site-header { animation: header-edge linear both; animation-timeline: scroll(root); animation-range: 0 72px; }
+}
+@keyframes header-edge {
+  from { box-shadow: 0 1px 0 transparent; }
+  to { box-shadow: 0 1px 0 color-mix(in oklab, var(--ink) 12%, transparent); }
+}
+/* Anchors land below the bar. */
+html:has(.site-header) { scroll-padding-top: 5.5rem; }
+/* On phones the bar wraps to two rows, too tall to keep on screen. */
+@media (max-width: 720px) {
+  .site-header { position: relative; animation: none; background: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  html:has(.site-header) { scroll-padding-top: 0; }
+}
 .brand-lockup { display: flex; align-items: center; }
 .brand-mark { font-family: var(--font-display); font-weight: 600; font-size: 1.375rem; letter-spacing: -0.04em; line-height: 1; display: inline-flex; align-items: center; gap: 0.55rem; }
 .brand-mark-icon { display: inline-block; flex-shrink: 0; }

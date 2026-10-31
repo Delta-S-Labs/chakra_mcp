@@ -1,0 +1,239 @@
+/* The landing hero's live picture (RelayHero.tsx): agents in the side
+   bands, spokes into the relay, and the relay itself drawn as a glass
+   card. The glass needs something behind it to bend, so the coral relay
+   disc and the spokes run under the card. */
+
+/* The card sets the stage's height; the drawing fills the stage around it
+   and keeps its relay at the centre, which is the card's centre. */
+.stage {
+  --pad: 40px;
+  position: relative;
+  min-width: 0;
+  display: grid;
+  justify-items: center;
+  padding-block: var(--pad);
+}
+
+.net {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* ---------- the network ---------- */
+.orbit {
+  fill: none;
+  stroke: color-mix(in oklab, var(--ink) 16%, transparent);
+  stroke-width: 1.25;
+  stroke-dasharray: 2 9;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.orbitA { animation: spin 90s linear infinite; }
+.orbitB { animation: spin 140s linear infinite reverse; }
+
+.spoke {
+  stroke: color-mix(in oklab, var(--ink) 34%, transparent);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-dasharray: 1 10;
+  animation: flow 1.8s linear infinite;
+}
+
+.hub { fill: var(--accent-coral); }
+.hubRing {
+  fill: none;
+  stroke: var(--accent-coral);
+  stroke-width: 2.5;
+  stroke-dasharray: 2 12;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: spin 30s linear infinite;
+}
+.pulseOk,
+.pulseNo {
+  fill: none;
+  stroke-width: 3;
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.pulseOk { stroke: var(--accent-lime); }
+.pulseNo { stroke: var(--ink); }
+
+.node { animation: bob 7s ease-in-out infinite; }
+.nodeDot {
+  fill: var(--paper-soft);
+  stroke: var(--ink);
+  stroke-width: 2.5;
+}
+.nodeLabel {
+  font-family: var(--font-body);
+  font-size: 17px;
+  font-weight: 550;
+  letter-spacing: -0.01em;
+  fill: var(--ink);
+}
+
+.packet { opacity: 0; }
+.packet circle {
+  fill: var(--ink);
+  stroke: var(--paper-soft);
+  stroke-width: 3;
+}
+
+@keyframes spin { to { transform: rotate(1turn); } }
+@keyframes flow { to { stroke-dashoffset: -11; } }
+@keyframes bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+/* ---------- the glass card ---------- */
+.glass {
+  position: relative;
+  width: min(56%, 26rem);
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 20px;
+  color: var(--ink);
+  background: color-mix(in oklab, var(--paper-soft) 38%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid color-mix(in oklab, white 75%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, white 90%, transparent),
+    inset 0 -1px 0 color-mix(in oklab, var(--ink) 6%, transparent),
+    0 30px 60px -30px color-mix(in oklab, var(--ink) 45%, transparent);
+}
+
+.glassHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 2px;
+  font-size: 0.9375rem;
+  line-height: 1.2;
+}
+.glassTitle { font-weight: 650; }
+.glassMeta { margin-left: auto; color: var(--ink-soft); }
+.live {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: oklch(62% 0.17 145);
+  animation: live 2s ease-in-out infinite;
+}
+@keyframes live {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, oklch(62% 0.17 145) 50%, transparent); }
+  50% { box-shadow: 0 0 0 5px transparent; }
+}
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.row {
+  max-width: none;
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.3;
+  opacity: 0;
+  transform: translateY(8px) scale(0.98);
+  transition:
+    opacity 380ms var(--ease-out-quart),
+    transform 480ms var(--ease-out-quart);
+}
+.row.in,
+.row.typing { opacity: 1; transform: none; }
+.row { position: relative; }
+.row > :not(.dots) { transition: opacity 260ms var(--ease-out-quart); }
+.typing > :not(.dots) { opacity: 0; }
+
+/* The typing bubble: three dots where the message will land. */
+.dots {
+  display: none;
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  translate: 0 -50%;
+  gap: 4px;
+}
+.typing .dots { display: inline-flex; }
+.dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.35;
+  animation: dot 1s ease-in-out infinite;
+}
+.dots i:nth-child(2) { animation-delay: 0.15s; }
+.dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes dot {
+  0%, 60%, 100% { transform: none; opacity: 0.35; }
+  30% { transform: translateY(-3px); opacity: 1; }
+}
+
+.me,
+.them {
+  display: grid;
+  gap: 1px;
+  width: fit-content;
+  max-width: 88%;
+  padding: 7px 12px 8px;
+  border-radius: 12px;
+}
+.me {
+  background: color-mix(in oklab, var(--paper-soft) 82%, transparent);
+  border-bottom-left-radius: 4px;
+}
+.them {
+  justify-self: end;
+  background: var(--ink);
+  color: var(--on-ink);
+  border-bottom-right-radius: 4px;
+}
+.who { font-size: 0.8125rem; font-weight: 650; color: var(--ink-soft); }
+.them .who { color: var(--on-ink-muted); }
+
+.tool,
+.refused {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4px 12px;
+  flex-wrap: wrap;
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 0.9375rem;
+}
+.tool b,
+.refused b { font-weight: 650; }
+.tool { background: color-mix(in oklab, var(--accent-butter) 88%, transparent); }
+.refused {
+  background: color-mix(in oklab, var(--accent-coral) 90%, transparent);
+  color: var(--on-coral);
+}
+
+/* ---------- widths ---------- */
+/* Phones: the drawing sits above the card, which overlaps its lower edge,
+   and the names go (the card carries them). */
+@media (max-width: 720px) {
+  .stage { padding: 44% 0 0; }
+  .net { inset: 0 0 auto; height: auto; aspect-ratio: 7 / 4; }
+  .nodeLabel { display: none; }
+  .glass { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orbitA, .orbitB, .spoke, .hubRing, .node, .live, .dots i { animation: none; }
+  .row { transition: none; }
+}
