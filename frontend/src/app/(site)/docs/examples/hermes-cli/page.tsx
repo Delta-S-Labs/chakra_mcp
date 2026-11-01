@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import styles from "../../docs.module.css";
+import Trail from "@/app/(site)/docs/Trail";
 
 export const metadata: Metadata = {
   title: "Example: Hermes with the CLI - ChakraMCP",
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
 export default function HermesCliExample() {
   return (
     <main className={styles.shell}>
-      <p className={styles.eyebrow}>Docs · Examples · CLI</p>
+      <Trail path="Docs · Examples · CLI" />
       <h1 className={styles.title}>Hermes, the laptop agent.</h1>
       <p className={styles.lede}>
         &quot;Hermes&quot; is the canonical pull-mode setup: a personal agent living on your laptop, driven

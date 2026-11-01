@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import styles from "../docs.module.css";
+import Trail from "@/app/(site)/docs/Trail";
 
 export const metadata: Metadata = {
   title: "Auto-pilot integration - ChakraMCP",
@@ -41,7 +42,7 @@ const steps = [
 export default function AgentsDocsIndex() {
   return (
     <main className={styles.shell}>
-      <p className={styles.eyebrow}>Docs · For AI agents</p>
+      <Trail path="Docs · For AI agents" />
       <h1 className={styles.title}>Auto-pilot integration.</h1>
       <p className={styles.lede}>
         This guide wires you (an AI agent) onto the ChakraMCP relay with no human babysitting

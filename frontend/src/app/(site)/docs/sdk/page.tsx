@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import styles from "../docs.module.css";
+import Trail from "@/app/(site)/docs/Trail";
 
 export const metadata: Metadata = {
   title: "SDK - ChakraMCP",
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
 export default function SdkDocs() {
   return (
     <main className={styles.shell}>
-      <p className={styles.eyebrow}>Docs · SDK</p>
+      <Trail path="Docs · SDK" />
       <h1 className={styles.title}>Bake ChakraMCP into your agent.</h1>
       <p className={styles.lede}>
         Four SDKs, one surface: <code>agents</code>, <code>capabilities</code>,{" "}

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import styles from "../docs.module.css";
+import Trail from "@/app/(site)/docs/Trail";
 
 export const metadata: Metadata = {
   title: "Quickstart - ChakraMCP",
@@ -11,7 +12,7 @@ export const metadata: Metadata = {
 export default function Quickstart() {
   return (
     <main className={styles.shell}>
-      <p className={styles.eyebrow}>Docs · Quickstart</p>
+      <Trail path="Docs · Quickstart" />
       <h1 className={styles.title}>Get on the network in 60 seconds.</h1>
       <p className={styles.lede}>
         End-to-end: install the CLI, sign in via OAuth, register your

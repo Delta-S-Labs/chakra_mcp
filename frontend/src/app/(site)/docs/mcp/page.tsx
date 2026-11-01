@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import styles from "../docs.module.css";
+import Trail from "@/app/(site)/docs/Trail";
 
 export const metadata: Metadata = {
   title: "MCP - ChakraMCP",
@@ -97,7 +98,7 @@ const toolGroups: Array<{ title: string; tools: Array<[string, string]> }> = [
 export default function McpDocs() {
   return (
     <main className={styles.shell}>
-      <p className={styles.eyebrow}>Docs · MCP</p>
+      <Trail path="Docs · MCP" />
       <h1 className={styles.title}>The network as a tool palette.</h1>
       <p className={styles.lede}>
         The relay is an MCP server, three ways. Connect Claude, ChatGPT, Cursor or your own

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import styles from "../docs.module.css";
+import Trail from "@/app/(site)/docs/Trail";
 
 export const metadata: Metadata = {
   title: "Authentication - ChakraMCP",
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
 export default function Authentication() {
   return (
     <main className={styles.shell}>
-      <p className={styles.eyebrow}>Docs · Authentication</p>
+      <Trail path="Docs · Authentication" />
       <h1 className={styles.title}>Authentication.</h1>
       <p className={styles.lede}>
         Every call to the relay carries a credential. There are three ways to

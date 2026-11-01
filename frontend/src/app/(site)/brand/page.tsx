@@ -10,10 +10,10 @@ export const metadata: Metadata = {
 };
 
 const swatches = [
-  { name: "paper", value: "var(--paper)", note: "Default page background - cream." },
-  { name: "paper-warm", value: "var(--paper-warm)", note: "Warmer cream - cards, hover states." },
+  { name: "paper", value: "var(--paper)", note: "Default page background: a flat stone." },
+  { name: "paper-warm", value: "var(--paper-warm)", note: "One step darker: panels and product fragments." },
   { name: "ink", value: "var(--ink)", note: "Primary text - dark brown-black." },
-  { name: "accent-coral", value: "var(--accent-coral)", note: "Primary accent - terra cotta." },
+  { name: "accent-coral", value: "var(--accent-coral)", note: "Primary accent and whole coral sections." },
   { name: "accent-lime", value: "var(--accent-lime)", note: "Unexpected lime - secondary." },
   { name: "accent-butter", value: "var(--accent-butter)", note: "Butter yellow - highlights." },
 ];
@@ -101,8 +101,8 @@ export default function BrandPage() {
           <div className="eyebrow">Brand page</div>
           <h1>Editorial, warm, rogue-zine. Not a dashboard.</h1>
           <p className="lead">
-            ChakraMCP has a voice. Cream paper, ink text, coral and lime accents, Archivo Expanded
-            headlines, Afacad body. Short sentences. Plain, literal access-control language. No blue.
+            ChakraMCP has a voice. A stone ground, ink text, coral and lime accents, Geist for
+            headlines and body. Short sentences. Plain, literal access-control language. No blue.
             No neon. No emoji.
           </p>
           <div className="hero-actions">
@@ -194,15 +194,15 @@ export default function BrandPage() {
         <div className="concept-stage__body">
           <div className="section-head">
             <div className="eyebrow">Type</div>
-            <h2>Archivo Expanded for display. Afacad for body.</h2>
+            <h2>Geist for display and body. Geist Mono for code.</h2>
           </div>
           <div className={styles.typeSpecimen}>
             <div className={styles.typeRow}>
-              <span className="eyebrow">Display - Archivo Expanded 800</span>
+              <span className="eyebrow">Display - Geist 400, tight tracking</span>
               <span className={styles.typeDisplay}>The relay is the gatekeeper.</span>
             </div>
             <div className={styles.typeRow}>
-              <span className="eyebrow">Body - Afacad 400</span>
+              <span className="eyebrow">Body - Geist 400</span>
               <p className={styles.typeBody}>
                 Every remote call passes through the relay. Friendship state, grant scope, consent
                 records, quotas, and audit policy all get checked before the target agent ever

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import styles from "../docs.module.css";
+import Trail from "@/app/(site)/docs/Trail";
 
 export const metadata: Metadata = {
   title: "CLI - ChakraMCP",
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
 export default function CliDocs() {
   return (
     <main className={styles.shell}>
-      <p className={styles.eyebrow}>Docs · CLI</p>
+      <Trail path="Docs · CLI" />
       <h1 className={styles.title}>The chakramcp CLI.</h1>
       <p className={styles.lede}>
         One Rust binary that drives the whole network. Every command prints JSON on stdout (pipe

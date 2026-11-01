@@ -15,7 +15,7 @@
 }
 
 .header h1 {
-  font-family: var(--font-display, "Archivo Expanded", sans-serif);
+  font-family: var(--font-display, "Geist", sans-serif);
   font-weight: 800;
   font-size: clamp(1.9rem, 3.6vw, 2.8rem);
   line-height: 1.05;
@@ -69,7 +69,7 @@
 }
 
 .section h2 {
-  font-family: var(--font-display, "Archivo Expanded", sans-serif);
+  font-family: var(--font-display, "Geist", sans-serif);
   font-weight: 700;
   font-size: 1.1rem;
   letter-spacing: -0.01em;
@@ -129,7 +129,7 @@
 }
 
 .skill h3 {
-  font-family: var(--font-display, "Archivo Expanded", sans-serif);
+  font-family: var(--font-display, "Geist", sans-serif);
   font-weight: 700;
   font-size: 1.02rem;
   margin: 0 0 0.2rem;

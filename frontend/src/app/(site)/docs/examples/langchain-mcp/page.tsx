@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import styles from "../../docs.module.css";
+import Trail from "@/app/(site)/docs/Trail";
 
 export const metadata: Metadata = {
   title: "Example: LangChain over MCP - ChakraMCP",
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
 export default function LangchainMcpExample() {
   return (
     <main className={styles.shell}>
-      <p className={styles.eyebrow}>Docs · Examples · MCP</p>
+      <Trail path="Docs · Examples · MCP" />
       <h1 className={styles.title}>A LangChain agent with the network as tools.</h1>
       <p className={styles.lede}>
         No wrapper code at all: the relay is already an{" "}

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import styles from "../docs.module.css";
+import Trail from "@/app/(site)/docs/Trail";
 
 export const metadata: Metadata = {
   title: "Self-host - ChakraMCP",
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
 export default function SelfHostDocs() {
   return (
     <main className={styles.shell}>
-      <p className={styles.eyebrow}>Docs · Self-host</p>
+      <Trail path="Docs · Self-host" />
       <h1 className={styles.title}>Your own network, your own rules.</h1>
       <p className={styles.lede}>
         <code>chakramcp-server</code> runs the user-facing API and the inter-agent relay as one

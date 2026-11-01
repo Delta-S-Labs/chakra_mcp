@@ -1,70 +1,81 @@
-/* Website UI kit - lifted from the Agent Telepathy codebase and renamed for ChakraMCP */
+/* Website UI kit for the public site. The look: a flat stone ground, ink
+   and coral fields, Geist for display and text. Glass in two places only,
+   the sticky bar and the hero's relay card; otherwise no gradients,
+   shadows or hairlines. */
+:root { --gutter: clamp(16px, 3.4vw, 56px); }
 body {
   margin: 0;
   min-width: 320px;
   color: var(--ink);
-  background:
-    radial-gradient(circle at top left, oklch(95% 0.08 92), transparent 26%),
-    radial-gradient(circle at 90% 8%, oklch(92% 0.06 25), transparent 32%),
-    linear-gradient(180deg, var(--paper-soft), var(--paper));
-}
-body::before {
-  content: ''; position: fixed; inset: 0; pointer-events: none; opacity: 0.18;
-  background:
-    linear-gradient(90deg, transparent calc(100% - 1px), color-mix(in oklab, var(--line) 60%, transparent) calc(100% - 1px)),
-    linear-gradient(180deg, transparent calc(100% - 1px), color-mix(in oklab, var(--line) 45%, transparent) calc(100% - 1px));
-  background-size: 88px 88px;
-  mask-image: linear-gradient(180deg, black, transparent 82%);
-  z-index: 0;
+  background: var(--paper);
 }
 
 * { box-sizing: border-box; }
 #root { min-height: 100vh; position: relative; z-index: 1; }
 
-.site-shell { position: relative; min-height: 100vh; }
-.site-header, .site-footer, .hero-block, .audience-strip, .story-grid, .flow-layout,
+.site-shell { position: relative; min-height: 100vh; display: flex; flex-direction: column; }
+.hero-block, .audience-strip, .story-grid, .flow-layout,
 .closing-panel, .concept-at-a-glance, .concept-stage { width: min(1180px, calc(100% - 1.5rem)); margin: 0 auto; }
 
-.site-header { position: sticky; top: 0.75rem; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; padding: 0.85rem 1rem; margin-top: 0.5rem; border: 1px solid color-mix(in oklab, var(--line) 76%, var(--ink) 24%); border-radius: 1.4rem; background: linear-gradient(90deg, color-mix(in oklab, var(--paper-soft) 97%, white 3%), color-mix(in oklab, var(--paper) 93%, var(--paper-warm) 7%)); backdrop-filter: blur(14px); box-shadow: var(--shadow-md); }
-.brand-lockup { display: grid; gap: 0.2rem; }
-.brand-mark { font-family: var(--font-display); font-weight: 800; font-size: 0.78rem; letter-spacing: 0.02em; display: inline-flex; align-items: center; gap: 0.45rem; }
+/* A plain bar: the wordmark, a few text links, one action. */
+.site-header {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem 1.5rem;
+  padding: 0.85rem var(--gutter);
+  position: sticky; top: 0; z-index: 40;
+  /* Frosted glass: the page shows through, blurred, as it scrolls under. */
+  background: color-mix(in oklab, var(--paper) 72%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  backdrop-filter: blur(18px) saturate(160%);
+}
+/* The bar's lower edge shows once the page has moved under it. */
+@supports (animation-timeline: scroll()) {
+  .site-header { animation: header-edge linear both; animation-timeline: scroll(root); animation-range: 0 72px; }
+}
+@keyframes header-edge {
+  from { box-shadow: 0 1px 0 transparent; }
+  to { box-shadow: 0 1px 0 color-mix(in oklab, var(--ink) 12%, transparent); }
+}
+/* Anchors land below the bar. */
+html:has(.site-header) { scroll-padding-top: 5.5rem; }
+/* On phones the bar wraps to two rows, too tall to keep on screen. */
+@media (max-width: 720px) {
+  .site-header { position: relative; animation: none; background: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  html:has(.site-header) { scroll-padding-top: 0; }
+}
+.brand-lockup { display: flex; align-items: center; }
+.brand-mark { font-family: var(--font-display); font-weight: 600; font-size: 1.375rem; letter-spacing: -0.04em; line-height: 1; display: inline-flex; align-items: center; gap: 0.55rem; }
 .brand-mark-icon { display: inline-block; flex-shrink: 0; }
-.brand-kicker { color: var(--ink-soft); font-size: 1rem; }
 
-.site-nav { display: flex; gap: 0.5rem; padding: 0.26rem; border: 1px solid var(--line); border-radius: 999px; background: color-mix(in oklab, var(--paper-soft) 78%, white 22%); }
-.nav-link { min-height: 2.65rem; padding: 0.48rem 0.95rem; display: inline-flex; align-items: center; border-radius: 999px; text-decoration: none; color: var(--ink); font-family: var(--font-display); font-weight: 700; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; background: transparent; border: 1px solid transparent; transition: transform 180ms var(--ease-out-quart), background-color 180ms var(--ease-out-quart), border-color 180ms var(--ease-out-quart); }
-.nav-link:hover { transform: translateY(-1px); border-color: var(--line); }
-.nav-link.active { background: var(--accent-butter); border-color: color-mix(in oklab, var(--accent-coral) 35%, var(--line)); }
+.site-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem clamp(1rem, 2.2vw, 2rem); }
+.nav-link { display: inline-flex; align-items: center; min-height: 2.75rem; color: var(--ink); font: 500 1.0625rem/1 var(--font-body); text-decoration: underline; text-decoration-color: transparent; text-decoration-thickness: 2px; text-underline-offset: 0.35em; transition: text-decoration-color 160ms var(--ease-out-quart); }
+.nav-link:hover, .nav-link:focus-visible { text-decoration-color: currentColor; }
+.nav-link.active { text-decoration-color: var(--accent-coral); }
+.nav-link--action { font-weight: 650; }
 
 /* minmax(0, 1fr): an implicit `auto` track grows to the widest child's
    min-content, which widened every section past a phone's viewport. */
-.site-main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6rem; padding: 2rem 0 6rem; position: relative; z-index: 1; }
-
-/* Narrow screens: the four-tab nav (Use cases / FAQ / Docs / App)
-   no longer fits beside the brand lockup on a phone. Let the header
-   wrap onto two rows, drop the kicker line, and tighten the pills. */
-@media (max-width: 720px) {
-  .site-header { flex-wrap: wrap; gap: 0.5rem 1rem; padding: 0.7rem 0.85rem; }
-  .brand-kicker { display: none; }
-  .site-nav { flex-wrap: wrap; }
-  .nav-link { min-height: 2.2rem; padding: 0.34rem 0.7rem; font-size: 0.66rem; letter-spacing: 0.06em; }
-}
+.site-main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6rem; padding: 2rem 0 6rem; position: relative; z-index: 1; flex: 1; }
+/* Pages built edge to edge (the landing, use cases, docs) manage their
+   own rhythm: no grid gap, no top or bottom padding. */
+.site-main:has(> .page-bleed) { gap: 0; padding: 0; }
 
 .hero-block { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 2rem; align-items: start; padding-top: 3rem; }
 .hero-copy { display: grid; gap: 1.5rem; align-content: start; }
 .eyebrow { font-family: var(--font-display); font-weight: 700; font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-soft); }
-h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(3.3rem, 7vw, 7rem); line-height: 0.96; letter-spacing: -0.05em; max-width: 11ch; text-wrap: balance; margin: 0; }
-h2 { font-family: var(--font-display); font-weight: 700; font-size: clamp(1.9rem, 3vw, 3.1rem); line-height: 1.02; letter-spacing: -0.04em; text-wrap: balance; margin: 0; }
+h1 { font-family: var(--font-display); font-weight: 500; font-size: clamp(3.3rem, 7vw, 7rem); line-height: 0.96; letter-spacing: -0.05em; max-width: 11ch; text-wrap: balance; margin: 0; }
+h2 { font-family: var(--font-display); font-weight: 500; font-size: clamp(1.9rem, 3vw, 3.1rem); line-height: 1.02; letter-spacing: -0.04em; text-wrap: balance; margin: 0; }
 h3, dt { font-family: var(--font-display); font-weight: 600; font-size: 1.1rem; letter-spacing: -0.03em; margin: 0; }
 p, li, dd { max-width: 68ch; margin: 0; }
 ol, ul { margin: 0; padding: 0; list-style-position: inside; }
 .lead { font-size: 1.22rem; line-height: 1.72; max-width: 56ch; color: var(--ink-soft); }
 
 .tag-row, .hero-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
-.tag { padding: 0.38rem 0.66rem; border: 1px solid var(--line); border-radius: 999px; background: color-mix(in oklab, var(--paper-soft) 88%, white 12%); font-family: var(--font-display); font-weight: 700; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; }
-.pill-link { padding: 0.85rem 1.15rem; border: 1px solid var(--line); border-radius: 999px; background: color-mix(in oklab, var(--paper-warm) 72%, white 28%); font-family: var(--font-display); font-weight: 700; font-size: 0.84rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink); text-decoration: none; display: inline-flex; align-items: center; transition: transform 180ms var(--ease-out-quart); }
-.pill-link:hover { transform: translateY(-1px); }
-.pill-link--primary { background: var(--accent-coral); border-color: color-mix(in oklab, var(--accent-coral) 70%, var(--ink)); color: var(--paper-soft); }
+.tag { padding: 0.38rem 0.7rem; border-radius: 6px; background: var(--paper-warm); font: 500 0.95rem/1.2 var(--font-body); }
+.pill-link { padding: 0.95rem 1.3rem; border-radius: 8px; background: var(--paper-warm); font: 600 1.0625rem/1 var(--font-body); color: var(--ink); text-decoration: none; display: inline-flex; align-items: center; transition: transform 160ms var(--ease-out-quart), background-color 160ms var(--ease-out-quart); }
+.pill-link:hover { background: color-mix(in oklab, var(--paper-warm) 85%, var(--ink)); }
+.pill-link:active { transform: translateY(1px); }
+.pill-link--primary { background: var(--accent-coral); color: var(--on-coral); }
+.pill-link--primary:hover { background: color-mix(in oklab, var(--accent-coral) 88%, var(--ink)); }
 
 .hero-board, .audience-lane, .highlight-tile, .fact-sheet, .closing-panel, .relay-card, .relay-hub, .object-item { position: relative; border: 1px solid color-mix(in oklab, var(--line) 82%, var(--ink) 18%); border-radius: 1.6rem; background: linear-gradient(180deg, color-mix(in oklab, var(--paper-soft) 97%, white 3%), color-mix(in oklab, var(--paper) 95%, var(--paper-warm) 5%)); box-shadow: var(--shadow-soft); }
 .hero-board, .closing-panel { padding: clamp(1.25rem, 2vw, 2rem); }
@@ -192,124 +203,53 @@ ol, ul { margin: 0; padding: 0; list-style-position: inside; }
 
 .closing-panel { display: grid; gap: 1rem; overflow: hidden; }
 
-/* "AI agent reading this?" tap at the very bottom of the landing.
-   Visually quiet — a single dashed-border row that does not compete
-   with the human-facing copy above, but is loud enough for an LLM
-   scanning the body to land on. Pairs with the head-level
-   <meta name="ai-agent-instructions"> + JSON-LD in app/layout.tsx. */
+/* "AI agent reading this?" at the foot of the landing: quiet, in the
+   text face, for an LLM reading the page top to bottom. Pairs with the
+   head-level <meta name="ai-agent-instructions"> + JSON-LD in app/layout.tsx. */
 .agent-tap {
-  margin: 2.5rem auto 0;
-  width: min(1180px, calc(100% - 1.5rem));
-  padding: 1.1rem 1.3rem;
-  border: 1px dashed color-mix(in oklab, var(--line) 70%, var(--ink) 30%);
-  border-radius: 1rem;
-  background: color-mix(in oklab, var(--paper-warm) 32%, var(--paper-soft));
+  padding: 2rem var(--gutter);
+  background: var(--paper-warm);
   display: grid;
-  gap: 0.4rem;
+  grid-template-columns: minmax(0, 18rem) minmax(0, 1fr);
+  gap: 0.5rem 2rem;
+  align-items: baseline;
 }
-.agent-tap__eyebrow {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 0.74rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--accent-coral);
-}
-.agent-tap__body {
-  font-family: var(--font-body);
-  font-size: 0.95rem;
-  line-height: 1.55;
-  color: var(--ink);
-  margin: 0;
-  max-width: 80ch;
-}
-.agent-tap__body code {
-  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
-  font-size: 0.86rem;
-  overflow-wrap: anywhere;
-}
-.agent-tap__link {
-  color: var(--accent-coral);
-  text-decoration: none;
-  border-bottom: 1px dashed currentColor;
-}
-.agent-tap__link:hover { border-bottom-style: solid; }
+.agent-tap__eyebrow { font: 650 1.0625rem/1.3 var(--font-body); color: var(--ink); }
+.agent-tap__body { font: 400 1.0625rem/1.55 var(--font-body); color: var(--ink); margin: 0; max-width: 42rem; }
+.agent-tap__body code { font-family: var(--font-mono); font-size: 0.9rem; overflow-wrap: anywhere; }
+.agent-tap__link { color: var(--ink); font-weight: 600; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 0.25em; text-decoration-color: var(--accent-coral); }
+.agent-tap__link:hover { text-decoration-color: currentColor; }
+@media (max-width: 720px) { .agent-tap { grid-template-columns: 1fr; } }
 
+/* The footer is an ink field: the wordmark large, the links in columns,
+   then who builds it. */
 .site-footer {
-  padding: 1.5rem 0 2rem;
+  background: var(--ink);
+  color: var(--on-ink);
+  padding: clamp(3rem, 6vw, 5.5rem) var(--gutter) 2rem;
   display: grid;
-  gap: 1rem;
-  border-top: 1px solid var(--line);
-  margin-top: 2.5rem;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 2.5rem 1.5rem;
 }
-.footer-tagline {
-  color: var(--ink-soft);
-  font-size: 0.92rem;
-  line-height: 1.5;
-  max-width: 72ch;
-}
-.footer-nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem 1.1rem;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.82rem;
-  letter-spacing: 0.04em;
-}
-.footer-nav a {
-  color: var(--ink, #2a2620);
-  text-decoration: none;
-  border-bottom: 1px dashed transparent;
-  transition: border-color 0.15s ease;
-}
-.footer-nav a:hover {
-  border-bottom-color: var(--ink, #2a2620);
-}
-.footer-credit {
-  display: grid;
-  gap: 0.4rem;
-  padding-top: 0.9rem;
-  border-top: 1px solid color-mix(in oklab, var(--line) 80%, var(--ink) 20%);
-  color: var(--ink-soft, #6b6258);
-  font-size: 0.85rem;
-  line-height: 1.5;
-}
-.footer-credit strong { color: var(--ink, #2a2620); font-weight: 700; }
-.footer-contact {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem 0.6rem;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.8rem;
-}
-.footer-contact a {
-  color: var(--ink, #2a2620);
-  text-decoration: none;
-  border-bottom: 1px dashed currentColor;
-}
-.footer-contact a:hover { border-bottom-style: solid; }
-/* Legal line — sits below the credit block. Hairline divider above
-   so it reads as its own row; muted color + small mono dots so it
-   recedes visually while still being scannable. */
-.footer-copyright {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  align-items: center;
-  gap: 0.35rem 0.6rem;
-  padding-top: 0.9rem;
-  border-top: 1px solid var(--line);
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.75rem;
-  letter-spacing: 0.05em;
-  color: color-mix(in oklab, var(--ink-soft, #6b6258) 75%, transparent);
-}
+.footer-word { grid-column: 1 / span 6; font-family: var(--font-display); font-weight: 500; letter-spacing: -0.05em; line-height: 0.95; font-size: clamp(2.5rem, 6vw, 6rem); }
+.footer-tagline { grid-column: 1 / span 5; color: var(--on-ink); font-size: 1.125rem; line-height: 1.5; max-width: 34rem; }
+.footer-nav { grid-column: 7 / span 6; grid-row: 1 / span 2; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.85rem 1.5rem; align-content: start; font: 500 1.125rem/1.3 var(--font-body); }
+.footer-nav a { color: var(--on-ink); text-decoration: underline; text-decoration-color: transparent; text-decoration-thickness: 2px; text-underline-offset: 0.3em; transition: text-decoration-color 160ms var(--ease-out-quart); }
+.footer-nav a:hover, .footer-nav a:focus-visible { text-decoration-color: var(--accent-coral); }
+.footer-credit { grid-column: 1 / -1; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.75rem 2rem; padding-top: 2rem; color: var(--on-ink-muted); font-size: 1rem; line-height: 1.5; }
+.footer-credit strong { color: var(--on-ink); font-weight: 600; }
+.footer-contact { display: flex; flex-wrap: wrap; gap: 0.4rem 1.25rem; }
+.footer-contact a { color: var(--on-ink); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--on-ink) 40%, transparent); text-underline-offset: 0.25em; }
+.footer-contact a:hover { text-decoration-color: currentColor; }
+.footer-copyright { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 0.35rem 0.6rem; color: var(--on-ink-muted); font-size: 0.95rem; }
 .footer-copyright span[aria-hidden] { opacity: 0.65; }
+@media (max-width: 860px) {
+  .footer-word, .footer-tagline, .footer-nav { grid-column: 1 / -1; grid-row: auto; }
+}
 /* Back-compat: any page still using the old .footer-note class
    gets the styling we used to ship so layout doesn't break. */
 .footer-note {
   padding-top: 1rem;
-  border-top: 1px solid var(--line);
   color: var(--ink-soft);
 }
 

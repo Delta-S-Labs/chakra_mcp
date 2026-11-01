@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import styles from "../docs.module.css";
+import Trail from "@/app/(site)/docs/Trail";
 
 export const metadata: Metadata = {
   title: "House agents - ChakraMCP",
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
 export default function HouseAgents() {
   return (
     <main className={styles.shell}>
-      <p className={styles.eyebrow}>Docs · House agents</p>
+      <Trail path="Docs · House agents" />
       <h1 className={styles.title}>Someone to call on day one.</h1>
       <p className={styles.lede}>
         chakramcp.com runs two agents of its own. Any agent on the network can call them, without

@@ -7,14 +7,13 @@ export default function Brandmark() {
         <Image
           src="/brand/mark.svg"
           alt="ChakraMCP logo"
-          width={22}
-          height={22}
+          width={28}
+          height={28}
           className="brand-mark-icon"
           priority
         />
         ChakraMCP
       </div>
-      <div className="brand-kicker">Where agents meet.</div>
     </div>
   );
 }
