@@ -1,467 +1,175 @@
-.main {
-  max-width: 1080px;
-  margin: 0 auto;
-  padding: 4rem 1.5rem 6rem;
-}
+/* The public directory (/agents), in the landing's grammar
+   (components/site/story.module.css): the 12-column grid, flat fields of
+   stone and ink, no borders, badges or uppercase labels. The status line
+   (Status.tsx) is shared with an agent's profile. */
 
-.header {
-  margin-bottom: 2rem;
-}
+/* ---------- hero: the title, the count, the search ---------- */
+.hero { padding-top: clamp(40px, 8vh, 112px); padding-bottom: clamp(56px, 6vw, 96px); row-gap: 32px; align-items: end; }
+.title { grid-column: 1 / -1; }
+.intro { grid-column: 1 / span 7; }
+.count { grid-column: 9 / span 4; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.count p { font-size: 1.0625rem; line-height: 1.3; color: var(--ink-soft); }
+.countNum { color: var(--ink); }
 
-.eyebrow {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.78rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--ink-soft, #6b6258);
-  margin-bottom: 0.5rem;
-}
-
-.header h1 {
-  font-family: var(--font-display, "Geist", sans-serif);
-  font-weight: 800;
-  font-size: clamp(2.2rem, 4vw, 3.4rem);
-  line-height: 1;
-  letter-spacing: -0.04em;
-  margin: 0 0 1rem;
-}
-
-.lede {
-  font-size: 1.05rem;
-  line-height: 1.6;
-  color: var(--ink-soft, #6b6258);
-  max-width: 60ch;
-}
-
-/* ─── Filter form ─── */
-.controls {
-  display: grid;
-  gap: 1rem;
-  margin-bottom: 2rem;
-  padding: 1.25rem;
-  border: 1px solid var(--line, #e6decd);
-  border-radius: 1.1rem;
-  background: var(--paper-soft, #fdf9ee);
-}
-
-.search {
-  width: 100%;
-  padding: 0.7rem 0.9rem;
-  font-size: 1rem;
-  font-family: inherit;
-  border: 1px solid var(--line, #e6decd);
-  border-radius: 0.6rem;
-  background: white;
-  color: var(--ink, #2a2620);
-}
-
-.filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem 1.4rem;
-  align-items: center;
+/* The search and its filters, one panel. */
+.search { grid-column: 1 / -1; display: grid; gap: 20px; padding: clamp(16px, 2vw, 24px); border-radius: 10px; background: var(--paper-warm); }
+.searchRow { display: flex; gap: 8px; }
+.query {
+  flex: 1;
+  min-width: 0;
+  min-height: 3.5rem;
+  padding: 0 18px;
   border: 0;
-  margin: 0;
-  padding: 0;
+  border-radius: 8px;
+  background: var(--paper-soft);
+  color: var(--ink);
+  font: 400 1.1875rem/1.2 var(--font-body);
 }
+.query::placeholder { color: var(--ink-muted); }
+.submit { justify-content: center; cursor: pointer; border: 0; }
+.query:focus-visible,
+.field select:focus-visible,
+.field input:focus-visible,
+.check input:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
 
-.filtersLegend {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.72rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--ink-soft, #6b6258);
-  padding: 0;
-  margin-right: 0.5rem;
+.filters { display: flex; flex-wrap: wrap; align-items: end; gap: 12px 24px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.field { display: grid; gap: 6px; font: 500 1rem/1.2 var(--font-body); color: var(--ink-soft); }
+.field select,
+.field input {
+  min-height: 2.75rem;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--paper-soft);
+  color: var(--ink);
+  font: 400 1.0625rem/1 var(--font-body);
 }
-
-.filters label {
-  display: inline-flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  font-size: 0.85rem;
-  color: var(--ink-soft, #6b6258);
-}
-
-.filters select,
-.filters input[type="text"] {
-  padding: 0.5rem 0.7rem;
-  font-size: 0.95rem;
-  font-family: inherit;
-  border: 1px solid var(--line, #e6decd);
-  border-radius: 0.5rem;
-  background: white;
-  color: var(--ink, #2a2620);
-}
-
-.checkbox {
-  flex-direction: row !important;
-  align-items: center;
-  gap: 0.4rem !important;
-  margin-top: 1rem; /* align baseline-ish with the dropdowns */
-}
-
-.tags input[type="text"] {
-  width: 14rem;
-}
-
-.submit {
-  margin-left: auto;
-  padding: 0.55rem 1.1rem;
-  border: 1px solid var(--ink, #2a2620);
-  border-radius: 0.5rem;
-  background: var(--ink, #2a2620);
-  color: var(--paper, #faf3e3);
-  font-family: inherit;
-  font-size: 0.95rem;
-  cursor: pointer;
-  transition: transform 0.1s ease;
-}
-
-.submit:hover {
-  transform: translateY(-1px);
-}
-
+.tags input { width: 15rem; max-width: 100%; }
+.check { display: inline-flex; align-items: center; gap: 10px; min-height: 2.75rem; font: 500 1.0625rem/1.2 var(--font-body); color: var(--ink); cursor: pointer; }
+.check input { width: 1.15rem; height: 1.15rem; margin: 0; accent-color: var(--ink); }
 .reset {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.85rem;
-  color: var(--ink-soft, #6b6258);
-  text-decoration: none;
-  padding: 0.55rem 0.9rem;
-  border: 1px solid var(--line, #e6decd);
-  border-radius: 0.5rem;
-  background: white;
-}
-
-.reset:hover {
-  background: var(--accent-butter, #f5d34a);
-  color: var(--ink, #2a2620);
-}
-
-.summary {
-  font-size: 0.95rem;
-  color: var(--ink-soft, #6b6258);
-  margin: 0 0 1rem;
-}
-
-/* ─── Card grid ─── */
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 1rem;
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.card {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  padding: 1.1rem;
-  border: 1px solid var(--line, #e6decd);
-  border-radius: 1rem;
-  background: var(--paper-soft, #fdf9ee);
-  transition: transform 0.12s ease, box-shadow 0.12s ease;
-}
-
-.card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 24px rgba(80, 60, 40, 0.06);
-}
-
-.cardHead h3 {
-  font-family: var(--font-display, "Geist", sans-serif);
-  font-weight: 700;
-  font-size: 1.15rem;
-  margin: 0 0 0.25rem;
-  letter-spacing: -0.02em;
-}
-
-.cardHead a {
-  color: var(--ink, #2a2620);
-  text-decoration: none;
-}
-
-.cardHead a:hover {
-  text-decoration: underline;
-}
-
-.cardSlug {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
+  display: inline-flex;
   align-items: center;
-  font-size: 0.78rem;
-  color: var(--ink-soft, #6b6258);
-  margin: 0;
+  min-height: 2.75rem;
+  margin-left: auto;
+  font: 600 1.0625rem/1 var(--font-body);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.3em;
+  text-decoration-color: var(--accent-coral);
 }
+.reset:hover { text-decoration-color: currentColor; }
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
-.cardSlug code {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  background: rgba(255, 255, 255, 0.5);
-  padding: 0.05rem 0.35rem;
-  border-radius: 0.3rem;
-}
-
-.verified {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.7rem;
-  letter-spacing: 0.04em;
-  padding: 0.1rem 0.4rem;
-  border-radius: 0.3rem;
-  background: var(--accent-lime, #c5e060);
-  color: var(--ink, #2a2620);
-}
-
-.modePush,
-.modePull {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.7rem;
-  letter-spacing: 0.04em;
-  padding: 0.1rem 0.4rem;
-  border-radius: 0.3rem;
-  border: 1px solid var(--line, #e6decd);
-  background: white;
-}
-
-.modePush {
-  border-color: var(--accent-coral, #e35d4c);
-  color: var(--accent-coral, #e35d4c);
-}
-
-/* "public" pill — directory marker for agents with at least one
- * publicly-invokable capability (migration 0022). Coral fill to
- * match the verified/mode badge family but distinct enough at a
- * glance that a stranger can spot agents they can actually try. */
-.publicInvoke {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.7rem;
-  letter-spacing: 0.04em;
-  padding: 0.1rem 0.4rem;
-  border-radius: 0.3rem;
-  background: color-mix(in oklab, var(--accent-coral, #e35d4c) 18%, white);
-  border: 1px solid color-mix(in oklab, var(--accent-coral, #e35d4c) 60%, var(--line, #e6decd));
-  color: var(--accent-coral, #e35d4c);
-  font-weight: 600;
-}
-
-.seen {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.7rem;
-  letter-spacing: 0.04em;
-  color: var(--ink-soft, #6b6258);
-}
-
-/* Capability chips: names, with the public ones marked. */
-.capChips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
-  list-style: none;
-  padding: 0;
-  margin: 0.1rem 0 0;
-}
-
-.cap,
-.capPublic,
-.capMore {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.72rem;
-  padding: 0.1rem 0.45rem;
-  border-radius: 0.3rem;
-  border: 1px solid var(--line, #e6decd);
-  background: white;
-  color: var(--ink, #2a2620);
-}
-
-.capPublic {
-  border-color: color-mix(in oklab, var(--accent-coral, #e35d4c) 60%, var(--line, #e6decd));
-}
-
-.capAccess {
-  margin-left: 0.35rem;
-  color: var(--accent-coral, #e35d4c);
-  font-weight: 600;
-}
-
-.capMore {
-  border-style: dashed;
-  color: var(--ink-soft, #6b6258);
-}
-
-.cardBody {
-  font-size: 0.92rem;
-  line-height: 1.55;
-  color: var(--ink, #2a2620);
-  margin: 0;
-}
-
-.cardTags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
-  list-style: none;
-  padding: 0;
-  margin: 0.2rem 0 0;
-}
-
-.cardTags a {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.72rem;
-  color: var(--ink-soft, #6b6258);
-  text-decoration: none;
-  padding: 0.1rem 0.4rem;
-  border-radius: 0.3rem;
-  background: rgba(255, 255, 255, 0.5);
-}
-
-.cardTags a:hover {
-  background: var(--accent-butter, #f5d34a);
-  color: var(--ink, #2a2620);
-}
-
-/* ─── Empty state ─── */
-/* Centered card with three stacked rows (title, body, link). The
- * `display: grid; justify-items: center` is what makes the body wrap
- * tidily inside a narrow inline-block — text-align: center alone
- * centers each line independently and a two-line wrap reads as
- * ragged-left. */
-.empty {
-  display: grid;
-  gap: 0.5rem;
-  justify-items: center;
-  text-align: center;
-  padding: 2.4rem 1.1rem;
-  color: var(--ink-soft, #6b6258);
-  border: 1px dashed var(--line, #e6decd);
-  border-radius: 1rem;
-  background: color-mix(in oklab, var(--paper-soft, #f7efe1) 80%, transparent);
-}
-
-.emptyTitle {
-  margin: 0;
-  font-family: var(--font-body);
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--ink, #2a2620);
-}
-
-.emptyHint {
-  margin: 0;
-  font-size: 0.92rem;
-  color: var(--ink-soft, #6b6258);
-  /* Cap the body line-length so wraps don't span the full card and
-   * read as ragged-left. ~48ch is comfortable around the two-line
-   * messages the empty state uses. */
-  max-width: 48ch;
-}
-
-.emptyLink {
-  margin: 0.3rem 0 0;
-  font-size: 0.9rem;
-}
-.emptyLink a {
-  color: var(--accent-coral);
-  text-decoration: none;
-  border-bottom: 1px dashed currentColor;
-}
-.emptyLink a:hover { border-bottom-style: solid; }
-
-.emptyHint code {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  background: rgba(255, 255, 255, 0.5);
-  padding: 0.05rem 0.3rem;
-  border-radius: 0.25rem;
-}
-
-/* ─── Pager ─── */
-.pager {
-  margin-top: 2rem;
-  text-align: center;
-}
-
-.pager a {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.95rem;
-  color: var(--ink, #2a2620);
-  text-decoration: none;
-  padding: 0.5rem 1rem;
-  border: 1px solid var(--line, #e6decd);
-  border-radius: 0.5rem;
-  background: var(--paper-soft, #fdf9ee);
-}
-
-.pager a:hover {
-  background: var(--accent-butter, #f5d34a);
-}
-
-/* ─── Online + "Try these" ─── */
-.online {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.7rem;
-  letter-spacing: 0.04em;
-  padding: 0.1rem 0.4rem;
-  border-radius: 0.3rem;
-  background: color-mix(in oklab, var(--accent-lime, #c5e060) 45%, white);
-  color: var(--ink, #2a2620);
-}
-
-.onlineDot {
-  display: inline-block;
-  width: 0.5rem;
-  height: 0.5rem;
-  margin-right: 0.4rem;
-  border-radius: 999px;
-  background: oklch(62% 0.17 145);
-  vertical-align: 0.1em;
-}
-
+/* ---------- try one now: an ink band ---------- */
+.band { padding: clamp(72px, 8vw, 128px) var(--gutter); }
+.bandHead { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: clamp(16px, 1.8vw, 24px); align-items: end; margin-bottom: clamp(32px, 4vw, 56px); }
+.bandHead h2 { grid-column: 1 / span 6; }
+.bandHead p { grid-column: 8 / span 5; }
+.tryGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
 .try {
-  margin: 0 0 1.5rem;
-}
-
-.tryTitle {
-  margin: 0 0 0.6rem;
-  font-size: 1.05rem;
-}
-
-.tryGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 0.75rem;
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.tryCard {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  padding: 0.9rem 1rem;
-  border: 1px solid color-mix(in oklab, var(--accent-butter, #f3e3a0) 70%, var(--line, #e6decd));
-  border-radius: 0.9rem;
-  background: color-mix(in oklab, var(--accent-butter, #f3e3a0) 25%, var(--paper-soft, #fdf9ee));
+  gap: 14px;
+  max-width: none;
+  padding: clamp(20px, 2vw, 28px);
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--ink) 82%, var(--paper));
+}
+.tryHead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; }
+.tryHead a { color: var(--on-ink); }
+.tryStatus { font-size: 1rem; color: var(--on-ink-muted); }
+.trySlug { color: var(--on-ink-muted); font-size: 0.9375rem; overflow-wrap: anywhere; }
+.tryBody { font-size: 1.0625rem; line-height: 1.5; color: var(--on-ink); max-width: none; }
+.tryCaps { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.tryCaps li { display: grid; gap: 4px; max-width: none; padding: 12px 14px; border-radius: 8px; background: color-mix(in oklab, var(--ink) 70%, black); color: var(--on-ink-muted); font-size: 1rem; line-height: 1.4; }
+.tryCaps code { color: var(--accent-lime); font-size: 0.9375rem; }
+.tryLink { margin-top: auto; align-self: start; font-size: 1.0625rem; color: var(--on-ink); }
+
+/* ---------- the list ---------- */
+.results { padding-block: clamp(72px, 8vw, 128px); row-gap: 24px; }
+.resultsHead { grid-column: 1 / -1; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px 32px; margin-bottom: clamp(8px, 1.5vw, 24px); }
+.resultsTitle { font-size: clamp(32px, 4vw, 64px); }
+.summary { font-size: 1.0625rem; color: var(--ink-soft); }
+
+.list { grid-column: 1 / -1; display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.list > li { max-width: none; }
+/* One agent a row: who it is, what it does, what it offers. The name's
+   link covers the row; the tag links sit above it. */
+.agent {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 16px clamp(16px, 1.8vw, 24px);
+  padding: clamp(20px, 2vw, 28px);
+  border-radius: 10px;
+  background: var(--paper-soft);
+  transition: background-color 160ms var(--ease-out-quart);
+}
+.agent:hover { background: color-mix(in oklab, var(--paper-soft) 55%, var(--paper-warm)); }
+.agentId { grid-column: 1 / span 4; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.agentName { font-size: clamp(22px, 1.8vw, 28px); }
+.agentName a::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.agentName a:focus-visible { outline: none; }
+.agentName a:focus-visible::after { outline: 3px solid var(--ink); outline-offset: 2px; }
+.slug { font-size: 0.9375rem; color: var(--ink-soft); overflow-wrap: anywhere; }
+.agentAbout { grid-column: 5 / span 5; display: grid; gap: 12px; align-content: start; min-width: 0; }
+.agentBody {
+  font-size: 1.0625rem;
+  line-height: 1.5;
+  max-width: 38rem;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  overflow: hidden;
+}
+.quiet { color: var(--ink-muted); }
+
+.tagList { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; padding: 0; list-style: none; }
+.tagList a {
+  position: relative;
+  z-index: 1;
+  font-size: 1rem;
+  color: var(--ink-soft);
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.3em;
+}
+.tagList a:hover, .tagList a:focus-visible { color: var(--ink); text-decoration-color: var(--accent-coral); }
+
+.caps { grid-column: 10 / span 3; display: grid; gap: 8px; align-content: start; margin: 0; padding: 0; list-style: none; min-width: 0; }
+.caps li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 10px; max-width: none; font-size: 1rem; }
+.caps code { font-size: 0.9375rem; color: var(--ink); overflow-wrap: anywhere; }
+.public { font-weight: 650; color: oklch(50% 0.17 28); }
+.friends { color: var(--ink-soft); }
+
+/* The status line. */
+.status { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; font-size: 1rem; line-height: 1.4; color: var(--ink-soft); max-width: none; }
+.dot { display: inline-block; width: 8px; height: 8px; margin-right: 7px; border-radius: 50%; background: oklch(62% 0.17 145); vertical-align: 0.08em; }
+.verified { padding: 1px 8px; border-radius: 5px; background: var(--tint-lime); color: var(--ink); font-weight: 600; }
+
+.empty { grid-column: 1 / -1; display: grid; gap: 10px; justify-items: start; padding: clamp(24px, 3vw, 40px); border-radius: 10px; background: var(--paper-warm); }
+.emptyTitle { font: 500 clamp(22px, 1.8vw, 28px)/1.2 var(--font-display); letter-spacing: -0.025em; }
+.emptyHint { font-size: 1.0625rem; line-height: 1.5; color: var(--ink-soft); max-width: 40rem; }
+
+.pager { grid-column: 1 / -1; margin-top: 16px; }
+
+/* ---------- widths ---------- */
+@media (max-width: 1100px) {
+  .intro { grid-column: 1 / span 8; }
+  .count { grid-column: 9 / -1; grid-template-columns: 1fr; }
+  .bandHead h2, .bandHead p { grid-column: 1 / -1; }
+  .agentId { grid-column: 1 / span 5; }
+  .agentAbout { grid-column: 6 / -1; }
+  .caps { grid-column: 6 / -1; }
 }
 
-.tryName {
-  margin: 0;
-  font-weight: 700;
-}
-
-.tryName a {
-  color: inherit;
-}
-
-.tryBody {
-  margin: 0;
-  font-size: 0.92rem;
-  color: var(--ink-soft, #6b6258);
-}
-
-.tryLink {
-  margin-top: auto;
-  font-weight: 600;
-  font-size: 0.9rem;
+@media (max-width: 720px) {
+  .intro, .count { grid-column: 1 / -1; }
+  .count { grid-template-columns: 1fr 1fr; }
+  .searchRow { flex-direction: column; }
+  .reset { margin-left: 0; }
+  .agentId, .agentAbout, .caps { grid-column: 1 / -1; }
 }
