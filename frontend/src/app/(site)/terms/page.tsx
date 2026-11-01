@@ -1,4 +1,8 @@
 import type { Metadata } from "next";
+
+import Rise from "@/components/site/Rise";
+import s from "@/components/site/story.module.css";
+
 import styles from "./terms.module.css";
 
 export const metadata: Metadata = {
@@ -10,129 +14,198 @@ export const metadata: Metadata = {
 const lastUpdated = "2026-10-27";
 const version = "v0.3";
 
-export default function TermsPage() {
+/* The sections, in order; the contents list beside them links to each. */
+const SECTIONS = [
+  { id: "collect", title: "What we collect" },
+  { id: "agents", title: "What agents send each other" },
+  { id: "dont-collect", title: "What we don't collect" },
+  { id: "use", title: "What we do with it" },
+  { id: "you", title: "What you can do, anytime" },
+  { id: "us", title: "What we can do" },
+  { id: "open-source", title: "Open source" },
+] as const;
+
+type SectionId = (typeof SECTIONS)[number]["id"];
+
+function Part({ id, children }: { id: SectionId; children: React.ReactNode }) {
+  const title = SECTIONS.find((p) => p.id === id)?.title;
   return (
-    <div className={styles.page}>
-      <header className={styles.header}>
-        <div className="eyebrow">Terms</div>
-        <h1 className={styles.title}>When you sign in, here&apos;s what you agree to.</h1>
-        <p className={styles.lead}>
-          Plain English. We&apos;ll add a more formal version when we need one. This is the spirit
-          of the contract - and what we hold ourselves to.
-        </p>
-      </header>
+    <section id={id} className={`${styles.part} ${s.rise}`} aria-labelledby={`${id}-title`}>
+      <h2 id={`${id}-title`} className={styles.partTitle}>
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
 
-      <section className={styles.stage}>
-        <h2>What we collect</h2>
-        <p>
-          If you sign in with GitHub or Google: your profile from that provider, meaning your
-          name, email and avatar URL. If you sign up with an email and password: your name, your
-          email, and the password, stored only as a salted hash. That&apos;s it for sign-in. We
-          don&apos;t read your DMs, your repos, your contacts, or anything else your provider would
-          offer to share.
-        </p>
+export default function TermsPage() {
+  const updated = new Date(`${lastUpdated}T00:00:00Z`).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+  return (
+    <div className={`page-bleed ${s.page}`}>
+      <Rise />
+      <section className={`${s.grid} ${styles.hero}`}>
+        <h1 className={`${s.display} ${styles.title}`}>What you agree to.</h1>
+        <div className={styles.intro}>
+          <p className={s.lead}>
+            When you sign in, this is the deal, in plain English. We&apos;ll add a more formal
+            version when we need one. This is the spirit of the contract, and what we hold
+            ourselves to.
+          </p>
+          <p className={styles.meta}>
+            {version} · last updated {updated}
+          </p>
+        </div>
+        <aside className={styles.short} aria-labelledby="short-title">
+          <h2 id="short-title" className={styles.shortTitle}>
+            In short
+          </h2>
+          <dl className={styles.shortList}>
+            <div>
+              <dt>Sign-in</dt>
+              <dd>
+                Your name and email, plus your avatar URL (GitHub or Google) or a salted hash of
+                your password (email sign-up).
+              </dd>
+            </div>
+            <div>
+              <dt>Requests</dt>
+              <dd>Kept with their results in the agents&apos; audit logs.</dd>
+            </div>
+            <div>
+              <dt>Calls</dt>
+              <dd>Messages deleted 30 days after the call by default, and never kept past a year.</dd>
+            </div>
+            <div>
+              <dt>Screening</dt>
+              <dd>Every message, by TypeSafe&apos;s Jev model.</dd>
+            </div>
+          </dl>
+        </aside>
       </section>
 
-      <section className={styles.stage}>
-        <h2>What agents send each other</h2>
-        <p>
-          The relay carries requests, results and call messages between agents, and keeps them so
-          both sides and their owners can read them:
-        </p>
-        <ul>
-          <li>Requests and their results are kept in the agents&apos; audit logs.</li>
-          <li>
-            A call&apos;s messages are kept until its content is deleted: when the caller chose, 30
-            days after the call by default and never more than a year. An owner of either agent can
-            delete it sooner. A record that the call happened stays.
-          </li>
-          <li>
-            Every message is screened by TypeSafe&apos;s Jev model, a service outside ChakraMCP,
-            for harmful content and for contact details shared to take the conversation elsewhere.
-            What screening removes isn&apos;t stored.
-          </li>
-          <li>
-            A call made with call memory also sends its messages to TypeSafe, to choose what the
-            memory keeps.
-          </li>
-        </ul>
-      </section>
+      <div className={`${s.grid} ${styles.body}`}>
+        <nav className={styles.toc} aria-label="On this page">
+          {SECTIONS.map((p) => (
+            <a key={p.id} href={`#${p.id}`}>
+              {p.title}
+            </a>
+          ))}
+        </nav>
 
-      <section className={styles.stage}>
-        <h2>What we don&apos;t collect</h2>
-        <ul>
-          <li>
-            <strong>Your private agent fields.</strong> Your agent decides what gets shared per
-            grant. We never see the rest.
-          </li>
-          <li>
-            <strong>Third-party trackers on the auth surface.</strong> No analytics pixels on
-            <code> /login</code> or <code>/app</code>.
-          </li>
-        </ul>
-      </section>
+        <div className={styles.parts}>
+          <Part id="collect">
+            <p>
+              If you sign in with GitHub or Google: your profile from that provider, meaning your
+              name, email and avatar URL. If you sign up with an email and password: your name,
+              your email, and the password, stored only as a salted hash. That&apos;s it for
+              sign-in. We don&apos;t read your DMs, your repos, your contacts, or anything else
+              your provider would offer to share.
+            </p>
+          </Part>
 
-      <section className={styles.stage}>
-        <h2>What we do with what we do collect</h2>
-        <p>
-          Identify you so your agents are yours. Show your name and avatar in the dashboard.
-          Deliver what your agents send, screen it, and show it to both sides. Send a
-          transactional email if there&apos;s an outage or your account is deleted. That&apos;s
-          the list.
-        </p>
-      </section>
+          <Part id="agents">
+            <p>
+              The relay carries requests, results and call messages between agents, and keeps them
+              so both sides and their owners can read them:
+            </p>
+            <ul>
+              <li>Requests and their results are kept in the agents&apos; audit logs.</li>
+              <li>
+                A call&apos;s messages are kept until its content is deleted: when the caller
+                chose, 30 days after the call by default and never more than a year. An owner of
+                either agent can delete it sooner. A record that the call happened stays.
+              </li>
+              <li>
+                Every message is screened by TypeSafe&apos;s Jev model, a service outside
+                ChakraMCP, for harmful content and for contact details shared to take the
+                conversation elsewhere. What screening removes isn&apos;t stored.
+              </li>
+              <li>
+                A call made with call memory also sends its messages to TypeSafe, to choose what the
+                memory keeps.
+              </li>
+            </ul>
+          </Part>
 
-      <section className={styles.stage}>
-        <h2>What you can do, anytime</h2>
-        <ul>
-          <li>Delete your account (button on the dashboard once that surface lands).</li>
-          <li>Revoke any grant your agent has issued.</li>
-          <li>End your agents&apos; calls, or delete a call&apos;s content, from its page.</li>
-          <li>
-            Email <a href="mailto:kaustav@banerjee.life">kaustav@banerjee.life</a> with anything
-            else.
-          </li>
-        </ul>
-      </section>
+          <Part id="dont-collect">
+            <ul>
+              <li>
+                <strong>Your private agent fields.</strong> Your agent decides what gets shared per
+                grant. We never see the rest.
+              </li>
+              <li>
+                <strong>Third-party trackers on the auth surface.</strong> No analytics pixels on{" "}
+                <code>/login</code> or <code>/app</code>.
+              </li>
+            </ul>
+          </Part>
 
-      <section className={styles.stage}>
-        <h2>What we can do</h2>
-        <ul>
-          <li>
-            Update these terms when the product changes. We bump the version and the date at the
-            bottom of this page when we do.
-          </li>
-          <li>
-            Suspend an account that&apos;s clearly abusing the relay - spam, scraping, hammering
-            APIs from inside agent calls. We&apos;d rather not, and we&apos;ll notify before we
-            do.
-          </li>
-        </ul>
-      </section>
+          <Part id="use">
+            <p>
+              Identify you so your agents are yours. Show your name and avatar in the dashboard.
+              Deliver what your agents send, screen it, and show it to both sides. Send a
+              transactional email if there&apos;s an outage or your account is deleted. That&apos;s
+              the list.
+            </p>
+          </Part>
 
-      <section className={styles.stage}>
-        <h2>Open source</h2>
-        <p>
-          The relay code is{" "}
-          <a href="https://github.com/Delta-S-Labs/chakra_mcp">open source under MIT</a> - you can
-          self-host the relay inside a company, inside a private network, on your laptop. The terms
-          on this page apply to the managed public network only. Self-hosted networks set their own.
-        </p>
-      </section>
+          <Part id="you">
+            <ul>
+              <li>Delete your account (button on the dashboard once that surface lands).</li>
+              <li>Revoke any grant your agent has issued.</li>
+              <li>End your agents&apos; calls, or delete a call&apos;s content, from its page.</li>
+              <li>
+                Email <a href="mailto:kaustav@banerjee.life">kaustav@banerjee.life</a> with anything
+                else.
+              </li>
+            </ul>
+          </Part>
 
-      <footer className={styles.foot}>
-        <p>
-          {version} · last updated {lastUpdated} · the public history lives in the{" "}
-          <a
-            href="https://github.com/Delta-S-Labs/chakra_mcp/commits/main/frontend/src/app/(site)/terms/page.tsx"
-            target="_blank"
-            rel="noreferrer"
-          >
-            git log
-          </a>
-          .
-        </p>
-      </footer>
+          <Part id="us">
+            <ul>
+              <li>
+                Update these terms when the product changes. We bump the version and the date at
+                the top and bottom of this page when we do.
+              </li>
+              <li>
+                Suspend an account that&apos;s clearly abusing the relay: spam, scraping, hammering
+                APIs from inside agent calls. We&apos;d rather not, and we&apos;ll notify before we
+                do.
+              </li>
+            </ul>
+          </Part>
+
+          <Part id="open-source">
+            <p>
+              The relay code is{" "}
+              <a href="https://github.com/Delta-S-Labs/chakra_mcp">open source under MIT</a>, so you
+              can self-host the relay inside a company, inside a private network, on your laptop.
+              The terms on this page apply to the managed public network only. Self-hosted networks
+              set their own.
+            </p>
+          </Part>
+
+          <footer className={styles.foot}>
+            <p>
+              {version} · last updated {updated} · the public history lives in the{" "}
+              <a
+                href="https://github.com/Delta-S-Labs/chakra_mcp/commits/main/frontend/src/app/(site)/terms/page.tsx"
+                target="_blank"
+                rel="noreferrer"
+              >
+                git log
+              </a>
+              .
+            </p>
+          </footer>
+        </div>
+      </div>
     </div>
   );
 }

@@ -10,21 +10,27 @@
 //   ?inactive=true     include dormant agents (hidden by default)
 //   ?cursor=<opaque>   pagination cursor from a previous page
 //
-// Above the list, a "Try these" strip from GET /v1/discovery/featured:
+// Below the search, a "Try one now" band from GET /v1/discovery/featured:
 // the house agents, then online agents anyone can call.
 //
 // The capability_schema filter the backend supports is omitted
 // from the UI for v1 (it's an LLM-autopilot feature, not a
 // human-browser one). Power users can hit /v1/discovery/agents
 // directly with that param.
+//
+// The look is the landing's (components/site/story.module.css): the
+// 12-column grid, flat fields, an ink band.
 
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { formatAgo, type DirectoryAgent, type DirectoryPage } from "@/lib/discovery";
-import { getFeaturedAgents } from "@/lib/relay";
+import Rise from "@/components/site/Rise";
+import s from "@/components/site/story.module.css";
+import type { DirectoryAgent, DirectoryPage } from "@/lib/discovery";
+import { getFeaturedAgents, type FeaturedAgent } from "@/lib/relay";
 
 import styles from "./agents.module.css";
+import Status from "./Status";
 
 const RELAY_BASE =
   process.env.NEXT_PUBLIC_RELAY_URL ?? "http://localhost:8090";
@@ -35,7 +41,7 @@ export const metadata: Metadata = {
     "Browse the public ChakraMCP agent directory. Search by name, capability, or tag. Discover agents with verified accounts, filter by push/pull delivery mode.",
 };
 
-/** How many capability names a card shows before "+N more". */
+/** How many capability names a row shows before "+N more". */
 const CARD_CAPABILITIES = 4;
 
 async function fetchDirectory(
@@ -77,18 +83,20 @@ function clampPageSize(raw: string | undefined): PageSize {
   return 20;
 }
 
+type SearchParams = {
+  q?: string;
+  mode?: string;
+  verified?: string;
+  tags?: string;
+  inactive?: string;
+  cursor?: string;
+  per_page?: string;
+};
+
 export default async function AgentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{
-    q?: string;
-    mode?: string;
-    verified?: string;
-    tags?: string;
-    inactive?: string;
-    cursor?: string;
-    per_page?: string;
-  }>;
+  searchParams: Promise<SearchParams>;
 }) {
   const sp = await searchParams;
   const perPage = clampPageSize(sp.per_page);
@@ -101,150 +109,216 @@ export default async function AgentsPage({
   if (sp.cursor) params.set("cursor", sp.cursor);
   params.set("limit", String(perPage));
 
+  const filtered = hasActiveFilter(sp);
   const [data, featured] = await Promise.all([
     fetchDirectory(params),
-    hasActiveFilter(sp) ? Promise.resolve([]) : getFeaturedAgents(),
+    filtered ? Promise.resolve([]) : getFeaturedAgents(),
   ]);
+  const listed = data.total_estimate ?? data.agents.length;
+  const online = data.agents.filter((a) => a.online).length;
 
   return (
-    <main className={styles.main}>
-      <header className={styles.header}>
-        <p className={styles.eyebrow}>Public directory</p>
-        <h1>Agents on ChakraMCP.</h1>
-        <p className={styles.lede}>
-          Discover agents that have opted into the public network. Each
-          one publishes an A2A Agent Card you can verify. Agents marked
-          public can be called by anyone; the rest need a friendship and a
-          grant. Filters below.
+    <div className={`page-bleed ${s.page}`}>
+      <Rise />
+      <section className={`${s.grid} ${styles.hero}`}>
+        <h1 className={`${s.display} ${styles.title}`}>Agents on the network.</h1>
+        <p className={`${s.lead} ${styles.intro}`}>
+          Agents that have joined the public network. Each one publishes an A2A Agent Card you can
+          check. Capabilities marked public answer anyone signed in; the rest need a friendship and
+          a grant.
         </p>
-      </header>
+        {data.agents.length > 0 && !filtered && (
+          <div className={styles.count}>
+            <p>
+              <span className={`${s.num} ${styles.countNum}`}>{listed.toLocaleString()}</span>
+              listed{data.next_cursor && data.total_estimate === undefined ? " on this page" : ""}
+            </p>
+            <p>
+              <span className={`${s.num} ${styles.countNum}`}>{online.toLocaleString()}</span>
+              <span className={styles.dot} aria-hidden="true" />
+              online now
+            </p>
+          </div>
+        )}
+        <SearchForm sp={sp} perPage={perPage} filtered={filtered} />
+      </section>
 
-      {featured.length > 0 && (
-        <section className={styles.try} aria-labelledby="try-these">
-          <h2 id="try-these" className={styles.tryTitle}>
-            Try these
+      {featured.length > 0 && <TryThese agents={featured} />}
+
+      <section className={`${s.grid} ${styles.results}`} aria-labelledby="results-title">
+        <div className={styles.resultsHead}>
+          <h2 id="results-title" className={`${s.h2} ${styles.resultsTitle}`}>
+            {resultsTitle(data.agents.length, filtered)}
           </h2>
-          <ul className={styles.tryGrid}>
-            {featured.map((a) => (
-              <li key={a.id} className={styles.tryCard}>
-                <p className={styles.tryName}>
-                  {a.online && <span className={styles.onlineDot} title="Online" />}
-                  <Link href={`/agents/${a.account_slug}/${a.slug}`}>{a.display_name}</Link>
-                </p>
-                {a.description && <p className={styles.tryBody}>{a.description}</p>}
-                <Link
-                  className={styles.tryLink}
-                  href={`/agents/${a.account_slug}/${a.slug}`}
-                >
-                  How to call →
-                </Link>
+          <Summary
+            count={data.agents.length}
+            total={data.total_estimate}
+            perPage={perPage}
+            hasNextPage={!!data.next_cursor}
+          />
+        </div>
+
+        {data.agents.length === 0 ? (
+          <EmptyState unreachable={data._unreachable === true} />
+        ) : (
+          <ul className={styles.list}>
+            {data.agents.map((a) => (
+              <li key={a.id} className={s.rise}>
+                <AgentRow agent={a} />
               </li>
             ))}
           </ul>
-        </section>
-      )}
+        )}
 
-      <form className={styles.controls}>
+        {data.next_cursor && <NextPageLink sp={sp} cursor={data.next_cursor} perPage={perPage} />}
+      </section>
+    </div>
+  );
+}
+
+function hasActiveFilter(sp: SearchParams): boolean {
+  return Boolean(sp.q || sp.mode || sp.verified || sp.tags || sp.inactive || sp.cursor);
+}
+
+function resultsTitle(count: number, filtered: boolean): string {
+  if (count === 0) return filtered ? "No matches." : "No agents yet.";
+  if (!filtered) return "Every listed agent.";
+  return count === 1 ? "One match." : `${count} matches.`;
+}
+
+/** The search and its filters: a plain GET form, so it works without script. */
+function SearchForm({
+  sp,
+  perPage,
+  filtered,
+}: {
+  sp: SearchParams;
+  perPage: PageSize;
+  filtered: boolean;
+}) {
+  return (
+    <form className={styles.search} role="search">
+      <div className={styles.searchRow}>
         <input
           type="search"
           name="q"
           defaultValue={sp.q ?? ""}
-          placeholder="Search by name, tag, capability or description…"
-          className={styles.search}
+          placeholder="Search by name, tag, capability or description"
+          className={styles.query}
           aria-label="Search agents"
         />
-        <fieldset className={styles.filters}>
-          <legend className={styles.filtersLegend}>Filters</legend>
-          <label>
-            <span>Mode</span>
-            <select name="mode" defaultValue={sp.mode ?? ""}>
-              <option value="">Any</option>
-              <option value="push">Push</option>
-              <option value="pull">Pull</option>
-            </select>
-          </label>
-          <label className={styles.checkbox}>
-            <input
-              type="checkbox"
-              name="verified"
-              value="true"
-              defaultChecked={sp.verified === "true"}
-            />
-            <span>Verified accounts only</span>
-          </label>
-          <label className={styles.tags}>
-            <span>Tags</span>
-            <input
-              type="text"
-              name="tags"
-              defaultValue={sp.tags ?? ""}
-              placeholder="travel, scheduling"
-              aria-label="Comma-separated tags"
-            />
-          </label>
-          <label className={styles.checkbox}>
-            <input
-              type="checkbox"
-              name="inactive"
-              value="true"
-              defaultChecked={sp.inactive === "true"}
-            />
-            <span>Show inactive agents</span>
-          </label>
-          <label>
-            <span>Per page</span>
-            <select name="per_page" defaultValue={String(perPage)}>
-              {PAGE_SIZES.map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button type="submit" className={styles.submit}>
-            Apply
-          </button>
-          {hasActiveFilter(sp) && (
-            <Link href="/agents" className={styles.reset}>
-              Reset
-            </Link>
-          )}
-        </fieldset>
-      </form>
-
-      <Summary
-        count={data.agents.length}
-        total={data.total_estimate}
-        perPage={perPage}
-        hasNextPage={!!data.next_cursor}
-      />
-
-      {data.agents.length === 0 ? (
-        <EmptyState unreachable={data._unreachable === true} />
-      ) : (
-        <ul className={styles.grid}>
-          {data.agents.map((a) => (
-            <li key={a.id}>
-              <AgentCard agent={a} />
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {data.next_cursor && <NextPageLink sp={sp} cursor={data.next_cursor} perPage={perPage} />}
-    </main>
+        <button type="submit" className={`${s.button} ${s.buttonInk} ${styles.submit}`}>
+          Search
+        </button>
+      </div>
+      <fieldset className={styles.filters}>
+        <legend className={styles.srOnly}>Filters</legend>
+        <label className={styles.field}>
+          <span>Mode</span>
+          <select name="mode" defaultValue={sp.mode ?? ""}>
+            <option value="">Any</option>
+            <option value="push">Push</option>
+            <option value="pull">Pull</option>
+          </select>
+        </label>
+        <label className={`${styles.field} ${styles.tags}`}>
+          <span>Tags</span>
+          <input
+            type="text"
+            name="tags"
+            defaultValue={sp.tags ?? ""}
+            placeholder="travel, scheduling"
+            aria-label="Comma-separated tags"
+          />
+        </label>
+        <label className={styles.field}>
+          <span>Per page</span>
+          <select name="per_page" defaultValue={String(perPage)}>
+            {PAGE_SIZES.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className={styles.check}>
+          <input
+            type="checkbox"
+            name="verified"
+            value="true"
+            defaultChecked={sp.verified === "true"}
+          />
+          <span>Verified accounts only</span>
+        </label>
+        <label className={styles.check}>
+          <input
+            type="checkbox"
+            name="inactive"
+            value="true"
+            defaultChecked={sp.inactive === "true"}
+          />
+          <span>Show inactive agents</span>
+        </label>
+        {filtered && (
+          <Link href="/agents" className={styles.reset}>
+            Clear filters
+          </Link>
+        )}
+      </fieldset>
+    </form>
   );
 }
 
-function hasActiveFilter(sp: {
-  q?: string;
-  mode?: string;
-  verified?: string;
-  tags?: string;
-  inactive?: string;
-  cursor?: string;
-}): boolean {
-  return Boolean(sp.q || sp.mode || sp.verified || sp.tags || sp.inactive || sp.cursor);
+/** The house agents, then online agents anyone can call. */
+function TryThese({ agents }: { agents: FeaturedAgent[] }) {
+  return (
+    <section className={`${s.fieldInk} ${styles.band}`} aria-labelledby="try-these">
+      <div className={styles.bandHead}>
+        <h2 id="try-these" className={`${s.h2} ${s.rise}`}>
+          Try one now.
+        </h2>
+        <p className={`${s.text} ${s.rise} ${s.rise2}`}>
+          These answer anyone signed in, with no friendship to set up first. Call one from your
+          agent to see the relay work end to end.
+        </p>
+      </div>
+      <ul className={styles.tryGrid}>
+        {agents.map((a) => {
+          const href = `/agents/${a.account_slug}/${a.slug}`;
+          return (
+            <li key={a.id} className={`${styles.try} ${s.rise}`}>
+              <div className={styles.tryHead}>
+                <h3 className={s.h3}>
+                  <Link href={href}>{a.display_name}</Link>
+                </h3>
+                <span className={styles.tryStatus}>
+                  {a.online && <span className={styles.dot} aria-hidden="true" />}
+                  {a.online ? "online" : "offline"}
+                </span>
+              </div>
+              <code className={styles.trySlug}>
+                {a.account_slug}/{a.slug}
+              </code>
+              {a.description && <p className={styles.tryBody}>{a.description}</p>}
+              {a.public_capabilities.length > 0 && (
+                <ul className={styles.tryCaps} aria-label="Public capabilities">
+                  {a.public_capabilities.map((c) => (
+                    <li key={c.id}>
+                      <code>{c.name}</code>
+                      {c.description && <span>{c.description}</span>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <Link className={`${s.link} ${styles.tryLink}`} href={href}>
+                How to call it
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
 }
 
 function Summary({
@@ -262,8 +336,7 @@ function Summary({
   if (total !== undefined && total > count) {
     return (
       <p className={styles.summary}>
-        Showing {count} of {total.toLocaleString()} matching agents · {perPage}{" "}
-        per page
+        Showing {count} of {total.toLocaleString()} · {perPage} per page
         {hasNextPage ? "" : " · last page"}
       </p>
     );
@@ -271,122 +344,79 @@ function Summary({
   return (
     <p className={styles.summary}>
       {count} agent{count === 1 ? "" : "s"} · {perPage} per page
-      {hasNextPage ? " · more available →" : ""}
+      {hasNextPage ? " · more on the next page" : ""}
     </p>
   );
 }
 
 function EmptyState({ unreachable }: { unreachable: boolean }) {
-  if (unreachable) {
-    return (
-      <div className={styles.empty}>
-        <p className={styles.emptyTitle}>The relay is unreachable.</p>
-        <p className={styles.emptyHint}>
-          The frontend can&apos;t reach a discovery endpoint right now.
-          Check the deploy logs for the underlying fetch error.
-        </p>
-        <p className={styles.emptyLink}>
-          <Link href="/docs/concepts#discovery-config">
-            How discovery is configured →
-          </Link>
-        </p>
-      </div>
-    );
-  }
   return (
     <div className={styles.empty}>
-      <p className={styles.emptyTitle}>No agents match the current filters.</p>
+      <p className={styles.emptyTitle}>
+        {unreachable ? "The relay can't be reached." : "No agents match these filters."}
+      </p>
       <p className={styles.emptyHint}>
-        Try a shorter query, fewer filters, or clear them entirely.
+        {unreachable
+          ? "The site can't reach a discovery endpoint right now. The deploy logs have the underlying fetch error."
+          : "Try a shorter search or fewer filters, or clear them."}
       </p>
-      <p className={styles.emptyLink}>
-        <Link href="/docs/concepts#discovery-config">
-          How discovery is configured →
-        </Link>
-      </p>
+      <Link className={s.link} href="/docs/concepts#discovery-config">
+        How discovery is configured
+      </Link>
     </div>
   );
 }
 
-function AgentCard({ agent }: { agent: DirectoryAgent }) {
+function AgentRow({ agent }: { agent: DirectoryAgent }) {
   const slug = `${agent.account_slug}/${agent.slug}`;
   const shown = agent.capabilities.slice(0, CARD_CAPABILITIES);
   const more = agent.capabilities.length - shown.length;
   return (
-    <article className={styles.card}>
-      <header className={styles.cardHead}>
-        <h3>
-          <Link href={`/agents/${agent.account_slug}/${agent.slug}`}>
-            {agent.display_name}
-          </Link>
+    <article className={styles.agent}>
+      <div className={styles.agentId}>
+        <h3 className={`${s.h3} ${styles.agentName}`}>
+          <Link href={`/agents/${slug}`}>{agent.display_name}</Link>
         </h3>
-        <p className={styles.cardSlug}>
-          <code>{slug}</code>
-          {agent.verified && (
-            <span className={styles.verified} title="Verified account">
-              verified
-            </span>
-          )}
-          <ModeBadge mode={agent.mode} />
-          {agent.online ? (
-            <span className={styles.online} title="Pulled its inbox in the last 5 minutes">
-              online
-            </span>
-          ) : (
-            <span className={styles.seen} title={new Date(agent.last_seen_at).toUTCString()}>
-              seen {formatAgo(agent.last_seen_at)}
-            </span>
-          )}
-        </p>
-      </header>
-      {agent.description && (
-        <p className={styles.cardBody}>{agent.description}</p>
-      )}
+        <code className={styles.slug}>{slug}</code>
+        <Status agent={agent} />
+      </div>
+      <div className={styles.agentAbout}>
+        {agent.description ? (
+          <p className={styles.agentBody}>{agent.description}</p>
+        ) : (
+          <p className={`${styles.agentBody} ${styles.quiet}`}>No description.</p>
+        )}
+        {agent.tags.length > 0 && (
+          <ul className={styles.tagList} aria-label="Tags">
+            {agent.tags.map((t) => (
+              <li key={t}>
+                <Link href={`/agents?tags=${encodeURIComponent(t)}`}>#{t}</Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
       {shown.length > 0 && (
-        <ul className={styles.capChips} aria-label="Capabilities">
+        <ul className={styles.caps} aria-label="Capabilities">
           {shown.map((c) => (
             <li
               key={c.id}
-              className={c.access === "public" ? styles.capPublic : styles.cap}
               title={
                 c.access === "public"
                   ? "Anyone signed in can call it, within its monthly quota."
                   : "Needs a friendship and a grant."
               }
             >
-              {c.name}
-              {c.access === "public" && <span className={styles.capAccess}>public</span>}
+              <code>{c.name}</code>
+              <span className={c.access === "public" ? styles.public : styles.friends}>
+                {c.access === "public" ? "public" : "friends"}
+              </span>
             </li>
           ))}
-          {more > 0 && <li className={styles.capMore}>+{more} more</li>}
-        </ul>
-      )}
-      {agent.tags.length > 0 && (
-        <ul className={styles.cardTags}>
-          {agent.tags.map((t) => (
-            <li key={t}>
-              <Link href={`/agents?tags=${encodeURIComponent(t)}`}>#{t}</Link>
-            </li>
-          ))}
+          {more > 0 && <li className={styles.quiet}>+{more} more</li>}
         </ul>
       )}
     </article>
-  );
-}
-
-function ModeBadge({ mode }: { mode: "push" | "pull" }) {
-  const label = mode === "push" ? "push" : "pull";
-  return (
-    <span
-      className={mode === "push" ? styles.modePush : styles.modePull}
-      title={
-        mode === "push"
-          ? "Has a public A2A endpoint; relay forwards calls."
-          : "No public host; runs inbox.serve() against the relay."
-      }
-    >
-      {label}
-    </span>
   );
 }
 
@@ -395,7 +425,7 @@ function NextPageLink({
   cursor,
   perPage,
 }: {
-  sp: { q?: string; mode?: string; verified?: string; tags?: string; inactive?: string };
+  sp: SearchParams;
   cursor: string;
   perPage: PageSize;
 }) {
@@ -410,7 +440,9 @@ function NextPageLink({
   next.set("per_page", String(perPage));
   return (
     <p className={styles.pager}>
-      <Link href={`/agents?${next.toString()}`}>Next page →</Link>
+      <Link className={s.link} href={`/agents?${next.toString()}`}>
+        Next page
+      </Link>
     </p>
   );
 }
