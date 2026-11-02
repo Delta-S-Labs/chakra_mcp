@@ -127,3 +127,6 @@ export default function JevCard({
 
 /** TypeSafe's dotted pink field, for a tile or section that holds a Jev card. */
 export const jevField = styles.field;
+
+/** TypeSafe's black-inverse label on its own, in its mono, for a tile on the field. */
+export const jevTag = `${mono.className} ${styles.tag}`;

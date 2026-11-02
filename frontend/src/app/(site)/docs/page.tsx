@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import styles from "./docs.module.css";
 import Trail from "@/app/(site)/docs/Trail";
+import { jevField, jevTag } from "@/components/site/JevCard";
 
 export const metadata: Metadata = {
   title: "Docs - ChakraMCP",
@@ -16,7 +17,8 @@ export const metadata: Metadata = {
   },
 };
 
-type DocCard = { title: string; body: string; href: string };
+/** `typesafe`: the card is about TypeSafe's Jev, so it wears TypeSafe's look. */
+type DocCard = { title: string; body: string; href: string; typesafe?: boolean };
 
 const startCards: DocCard[] = [
   {
@@ -74,6 +76,7 @@ const featureCards: DocCard[] = [
     title: "Message safety",
     body: "The relay reads each request with TypeSafe's Jev model and turns away off-purpose asks, injections and grabs for secrets.",
     href: "/docs/safety",
+    typesafe: true,
   },
   {
     title: "Find agents",
@@ -233,23 +236,25 @@ export default function DocsLanding() {
   );
 }
 
-function CardLink({ title, body, href }: DocCard) {
+function CardLink({ title, body, href, typesafe }: DocCard) {
   const inner = (
     <>
+      {typesafe && <span className={`${jevTag} ${styles.cardTag}`}>Jev [TypeSafe]</span>}
       <h3 className={styles.cardTitle}>{title}</h3>
       <p className={styles.cardBody}>{body}</p>
     </>
   );
+  const className = typesafe ? `${styles.card} ${jevField}` : styles.card;
   const isExternal = /^https?:\/\//.test(href);
   if (isExternal) {
     return (
-      <a className={styles.card} href={href} target="_blank" rel="noreferrer">
+      <a className={className} href={href} target="_blank" rel="noreferrer">
         {inner}
       </a>
     );
   }
   return (
-    <Link className={styles.card} href={href}>
+    <Link className={className} href={href}>
       {inner}
     </Link>
   );

@@ -46,6 +46,10 @@
   pointer-events: none;
 }
 .figure.field { padding: clamp(16px, 3vw, 36px); border-radius: 10px; }
+/* A small tile with text all over it gets a smaller cloud, kept in its corner. */
+a.field::before {
+  mask-image: radial-gradient(ellipse 38% 34% at 0% 100%, black 0%, rgb(0 0 0 / 0.5) 50%, transparent 85%);
+}
 
 /* The window: a grey frame inside a black line, with a second line just
    outside it, as TypeSafe draws theirs. */
@@ -71,6 +75,7 @@
   font-size: 0.8125rem;
   line-height: 1.4;
 }
+.figure .bar > :last-child { white-space: nowrap; }
 .figure .pane {
   display: grid;
   gap: 4px;
@@ -214,6 +219,31 @@
   .figure { font-size: 0.8125rem; }
   .figure .line { grid-template-columns: minmax(0, 1fr); gap: 0; }
   .figure .rowTop { flex-wrap: wrap; }
+}
+
+/* The label alone, on a tile set on the field (the docs index). */
+.tag {
+  display: inline-block;
+  padding: 0 5px;
+  background: #1e1e1e;
+  color: #fefefe;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+/* A tile on the field that is itself a link (a docs card), and its
+   hover, a little darker. Tripled to beat the docs' card rules, which set
+   the background on `.shell a.card` and reset it on hover. */
+a.field.field.field {
+  background:
+    radial-gradient(circle, rgb(30 30 30 / 0.2) 0.7px, transparent 1.1px) 0 0 / 6px 6px,
+    #f386a1;
+}
+a.field.field.field:hover {
+  background:
+    radial-gradient(circle, rgb(30 30 30 / 0.2) 0.7px, transparent 1.1px) 0 0 / 6px 6px,
+    #ec7898;
 }
 
 /* Links on the field (a section or tile set on it) underline in ink. */
