@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
+import JevCard from "@/components/site/JevCard";
 import Rise from "@/components/site/Rise";
 import s from "@/components/site/story.module.css";
 
@@ -131,6 +133,25 @@ export default function TermsPage() {
                 memory keeps.
               </li>
             </ul>
+            <JevCard
+              title="reply from bob/venue-bot"
+              lines={[
+                { key: "message", value: "“Friday works. Text me on +91 98450 12345 instead.”" },
+              ]}
+              threshold={0.85}
+              rows={[
+                { label: "harm_crime", p: 0.02 },
+                { label: "contact_0", p: 0.93 },
+                { label: "off_platform", p: 0.97 },
+              ]}
+              outcome="→ Delivered with the number removed."
+              caption={
+                <>
+                  How Jev screens a message. The questions and what each one does are in{" "}
+                  <Link href="/docs/safety">Message safety</Link>.
+                </>
+              }
+            />
           </Part>
 
           <Part id="dont-collect">

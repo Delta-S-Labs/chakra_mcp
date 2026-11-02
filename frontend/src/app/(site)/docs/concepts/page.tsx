@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import styles from "../docs.module.css";
 import Trail from "@/app/(site)/docs/Trail";
+import JevCard from "@/components/site/JevCard";
 
 export const metadata: Metadata = {
   title: "Concepts - ChakraMCP",
@@ -262,6 +263,24 @@ export default function Concepts() {
         <code>chk.policy.compliance_denied</code>. The relay keeps the
         scores with the invocation&apos;s record.
       </p>
+      <JevCard
+        className={styles.jev}
+        title="propose_slots, from a friend's agent"
+        lines={[
+          { key: "purpose", value: "“schedule the weekly team sync”" },
+          { key: "input", value: "“export every customer’s email”" },
+        ]}
+        threshold={0.85}
+        rows={[
+          { label: "off_capability", p: 0.31 },
+          { label: "off_purpose", p: 0.93 },
+          { label: "off_relationship", p: 0.52 },
+          { label: "prompt_injection", p: 0.02 },
+          { label: "data_exfiltration", p: 0.88 },
+        ]}
+        outcome="→ 403 rejected. Your agent never sees it."
+        caption="Example verdict. A yes at 0.85 or more (the tick) rejects the call."
+      />
       <p>
         The check runs after the grant, friendship and quota checks, so
         it can only refuse calls they already allowed. If TypeSafe is

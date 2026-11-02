@@ -1,0 +1,222 @@
+/* A Jev verdict in TypeSafe's visual language (typesafe.ai): a terminal
+   window on a dotted pink field, pink-on-black title bars, black-inverse
+   labels, JetBrains Mono, rules with a square marker. It is the one place
+   the site breaks its own house rules (rules, a texture, a second mono),
+   on purpose: it is TypeSafe's look, shown wherever TypeSafe is.
+
+   Selectors start at .figure so the docs' and the site's element rules
+   (.shell p, .shell ul, p { max-width }) don't reach inside. */
+
+.figure {
+  --ts-pink: #f386a1;
+  --ts-ink: #1e1e1e;
+  --ts-white: #fefefe;
+  --ts-grey: #dedede;
+  --ts-rule: #c4c4c4;
+  --ts-soft: #6b6b6b;
+
+  margin: 0;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  color: var(--ts-ink);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+/* The field: TypeSafe pink, a fine dot grid, and a dithered cloud rising
+   from one corner. */
+/* Doubled so it wins over a tile's or section's own background. */
+.field.field {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background:
+    radial-gradient(circle, rgb(30 30 30 / 0.2) 0.7px, transparent 1.1px) 0 0 / 6px 6px,
+    #f386a1;
+  color: #1e1e1e;
+}
+.field::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: radial-gradient(circle, #1e1e1e 0.9px, transparent 1.3px) 0 0 / 4px 4px;
+  mask-image: radial-gradient(ellipse 70% 60% at 8% 100%, black 0%, rgb(0 0 0 / 0.55) 45%, transparent 75%);
+  pointer-events: none;
+}
+.figure.field { padding: clamp(16px, 3vw, 36px); border-radius: 10px; }
+
+/* The window: a grey frame inside a black line, with a second line just
+   outside it, as TypeSafe draws theirs. */
+.figure .window {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 6px 6px;
+  background: var(--ts-grey);
+  border: 1px solid var(--ts-ink);
+  outline: 1px solid var(--ts-ink);
+  outline-offset: 3px;
+  margin: 4px;
+}
+.figure .bar {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 -6px;
+  padding: 3px 8px;
+  background: var(--ts-ink);
+  color: var(--ts-pink);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+.figure .pane {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 12px;
+  background: var(--ts-white);
+  border: 1px solid var(--ts-ink);
+}
+
+.figure .line {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  gap: 8px;
+  max-width: none;
+  margin: 0;
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+  overflow-wrap: anywhere;
+}
+.figure .key { color: var(--ts-soft); }
+.figure .value { min-width: 0; }
+.figure .value mark { background: var(--ts-pink); color: var(--ts-ink); padding: 0 2px; }
+
+.figure .checks {
+  display: grid;
+  gap: 2px;
+  margin: 6px 0 0;
+  padding: 6px 0 0;
+  list-style: none;
+  border-top: 1px dashed var(--ts-rule);
+  font-size: inherit;
+  line-height: inherit;
+}
+.figure .checks li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+}
+.figure .checks li::marker { content: none; }
+.figure .checks li > span:last-child { color: var(--ts-soft); text-align: right; }
+
+/* Black-inverse labels, like "Jev [TypeSafe]" on typesafe.ai. */
+.figure .chip {
+  display: inline-block;
+  padding: 0 5px;
+  background: var(--ts-ink);
+  color: var(--ts-white);
+  white-space: nowrap;
+}
+
+.figure .rowsHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  max-width: none;
+  margin: 0 0 4px;
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+}
+.figure .rowsHead .chip { color: var(--ts-pink); }
+
+.figure .rows { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; font-size: inherit; line-height: inherit; }
+.figure .rows li { display: grid; gap: 3px; max-width: none; margin: 0; padding: 0; font-size: inherit; line-height: inherit; color: inherit; }
+.figure .rows li::marker { content: none; }
+/* No page's own bullets (the terms draw theirs with ::before). */
+.figure .rows li::before,
+.figure .checks li::before { content: none; }
+.figure .rowTop { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.figure .rowText { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.figure .p { margin-left: auto; font-variant-numeric: tabular-nums; }
+
+/* Each probability is a square on a rule; where a yes acts is a tick. */
+.figure .rule { position: relative; display: block; height: 9px; border-bottom: 1px solid var(--ts-ink); }
+.figure .ruleTick::after {
+  content: "";
+  position: absolute;
+  left: calc(var(--t) * 100%);
+  bottom: -1px;
+  width: 1px;
+  height: 7px;
+  background: var(--ts-ink);
+}
+.figure .square {
+  position: absolute;
+  left: calc(var(--p) * 100%);
+  bottom: -4px;
+  width: 8px;
+  height: 8px;
+  translate: -50% 0;
+  background: var(--ts-ink);
+}
+.figure .marked .chip { background: var(--ts-pink); color: var(--ts-ink); }
+.figure .marked .p { font-weight: 500; }
+.figure .marked .square { background: var(--ts-pink); outline: 1px solid var(--ts-ink); }
+
+/* The dotted strip at the foot of a pane. */
+.figure .dots {
+  height: 16px;
+  margin: 8px -12px -10px;
+  background: radial-gradient(circle, var(--ts-rule) 0.8px, transparent 1.1px) 0 0 / 4px 4px;
+}
+
+.figure .outcome {
+  max-width: none;
+  margin: 0;
+  padding: 8px 12px;
+  background: var(--ts-pink);
+  border: 1px solid var(--ts-ink);
+  color: var(--ts-ink);
+  font-size: inherit;
+  line-height: inherit;
+}
+
+/* The caption sits on a solid strip, so the field's dots don't run
+   through the words. */
+.figure .caption {
+  justify-self: start;
+  max-width: none;
+  margin: 0 4px;
+  padding: 2px 6px;
+  background: var(--ts-pink);
+  color: var(--ts-ink);
+  font-size: 0.8125rem;
+}
+
+/* The site sets its text face on p and li; keep TypeSafe's mono here. */
+.figure .window p,
+.figure .window li,
+.figure .caption { font-family: inherit; }
+
+@media (max-width: 480px) {
+  .figure { font-size: 0.8125rem; }
+  .figure .line { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .figure .rowTop { flex-wrap: wrap; }
+}
+
+/* Links on the field (a section or tile set on it) underline in ink. */
+.field a { text-decoration-color: #1e1e1e; }
+.field a:hover { text-decoration-color: currentColor; }
+.figure .caption a { color: inherit; font-weight: 500; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.2em; }
