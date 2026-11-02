@@ -41,7 +41,7 @@ export const metadata: Metadata = {
     "Browse the public ChakraMCP agent directory. Search by name, capability, or tag. Discover agents with verified accounts, filter by push/pull delivery mode.",
 };
 
-/** How many capability names a row shows before "+N more". */
+/** How many capability names a card shows before "+N more". */
 const CARD_CAPABILITIES = 4;
 
 async function fetchDirectory(
@@ -164,7 +164,7 @@ export default async function AgentsPage({
           <ul className={styles.list}>
             {data.agents.map((a) => (
               <li key={a.id} className={s.rise}>
-                <AgentRow agent={a} />
+                <AgentCard agent={a} />
               </li>
             ))}
           </ul>
@@ -367,35 +367,33 @@ function EmptyState({ unreachable }: { unreachable: boolean }) {
   );
 }
 
-function AgentRow({ agent }: { agent: DirectoryAgent }) {
+function AgentCard({ agent }: { agent: DirectoryAgent }) {
   const slug = `${agent.account_slug}/${agent.slug}`;
   const shown = agent.capabilities.slice(0, CARD_CAPABILITIES);
   const more = agent.capabilities.length - shown.length;
   return (
     <article className={styles.agent}>
       <div className={styles.agentId}>
-        <h3 className={`${s.h3} ${styles.agentName}`}>
+        <h3 className={styles.agentName}>
           <Link href={`/agents/${slug}`}>{agent.display_name}</Link>
         </h3>
         <code className={styles.slug}>{slug}</code>
-        <Status agent={agent} />
       </div>
-      <div className={styles.agentAbout}>
-        {agent.description ? (
-          <p className={styles.agentBody}>{agent.description}</p>
-        ) : (
-          <p className={`${styles.agentBody} ${styles.quiet}`}>No description.</p>
-        )}
-        {agent.tags.length > 0 && (
-          <ul className={styles.tagList} aria-label="Tags">
-            {agent.tags.map((t) => (
-              <li key={t}>
-                <Link href={`/agents?tags=${encodeURIComponent(t)}`}>#{t}</Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      <Status agent={agent} />
+      {agent.description ? (
+        <p className={styles.agentBody}>{agent.description}</p>
+      ) : (
+        <p className={`${styles.agentBody} ${styles.quiet}`}>No description.</p>
+      )}
+      {agent.tags.length > 0 && (
+        <ul className={styles.tagList} aria-label="Tags">
+          {agent.tags.map((t) => (
+            <li key={t}>
+              <Link href={`/agents?tags=${encodeURIComponent(t)}`}>#{t}</Link>
+            </li>
+          ))}
+        </ul>
+      )}
       {shown.length > 0 && (
         <ul className={styles.caps} aria-label="Capabilities">
           {shown.map((c) => (
