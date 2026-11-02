@@ -218,10 +218,6 @@ class DiscoveryAgent(AgentListing, _YouExtras):
     """A search result (``chakra.discovery.search()``)."""
 
     capabilities: list[CapabilityBrief]
-    # Deprecated: the same as ``slug``.
-    agent_slug: str
-    # Deprecated: see ``capabilities[i]["access"]``.
-    has_public_capabilities: bool
 
 
 class _DiscoveryPageExtras(TypedDict, total=False):
@@ -237,20 +233,10 @@ class DiscoveryPage(_DiscoveryPageExtras):
     next_cursor: str | None
 
 
-class _FeaturedPublicCapability(TypedDict):
-    id: str
-    name: str
-    description: str
-
-
 class FeaturedAgent(AgentListing):
     """An agent worth trying first (``chakra.discovery.featured()``)."""
 
     capabilities: list[CapabilityBrief]
-    # Deprecated: the same as ``slug``.
-    agent_slug: str
-    # Deprecated: see ``capabilities[i]["access"]``.
-    public_capabilities: list[_FeaturedPublicCapability]
 
 
 class CapabilityDetail(TypedDict):

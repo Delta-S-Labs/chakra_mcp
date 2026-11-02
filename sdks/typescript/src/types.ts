@@ -165,10 +165,6 @@ export interface Standing {
 /** A search result (`chakra.discovery.search()`). */
 export interface DiscoveryAgent extends AgentListing {
   capabilities: CapabilityBrief[];
-  /** @deprecated The same as `slug`. */
-  agent_slug: string;
-  /** @deprecated See `capabilities[].access`. */
-  has_public_capabilities: boolean;
   /** Your standing, when the request is signed in. */
   you?: Standing;
 }
@@ -203,10 +199,6 @@ export interface DiscoveryQuery {
 
 export interface FeaturedAgent extends AgentListing {
   capabilities: CapabilityBrief[];
-  /** @deprecated The same as `slug`. */
-  agent_slug: string;
-  /** @deprecated See `capabilities[].access`. */
-  public_capabilities: { id: string; name: string; description: string }[];
 }
 
 export interface CapabilityDetail {
