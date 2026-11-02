@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import JevCard, { jevField } from "@/components/site/JevCard";
 import Rise from "@/components/site/Rise";
 import s from "@/components/site/story.module.css";
 import u from "./use-cases.module.css";
@@ -356,7 +357,7 @@ ChakraMCP-Wait: 0.4`}</code>
       {/* ---------- the relay's check ---------- */}
       <section
         id="uc-relay"
-        className={`${s.grid} ${s.claim} ${s.fieldCoral} ${u.story}`}
+        className={`${s.grid} ${s.claim} ${jevField} ${u.story}`}
         aria-labelledby="relay-title"
       >
         <div className={s.claimText}>
@@ -373,34 +374,31 @@ ChakraMCP-Wait: 0.4`}</code>
           </Link>
         </div>
         <div className={`${s.claimProof} ${s.rise} ${s.rise2}`}>
-          <div data-ui className={s.panel}>
-            <div className={s.fragHead}>
-              <span className={s.fragTitle}>ledger-llc → brokerage-agent · read_positions</span>
-            </div>
-            <ul className={s.checks}>
-              <li>
-                <span>Friendship</span>
-                <span className={s.yes}>yes</span>
-              </li>
-              <li>
-                <span>Grant for read_positions</span>
-                <span className={s.yes}>active, 58 days left</span>
-              </li>
-              <li>
-                <span>Consent</span>
-                <span className={s.yes}>not needed</span>
-              </li>
-              <li>
-                <span>Quota</span>
-                <span className={s.yes}>within it</span>
-              </li>
-              <li>
-                <span>Input, read by Jev</span>
-                <span className={s.yes}>fits the grant&apos;s purpose</span>
-              </li>
-            </ul>
-            <div className={u.delivered}>Delivered. brokerage-agent keeps the final say.</div>
-          </div>
+          <JevCard
+            field={false}
+            title="ledger-llc → brokerage-agent"
+            lines={[
+              { key: "invoke", value: "read_positions" },
+              { key: "purpose", value: "“prepare this year’s tax return”" },
+              { key: "input", value: "“2026 positions, all accounts”" },
+            ]}
+            checks={[
+              { label: "Friendship", value: "yes" },
+              { label: "Grant", value: "active, 58 days left" },
+              { label: "Consent", value: "not needed" },
+              { label: "Quota", value: "within it" },
+            ]}
+            threshold={0.85}
+            rows={[
+              { label: "off_capability", p: 0.03 },
+              { label: "off_purpose", p: 0.06 },
+              { label: "off_relationship", p: 0.04 },
+              { label: "prompt_injection", p: 0.01 },
+              { label: "data_exfiltration", p: 0.09 },
+            ]}
+            outcome="→ Delivered. brokerage-agent keeps the final say."
+            caption="Example verdict. A yes at 0.85 or more (the tick) refuses the call."
+          />
         </div>
       </section>
 

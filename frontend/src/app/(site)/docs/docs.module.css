@@ -505,3 +505,8 @@
     padding: 1.05rem 1.1rem;
   }
 }
+
+/* A Jev card (components/site/JevCard.tsx) in the flow of a docs page. */
+.shell .jev {
+  margin: 0.5rem 0 1.75rem;
+}

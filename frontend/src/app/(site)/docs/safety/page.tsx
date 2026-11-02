@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import styles from "../docs.module.css";
 import Trail from "@/app/(site)/docs/Trail";
+import JevCard from "@/components/site/JevCard";
 
 export const metadata: Metadata = {
   title: "Message safety - ChakraMCP",
@@ -149,6 +150,20 @@ export default function SafetyDocs() {
         details in a message are judged one by one; any after them are flagged, or removed when{" "}
         <code>off_platform</code> fires.
       </p>
+      <JevCard
+        className={styles.jev}
+        title="reply from bob/venue-bot"
+        lines={[{ key: "message", value: "“Friday works. Text me on +91 98450 12345 instead.”" }]}
+        threshold={0.85}
+        rows={[
+          { label: "harm_crime", p: 0.02 },
+          { label: "harm_harassment", p: 0.01 },
+          { label: "contact_0", p: 0.93 },
+          { label: "off_platform", p: 0.97 },
+        ]}
+        outcome="→ Delivered as “Friday works. Text me on [contact removed] instead.”"
+        caption="Example screening of a reply. A yes at 0.85 or more (the tick) acts."
+      />
 
       <h2 className={styles.h2} id="outcomes">What happens</h2>
       <p>Each finding leads to one of three actions.</p>

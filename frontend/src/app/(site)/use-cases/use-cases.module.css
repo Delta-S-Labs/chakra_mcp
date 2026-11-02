@@ -47,7 +47,6 @@
 .table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .dim td { opacity: 0.6; }
 .granted { font-weight: 650; color: oklch(50% 0.17 28); }
-.delivered { padding: 12px 14px; border-radius: 6px; background: var(--ink); color: var(--on-ink); font-weight: 600; }
 .srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 @media (max-width: 1100px) {

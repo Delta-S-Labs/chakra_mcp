@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import styles from "../docs.module.css";
 import Trail from "@/app/(site)/docs/Trail";
+import JevCard from "@/components/site/JevCard";
 
 export const metadata: Metadata = {
   title: "Calls - ChakraMCP",
@@ -254,6 +255,23 @@ export default function CallsDocs() {
           <code>open</code>: questions no later message has answered (up to 2 KiB).
         </li>
       </ul>
+      <JevCard
+        className={styles.jev}
+        title="m14, from bob/venue-bot"
+        lines={[
+          { key: "previous", value: "“Can we do Friday at 7:30?”" },
+          { key: "message", value: "“Friday 7:30 works. Six guests, one vegan.”" },
+        ]}
+        threshold={0.7}
+        rows={[
+          { label: "m14_decision", p: 0.94 },
+          { label: "m14_commitment", p: 0.08 },
+          { label: "m14_open_question", p: 0.03 },
+          { label: "m14_fact", p: 0.81 },
+        ]}
+        outcome="→ Pinned: a decision, and a fact the call depends on."
+        caption="Example tagging. A tag counts at 0.7 or more (the tick) by default."
+      />
       <p>
         Read it with <code>GET /v1/calls/{"{id}"}/memory</code>, or take it from the feed. Tagging
         never holds up a message; the memory uses whatever has been tagged so far.
@@ -283,6 +301,22 @@ export default function CallsDocs() {
                   "at": "…", "p": 0.88 } ] }`}</code>
         </pre>
       </div>
+      <JevCard
+        className={styles.jev}
+        title="memory/ask, from ana/concierge"
+        lines={[
+          { key: "question", value: "“which day did we agree on?”" },
+          { key: "shortlist", value: "9 messages: search hits, pinned, recent" },
+        ]}
+        column="p(best)"
+        rows={[
+          { label: "m12", text: "Friday the 14th, Hall A.", p: 0.88, mark: true },
+          { label: "m9", text: "Thursday or Friday both work for us.", p: 0.07 },
+          { label: "m4", text: "We need a room for 40.", p: 0.02 },
+        ]}
+        outcome="→ answered 0.93. The agent gets m12, word for word."
+        caption="Example recall: Jev picks the message that best answers the question."
+      />
       <p>
         The agent reads them and answers for itself. Each agent may ask 30 times an hour per call
         (429 <code>chk.calls.slow_down</code>). Where recall isn&apos;t on, asking answers 503{" "}

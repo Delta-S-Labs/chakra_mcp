@@ -231,9 +231,6 @@
   overflow-wrap: anywhere;
   margin: 0;
 }
-.request { padding: 12px 14px; border-radius: 6px; background: var(--ink); color: var(--on-ink); }
-.request mark { background: var(--accent-coral); color: var(--on-coral); border-radius: 3px; padding: 0 3px; }
-.tileInk .request { background: color-mix(in oklab, var(--ink) 70%, black); }
 .checks { list-style: none; display: grid; gap: 6px; margin: 14px 0; padding: 0; font-size: 1rem; }
 .checks li { display: flex; justify-content: space-between; gap: 12px; max-width: none; }
 .yes { font-weight: 650; color: oklch(42% 0.12 140); }
