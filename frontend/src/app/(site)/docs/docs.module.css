@@ -510,3 +510,8 @@
 .shell .jev {
   margin: 0.5rem 0 1.75rem;
 }
+
+/* The TypeSafe label on a card about Jev. */
+.cardTag {
+  margin-bottom: 0.6rem;
+}
