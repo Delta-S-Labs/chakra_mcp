@@ -66,25 +66,47 @@
 .bandHead { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: clamp(16px, 1.8vw, 24px); align-items: end; margin-bottom: clamp(32px, 4vw, 56px); }
 .bandHead h2 { grid-column: 1 / span 6; }
 .bandHead p { grid-column: 8 / span 5; }
-.tryGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+/* Small cards, as many across as fit at about 260px. The name's link
+   covers the card; the public capabilities sit at its foot. */
+.tryGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
 .try {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
+  min-width: 0;
   max-width: none;
-  padding: clamp(20px, 2vw, 28px);
+  padding: clamp(16px, 1.4vw, 20px);
   border-radius: 10px;
   background: color-mix(in oklab, var(--ink) 82%, var(--paper));
+  transition: background-color 160ms var(--ease-out-quart);
 }
-.tryHead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; }
-.tryHead a { color: var(--on-ink); }
-.tryStatus { font-size: 1rem; color: var(--on-ink-muted); }
-.trySlug { color: var(--on-ink-muted); font-size: 0.9375rem; overflow-wrap: anywhere; }
-.tryBody { font-size: 1.0625rem; line-height: 1.5; color: var(--on-ink); max-width: none; }
-.tryCaps { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.tryCaps li { display: grid; gap: 4px; max-width: none; padding: 12px 14px; border-radius: 8px; background: color-mix(in oklab, var(--ink) 70%, black); color: var(--on-ink-muted); font-size: 1rem; line-height: 1.4; }
-.tryCaps code { color: var(--accent-lime); font-size: 0.9375rem; }
-.tryLink { margin-top: auto; align-self: start; font-size: 1.0625rem; color: var(--on-ink); }
+.try:hover { background: color-mix(in oklab, var(--ink) 76%, var(--paper)); }
+.tryHead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 12px; }
+.tryName { font: 500 clamp(19px, 1.4vw, 22px)/1.15 var(--font-display); letter-spacing: -0.025em; }
+.tryName a { color: var(--on-ink); }
+.tryName a::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.tryName a:focus-visible { outline: none; }
+.tryName a:focus-visible::after { outline: 3px solid var(--on-ink); outline-offset: 2px; }
+.tryStatus { font-size: 0.875rem; color: var(--on-ink-muted); }
+.trySlug { color: var(--on-ink-muted); font-size: 0.875rem; overflow-wrap: anywhere; }
+.tryBody {
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  color: var(--on-ink);
+  max-width: none;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+.tryFoot { display: grid; gap: 10px; margin-top: auto; }
+.tryCaps { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.tryCaps li { max-width: none; padding: 3px 8px; border-radius: 6px; background: color-mix(in oklab, var(--ink) 70%, black); }
+.tryCaps code { color: var(--accent-lime); font-size: 0.875rem; overflow-wrap: anywhere; }
+.tryCue { font-size: 0.9375rem; color: var(--on-ink-muted); }
+.try:hover .tryCue { color: var(--on-ink); }
 
 /* ---------- the list ---------- */
 .results { padding-block: clamp(72px, 8vw, 128px); row-gap: 24px; }

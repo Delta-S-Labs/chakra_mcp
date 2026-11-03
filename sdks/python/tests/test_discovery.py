@@ -64,7 +64,6 @@ def test_search_sends_its_filters_and_decodes_a_page() -> None:
         assert isinstance(guide["last_seen_at"], str)
         assert guide["featured"] is True
         assert guide["avg_rating"] is None
-        assert guide["agent_slug"] == "guide"
         assert "you" not in guide
         assert page["next_cursor"] is None
         assert page["total_estimate"] == 1
@@ -83,7 +82,7 @@ def test_featured_returns_the_agents() -> None:
     assert [a["slug"] for a in agents] == ["guide", "ping"]
     assert all(a["featured"] for a in agents)
     assert agents[1]["capabilities"][0]["name"] == "ping.echo"
-    assert agents[1]["public_capabilities"][0]["name"] == "ping.echo"
+    assert agents[1]["capabilities"][0]["access"] == "public"
 
 
 @respx.mock
@@ -154,7 +153,7 @@ async def test_async_namespace_hits_the_same_routes() -> None:
             "include_dormant": "true",
             "cursor": "Zmly+/=",
         }
-        assert page["agents"][0]["has_public_capabilities"] is True
+        assert page["agents"][0]["capabilities"][0]["access"] == "public"
 
         agents = await c.discovery.featured()
         assert featured.called
