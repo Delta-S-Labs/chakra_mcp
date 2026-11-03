@@ -35,7 +35,7 @@ const guide: FeaturedAgent = {
   description: "",
   online: true,
   featured: true,
-  public_capabilities: [{ id: "cap-guide", name: "guide.ask", description: "" }],
+  capabilities: [{ id: "cap-guide", name: "guide.ask", access: "public" }],
 };
 
 const done = (g: ReturnType<typeof deriveGetStarted>) => g.steps.filter((s) => s.done).map((s) => s.id);
@@ -86,6 +86,15 @@ test("calls come from the oldest agent, and only a featured guide.ask counts", (
     featured: [{ ...guide, featured: false }],
   });
   expect(g.fromAgentId).toBe("old");
+  expect(g.guide).toBeNull();
+});
+
+test("a guide.ask that only friends can call doesn't count", () => {
+  const g = deriveGetStarted({
+    agents: [],
+    invocations: [],
+    featured: [{ ...guide, capabilities: [{ id: "cap-guide", name: "guide.ask", access: "friends" }] }],
+  });
   expect(g.guide).toBeNull();
 });
 

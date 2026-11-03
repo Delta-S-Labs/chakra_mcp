@@ -97,8 +97,6 @@ async fn search_sends_its_filters_and_decodes_a_page() {
         (cap.name.as_str(), cap.access),
         ("guide.ask", Access::Public)
     );
-    assert_eq!(guide.agent_slug, "guide");
-    assert!(guide.has_public_capabilities);
     assert!(guide.you.is_none());
 
     // No filters, no query string.
@@ -133,7 +131,7 @@ async fn featured_returns_the_agents() {
     assert_eq!(slugs, ["guide", "ping"]);
     assert!(agents.iter().all(|a| a.listing.featured));
     assert_eq!(agents[1].capabilities[0].name, "ping.echo");
-    assert_eq!(agents[0].public_capabilities[0].name, "guide.ask");
+    assert_eq!(agents[0].capabilities[0].access, Access::Public);
 }
 
 #[tokio::test]

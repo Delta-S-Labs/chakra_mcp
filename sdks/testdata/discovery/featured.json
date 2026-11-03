@@ -24,14 +24,6 @@
                     "name": "guide.ask",
                     "access": "public"
                 }
-            ],
-            "agent_slug": "guide",
-            "public_capabilities": [
-                {
-                    "id": "01a1607c-5cc1-7731-83bf-f01da6d663e9",
-                    "name": "guide.ask",
-                    "description": "Answers a question about ChakraMCP from its documentation. The Guide keeps one conversation per calling agent; send `new_session: true` to start over. Limits: 10 questions an hour and 50 a day per agent, one at a time."
-                }
             ]
         },
         {
@@ -57,14 +49,6 @@
                     "id": "01a1607c-5c7f-7646-8a64-88cefa364cd7",
                     "name": "ping.echo",
                     "access": "public"
-                }
-            ],
-            "agent_slug": "ping",
-            "public_capabilities": [
-                {
-                    "id": "01a1607c-5c7f-7646-8a64-88cefa364cd7",
-                    "name": "ping.echo",
-                    "description": "Replies with pong and echoes `message` (up to 500 characters)."
                 }
             ]
         }

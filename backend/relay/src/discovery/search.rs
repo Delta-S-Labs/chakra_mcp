@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use chakramcp_shared::error::ApiError;
 
-use super::fields::{self, Access, AgentSummary, CapabilityBrief};
+use super::fields::{self, AgentSummary, CapabilityBrief};
 use super::standing::{self, You};
 use crate::auth::AuthUser;
 use crate::state::RelayState;
@@ -56,10 +56,6 @@ pub struct SearchRow {
     #[serde(flatten)]
     pub agent: AgentSummary,
     pub capabilities: Vec<CapabilityBrief>,
-    /// Deprecated, the same as `slug`. Kept for one release.
-    pub agent_slug: String,
-    /// Deprecated: see `capabilities[].access`. Kept for one release.
-    pub has_public_capabilities: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub you: Option<You>,
 }
@@ -288,8 +284,6 @@ pub async fn search(
         .into_iter()
         .map(|l| SearchRow {
             you: viewer.map(|_| standing.remove(&l.summary.id).unwrap_or_default()),
-            agent_slug: l.summary.slug.clone(),
-            has_public_capabilities: l.capabilities.iter().any(|c| c.access == Access::Public),
             capabilities: l.capabilities,
             agent: l.summary,
         })

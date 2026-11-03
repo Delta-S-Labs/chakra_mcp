@@ -304,7 +304,7 @@ mod tests {
             .as_array()
             .unwrap()
             .iter()
-            .map(|a| a["agent_slug"].as_str().unwrap().to_owned())
+            .map(|a| a["slug"].as_str().unwrap().to_owned())
             .collect()
     }
 
@@ -334,7 +334,7 @@ mod tests {
                 .as_array()
                 .unwrap()
                 .iter()
-                .find(|x| x["agent_slug"] == slug)
+                .find(|x| x["slug"] == slug)
                 .unwrap()["friend_count"]
                 .clone()
         };
@@ -425,7 +425,7 @@ mod tests {
                 .as_array()
                 .unwrap()
                 .iter()
-                .find(|a| a["agent_slug"] == slug)
+                .find(|a| a["slug"] == slug)
                 .unwrap()
                 .clone()
         };
@@ -476,8 +476,12 @@ mod tests {
         let first = &body["agents"][0];
         assert_eq!(first["featured"], true);
         assert_eq!(first["id"], guide.to_string());
-        assert_eq!(first["public_capabilities"][0]["id"], ask.to_string());
-        assert_eq!(first["public_capabilities"][0]["name"], "guide.ask");
+        assert_eq!(first["capabilities"][0]["id"], ask.to_string());
+        assert_eq!(first["capabilities"][0]["name"], "guide.ask");
+        assert_eq!(first["capabilities"][0]["access"], "public");
+        // The fields 0.6 deprecated are gone.
+        assert!(first.get("agent_slug").is_none());
+        assert!(first.get("public_capabilities").is_none());
         assert_eq!(body["agents"][1]["online"], true);
 
         // The main list marks them too.
@@ -486,7 +490,7 @@ mod tests {
             .as_array()
             .unwrap()
             .iter()
-            .find(|a| a["agent_slug"] == "guide")
+            .find(|a| a["slug"] == "guide")
             .unwrap();
         assert_eq!(guide_row["featured"], true);
 
@@ -535,7 +539,7 @@ mod tests {
             .as_array()
             .unwrap()
             .iter()
-            .map(|a| a["agent_slug"].as_str().unwrap())
+            .map(|a| a["slug"].as_str().unwrap())
             .collect();
         assert!(names.contains(&"alice-bot"));
         assert!(names.contains(&"bob-bot"));
@@ -569,7 +573,7 @@ mod tests {
         let body = search_url(pool, "?q=trip").await;
         let agents = body["agents"].as_array().unwrap();
         assert_eq!(agents.len(), 1);
-        assert_eq!(agents[0]["agent_slug"], "alice-bot");
+        assert_eq!(agents[0]["slug"], "alice-bot");
     }
 
     #[sqlx::test(migrations = "../migrations")]
@@ -598,7 +602,7 @@ mod tests {
         let body = search_url(pool, "?q=summarize").await;
         let agents = body["agents"].as_array().unwrap();
         assert_eq!(agents.len(), 1);
-        assert_eq!(agents[0]["agent_slug"], "alice-bot");
+        assert_eq!(agents[0]["slug"], "alice-bot");
     }
 
     #[sqlx::test(migrations = "../migrations")]
@@ -631,7 +635,7 @@ mod tests {
         .await;
         let agents = body["agents"].as_array().unwrap();
         assert_eq!(agents.len(), 1);
-        assert_eq!(agents[0]["agent_slug"], "alice");
+        assert_eq!(agents[0]["slug"], "alice");
     }
 
     #[sqlx::test(migrations = "../migrations")]
@@ -643,12 +647,12 @@ mod tests {
         let push = search_url(pool.clone(), "?mode=push").await;
         let push_agents = push["agents"].as_array().unwrap();
         assert_eq!(push_agents.len(), 1);
-        assert_eq!(push_agents[0]["agent_slug"], "pusher");
+        assert_eq!(push_agents[0]["slug"], "pusher");
 
         let pull = search_url(pool, "?mode=pull").await;
         let pull_agents = pull["agents"].as_array().unwrap();
         assert_eq!(pull_agents.len(), 1);
-        assert_eq!(pull_agents[0]["agent_slug"], "puller");
+        assert_eq!(pull_agents[0]["slug"], "puller");
     }
 
     #[sqlx::test(migrations = "../migrations")]
@@ -661,7 +665,7 @@ mod tests {
         let body = search_url(pool, "?verified=true").await;
         let agents = body["agents"].as_array().unwrap();
         assert_eq!(agents.len(), 1);
-        assert_eq!(agents[0]["agent_slug"], "bob");
+        assert_eq!(agents[0]["slug"], "bob");
         assert_eq!(agents[0]["verified"], true);
     }
 
@@ -692,12 +696,12 @@ mod tests {
         let body = search_url(pool.clone(), "?tags=travel").await;
         let agents = body["agents"].as_array().unwrap();
         assert_eq!(agents.len(), 1);
-        assert_eq!(agents[0]["agent_slug"], "travel-bot");
+        assert_eq!(agents[0]["slug"], "travel-bot");
 
         let body2 = search_url(pool, "?tags=travel,booking").await;
         let agents2 = body2["agents"].as_array().unwrap();
         assert_eq!(agents2.len(), 1);
-        assert_eq!(agents2[0]["agent_slug"], "travel-bot");
+        assert_eq!(agents2[0]["slug"], "travel-bot");
     }
 
     #[sqlx::test(migrations = "../migrations")]
@@ -716,7 +720,7 @@ mod tests {
         let body = search_url(pool, "").await;
         let agents = body["agents"].as_array().unwrap();
         assert_eq!(agents.len(), 1);
-        assert_eq!(agents[0]["agent_slug"], "alive");
+        assert_eq!(agents[0]["slug"], "alive");
         let _ = alive;
     }
 
@@ -738,7 +742,7 @@ mod tests {
         let body = search_url(pool, "").await;
         let agents = body["agents"].as_array().unwrap();
         assert_eq!(agents.len(), 1);
-        assert_eq!(agents[0]["agent_slug"], "public-bot");
+        assert_eq!(agents[0]["slug"], "public-bot");
     }
 
     #[sqlx::test(migrations = "../migrations")]
@@ -773,11 +777,11 @@ mod tests {
         // No overlap.
         let p1_slugs: Vec<&str> = p1_agents
             .iter()
-            .map(|a| a["agent_slug"].as_str().unwrap())
+            .map(|a| a["slug"].as_str().unwrap())
             .collect();
         let p2_slugs: Vec<&str> = p2_agents
             .iter()
-            .map(|a| a["agent_slug"].as_str().unwrap())
+            .map(|a| a["slug"].as_str().unwrap())
             .collect();
         assert!(p1_slugs.iter().all(|s| !p2_slugs.contains(s)));
 

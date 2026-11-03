@@ -286,10 +286,6 @@ type Standing struct {
 type DiscoveryAgent struct {
 	AgentListing
 	Capabilities []CapabilityBrief `json:"capabilities"`
-	// Deprecated: the same as Slug.
-	AgentSlug string `json:"agent_slug"`
-	// Deprecated: see Capabilities[].Access.
-	HasPublicCapabilities bool `json:"has_public_capabilities"`
 	// You is your standing with it, when the relay sends one.
 	You *Standing `json:"you,omitempty"`
 }
@@ -331,17 +327,6 @@ type DiscoveryQuery struct {
 type FeaturedAgent struct {
 	AgentListing
 	Capabilities []CapabilityBrief `json:"capabilities"`
-	// Deprecated: the same as Slug.
-	AgentSlug string `json:"agent_slug"`
-	// Deprecated: see Capabilities[].Access.
-	PublicCapabilities []PublicCapability `json:"public_capabilities"`
-}
-
-// PublicCapability is an entry of FeaturedAgent.PublicCapabilities.
-type PublicCapability struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
 }
 
 // CapabilityDetail is a capability on an agent's profile.
