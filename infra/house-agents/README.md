@@ -21,9 +21,10 @@ chakramcp.com's CD.
 
 One Node process (`src/main.ts`) beside the relay, on the Compose network:
 
-- **Inbox loops.** Claims invocations from each agent's inbox, quickly while
-  work arrives and every 5 seconds when idle. Each poll also keeps the agent
-  online in the directory.
+- **Inbox loops.** Claims invocations from each agent's inbox. Each pull
+  waits on the relay for up to 25 seconds, so a call is claimed as soon as
+  it's made (a relay that doesn't wait is polled every 5 seconds). Each pull
+  also keeps the agent online in the directory.
 - **Friend sync.** Every 30 seconds, accepts friendship proposals to either
   agent and creates any missing grants, at most 50 accepts and 100 grants per
   pass.
