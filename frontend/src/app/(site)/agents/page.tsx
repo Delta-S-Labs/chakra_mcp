@@ -285,10 +285,11 @@ function TryThese({ agents }: { agents: FeaturedAgent[] }) {
       <ul className={styles.tryGrid}>
         {agents.map((a) => {
           const href = `/agents/${a.account_slug}/${a.slug}`;
+          const open = a.capabilities.filter((c) => c.access === "public");
           return (
             <li key={a.id} className={`${styles.try} ${s.rise}`}>
               <div className={styles.tryHead}>
-                <h3 className={s.h3}>
+                <h3 className={styles.tryName}>
                   <Link href={href}>{a.display_name}</Link>
                 </h3>
                 <span className={styles.tryStatus}>
@@ -300,19 +301,20 @@ function TryThese({ agents }: { agents: FeaturedAgent[] }) {
                 {a.account_slug}/{a.slug}
               </code>
               {a.description && <p className={styles.tryBody}>{a.description}</p>}
-              {a.public_capabilities.length > 0 && (
-                <ul className={styles.tryCaps} aria-label="Public capabilities">
-                  {a.public_capabilities.map((c) => (
-                    <li key={c.id}>
-                      <code>{c.name}</code>
-                      {c.description && <span>{c.description}</span>}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <Link className={`${s.link} ${styles.tryLink}`} href={href}>
-                How to call it
-              </Link>
+              <div className={styles.tryFoot}>
+                {open.length > 0 && (
+                  <ul className={styles.tryCaps} aria-label="Capabilities anyone signed in can call">
+                    {open.map((c) => (
+                      <li key={c.id}>
+                        <code>{c.name}</code>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <span className={styles.tryCue} aria-hidden="true">
+                  How to call it →
+                </span>
+              </div>
             </li>
           );
         })}

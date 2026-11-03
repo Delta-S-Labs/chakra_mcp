@@ -485,7 +485,8 @@ async fn signed_in_search(pool: PgPool) {
     );
     assert_eq!(row("open")["you"]["callable"][0]["via"], "public");
     assert_eq!(row("open")["capabilities"][0]["access"], "public");
-    assert_eq!(row("open")["has_public_capabilities"], true);
+    assert!(row("open").get("has_public_capabilities").is_none());
+    assert!(row("open").get("agent_slug").is_none());
     assert_eq!(row("closed")["you"]["callable"], serde_json::json!([]));
 
     let mut callable = slugs(&search(&pool, "callable=true", Some(&alice)).await)

@@ -13,23 +13,11 @@ use crate::state::RelayState;
 /// How many agents are featured at most.
 const FEATURED_LIMIT: i64 = 12;
 
-/// A publicly callable capability, so a page can show a working call.
-#[derive(Debug, Clone, Serialize)]
-pub struct FeaturedCapability {
-    pub id: Uuid,
-    pub name: String,
-    pub description: String,
-}
-
 #[derive(Debug, Clone, Serialize)]
 pub struct FeaturedAgent {
     #[serde(flatten)]
     pub agent: AgentSummary,
     pub capabilities: Vec<CapabilityBrief>,
-    /// Deprecated, the same as `slug`. Kept for one release.
-    pub agent_slug: String,
-    /// Deprecated: see `capabilities[].access`. Kept for one release.
-    pub public_capabilities: Vec<FeaturedCapability>,
 }
 
 /// The featured agents, loaded for `viewer`. A short list apart from search,
@@ -61,30 +49,9 @@ pub async fn featured(
     .fetch_all(&state.db)
     .await?;
     let loaded = fields::load(state, viewer, &ids).await?;
-    let public = sqlx::query!(
-        r#"
-        SELECT id, agent_id, name, description
-          FROM agent_capabilities
-         WHERE agent_id = ANY($1) AND public_invoke = true AND visibility = 'network'
-         ORDER BY name
-        "#,
-        &ids,
-    )
-    .fetch_all(&state.db)
-    .await?;
     Ok(loaded
         .into_iter()
         .map(|l| FeaturedAgent {
-            public_capabilities: public
-                .iter()
-                .filter(|c| c.agent_id == l.summary.id)
-                .map(|c| FeaturedCapability {
-                    id: c.id,
-                    name: c.name.clone(),
-                    description: c.description.clone(),
-                })
-                .collect(),
-            agent_slug: l.summary.slug.clone(),
             capabilities: l.capabilities,
             agent: l.summary,
         })

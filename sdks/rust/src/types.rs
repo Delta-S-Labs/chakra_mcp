@@ -347,12 +347,6 @@ pub struct DiscoveryAgent {
     #[serde(flatten)]
     pub listing: AgentListing,
     pub capabilities: Vec<CapabilityBrief>,
-    /// Deprecated: the same as `slug`.
-    #[serde(default)]
-    pub agent_slug: String,
-    /// Deprecated: see `capabilities[].access`.
-    #[serde(default)]
-    pub has_public_capabilities: bool,
     /// Your standing, when the request is signed in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub you: Option<Standing>,
@@ -397,26 +391,12 @@ pub struct DiscoveryQuery {
     pub cursor: Option<String>,
 }
 
-/// An entry of the deprecated [`FeaturedAgent::public_capabilities`].
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FeaturedCapability {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-}
-
 /// An agent worth trying first ([`crate::DiscoveryClient::featured`]).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeaturedAgent {
     #[serde(flatten)]
     pub listing: AgentListing,
     pub capabilities: Vec<CapabilityBrief>,
-    /// Deprecated: the same as `slug`.
-    #[serde(default)]
-    pub agent_slug: String,
-    /// Deprecated: see `capabilities[].access`.
-    #[serde(default)]
-    pub public_capabilities: Vec<FeaturedCapability>,
 }
 
 /// A capability in full, as a profile shows it.

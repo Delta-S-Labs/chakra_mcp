@@ -24,9 +24,7 @@
                     "name": "guide.ask",
                     "access": "public"
                 }
-            ],
-            "agent_slug": "guide",
-            "has_public_capabilities": true
+            ]
         }
     ],
     "next_cursor": null,

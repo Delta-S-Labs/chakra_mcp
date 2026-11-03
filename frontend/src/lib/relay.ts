@@ -6,6 +6,8 @@
  * because both services share JWT_SECRET.
  */
 
+import type { CapabilityBrief } from "./discovery";
+
 const BASE = process.env.NEXT_PUBLIC_RELAY_URL ?? "http://localhost:8090";
 
 export type Visibility = "private" | "org" | "network";
@@ -957,7 +959,8 @@ export interface FeaturedAgent {
   description: string;
   online: boolean;
   featured: boolean;
-  public_capabilities: { id: string; name: string; description: string }[];
+  /** What the agent offers; `access: "public"` ones answer anyone signed in. */
+  capabilities: CapabilityBrief[];
 }
 
 /** Featured agents; empty on any error, so callers can just leave them out.

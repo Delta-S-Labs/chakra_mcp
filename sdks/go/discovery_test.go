@@ -93,8 +93,8 @@ func TestDiscoverySearchSendsFiltersAndDecodesPage(t *testing.T) {
 	if len(guide.Capabilities) != 1 || guide.Capabilities[0].Name != "guide.ask" || guide.Capabilities[0].Access != AccessPublic {
 		t.Errorf("capabilities = %+v", guide.Capabilities)
 	}
-	if guide.AgentSlug != "guide" || !guide.HasPublicCapabilities || guide.You != nil {
-		t.Errorf("agent_slug/has_public_capabilities/you = %q/%v/%v", guide.AgentSlug, guide.HasPublicCapabilities, guide.You)
+	if guide.You != nil {
+		t.Errorf("you = %+v", guide.You)
 	}
 }
 
@@ -123,9 +123,9 @@ func TestDiscoveryFeaturedReturnsTheAgents(t *testing.T) {
 	if !agents[0].Featured || agents[0].Slug != "guide" || agents[1].Slug != "ping" {
 		t.Errorf("agents = %+v / %+v", agents[0].AgentListing, agents[1].AgentListing)
 	}
-	if len(agents[1].PublicCapabilities) != 1 || agents[1].PublicCapabilities[0].Name != "ping.echo" ||
-		agents[1].PublicCapabilities[0].Description == "" {
-		t.Errorf("public_capabilities = %+v", agents[1].PublicCapabilities)
+	if len(agents[1].Capabilities) != 1 || agents[1].Capabilities[0].Name != "ping.echo" ||
+		agents[1].Capabilities[0].Access != AccessPublic {
+		t.Errorf("capabilities = %+v", agents[1].Capabilities)
 	}
 }
 

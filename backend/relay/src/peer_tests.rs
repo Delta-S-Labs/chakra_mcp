@@ -85,7 +85,7 @@ async fn peer_says_what_the_directory_says(pool: PgPool) {
             .as_array()
             .unwrap()
             .iter()
-            .find(|a| a["agent_slug"] == slug)
+            .find(|a| a["slug"] == slug)
             .unwrap_or_else(|| panic!("{slug} not listed: {directory}"))["online"]
             .clone()
     };

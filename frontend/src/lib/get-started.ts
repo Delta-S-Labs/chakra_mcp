@@ -46,7 +46,7 @@ export function deriveGetStarted(input: {
   let guide: GetStarted["guide"] = null;
   for (const a of featured) {
     if (!a.featured) continue;
-    const cap = a.public_capabilities.find((c) => c.name === GUIDE_CAPABILITY);
+    const cap = a.capabilities.find((c) => c.access === "public" && c.name === GUIDE_CAPABILITY);
     if (cap) {
       guide = { agentId: a.id, agentName: a.display_name, capabilityId: cap.id };
       break;
