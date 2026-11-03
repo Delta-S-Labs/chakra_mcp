@@ -72,13 +72,16 @@ export interface PullLoop {
   signal: AbortSignal;
 }
 
+/** How long a pull may wait on the relay for work (the relay's limit). */
+export const PULL_WAIT_SECS = 25;
 const IDLE_POLL_MS = 5000;
-const BUSY_POLL_MS = 250;
 
 /**
- * Claims an agent's invocations until `signal` aborts. Polls quickly while
- * work arrives and every few seconds when idle; each poll also keeps the
- * agent "online" in the directory.
+ * Claims an agent's invocations until `signal` aborts. Each pull waits on
+ * the relay until work arrives, so a call is claimed as soon as it's made;
+ * a relay that answers without waiting (one before 0.7, or one with no
+ * room for another waiter) is polled every few seconds instead. Each pull
+ * also keeps the agent "online" in the directory.
  */
 export async function pullLoop(loop: PullLoop): Promise<void> {
   let backoff = 1000;
@@ -89,11 +92,16 @@ export async function pullLoop(loop: PullLoop): Promise<void> {
       continue;
     }
     try {
-      const invs = (await loop.chakra.inbox.pull(loop.agentId, { limit: room })) as HouseInvocation[];
+      const pulled = await loop.chakra.inbox.pullWithMeta(loop.agentId, {
+        limit: room,
+        wait: PULL_WAIT_SECS,
+        signal: loop.signal,
+      });
       backoff = 1000;
-      for (const inv of invs) loop.onInvocation(inv);
-      await pause(invs.length > 0 ? BUSY_POLL_MS : IDLE_POLL_MS, loop.signal);
+      for (const inv of pulled.items as HouseInvocation[]) loop.onInvocation(inv);
+      if (pulled.items.length === 0 && !pulled.waited) await pause(IDLE_POLL_MS, loop.signal);
     } catch (err) {
+      if (loop.signal.aborted) break;
       log.warn("inbox.pull_failed", {
         agent_id: loop.agentId,
         error: errorName(err),
