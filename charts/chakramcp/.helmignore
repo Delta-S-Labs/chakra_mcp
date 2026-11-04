@@ -1,4 +1,5 @@
 # Test values and chart CI inputs aren't part of the package.
 ci/
 ci-template/
+alerting/*.test.yaml
 .DS_Store
