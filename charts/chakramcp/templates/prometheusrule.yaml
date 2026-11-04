@@ -1,0 +1,18 @@
+{{- $pr := .Values.observability.prometheusRule }}
+{{- if and .Values.metrics.enabled $pr.enabled (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1/PrometheusRule") }}
+# The alerts for a Prometheus Operator's Prometheus and Alertmanager (e.g.
+# kube-prometheus-stack, which selects rules by label: release: <its name>).
+# The same alerts as the Grafana rules in alerting.yaml: if your Grafana
+# loads those too, turn one of them off.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "chakramcp.fullname" . }}
+  labels:
+    {{- include "chakramcp.labels" . | nindent 4 }}
+    {{- with $pr.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- .Files.Get "alerting/prometheus-rules.yaml" | nindent 2 }}
+{{- end }}

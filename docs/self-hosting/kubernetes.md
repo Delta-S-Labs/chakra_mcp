@@ -167,7 +167,8 @@ kubectl -n chakramcp delete pvc data-chakramcp-postgresql-0
 
 The chart ships ChakraMCP's dashboards and alert rules. With your own
 Prometheus and Grafana (e.g. kube-prometheus-stack), that's a
-ServiceMonitor plus ConfigMaps for Grafana's sidecars. Alternatively,
+ServiceMonitor, a PrometheusRule with the alerts for Alertmanager, and
+ConfigMaps for Grafana's sidecars. Alternatively,
 `observability.bundled.enabled=true` installs a small Prometheus, Loki,
 Grafana and Alloy stack. Both are in
 [observability.md](observability.md#kubernetes).

@@ -179,6 +179,15 @@ observability:
     # e.g. release: kube-prometheus-stack.
     labels: {}
     interval: 15s
+  # The alerts as a PrometheusRule, for the operator's Prometheus and
+  # Alertmanager: backend down, 5xx ratio, stale credit switches, credit
+  # queue backlog. The error-log alert reads Loki, so it's Grafana-only
+  # (alertRules). Turn one of the two off if your Grafana loads both.
+  prometheusRule:
+    # Rendered only when the monitoring.coreos.com/v1 API exists.
+    enabled: true
+    # kube-prometheus-stack selects rules by its release label too.
+    labels: {}
   dashboards:
     enabled: true
     # The label Grafana's dashboard sidecar watches.
