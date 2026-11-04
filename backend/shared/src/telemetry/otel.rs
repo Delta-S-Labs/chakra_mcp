@@ -33,9 +33,10 @@ use opentelemetry_sdk::trace::{
 };
 use opentelemetry_sdk::Resource;
 use tracing::field::Empty;
+use tracing::subscriber::Interest;
 use tracing::{Instrument, Span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
-use tracing_subscriber::filter::{filter_fn, FilterFn, Filtered};
+use tracing_subscriber::filter::{DynFilterFn, Filtered};
 use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::Layer;
 
@@ -234,15 +235,19 @@ impl Pipeline {
 }
 
 /// [`layer`]'s type: the OpenTelemetry layer behind its filter.
-pub type TracesLayer<S> = Filtered<
-    tracing_opentelemetry::OpenTelemetryLayer<S, SdkTracer>,
-    FilterFn<fn(&tracing::Metadata<'_>) -> bool>,
-    S,
->;
+pub type TracesLayer<S> =
+    Filtered<tracing_opentelemetry::OpenTelemetryLayer<S, SdkTracer>, DynFilterFn<S>, S>;
 
 /// The OpenTelemetry layer: spans only (events stay in the logs), from this
 /// workspace's crates only, so the exporter's own HTTP stack can never be
 /// traced into a loop. `RUST_LOG` doesn't apply to it.
+///
+/// Its spans are "sometimes" enabled, never cached as "always": with an
+/// "always" callsite, tracing skips the check that refreshes the per-layer
+/// filters' state, and a `log_enabled!` call with no record after it (sqlx
+/// makes one per query) leaves this filter's "no" behind for the next span.
+/// That dropped every request after the first from traces
+/// (tests/tracing_server.rs).
 pub fn layer<S>(tracer: SdkTracer) -> TracesLayer<S>
 where
     S: tracing::Subscriber + for<'a> LookupSpan<'a>,
@@ -255,6 +260,18 @@ where
             // has no `otel.kind`.
             && (meta.name() != "http_request" || meta.fields().field("otel.kind").is_some())
     }
+    fn interest(meta: &'static tracing::Metadata<'static>) -> Interest {
+        if ours(meta) {
+            Interest::sometimes()
+        } else {
+            Interest::never()
+        }
+    }
+    let filter = DynFilterFn::new(
+        (|meta, _cx| ours(meta))
+            as fn(&tracing::Metadata<'_>, &tracing_subscriber::layer::Context<'_, S>) -> bool,
+    )
+    .with_callsite_filter(interest as fn(&'static tracing::Metadata<'static>) -> Interest);
     tracing_opentelemetry::layer()
         .with_tracer(tracer)
         .with_location(false)
@@ -262,7 +279,7 @@ where
         .with_level(false)
         .with_target(false)
         .with_tracked_inactivity(false)
-        .with_filter(filter_fn(ours as fn(&tracing::Metadata<'_>) -> bool))
+        .with_filter(filter)
 }
 
 // ─── The exporter's HTTP client ──────────────────────────
