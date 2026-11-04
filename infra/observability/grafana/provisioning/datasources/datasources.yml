@@ -19,6 +19,32 @@ datasources:
     access: proxy
     url: http://loki:3100
     editable: false
+    jsonData:
+      # A traced request's JSON log lines carry its trace_id: a link to the
+      # trace in Tempo.
+      derivedFields:
+        - name: trace_id
+          matcherRegex: '"trace_id":"(\w{32})"'
+          datasourceUid: tempo
+          url: "$${__value.raw}"
+
+  # Traces, when the relay sends them (OTEL_EXPORTER_OTLP_ENDPOINT). A span
+  # links to its request's log lines in Loki.
+  - name: Tempo
+    uid: tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    editable: false
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: -1m
+        spanEndTimeShift: 1m
+        filterByTraceID: false
+        filterBySpanID: false
+        customQuery: true
+        query: '{service="relay"} |= "$${__trace.traceId}"'
 
   # The relay's own database, for the Revenue dashboard: Prometheus keeps
   # 15 days, revenue needs months. Read-only, as the collector's

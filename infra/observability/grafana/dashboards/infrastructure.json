@@ -802,7 +802,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "label_replace(label_replace(label_replace(process_resident_memory_bytes{job=~\"chakramcp|caddy|prometheus|loki|grafana|integrations/self\"}, \"service\", \"$1\", \"job\", \"(.*)\"), \"service\", \"relay\", \"job\", \"chakramcp\"), \"service\", \"alloy\", \"job\", \"integrations/self\")",
+          "expr": "label_replace(label_replace(label_replace(process_resident_memory_bytes{job=~\"chakramcp|caddy|prometheus|loki|grafana|tempo|integrations/self\"}, \"service\", \"$1\", \"job\", \"(.*)\"), \"service\", \"relay\", \"job\", \"chakramcp\"), \"service\", \"alloy\", \"job\", \"integrations/self\")",
           "legendFormat": "{{service}}",
           "range": true,
           "instant": false,
@@ -866,7 +866,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "label_replace(label_replace(label_replace(rate(process_cpu_seconds_total{job=~\"chakramcp|caddy|prometheus|loki|grafana|integrations/self\"}[$__rate_interval]), \"service\", \"$1\", \"job\", \"(.*)\"), \"service\", \"relay\", \"job\", \"chakramcp\"), \"service\", \"alloy\", \"job\", \"integrations/self\")",
+          "expr": "label_replace(label_replace(label_replace(rate(process_cpu_seconds_total{job=~\"chakramcp|caddy|prometheus|loki|grafana|tempo|integrations/self\"}[$__rate_interval]), \"service\", \"$1\", \"job\", \"(.*)\"), \"service\", \"relay\", \"job\", \"chakramcp\"), \"service\", \"alloy\", \"job\", \"integrations/self\")",
           "legendFormat": "{{service}}",
           "range": true,
           "instant": false,
@@ -919,7 +919,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "label_replace(label_replace(label_replace(changes(process_start_time_seconds{job=~\"chakramcp|caddy|prometheus|loki|grafana|integrations/self\"}[24h]), \"service\", \"$1\", \"job\", \"(.*)\"), \"service\", \"relay\", \"job\", \"chakramcp\"), \"service\", \"alloy\", \"job\", \"integrations/self\")",
+          "expr": "label_replace(label_replace(label_replace(changes(process_start_time_seconds{job=~\"chakramcp|caddy|prometheus|loki|grafana|tempo|integrations/self\"}[24h]), \"service\", \"$1\", \"job\", \"(.*)\"), \"service\", \"relay\", \"job\", \"chakramcp\"), \"service\", \"alloy\", \"job\", \"integrations/self\")",
           "legendFormat": "",
           "range": false,
           "instant": true,

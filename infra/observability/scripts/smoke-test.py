@@ -17,7 +17,10 @@ published. Polls until everything holds or the deadline passes:
   the configured ALERT_CHANNEL are provisioned (none for `none`);
 - the Postgres datasource logs in, and every query of the Postgres
   dashboards (Revenue, Activation, House agents) runs through it, macros and
-  all (catches SQL errors and a column ensure-monitor-role.sh doesn't grant).
+  all (catches SQL errors and a column ensure-monitor-role.sh doesn't grant);
+- traces: a relay request names its trace (ChakraMCP-Trace-Id; ci.env sets
+  OTEL_EXPORTER_OTLP_ENDPOINT, so a missing header fails), the trace reaches
+  Tempo, and Grafana's Tempo datasource answers.
 
 The base compose file is docker-compose.yml when present, else
 docker-compose.prod.yml; COMPOSE_BASE overrides it (as in deploy.sh).
@@ -101,6 +104,32 @@ def postgres_query_errors(targets):
     return errors
 
 
+RELAY_TRACE = {}
+
+
+def relay_trace_id():
+    """The trace id the relay names for one request (asked once it does)."""
+    if "id" not in RELAY_TRACE:
+        cmd = COMPOSE + ["exec", "-T", "grafana", "curl", "-sS", "-D", "-", "-o", "/dev/null",
+                         "http://relay:8090/v1/discovery/featured"]
+        out = subprocess.run(cmd, capture_output=True, text=True).stdout
+        for line in out.splitlines():
+            name, _, value = line.partition(":")
+            if name.strip().lower() == "chakramcp-trace-id" and value.strip():
+                RELAY_TRACE["id"] = value.strip()
+    return RELAY_TRACE.get("id")
+
+
+def trace_spans(trace_id):
+    """The span names Tempo holds for a trace (none until it arrives)."""
+    try:
+        trace = curl(f"http://tempo:3200/api/v2/traces/{trace_id}")["trace"]
+    except RuntimeError:  # 404 until the batch arrives
+        return []
+    return [s["name"] for rs in trace.get("resourceSpans", []) for ss in rs.get("scopeSpans", [])
+            for s in ss.get("spans", [])]
+
+
 def prom(query):
     return curl("http://prometheus:9090/api/v1/query?" + urllib.parse.urlencode({"query": query}))["data"]["result"]
 
@@ -109,7 +138,7 @@ def checks():
     """(name, ok) pairs for everything the stack should be doing."""
     yield "pg_up == 1", [r["value"][1] for r in prom("pg_up")] == ["1"]
     yield "redis_up == 1", [r["value"][1] for r in prom("redis_up")] == ["1"]
-    for job in ["chakramcp", "integrations/unix", "integrations/self", "prometheus", "loki", "grafana"]:
+    for job in ["chakramcp", "integrations/unix", "integrations/self", "prometheus", "loki", "grafana", "tempo"]:
         yield f'up{{job="{job}"}} == 1', [r["value"][1] for r in prom(f'up{{job="{job}"}}')] == ["1"]
     for metric in [
         "chakramcp_build_info",
@@ -145,6 +174,12 @@ def checks():
     targets = postgres_queries()
     errors = postgres_query_errors(targets)
     yield f"Postgres dashboards' {len(targets)} queries run (failing: {errors})", bool(targets) and not errors
+    trace_id = relay_trace_id()
+    yield f"the relay names its trace (ChakraMCP-Trace-Id: {trace_id})", trace_id is not None
+    spans = trace_spans(trace_id) if trace_id else []
+    yield f"the trace reached Tempo ({sorted(spans)})", "GET /v1/discovery/featured" in spans
+    health = curl("http://127.0.0.1:3000/api/datasources/uid/tempo/health", auth=True)
+    yield f"Tempo datasource answers ({health.get('message')})", health.get("status") == "OK"
     rules = curl("http://127.0.0.1:3000/api/v1/provisioning/alert-rules", auth=True)
     yield f"alert rules loaded ({len(rules)})", len(rules) >= 12
     points = {p["uid"] for p in curl("http://127.0.0.1:3000/api/v1/provisioning/contact-points", auth=True)}

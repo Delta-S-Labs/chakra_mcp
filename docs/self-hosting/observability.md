@@ -1,15 +1,17 @@
 # Observability for self-hosters
 
-`infra/observability/` adds four services next to the
+`infra/observability/` adds five services next to the
 [Compose setup](compose.md):
 
 - **Alloy** collects metrics from ChakraMCP, Caddy, Postgres, Redis and
   the host, and reads every container's logs from the host journal.
 - **Prometheus** keeps metrics for 15 days (2 GB at most).
 - **Loki** keeps logs for 14 days.
+- **Tempo** keeps traces for 7 days, once you turn them on
+  ([Tracing](#tracing)).
 - **Grafana** serves the dashboards and evaluates the alert rules.
 
-You get six dashboards and eighteen alert rules, the same files production
+You get six dashboards and nineteen alert rules, the same files production
 runs:
 - **Overview**, **Infrastructure** and **Logs**.
 - **Activation**: sign-ups, agents and calls, and how far new accounts get
@@ -40,7 +42,9 @@ missing. If the journal is volatile, enabling persistent storage takes
    - `GRAFANA_DOMAIN`: that hostname;
    - `GRAFANA_ADMIN_PASSWORD`: the `admin` login;
    - `PG_MONITOR_PASSWORD`: the read-only Postgres role the collector
-     and Grafana's Postgres dashboards log in as.
+     and Grafana's Postgres dashboards log in as;
+   - optionally, `OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318` for traces
+     ([Tracing](#tracing)).
 
    After setting `GRAFANA_DOMAIN`, apply it to Caddy:
    `docker compose -f docker-compose.prod.yml up -d caddy`.
@@ -48,7 +52,7 @@ missing. If the journal is volatile, enabling persistent storage takes
 3. **Deploy**, from `infra/`:
 
    ```sh
-   observability/scripts/deploy.sh "alloy prometheus loki grafana/provisioning grafana/dashboards grafana/channels"
+   observability/scripts/deploy.sh "alloy prometheus loki tempo grafana/provisioning grafana/dashboards grafana/channels"
    ```
 
    The script:
@@ -140,7 +144,7 @@ The stack needs both compose files on every command:
 
 ```sh
 alias obs='docker compose -f docker-compose.prod.yml -f observability/compose.yml'
-obs ps alloy prometheus loki grafana
+obs ps alloy prometheus loki tempo grafana
 obs logs --tail 50 grafana
 ```
 
@@ -150,7 +154,7 @@ obs logs --tail 50 grafana
 - **Dashboards and alert rules** are files in
   `infra/observability/grafana/`. Change the files rather than the UI,
   then re-run `deploy.sh`.
-- **Prometheus, Loki and Alloy aren't published.** To reach one, tunnel
+- **Prometheus, Loki, Tempo and Alloy aren't published.** To reach one, tunnel
   to its container address, e.g. `ssh -L 9090:<ip>:9090 host`, where
   `<ip>` comes from `docker inspect` on the container.
 - **What Grafana can read in Postgres:** it logs in as
@@ -174,7 +178,25 @@ obs logs --tail 50 grafana
 
 The server can send OpenTelemetry traces to any OTLP/HTTP collector:
 Tempo, Jaeger, an OpenTelemetry Collector or a hosted service. It's off
-until you set the endpoint, in `.env`:
+until you set the endpoint.
+
+**With this stack**, set `OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318` in
+`.env`, then recreate the relay:
+
+```sh
+docker compose -f docker-compose.prod.yml up -d relay
+```
+
+Tempo keeps the traces for 7 days, and Grafana's Tempo datasource reads
+them: **Explore → Tempo** searches by route, duration or status. The links
+go both ways:
+- a JSON log line with a `trace_id` links to its trace;
+- a span links to its request's log lines in Loki.
+
+If the relay can't deliver its spans, the **Trace export failing** alert
+fires.
+
+The settings, in `.env`:
 
 | Setting | Default | |
 |---|---|---|

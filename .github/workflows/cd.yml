@@ -404,7 +404,7 @@ jobs:
           set -euo pipefail
           # shellcheck disable=SC2016 # runs on the VM, where it expands
           hashes='cd /opt/chakramcp/observability 2>/dev/null || exit 0
-            for d in alloy prometheus loki grafana/provisioning grafana/dashboards grafana/channels; do
+            for d in alloy prometheus loki tempo grafana/provisioning grafana/dashboards grafana/channels; do
               printf "%s %s\n" "$d" "$(find "$d" -type f -print0 2>/dev/null | sort -z | xargs -0r sha256sum | sha256sum | cut -c1-16)"
             done'
           before=$(ssh -i ~/.ssh/lightsail ubuntu@"$LIGHTSAIL_HOST" "$hashes")

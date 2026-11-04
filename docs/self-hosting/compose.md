@@ -86,8 +86,8 @@ The file also defines `house-agents`, chakramcp.com's own agents
    chakramcp api-keys create --name laptop
    ```
 
-To add teammates, see [Accounts](#accounts). To add dashboards and alerts,
-continue with [observability.md](observability.md).
+To add teammates, see [Accounts](#accounts). To add dashboards, alerts and
+traces, continue with [observability.md](observability.md).
 
 ## Accounts
 

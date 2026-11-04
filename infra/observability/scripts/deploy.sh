@@ -6,7 +6,7 @@
 #   observability/scripts/deploy.sh "<changed config dirs>"
 #
 # The argument lists the config directories whose content changed (CD
-# hashes them before and after syncing): alloy, prometheus, loki,
+# hashes them before and after syncing): alloy, prometheus, loki, tempo,
 # grafana/provisioning, grafana/dashboards, grafana/channels. Changes are
 # applied by reload wherever the service supports it, so a config deploy
 # never shows up as a restart (the crash-loop alert counts restarts).
@@ -89,12 +89,14 @@ fi
 
 observability/scripts/ensure-monitor-role.sh -f "$COMPOSE_BASE" -f observability/compose.yml
 grafana_before=$(obs ps -q grafana)
-obs up -d alloy prometheus loki grafana
+tempo_before=$(obs ps -q tempo)
+obs up -d alloy prometheus loki tempo grafana
 
 wait_for prometheus in_prom http://127.0.0.1:9090/-/ready
 wait_for grafana http http://127.0.0.1:3000/api/health
 wait_for loki http http://loki:3100/ready
 wait_for alloy http http://alloy:12345/-/ready
+wait_for tempo http http://tempo:3200/ready
 
 # ─── Apply config changes ────────────────────────────────
 if has grafana/channels && [ "$(obs ps -q grafana)" = "$grafana_before" ]; then
@@ -117,6 +119,12 @@ if has loki; then
   # Loki can't reload its main config; it's rarely touched.
   obs restart loki
   wait_for loki http http://loki:3100/ready
+fi
+if has tempo && [ "$(obs ps -q tempo)" = "$tempo_before" ]; then
+  # Tempo can't reload its config: a new container reads it. (Skipped
+  # when `up` just created it, as for Grafana above.)
+  obs up -d --force-recreate tempo
+  wait_for tempo http http://tempo:3200/ready
 fi
 if has grafana/provisioning; then
   # Dashboards reload from disk on their own; datasources, alerting and the
@@ -146,4 +154,4 @@ check_flag() { # name, metric, command...
 check_flag prometheus prometheus_config_last_reload_successful in_prom http://127.0.0.1:9090/metrics
 check_flag alloy alloy_config_last_load_successful http http://alloy:12345/metrics
 
-obs ps alloy prometheus loki grafana
+obs ps alloy prometheus loki tempo grafana

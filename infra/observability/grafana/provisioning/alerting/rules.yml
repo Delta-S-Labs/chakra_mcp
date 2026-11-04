@@ -345,7 +345,7 @@ groups:
       datasourceUid: prometheus
       model:
         refId: A
-        expr: 'label_replace(label_replace(changes(process_start_time_seconds{job=~"caddy|prometheus|loki|grafana|integrations/self"}[15m]), "service", "$1", "job", "(.*)"), "service", "alloy", "job", "integrations/self") or label_replace(max(changes(process_start_time_seconds{job="chakramcp"}[15m])) - (count(count_over_time(chakramcp_build_info{job="chakramcp"}[15m])) - 1), "service", "relay", "", "") or label_replace(changes(pg_postmaster_start_time_seconds[15m]), "service", "postgres", "", "") or label_replace(resets(redis_uptime_in_seconds[15m]), "service", "redis", "", "")'
+        expr: 'label_replace(label_replace(changes(process_start_time_seconds{job=~"caddy|prometheus|loki|grafana|tempo|integrations/self"}[15m]), "service", "$1", "job", "(.*)"), "service", "alloy", "job", "integrations/self") or label_replace(max(changes(process_start_time_seconds{job="chakramcp"}[15m])) - (count(count_over_time(chakramcp_build_info{job="chakramcp"}[15m])) - 1), "service", "relay", "", "") or label_replace(changes(pg_postmaster_start_time_seconds[15m]), "service", "postgres", "", "") or label_replace(resets(redis_uptime_in_seconds[15m]), "service", "redis", "", "")'
         instant: true
         range: false
         intervalMs: 1000
@@ -403,6 +403,43 @@ groups:
       summary: The collector (Alloy) has stopped sending metrics.
     labels:
       severity: critical
+    isPaused: false
+  # Traces go missing silently when Tempo (or another collector) is down or
+  # refusing them: the relay only counts the failures. 0 with tracing off.
+  - uid: trace-export-failing
+    title: Trace export failing
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: 'sum(increase(chakramcp_trace_export_failures_total[15m]))'
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+    noDataState: OK
+    execErrState: Error
+    for: 10m
+    annotations:
+      summary: The relay can't send traces to its collector{{ with $values.A }} ({{ humanize .Value }} failed exports in 15 minutes){{ end }}, so those traces are lost. Is Tempo up?
+    labels:
+      severity: warning
     isPaused: false
 - orgId: 1
   name: logs

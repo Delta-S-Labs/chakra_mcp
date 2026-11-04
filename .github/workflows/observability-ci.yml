@@ -3,11 +3,11 @@ name: Observability CI
 # Checks the observability stack (infra/observability/, plus the prod compose
 # file and Caddyfile it layers on):
 #   1. every config through its own tool (compose, Caddy, Alloy, Prometheus,
-#      Loki, Grafana provisioning, the shell scripts);
+#      Loki, Tempo, Grafana provisioning, the shell scripts);
 #   2. a smoke test: the real stack on this runner — which, unlike Docker
 #      Desktop, has journald — deployed by the same script CD runs on the VM
 #      (scripts/deploy.sh) next to the relay from the public :edge image,
-#      then checked for metrics, logs and provisioning. The settings are the
+#      then checked for metrics, logs, traces and provisioning. The settings are the
 #      generic self-hoster ones (observability/ci.env), not production's.
 #
 # Runs on every PR so it can be a required check; the steps skip themselves
@@ -67,7 +67,7 @@ jobs:
             -f observability/compose.dev.yml "${env[@]}" config -q
           # Pinned images, for the tool checks below.
           images=$(docker compose -f docker-compose.prod.yml -f observability/compose.yml "${env[@]}" config --images)
-          for name in alloy prometheus loki; do
+          for name in alloy prometheus loki tempo; do
             echo "$(echo "$name" | tr '[:lower:]' '[:upper:]')_IMAGE=$(echo "$images" | grep -m1 "/$name:")" >> "$GITHUB_ENV"
           done
 
@@ -88,7 +88,7 @@ jobs:
             | diff -u infra/observability/alloy/config.alloy - \
             || { echo "::error::config.alloy isn't formatted: run alloy fmt"; exit 1; }
 
-      - name: Prometheus and Loki configs
+      - name: Prometheus, Loki and Tempo configs
         if: steps.changes.outputs.infra == 'true'
         run: |
           set -euo pipefail
@@ -96,6 +96,8 @@ jobs:
             "$PROMETHEUS_IMAGE" check config /etc/prometheus/prometheus.yml
           docker run --rm -v "$PWD/infra/observability/loki:/etc/loki:ro" \
             "$LOKI_IMAGE" -config.file=/etc/loki/loki.yml -verify-config
+          docker run --rm -v "$PWD/infra/observability/tempo:/etc/tempo:ro" \
+            "$TEMPO_IMAGE" -config.file=/etc/tempo/tempo.yml -config.verify=true
 
       - name: Grafana provisioning and dashboards
         if: steps.changes.outputs.infra == 'true'
@@ -155,7 +157,7 @@ jobs:
         run: |
           set -euo pipefail
           docker compose up -d --wait pg redis relay
-          observability/scripts/deploy.sh "alloy prometheus loki grafana/provisioning grafana/dashboards grafana/channels"
+          observability/scripts/deploy.sh "alloy prometheus loki tempo grafana/provisioning grafana/dashboards grafana/channels"
 
       - name: Smoke test
         if: steps.changes.outputs.infra == 'true'

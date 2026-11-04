@@ -1,0 +1,45 @@
+# Tempo 3, as one process: stores ChakraMCP's traces on local disk for 7
+# days. The relay sends OTLP/HTTP to tempo:4318 (OTEL_EXPORTER_OTLP_ENDPOINT
+# in .env); Grafana queries tempo:3200. Tempo can't reload its config:
+# deploy.sh recreates it when this file changes.
+stream_over_http_enabled: false
+multitenancy_enabled: false
+usage_report:
+  reporting_enabled: false
+
+server:
+  http_listen_port: 3200
+  log_level: warn
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        # HTTP only. Bound to every interface: recent Tempo binds receivers
+        # to localhost otherwise.
+        http:
+          endpoint: 0.0.0.0:4318
+
+# Retention: compaction deletes blocks older than this.
+backend_scheduler:
+  provider:
+    compaction:
+      compaction:
+        block_retention: 168h
+backend_worker:
+  # The scheduler in this same process: set, so start-up doesn't warn.
+  backend_scheduler_addr: 127.0.0.1:9095
+  compaction:
+    block_retention: 168h
+
+querier:
+  frontend_worker:
+    frontend_address: 127.0.0.1:9095
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/traces
+    wal:
+      path: /var/tempo/wal
