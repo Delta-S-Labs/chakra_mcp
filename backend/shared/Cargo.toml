@@ -28,6 +28,18 @@ dotenvy = { workspace = true }
 metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
 metrics-process = { workspace = true }
+# Tracing (telemetry::otel).
+opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true }
+opentelemetry-otlp = { workspace = true }
+opentelemetry-http = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+http = { workspace = true }
+bytes = { workspace = true }
+async-trait = { workspace = true }
+# The fake OTLP receiver (test-support).
+opentelemetry-proto = { workspace = true, optional = true }
+prost = { workspace = true, optional = true }
 serde_json_canonicalizer = "=0.4.1"
 # System One (TypeSafe) client.
 reqwest = { workspace = true }
@@ -39,12 +51,17 @@ unicode-normalization = "0.1"
 whatlang = "0.18"
 
 [features]
-# The fake TypeSafe server (`system_one::test_support`), for other crates'
-# tests.
-test-support = []
+# The fake TypeSafe server (`system_one::test_support`) and the fake OTLP
+# receiver (`telemetry::otel::test_support`), for other crates' tests.
+test-support = ["dep:opentelemetry-proto", "dep:prost"]
 
 [[example]]
 name = "fake_typesafe"
+required-features = ["test-support"]
+
+# Exports to the fake OTLP collector (`telemetry::otel::test_support`).
+[[test]]
+name = "tracing"
 required-features = ["test-support"]
 
 [dev-dependencies]

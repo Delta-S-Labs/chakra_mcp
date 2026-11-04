@@ -29,6 +29,7 @@
 
 use std::time::Duration;
 
+use chakramcp_shared::telemetry::otel;
 use reqwest::header;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -140,8 +141,7 @@ impl Fetcher {
         if let Some(etag) = if_none_match {
             req = req.header(header::IF_NONE_MATCH, etag);
         }
-        let resp = req
-            .send()
+        let resp = otel::send(req, "agent_card.fetch")
             .await
             .map_err(|e| FetchError::Transport(e.to_string()))?;
 

@@ -24,6 +24,7 @@ use std::time::{Duration, Instant};
 
 use axum::http::HeaderMap;
 use bytes::Bytes;
+use chakramcp_shared::telemetry::otel;
 use chrono::Utc;
 use reqwest::header;
 use sqlx::PgPool;
@@ -273,7 +274,7 @@ pub async fn forward_push(
         .body(request_body.clone());
 
     // (4) Send + outcome classification.
-    let outcome = match request.send().await {
+    let outcome = match otel::send(request, "push.deliver").await {
         Ok(resp) => {
             let elapsed_ms = started.elapsed().as_millis() as i64;
             let status = resp.status().as_u16();

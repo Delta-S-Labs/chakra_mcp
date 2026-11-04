@@ -11,6 +11,7 @@ use std::time::Duration;
 use axum::http::HeaderMap;
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
+use chakramcp_shared::telemetry::otel;
 use hmac::{Hmac, KeyInit, Mac};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -135,13 +136,14 @@ impl DodoClient {
             checkout_url: Option<String>,
         }
 
-        let res = self
-            .http
-            .post(format!("{}/checkouts", self.base_url))
-            .bearer_auth(self.api_key.expose())
-            .json(&checkout.body())
-            .send()
-            .await?;
+        let res = otel::send(
+            self.http
+                .post(format!("{}/checkouts", self.base_url))
+                .bearer_auth(self.api_key.expose())
+                .json(&checkout.body()),
+            "dodo.checkout",
+        )
+        .await?;
         let status = res.status();
         if !status.is_success() {
             let mut body = res.text().await.unwrap_or_default();

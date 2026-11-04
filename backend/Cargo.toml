@@ -65,6 +65,20 @@ metrics-process = "2"
 metrics-util = { version = "0.20", default-features = false, features = ["debugging"] }
 anyhow = "1"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+# Tracing: OpenTelemetry over OTLP/HTTP (shared::telemetry::otel). Default
+# features off everywhere: the SDK's internal logs stay off (the exporter's
+# HTTP client counts its own failures), and opentelemetry-otlp's reqwest
+# 0.13 clients aren't built (ours is reqwest 0.12).
+opentelemetry = { version = "0.33", default-features = false, features = ["trace"] }
+opentelemetry_sdk = { version = "0.33", default-features = false, features = ["trace"] }
+opentelemetry-otlp = { version = "0.33", default-features = false, features = ["http-proto", "trace"] }
+opentelemetry-http = { version = "0.33", default-features = false }
+opentelemetry-proto = { version = "0.33", default-features = false, features = ["gen-tonic-messages", "trace"] }
+tracing-opentelemetry = { version = "0.34", default-features = false }
+prost = "0.14"
+http = "1"
+bytes = "1"
+async-trait = "0.1"
 
 [profile.release]
 opt-level = 3

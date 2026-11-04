@@ -67,4 +67,8 @@ async fn json_logs_carry_the_request_span() {
     assert_eq!(v["span"]["request_id"], id.as_str());
     assert_eq!(v["span"]["route"], "/items/{id}");
     assert_eq!(v["span"]["method"], "GET");
+    assert!(
+        v["span"].get("trace_id").is_none(),
+        "no trace_id with tracing off (tests/tracing.rs covers it on)"
+    );
 }

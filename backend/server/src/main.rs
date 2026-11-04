@@ -212,7 +212,30 @@ async fn migrate(explicit_path: Option<PathBuf>) -> Result<()> {
 
 async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
     let cfg = load_config(explicit_path)?;
-    telemetry::init_tracing(&cfg.shared.log_filter, cfg.log_format.as_deref());
+    // Traces are off unless OTEL_EXPORTER_OTLP_ENDPOINT is set. A bad
+    // setting is a warning, never a failed boot.
+    let (otel_cfg, mut otel_warnings) = telemetry::otel::OtelConfig::from_env();
+    let traces = otel_cfg.as_ref().and_then(|otel| {
+        telemetry::otel::Pipeline::start(
+            otel,
+            telemetry::BuildInfo::CURRENT.version,
+            cfg.hosting.mode.as_str(),
+            tokio::runtime::Handle::current(),
+        )
+        .map_err(|err| otel_warnings.push(format!("tracing is off: {err:#}")))
+        .ok()
+    });
+    telemetry::init_tracing_with(
+        &cfg.shared.log_filter,
+        cfg.log_format.as_deref(),
+        traces.as_ref().map(telemetry::otel::Pipeline::tracer),
+    );
+    for warning in otel_warnings {
+        tracing::warn!("{warning}");
+    }
+    if let (Some(otel), Some(_)) = (&otel_cfg, &traces) {
+        tracing::info!(sampler = ?otel.sampler, "tracing on: spans go out over OTLP");
+    }
     // Metrics are opt-in (METRICS_ADDR): nothing listens unless it's set.
     if let Some(addr) = cfg.metrics_addr {
         telemetry::install_metrics(addr, telemetry::BuildInfo::CURRENT).await?;
@@ -447,6 +470,10 @@ async fn start(explicit_path: Option<PathBuf>) -> Result<()> {
                 "requests still open after the drain period — exiting anyway"
             );
         }
+    }
+    // The spans still queued, for at most a second (inside Docker's 10).
+    if let Some(traces) = traces {
+        traces.shutdown().await;
     }
     // Stop the refresh loop cleanly so its current tick (if any)
     // can finish before the DB pool drops.

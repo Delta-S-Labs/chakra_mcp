@@ -170,6 +170,48 @@ obs logs --tail 50 grafana
   2. Run `obs exec -T pg psql -U chakramcp -d chakramcp -c "ALTER ROLE chakramcp_monitor PASSWORD '…'"`.
   3. Run `obs up -d --force-recreate alloy grafana`.
 
+## Tracing
+
+The server can send OpenTelemetry traces to any OTLP/HTTP collector:
+Tempo, Jaeger, an OpenTelemetry Collector or a hosted service. It's off
+until you set the endpoint, in `.env`:
+
+| Setting | Default | |
+|---|---|---|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset: off | The collector's base URL, e.g. `http://tempo:4318`. Spans go to `/v1/traces` under it. |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | unset | A full traces URL instead |
+| `OTEL_EXPORTER_OTLP_HEADERS` | unset | Headers for a hosted backend's auth, e.g. `Authorization=Basic …` |
+| `OTEL_SERVICE_NAME` | `chakramcp` | |
+| `OTEL_TRACES_SAMPLER` | `traceidratio` | `always_on`, `always_off` or `traceidratio` |
+| `OTEL_TRACES_SAMPLER_ARG` | `1.0` | The share of requests traced, from 0 to 1 |
+
+**What a trace holds.** Each request is one trace, named by its method and
+route template (`POST /v1/invoke`). Health checks aren't traced. Under the
+request are:
+- the stages of an invocation: authentication, loading the grant, the
+  usage limits, the safety and compliance checks, consent, and the enqueue
+  or the push to the agent;
+- each outbound call (push delivery, agent cards, TypeSafe, wake URLs,
+  Dodo), with its host and status.
+
+Spans never hold bodies, headers, URL paths or queries: an agent's endpoint
+or wake URL can carry a secret.
+
+**Logs.** With `LOG_FORMAT=json`, every line a traced request logs carries
+its `trace_id`. Responses carry it too, as `ChakraMCP-Trace-Id`, when the
+request was sampled. In Grafana, a Loki derived field on `trace_id` links a
+log line to its trace.
+
+**Callers' traces.** A `traceparent` header on a request becomes a link on
+the request's span, never its parent: callers can't choose what's sampled
+or join your traces. Nothing is passed on to agents.
+
+**Cost.** Off, none of it runs. On, spans are kept in memory and sent in
+batches every 5 seconds from a background thread. When the collector is slow
+or down, spans are dropped rather than delaying requests:
+`chakramcp_trace_export_failures_total` counts the failed exports, and the
+server logs one warning a minute. `RUST_LOG` doesn't change what's traced.
+
 ## Kubernetes
 
 The Helm chart ([kubernetes.md](kubernetes.md)) ships the same dashboards

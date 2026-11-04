@@ -355,13 +355,12 @@ pub(crate) async fn post(
     let fail = |status: Option<u16>, message: String| CallError { status, message };
     let mut retried = false;
     loop {
-        let res = http
-            .post(endpoint)
-            .bearer_auth(api_key)
-            .json(body)
-            .send()
-            .await
-            .map_err(|e| fail(None, format!("request failed: {e}")))?;
+        let res = crate::telemetry::otel::send(
+            http.post(endpoint).bearer_auth(api_key).json(body),
+            "typesafe.ask",
+        )
+        .await
+        .map_err(|e| fail(None, format!("request failed: {e}")))?;
         let status = res.status();
         if status.is_success() {
             return res
