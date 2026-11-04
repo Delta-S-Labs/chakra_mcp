@@ -64,7 +64,13 @@ required-features = ["test-support"]
 name = "tracing"
 required-features = ["test-support"]
 
+[[test]]
+name = "tracing_server"
+required-features = ["test-support"]
+
 [dev-dependencies]
+# tests/tracing_server.rs: a dependency's `log_enabled!` check.
+log = "0.4"
 metrics-util = { workspace = true }
 tower = { workspace = true }
 http-body-util = "0.1"
