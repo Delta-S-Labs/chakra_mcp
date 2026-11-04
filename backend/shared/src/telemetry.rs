@@ -1,5 +1,6 @@
 //! Metrics, structured logs and request IDs — the backend half of
 //! `docs/superpowers/specs/2026-09-29-observability-phase1-design.md`.
+//! Traces are in [`otel`].
 //!
 //! Everything on the request path stays in memory: a counter increment or a
 //! histogram sample in the `metrics` registry, never I/O. Without
@@ -20,12 +21,19 @@ use metrics::{
     counter, describe_counter, describe_gauge, describe_histogram, gauge, histogram, Unit,
 };
 use metrics_exporter_prometheus::{Matcher, PrometheusBuilder, PrometheusHandle};
+use opentelemetry_sdk::trace::SdkTracer;
 use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
+use tracing::field::Empty;
+use tracing_subscriber::filter::{filter_fn, FilterExt, FilterFn};
 use tracing_subscriber::fmt::MakeWriter;
+use tracing_subscriber::layer::{Filter, SubscriberExt};
+use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::{EnvFilter, Layer};
 use uuid::Uuid;
+
+pub mod otel;
 
 /// Metric names — the catalogue in the design spec (§4.3). Label values
 /// always come from bounded sets: route templates, status codes, fixed enums.
@@ -63,6 +71,7 @@ pub mod names {
     pub const WAKE_LISTENER_RECONNECTS_TOTAL: &str = "chakramcp_wake_listener_reconnects_total";
     pub const INVOCATION_EXPIRED_TOTAL: &str = "chakramcp_invocation_expired_total";
     pub const WAKE_SENT_TOTAL: &str = "chakramcp_wake_sent_total";
+    pub const TRACE_EXPORT_FAILURES_TOTAL: &str = "chakramcp_trace_export_failures_total";
 }
 
 /// `result` values of `chakramcp_wake_sent_total`: answered 2xx, didn't, not
@@ -167,14 +176,31 @@ impl LogFormat {
 /// the format `log_format` names — see [`LogFormat::parse`]) and a panic hook
 /// that logs panics at ERROR, so they reach the error-log alert.
 pub fn init_tracing(filter: &str, log_format: Option<&str>) {
+    init_tracing_with(filter, log_format, None);
+}
+
+/// [`init_tracing`], plus traces when `tracer` is set ([`otel::Pipeline`]).
+pub fn init_tracing_with(filter: &str, log_format: Option<&str>, tracer: Option<SdkTracer>) {
     let (format, warning) = LogFormat::parse(log_format);
     let filter = EnvFilter::try_new(filter).unwrap_or_else(|_| EnvFilter::new("info"));
-    match format {
-        LogFormat::Text => tracing_subscriber::fmt()
-            .with_env_filter(filter)
-            .with_target(true)
+    match (format, tracer) {
+        (LogFormat::Text, None) => tracing_subscriber::registry()
+            .with(filter)
+            .with(no_trace_spans())
+            .with(tracing_subscriber::fmt::layer().with_target(true))
             .init(),
-        LogFormat::Json => json_subscriber(filter, std::io::stdout).init(),
+        (LogFormat::Json, None) => json_subscriber(filter, std::io::stdout).init(),
+        (LogFormat::Text, Some(tracer)) => tracing_subscriber::registry()
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .with_target(true)
+                    .with_filter(log_filter(filter)),
+            )
+            .with(otel::layer(tracer))
+            .init(),
+        (LogFormat::Json, Some(tracer)) => {
+            json_subscriber_traced(filter, std::io::stdout, tracer).init()
+        }
     }
     if let Some(warning) = warning {
         tracing::warn!("{warning}");
@@ -183,21 +209,69 @@ pub fn init_tracing(filter: &str, log_format: Option<&str>) {
 }
 
 /// JSON lines: event fields flattened into the object, plus the current
-/// span's fields (`request_id`, `method`, `route` inside a request).
+/// span's fields (`request_id`, `method`, `route` inside a request, and
+/// `trace_id` when it's traced).
 /// Public for `tests/json_logs.rs`, which checks this format.
+///
+/// Without traces the filters are global, as they were before traces
+/// existed: per-layer filtering costs a little on every span.
 pub fn json_subscriber<W>(filter: EnvFilter, writer: W) -> impl tracing::Subscriber + Send + Sync
 where
     W: for<'w> MakeWriter<'w> + Send + Sync + 'static,
 {
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(no_trace_spans())
+        .with(json_layer(writer))
+}
+
+/// [`json_subscriber`] with traces. The logs and the traces each have
+/// their own filter: [`log_filter`] and [`otel::layer`]'s.
+pub fn json_subscriber_traced<W>(
+    filter: EnvFilter,
+    writer: W,
+    tracer: SdkTracer,
+) -> impl tracing::Subscriber + Send + Sync
+where
+    W: for<'w> MakeWriter<'w> + Send + Sync + 'static,
+{
+    tracing_subscriber::registry()
+        .with(json_layer(writer).with_filter(log_filter(filter)))
+        .with(otel::layer(tracer))
+}
+
+fn json_layer<S, W>(writer: W) -> impl Layer<S> + Send + Sync
+where
+    S: tracing::Subscriber + for<'a> LookupSpan<'a>,
+    W: for<'w> MakeWriter<'w> + Send + Sync + 'static,
+{
+    tracing_subscriber::fmt::layer()
         .with_target(true)
         .with_writer(writer)
         .json()
         .flatten_event(true)
         .with_current_span(true)
         .with_span_list(false)
-        .finish()
+}
+
+/// What the logs see with traces on: `RUST_LOG`, minus the spans that exist
+/// only for traces ([`otel::SPAN_TARGET`]). A line logged inside one of those
+/// still carries the request span's fields: the current span the formatter
+/// sees skips them.
+fn log_filter<S>(filter: EnvFilter) -> impl Filter<S> + Send + Sync
+where
+    S: tracing::Subscriber + for<'a> LookupSpan<'a>,
+{
+    filter.and(filter_fn(not_trace_only))
+}
+
+/// With traces off, the trace-only spans aren't created at all.
+fn no_trace_spans() -> FilterFn<fn(&tracing::Metadata<'_>) -> bool> {
+    filter_fn(not_trace_only as fn(&tracing::Metadata<'_>) -> bool)
+}
+
+fn not_trace_only(meta: &tracing::Metadata<'_>) -> bool {
+    !(meta.is_span() && meta.target() == otel::SPAN_TARGET)
 }
 
 /// Log every panic through `tracing` at ERROR, then run the previous hook
@@ -494,13 +568,29 @@ fn describe() {
     for result in WAKE_SENT_RESULTS {
         counter!(WAKE_SENT_TOTAL, "result" => result).increment(0);
     }
+    describe_counter!(
+        TRACE_EXPORT_FAILURES_TOTAL,
+        "Trace exports that failed, by reason: their spans are dropped."
+    );
+    for reason in otel::EXPORT_FAILURE_REASONS {
+        counter!(TRACE_EXPORT_FAILURES_TOTAL, "reason" => reason).increment(0);
+    }
 }
 
 // ─── HTTP ────────────────────────────────────────────────
 
 /// Wrap a service's router with, outermost first: the request ID, the HTTP
-/// metrics, and the per-request span. `service` is the `service` label.
+/// metrics, the per-request span, and (inside it) the span's response status
+/// for traces. `service` is the `service` label.
+///
+/// Call it after [`otel::Pipeline::start`]: with tracing off, the response
+/// middleware isn't added at all.
 pub fn instrument(router: Router, service: &'static str) -> Router {
+    let router = if otel::enabled() {
+        router.layer(from_fn(otel::on_response))
+    } else {
+        router
+    };
     router
         .layer(TraceLayer::new_for_http().make_span_with(request_span))
         .layer(from_fn_with_state(service, http_metrics))
@@ -563,20 +653,38 @@ async fn request_id(mut req: Request, next: Next) -> Response {
     response
 }
 
+/// Routes that aren't traced: health checks would be most of the traces.
+const UNTRACED_ROUTES: [&str; 2] = ["/healthz", "/readyz"];
+
 /// The per-request span: every log line a request produces carries these
-/// fields in JSON mode. INFO, so it's on at the prod filter.
+/// fields in JSON mode. INFO, so it's on at the prod filter. With tracing
+/// on, it's also the trace's root (named `{method} {route}`), and its
+/// `trace_id` field puts the trace's id on those log lines.
 fn request_span(req: &Request) -> tracing::Span {
+    let route = route_of(req);
     let request_id = req
         .headers()
         .get(REQUEST_ID_HEADER)
         .and_then(|v| v.to_str().ok())
         .unwrap_or_default();
-    tracing::info_span!(
+    let method = normalize_method(req.method());
+    if !otel::enabled() || UNTRACED_ROUTES.contains(&route) {
+        // For the logs only: without `otel.kind`, the traces layer passes
+        // over this one (otel::layer).
+        return tracing::info_span!("http_request", request_id, method, route);
+    }
+    let name = format!("{method} {route}");
+    let span = tracing::info_span!(
         "http_request",
         request_id,
-        method = normalize_method(req.method()),
-        route = route_of(req),
-    )
+        method,
+        route,
+        trace_id = Empty,
+        otel.name = name.as_str(),
+        otel.kind = "server",
+    );
+    otel::start_server_span(&span, req.headers(), method, route);
+    span
 }
 
 #[cfg(test)]

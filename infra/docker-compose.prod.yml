@@ -150,6 +150,14 @@ services:
       MCP_TOOL_WAIT_SECS: ${MCP_TOOL_WAIT_SECS:-25}
       MCP_MAX_WAITERS: ${MCP_MAX_WAITERS:-200}
       MCP_DIRECTORY_PER_IP_PER_MIN: ${MCP_DIRECTORY_PER_IP_PER_MIN:-60}
+      # Traces (OpenTelemetry over OTLP/HTTP): off unless the endpoint is
+      # set. Empty values mean the server's defaults; older images ignore
+      # them. See docs/self-hosting/observability.md.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-}
+      OTEL_TRACES_SAMPLER: ${OTEL_TRACES_SAMPLER:-}
+      OTEL_TRACES_SAMPLER_ARG: ${OTEL_TRACES_SAMPLER_ARG:-}
       # Caddy, in front, sets X-Forwarded-For to the client's IP: the
       # directory's per-IP limit reads it.
       TRUST_FORWARDED_FOR: "true"

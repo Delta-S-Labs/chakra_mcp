@@ -26,6 +26,8 @@ use crate::inbox_bridge::{
 };
 use crate::policy::{evaluate, Authorized, Decision, DenyReason};
 use crate::state::RelayState;
+use chakramcp_shared::telemetry::otel;
+use tracing::Instrument;
 
 /// `POST /agents/<account_slug>/<agent_slug>/a2a/jsonrpc`
 ///
@@ -73,14 +75,19 @@ async fn handle_send_message(
     headers: &HeaderMap,
     body: Bytes,
 ) -> Response {
-    let decision = evaluate(&state.db, headers, state, account_slug, agent_slug).await;
+    let decision = evaluate(&state.db, headers, state, account_slug, agent_slug)
+        .instrument(otel::stage("a2a.authorize"))
+        .await;
     match decision {
         Decision::Authorized(authz) => {
             // Usage limits (per-account rate + credits), keyed on the caller's
             // account. In-memory only: the credits worker keeps the switch
             // current. In shadow mode a would-block is logged and the call
             // proceeds; when enforcing, it's refused (→ HTTP 429).
-            let limits = state.enforce_limits(authz.caller_account_id, "a2a").await;
+            let limits = state
+                .enforce_limits(authz.caller_account_id, "a2a")
+                .instrument(otel::stage("invoke.limits"))
+                .await;
             if let Some(outcome) = limits.refusal {
                 return limit_deny_response(outcome, state.credits_url.as_deref());
             }
@@ -115,7 +122,10 @@ async fn handle_send_message(
                     input,
                 };
                 if checker.safety_enabled() {
-                    match screen_a2a(checker, subject, &envelope, &body).await {
+                    match screen_a2a(checker, subject, &envelope, &body)
+                        .instrument(otel::stage("invoke.safety"))
+                        .await
+                    {
                         Err(response) => {
                             tracing::info!(
                                 grant_id = %authz.grant_id,
@@ -131,7 +141,11 @@ async fn handle_send_message(
                         }
                     }
                 } else {
-                    match checker.check(&subject).await {
+                    match checker
+                        .check(&subject)
+                        .instrument(otel::stage("invoke.compliance"))
+                        .await
+                    {
                         crate::compliance::Verdict::Deny { reason, report } => {
                             tracing::info!(
                                 grant_id = %authz.grant_id,
@@ -369,6 +383,7 @@ async fn handle_authorized_push(
         trust_snapshot,
         reply_screen,
     )
+    .instrument(otel::stage("a2a.forward"))
     .await
     {
         Ok(ForwardOutcome {
@@ -464,7 +479,10 @@ async fn handle_authorized_pull(
         consent,
         trust_snapshot,
         (&state.invocations, human_in_loop),
-    ).await {
+    )
+    .instrument(otel::stage("a2a.park"))
+    .await
+    {
         Ok(mut parked) => {
             // Parked for a pull agent: whether it's around (waking pull
             // agents §8).

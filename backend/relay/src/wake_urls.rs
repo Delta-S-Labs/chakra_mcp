@@ -24,6 +24,7 @@ use std::time::Duration;
 use chakramcp_shared::error::ApiError;
 use chakramcp_shared::hosting::{env_value, parse_bool};
 use chakramcp_shared::telemetry::names::WAKE_SENT_TOTAL;
+use chakramcp_shared::telemetry::otel;
 use chakramcp_shared::wake::Feed;
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, KeyInit, Mac};
@@ -222,7 +223,7 @@ async fn send(
             signature(&target.secret, Utc::now().timestamp(), &body),
         );
     }
-    match request.body(body).send().await {
+    match otel::send(request.body(body), "wake.ping").await {
         Ok(response) if response.status().is_success() => PingResult {
             ok: true,
             status: Some(response.status().as_u16()),

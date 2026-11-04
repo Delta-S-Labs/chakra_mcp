@@ -12,6 +12,8 @@ use uuid::Uuid;
 
 use chakramcp_shared::error::ApiError;
 use chakramcp_shared::jwt;
+use chakramcp_shared::telemetry::otel;
+use tracing::Instrument;
 
 use crate::state::RelayState;
 
@@ -49,6 +51,7 @@ impl FromRequestParts<RelayState> for AuthUser {
             .get(axum::http::header::AUTHORIZATION)
             .and_then(|v| v.to_str().ok());
         authenticate(state, header)
+            .instrument(otel::stage("auth"))
             .await
             .ok_or(ApiError::Unauthorized)
     }

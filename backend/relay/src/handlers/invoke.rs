@@ -66,6 +66,8 @@ use uuid::Uuid;
 
 use chakramcp_shared::error::{ApiError, ApiResult};
 use chakramcp_shared::safety::{self, Safety};
+use chakramcp_shared::telemetry::otel;
+use tracing::Instrument;
 
 use crate::auth::{user_is_member, AuthUser};
 use crate::compliance;
@@ -667,6 +669,8 @@ pub(crate) async fn start(
     // Refuse a too-short `expires_in` before anything is recorded; the
     // capability's kind sets the most it may be, below.
     state.invocations.ttl(false, opts.expires_in)?;
+    let stage = otel::stage("invoke");
+    otel::attribute(&stage, "agent.caller.id", as_agent.to_string());
     match target {
         Target::Grant(grant_id) => {
             authorize_and_enqueue_trusted(
@@ -680,6 +684,7 @@ pub(crate) async fn start(
                 opts.call,
                 opts.expires_in,
             )
+            .instrument(stage)
             .await
         }
         Target::Public(capability_id) => {
@@ -694,6 +699,7 @@ pub(crate) async fn start(
                 opts.call,
                 opts.expires_in,
             )
+            .instrument(stage)
             .await
         }
         Target::Named { .. } => unreachable!("named targets resolve to a grant or a capability"),
@@ -850,6 +856,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
         grant_id,
     )
     .fetch_optional(&state.db)
+    .instrument(otel::stage("invoke.load_grant"))
     .await?
     .ok_or(ApiError::NotFound)?;
 
@@ -959,6 +966,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
     // retry hint. An allowed call carries its signals back to the caller.
     let decision = state
         .enforce_limits(row.grantee_account_id, limits_source)
+        .instrument(otel::stage("invoke.limits"))
         .await;
     if let Some(refusal) = decision.refusal {
         return Err(state.refusal_error(refusal));
@@ -1022,6 +1030,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
         purpose.as_deref(),
         Some(&row.capability_input_schema),
     )
+    .instrument(otel::stage("invoke.safety"))
     .await?;
     match screened {
         Some(screened) => {
@@ -1069,7 +1078,10 @@ pub(crate) async fn authorize_and_enqueue_trusted(
             }
             safety = found;
         }
-        None => match system_one_check(state, &subject).await {
+        None => match system_one_check(state, &subject)
+            .instrument(otel::stage("invoke.compliance"))
+            .await
+        {
             Ok(None) => {}
             Ok(Some(report)) => compliance::attach_report(&mut trust_snapshot, report),
             Err((reason, report)) => {
@@ -1132,6 +1144,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
             },
             gate,
         )
+        .instrument(otel::stage("invoke.consent"))
         .await?;
         return Ok(match enqueued {
             Enqueued::Covered { consent_request_id } => Outcome::Enqueued {
@@ -1179,6 +1192,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
         ttl_secs,
     )
     .execute(&state.db)
+    .instrument(otel::stage("invoke.enqueue"))
     .await?;
     state.wake.notify(
         row.granter_agent_id,
@@ -1242,6 +1256,7 @@ pub(crate) async fn authorize_and_enqueue_public(
         capability_id,
     )
     .fetch_optional(&state.db)
+    .instrument(otel::stage("invoke.load_capability"))
     .await?
     .ok_or(ApiError::NotFound)?;
 
@@ -1332,6 +1347,7 @@ pub(crate) async fn authorize_and_enqueue_public(
     // and proceeds; enforcing returns 429 with an `account_*` code.
     let decision = state
         .enforce_limits(invoker.account_id, limits_source)
+        .instrument(otel::stage("invoke.limits"))
         .await;
     if let Some(refusal) = decision.refusal {
         return Err(state.refusal_error(refusal));
@@ -1360,6 +1376,7 @@ pub(crate) async fn authorize_and_enqueue_public(
         purpose.as_deref(),
         Some(&cap.input_schema),
     )
+    .instrument(otel::stage("invoke.safety"))
     .await?;
     let mut safety = None;
     let trust_snapshot = if let Some(screened) = screened {
@@ -1408,7 +1425,10 @@ pub(crate) async fn authorize_and_enqueue_public(
         safety = found;
         Some(snapshot)
     } else {
-        match system_one_check(state, &subject).await {
+        match system_one_check(state, &subject)
+            .instrument(otel::stage("invoke.compliance"))
+            .await
+        {
             Ok(report) => report.map(|r| serde_json::json!({ "system_one": r })),
             Err((reason, report)) => {
                 let id = record_terminal(
@@ -1474,6 +1494,7 @@ pub(crate) async fn authorize_and_enqueue_public(
             },
             gate,
         )
+        .instrument(otel::stage("invoke.consent"))
         .await?;
         return Ok(match enqueued {
             Enqueued::Covered { consent_request_id } => Outcome::Enqueued {
@@ -1520,6 +1541,7 @@ pub(crate) async fn authorize_and_enqueue_public(
         ttl_secs,
     )
     .execute(&state.db)
+    .instrument(otel::stage("invoke.enqueue"))
     .await?;
     state.wake.notify(
         cap.granter_agent_id,
@@ -1568,11 +1590,15 @@ pub async fn inbox(
     state.heartbeats.record(q.agent_id);
     let lease = state.invocations.lease(q.lease_secs);
 
+    let claim = otel::stage("inbox.claim");
     let (ids, waited) =
         crate::inbox_wait::claim_waiting(&state, q.agent_id, Feed::Invocations, q.wait, || {
             claim_invocations(&state.db, q.agent_id, limit, user.user_id, lease)
         })
+        .instrument(claim.clone())
         .await?;
+    otel::attribute(&claim, "inbox.items", ids.len() as i64);
+    otel::attribute(&claim, "inbox.waited_secs", i64::from(waited));
     let header = crate::inbox_wait::wait_header(waited);
     if ids.is_empty() {
         return Ok((header, Json(vec![])));

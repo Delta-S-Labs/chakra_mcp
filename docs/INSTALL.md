@@ -343,8 +343,10 @@ docker run --rm -p 8080:8080 -p 8090:8090 \
 Multi-arch (linux/amd64 + linux/arm64), runs as uid 10001, applies
 migrations on start, and serves the app on 8080 and the relay on 8090.
 Set `METRICS_ADDR=0.0.0.0:9464` for Prometheus metrics (keep that port
-private) and `LOG_FORMAT=json` for structured logs. Images carry build
-provenance and an SBOM.
+private), `LOG_FORMAT=json` for structured logs, and
+`OTEL_EXPORTER_OTLP_ENDPOINT` to send traces to an OpenTelemetry
+collector ([observability](./self-hosting/observability.md#tracing)).
+Images carry build provenance and an SBOM.
 
 ### Docker Compose (with TLS, and optional observability)
 
