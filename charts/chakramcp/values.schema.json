@@ -103,6 +103,35 @@
         }
       }
     },
+    "tracing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "endpoint": {
+          "type": "string",
+          "pattern": "^(|https?://.+)$"
+        },
+        "sampler": {
+          "type": "string",
+          "enum": [
+            "",
+            "always_on",
+            "always_off",
+            "traceidratio",
+            "parentbased_always_on",
+            "parentbased_always_off",
+            "parentbased_traceidratio"
+          ]
+        },
+        "samplerArg": {
+          "type": "string",
+          "pattern": "^(|0(\\.[0-9]+)?|1(\\.0+)?)$"
+        },
+        "headersSecret": {
+          "type": "string"
+        }
+      }
+    },
     "service": {
       "type": "object",
       "properties": {

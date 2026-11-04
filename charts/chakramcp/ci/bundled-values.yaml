@@ -1,6 +1,7 @@
 # `ct install`: the bundled observability stack (without volumes, to keep
 # CI light). Its helm test checks that the server is scraped, its logs reach
-# Loki, and Grafana has the dashboards and alert rules.
+# Loki, a request's trace reaches Tempo, and Grafana has the dashboards and
+# alert rules.
 image:
   pullPolicy: IfNotPresent
 observability:
@@ -20,3 +21,14 @@ loki:
 grafana:
   persistence:
     enabled: false
+# Tempo's root filesystem is read-only: /var/tempo is an emptyDir instead.
+tempo:
+  persistence:
+    enabled: false
+  tempo:
+    extraVolumeMounts:
+      - name: tempo-data
+        mountPath: /var/tempo
+  extraVolumes:
+    - name: tempo-data
+      emptyDir: {}

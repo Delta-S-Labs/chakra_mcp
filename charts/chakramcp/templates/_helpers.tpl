@@ -139,3 +139,11 @@ name alone when it already contains the chart's name. */}}
 {{- else }}{{ printf "%s-%s" $root.Release.Name $chart | trunc 63 | trimSuffix "-" }}
 {{- end }}
 {{- end }}
+
+{{/* Where the server sends its traces: tracing.endpoint, else the bundled
+Tempo, else nothing (tracing off). */}}
+{{- define "chakramcp.tracingEndpoint" -}}
+{{- if .Values.tracing.endpoint }}{{ .Values.tracing.endpoint }}
+{{- else if .Values.observability.bundled.enabled }}{{ printf "http://%s:4318" (include "chakramcp.subchartFullname" (list . "tempo")) }}
+{{- end }}
+{{- end }}

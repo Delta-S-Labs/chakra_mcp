@@ -147,6 +147,25 @@ spec:
             - name: METRICS_ADDR
               value: {{ printf "0.0.0.0:%v" .Values.metrics.port | quote }}
             {{- end }}
+            {{- with include "chakramcp.tracingEndpoint" . }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.tracing.sampler }}
+            - name: OTEL_TRACES_SAMPLER
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.tracing.samplerArg }}
+            - name: OTEL_TRACES_SAMPLER_ARG
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.tracing.headersSecret }}
+            - name: OTEL_EXPORTER_OTLP_HEADERS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . }}
+                  key: OTEL_EXPORTER_OTLP_HEADERS
+            {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

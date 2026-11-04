@@ -3,9 +3,11 @@
 {{- $grafana := include "chakramcp.subchartFullname" (list . "grafana") }}
 {{- $prometheus := printf "%s-server" (include "chakramcp.subchartFullname" (list . "prometheus")) }}
 {{- $loki := include "chakramcp.subchartFullname" (list . "loki") }}
-# `helm test`, bundled stack: the server is scraped and its logs reach Loki,
-# and Grafana has the dashboards and alert rules. Retries for up to 3
-# minutes while the first scrapes and log batches land.
+{{- $tempo := include "chakramcp.subchartFullname" (list . "tempo") }}
+# `helm test`, bundled stack: the server is scraped, its logs reach Loki and
+# a request's trace reaches Tempo, and Grafana has the dashboards and alert
+# rules. Retries for up to 3 minutes while the first scrapes, log batches
+# and span batches land.
 apiVersion: v1
 kind: Pod
 metadata:
@@ -58,6 +60,16 @@ spec:
           build_info() { prometheus_has chakramcp_build_info '"version"'; }
           relay_logs() { wget -qO- "http://{{ $loki }}:3100/loki/api/v1/label/level/values" | grep -q '"info"'; }
           dashboard() { grafana "/api/dashboards/uid/$1"; }
+          # One request's trace id (ChakraMCP-Trace-Id), then that trace in
+          # Tempo. A missing header fails: the server traces to Tempo here.
+          trace_id=
+          relay_trace() {
+            trace_id=$(wget -S -O /dev/null "http://{{ $fullname }}:{{ .Values.service.relayPort }}/v1/discovery/featured" 2>&1 \
+              | awk 'tolower($1) == "chakramcp-trace-id:" {print $2; exit}')
+            [ -n "$trace_id" ]
+          }
+          in_tempo() { wget -qO- "http://{{ $tempo }}:3200/api/v2/traces/$trace_id" | grep -q 'GET /v1/discovery/featured'; }
+          tempo_datasource() { grafana /api/datasources/uid/tempo/health | grep -q '"OK"'; }
           five_rules() { [ "$(grafana /api/v1/provisioning/alert-rules | grep -o '"uid"' | wc -l)" -eq 5 ]; }
 
           retry 'Prometheus: up{job="chakramcp"} == 1' scraped
@@ -66,6 +78,9 @@ spec:
           retry 'Grafana: Overview dashboard' dashboard chakramcp-overview
           retry 'Grafana: Logs dashboard' dashboard chakramcp-logs
           retry 'Grafana: 5 alert rules' five_rules
+          retry 'Relay: names its trace' relay_trace
+          retry "Tempo: has trace $trace_id" in_tempo
+          retry 'Grafana: Tempo datasource' tempo_datasource
       securityContext:
         {{- toYaml .Values.securityContext | nindent 8 }}
 {{- end }}
