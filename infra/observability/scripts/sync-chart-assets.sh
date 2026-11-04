@@ -9,7 +9,9 @@
 # - Dashboards: Overview (plus a variant without its Loki panel, for a
 #   Grafana without Loki) and Logs. Infrastructure stays Compose-only.
 # - Alert rules: only those that work on Kubernetes (design §5.3), in two
-#   files: rules.yaml, and rules-logs.yaml (the Loki-backed group).
+#   files: rules.yaml, and rules-logs.yaml (the Loki-backed group). It also
+#   checks that the chart's PrometheusRule (charts/chakramcp/alerting/,
+#   hand-written PromQL) has one alert for each of them.
 # - The alert message template and the channel files, for the bundled
 #   Grafana.
 set -euo pipefail
@@ -84,6 +86,14 @@ for group in rules["groups"]:
     kept = [r for r in group["rules"] if r["uid"] in K8S_RULES]
     if kept:
         core.append(dict(group, rules=kept))
+# The chart's PrometheusRule (charts/chakramcp/alerting/, written by hand
+# in PromQL) must carry the same alerts: one per Kubernetes rule, matched
+# by its uid label.
+prom_rules = yaml.safe_load(read(os.path.join(repo, "charts/chakramcp/alerting/prometheus-rules.yaml")))
+prom_uids = [r.get("labels", {}).get("uid") for g in prom_rules["groups"] for r in g["rules"]]
+if sorted(prom_uids) != sorted(K8S_RULES):
+    sys.exit(f"charts/chakramcp/alerting/prometheus-rules.yaml has uids {sorted(map(str, prom_uids))}, "
+             f"expected one alert each for {sorted(K8S_RULES)}")
 write(os.path.join(out, "alerting/rules.yaml"), dump_yaml({"apiVersion": 1, "groups": core}, "provisioning/alerting/rules.yml"))
 write(os.path.join(out, "alerting/rules-logs.yaml"), dump_yaml({"apiVersion": 1, "groups": logs}, "provisioning/alerting/rules.yml"))
 

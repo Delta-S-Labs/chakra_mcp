@@ -242,9 +242,23 @@ For kube-prometheus-stack or anything like it, the chart renders:
   Compose-only; on Kubernetes, the cluster's own dashboards cover nodes
   and pods. So are Revenue, Activation and House agents, which read
   Postgres directly.
-- **Alert rules**: a ConfigMap labelled `grafana_alert: "1"`.
-  kube-prometheus-stack's alerts sidecar is **off** by default and only
-  watches Grafana's namespace, so turn it on and let it see the rules:
+- **A PrometheusRule**, when the Prometheus Operator's API exists: the
+  alerts for your Prometheus and Alertmanager, which route them. Like
+  ServiceMonitors, kube-prometheus-stack only selects rules that carry
+  its release label:
+
+  ```yaml
+  observability:
+    prometheusRule:
+      labels:
+        release: kube-prometheus-stack
+  ```
+
+  It has every alert below except the error-log spike, which reads Loki.
+- **Grafana alert rules**: a ConfigMap labelled `grafana_alert: "1"`, for
+  alerting from Grafana instead. kube-prometheus-stack's alerts sidecar is
+  **off** by default and only watches Grafana's namespace, so turn it on
+  and let it see the rules:
 
   ```yaml
   # kube-prometheus-stack values
@@ -258,12 +272,17 @@ For kube-prometheus-stack or anything like it, the chart renders:
   Alternatively, set `observability.alertRules.namespace` to Grafana's
   namespace. Your Grafana's notification policies route the alerts.
 
-Only the rules that work on Kubernetes are shipped:
+  If Grafana loads these rules and Prometheus selects the PrometheusRule,
+  each alert fires twice: turn one off with
+  `observability.alertRules.enabled` or
+  `observability.prometheusRule.enabled`.
+
+Only the alerts that work on Kubernetes are shipped:
 - backend down;
 - a high 5xx ratio;
 - the credit switches going stale;
 - the credit queue backing up;
-- with Loki, the error-log spike.
+- with Loki, the error-log spike (Grafana only).
 
 The host, Postgres and certificate rules need Compose's exporters and
 probes.

@@ -5,6 +5,9 @@ observability:
   serviceMonitor:
     labels:
       release: kube-prometheus-stack
+  prometheusRule:
+    labels:
+      release: kube-prometheus-stack
   loki:
     enabled: true
   datasources:

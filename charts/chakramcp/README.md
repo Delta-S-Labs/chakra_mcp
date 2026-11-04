@@ -67,6 +67,7 @@ non-root user with a read-only root filesystem.
 | `redis.image.*`, `redis.maxmemory`, `redis.resources` | `redis:7-alpine`, `128mb`, … | |
 | `externalRedis.url` | `""` | With `redis.enabled=false`. Without any Redis, rate limiting fails open. |
 | `observability.serviceMonitor.enabled`, `.labels`, `.interval` | `true`, `{}`, `15s` | A ServiceMonitor, rendered only when the Prometheus Operator's API exists. kube-prometheus-stack needs `labels: {release: <its release>}`. |
+| `observability.prometheusRule.enabled`, `.labels` | `true`, `{}` | The alerts as a PrometheusRule, for the operator's Prometheus and Alertmanager; rendered only when its API exists. kube-prometheus-stack needs `labels: {release: <its release>}`. Turn it or `alertRules` off if your Grafana loads both. |
 | `observability.dashboards.enabled`, `.labels`, `.namespace` | `true`, `grafana_dashboard: "1"`, the release's | Dashboard ConfigMaps for Grafana's sidecar |
 | `observability.alertRules.enabled`, `.labels`, `.namespace` | `true`, `grafana_alert: "1"`, the release's | The Kubernetes alert rules, for Grafana's alerts sidecar |
 | `observability.loki.enabled` | `false` | Your Grafana has a Loki with the chart's log labels: adds the Logs dashboard and the log rule. Implied by `bundled`. |

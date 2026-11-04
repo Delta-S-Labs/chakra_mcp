@@ -1,0 +1,148 @@
+# promtool test rules alerting/prometheus-rules.test.yaml (chart CI runs it):
+# each alert fires at its Grafana twin's threshold, and not below it.
+rule_files:
+  - prometheus-rules.yaml
+evaluation_interval: 1m
+
+tests:
+  # The scrape fails at 2m: pending at 3m, firing from 4m.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="chakramcp", instance="a"}'
+        values: '1 1 0 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: ChakraMCPBackendDown
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: ChakraMCPBackendDown
+        exp_alerts:
+          - exp_labels: { severity: critical, uid: backend-down, job: chakramcp, instance: a }
+            exp_annotations:
+              summary: The ChakraMCP server's metrics scrape is failing.
+
+  # Never scraped at all.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="other"}'
+        values: '1x5'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: ChakraMCPBackendDown
+        exp_alerts:
+          - exp_labels: { severity: critical, uid: backend-down, job: chakramcp }
+            exp_annotations:
+              summary: The ChakraMCP server's metrics scrape is failing.
+
+  # 1 req/s, 0.06/s of it 5xx: 5.7%, over 5%.
+  - interval: 1m
+    input_series:
+      - series: 'chakramcp_http_requests_total{status="200"}'
+        values: '0+60x15'
+      - series: 'chakramcp_http_requests_total{status="500"}'
+        values: '0+3.6x15'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ChakraMCPHigh5xxRatio
+        exp_alerts:
+          - exp_labels: { severity: critical, uid: high-5xx-ratio }
+            exp_annotations:
+              summary: More than 5% of requests are failing with 5xx (5.66%).
+
+  # 0.04/s of 1 req/s: 3.8%, under 5%.
+  - interval: 1m
+    input_series:
+      - series: 'chakramcp_http_requests_total{status="200"}'
+        values: '0+60x15'
+      - series: 'chakramcp_http_requests_total{status="500"}'
+        values: '0+2.4x15'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ChakraMCPHigh5xxRatio
+        exp_alerts: []
+
+  # Half the requests fail, but at 0.07 req/s: too little traffic to alert.
+  - interval: 1m
+    input_series:
+      - series: 'chakramcp_http_requests_total{status="200"}'
+        values: '0+2x15'
+      - series: 'chakramcp_http_requests_total{status="500"}'
+        values: '0+2x15'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ChakraMCPHigh5xxRatio
+        exp_alerts: []
+
+  # Last refreshed at 0, stale after 120 s: over the limit from 3m, firing
+  # from 5m.
+  - interval: 1m
+    input_series:
+      - series: 'chakramcp_credits_switches_last_refresh_timestamp_seconds{job="chakramcp", instance="a"}'
+        values: '0x10'
+      - series: 'chakramcp_credits_stale_after_seconds{job="chakramcp", instance="a"}'
+        values: '120x10'
+      - series: 'chakramcp_credits_switches_stale{job="chakramcp", instance="a"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: ChakraMCPCreditSwitchesStale
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: ChakraMCPCreditSwitchesStale
+        exp_alerts: &stale
+          - exp_labels: { severity: critical, uid: credit-switches-stale }
+            exp_annotations:
+              summary: "The credit switches are stale: nobody is blocked (fail open) until a refresh succeeds."
+
+  # Refreshed every minute: fine. Then the worker says it's stale.
+  - interval: 1m
+    input_series:
+      - series: 'chakramcp_credits_switches_last_refresh_timestamp_seconds{job="chakramcp", instance="a"}'
+        values: '0+60x10'
+      - series: 'chakramcp_credits_stale_after_seconds{job="chakramcp", instance="a"}'
+        values: '120x10'
+      - series: 'chakramcp_credits_switches_stale{job="chakramcp", instance="a"}'
+        values: '0 0 0 0 1 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: ChakraMCPCreditSwitchesStale
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: ChakraMCPCreditSwitchesStale
+        exp_alerts: *stale
+
+  # No switch metrics at all.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="chakramcp", instance="a"}'
+        values: '1x5'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: ChakraMCPCreditSwitchesStale
+        exp_alerts: *stale
+
+  # 5,001 charges queued: firing after 15m, not before.
+  - interval: 1m
+    input_series:
+      - series: 'chakramcp_credits_queue_depth{job="chakramcp", instance="a"}'
+        values: '5001x20'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: ChakraMCPCreditQueueBacklog
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: ChakraMCPCreditQueueBacklog
+        exp_alerts:
+          - exp_labels: { severity: warning, uid: credit-queue-backlog }
+            exp_annotations:
+              summary: "5.001k credit charges are queued; the worker is falling behind."
+
+  # 5,000 is the limit itself: no alert.
+  - interval: 1m
+    input_series:
+      - series: 'chakramcp_credits_queue_depth{job="chakramcp", instance="a"}'
+        values: '5000x20'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: ChakraMCPCreditQueueBacklog
+        exp_alerts: []
