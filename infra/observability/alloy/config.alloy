@@ -167,6 +167,7 @@ prometheus.scrape "stack" {
 			{"__address__" = "prometheus:9090", "job" = "prometheus"},
 			{"__address__" = "loki:3100", "job" = "loki"},
 			{"__address__" = "grafana:3000", "job" = "grafana"},
+			{"__address__" = "tempo:3200", "job" = "tempo"},
 		],
 	)
 	job_name        = "alloy"
@@ -185,7 +186,7 @@ prometheus.relabel "stack" {
 
 	rule {
 		source_labels = ["__name__"]
-		regex         = "up|process_(resident_memory_bytes|cpu_seconds_total|start_time_seconds)|go_memstats_heap_inuse_bytes|alloy_build_info|alloy_config_last_load_successful|alloy_component_controller_running_components|prometheus_remote_storage_(samples_failed_total|samples_pending)|prometheus_tsdb_head_series|prometheus_config_last_reload_successful|loki_ingester_memory_streams|loki_distributor_lines_received_total|loki_write_dropped_entries_total|grafana_build_info|grafana_alerting_notification_latency_seconds_count|grafana_alerting_notifications_failed_total|grafana_alerting_notifications_total"
+		regex         = "up|process_(resident_memory_bytes|cpu_seconds_total|start_time_seconds)|go_memstats_heap_inuse_bytes|alloy_build_info|alloy_config_last_load_successful|alloy_component_controller_running_components|prometheus_remote_storage_(samples_failed_total|samples_pending)|prometheus_tsdb_head_series|prometheus_config_last_reload_successful|loki_ingester_memory_streams|loki_distributor_lines_received_total|loki_write_dropped_entries_total|grafana_build_info|grafana_alerting_notification_latency_seconds_count|grafana_alerting_notifications_failed_total|grafana_alerting_notifications_total|tempo_build_info|tempo_distributor_spans_received_total|tempo_discarded_spans_total"
 		action        = "keep"
 	}
 	forward_to = [prometheus.remote_write.local.receiver]

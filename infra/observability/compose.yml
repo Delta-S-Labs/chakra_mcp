@@ -1,5 +1,5 @@
-# The observability stack — Prometheus (metrics), Loki (logs), Alloy (the
-# collector) and Grafana (dashboards and alerts). Designs:
+# The observability stack — Prometheus (metrics), Loki (logs), Tempo
+# (traces), Alloy (the collector) and Grafana (dashboards and alerts). Designs:
 # docs/superpowers/specs/2026-09-29-observability-phase1-design.md and
 # 2026-09-29-self-hosting-phase2-design.md; guide: docs/self-hosting/.
 #
@@ -122,6 +122,26 @@ services:
       - loki_data:/loki
     networks: [observability]
 
+  # Stores traces (7 days): the relay sends them over OTLP/HTTP when .env sets
+  # OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318. On the internal network
+  # for the relay; Grafana queries it on :3200. It can't reload its config:
+  # deploy.sh recreates it when tempo/ changes.
+  tempo:
+    image: grafana/tempo:3.1.1
+    restart: unless-stopped
+    logging: *logging
+    command: ["-config.file=/etc/tempo/tempo.yml"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    mem_limit: 192m
+    environment:
+      GOMEMLIMIT: 160MiB
+    volumes:
+      - ./observability/tempo:/etc/tempo:ro
+      - tempo_data:/var/tempo
+    networks: [internal, observability]
+
   # Dashboards and alerting. The only piece reachable from outside, through
   # Caddy at GRAFANA_DOMAIN. On the internal network too, for the Postgres
   # dashboards' read-only login (the collector's chakramcp_monitor). Sign-in: the admin login form by default, plus
@@ -229,4 +249,5 @@ volumes:
   alloy_data:
   prometheus_data:
   loki_data:
+  tempo_data:
   grafana_data:

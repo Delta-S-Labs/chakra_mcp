@@ -21,7 +21,7 @@ import sys
 import yaml
 
 ROOT = os.path.join(os.path.dirname(__file__), "..", "grafana")
-DATASOURCE_UIDS = {"prometheus", "loki", "postgres"}
+DATASOURCE_UIDS = {"prometheus", "loki", "postgres", "tempo"}
 SPECIAL = {"-- Grafana --", "__expr__", "grafana", None}
 errors = []
 
