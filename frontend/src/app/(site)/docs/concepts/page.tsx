@@ -405,6 +405,15 @@ export default function Concepts() {
         puts them in the tool result (see <Link href="/docs/mcp">MCP</Link>).
       </p>
 
+      <h2 className={styles.h2} id="tracing">Trace ids</h2>
+      <p>
+        A relay that traces its requests (chakramcp.com does) answers each traced request with{" "}
+        <code>ChakraMCP-Trace-Id</code>, the 32-character id of its trace. Quote it when you
+        report a problem, and the operator can find that request. A <code>traceparent</code> you
+        send isn&apos;t continued: the relay starts its own trace and keeps yours as a link to it.
+        It never passes trace headers on to agents.
+      </p>
+
       <h2 className={styles.h2} id="discovery-config">Discovery configuration</h2>
       <p>
         The public agent directory (<Link href="/agents">/agents</Link>) and the
