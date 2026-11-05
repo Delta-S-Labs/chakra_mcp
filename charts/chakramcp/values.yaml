@@ -60,6 +60,20 @@ metrics:
   enabled: true
   port: 9464
 
+# Traces (OpenTelemetry over OTLP/HTTP). Guide:
+# docs/self-hosting/observability.md#tracing.
+tracing:
+  # Your collector's base URL, e.g. http://tempo.monitoring:4318. Empty:
+  # the bundled Tempo with observability.bundled.enabled, else tracing off.
+  endpoint: ""
+  # always_on, always_off or traceidratio; empty is traceidratio.
+  sampler: ""
+  # The share of requests traced, e.g. "0.1"; empty is all of them.
+  samplerArg: ""
+  # A Secret whose OTEL_EXPORTER_OTLP_HEADERS key holds a hosted backend's
+  # auth headers, e.g. Authorization=Basic%20….
+  headersSecret: ""
+
 service:
   type: ClusterIP
   appPort: 8080
@@ -332,6 +346,77 @@ loki:
   resultsCache:
     enabled: false
 
+# Trace storage: one Tempo (one process), on its volume, for 7 days. Its
+# config is the Compose stack's (infra/observability/tempo/tempo.yml): keep
+# the two in step. Replacing the whole config is the only way to drop the
+# subchart's default Jaeger and gRPC receivers (a null doesn't reach them).
+tempo:
+  tempo:
+    reportingEnabled: false
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        memory: 256Mi
+    extraEnv:
+      - name: GOMEMLIMIT
+        value: 200MiB
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: [ALL]
+  # The restricted Pod Security profile, like the rest of the chart.
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  # /var/tempo: traces and their write-ahead log.
+  persistence:
+    enabled: true
+    size: 4Gi
+  tempoQuery:
+    enabled: false
+  config: |
+    stream_over_http_enabled: false
+    multitenancy_enabled: false
+    usage_report:
+      reporting_enabled: false
+    memberlist:
+      cluster_label: "{{ .Release.Name }}.{{ .Release.Namespace }}"
+    server:
+      http_listen_port: 3200
+      log_level: warn
+    distributor:
+      receivers:
+        otlp:
+          protocols:
+            http:
+              endpoint: 0.0.0.0:4318
+    backend_scheduler:
+      provider:
+        compaction:
+          compaction:
+            block_retention: 168h
+    backend_worker:
+      backend_scheduler_addr: 127.0.0.1:9095
+      compaction:
+        block_retention: 168h
+    querier:
+      frontend_worker:
+        frontend_address: 127.0.0.1:9095
+    storage:
+      trace:
+        backend: local
+        local:
+          path: /var/tempo/traces
+        wal:
+          path: /var/tempo/wal
+
 # Dashboards and alerting. Sign-in: the admin (admin.existingSecret for
 # GitOps) plus any provider set in grafana.ini, e.g. auth.github; see
 # docs/self-hosting/observability.md.
@@ -356,6 +441,29 @@ grafana:
           type: loki
           url: http://{{ if contains "loki" .Release.Name }}{{ .Release.Name }}{{ else }}{{ .Release.Name }}-loki{{ end }}:3100
           access: proxy
+          jsonData:
+            # A traced request's log lines carry its trace_id: a link to the
+            # trace. ($$ is a literal $: Grafana expands env vars here.)
+            derivedFields:
+              - name: trace_id
+                matcherRegex: '"trace_id":"(\w{32})"'
+                datasourceUid: tempo
+                url: "$${__value.raw}"
+        # The server's traces; a span links to its request's log lines.
+        - name: Tempo
+          uid: tempo
+          type: tempo
+          url: http://{{ if contains "tempo" .Release.Name }}{{ .Release.Name }}{{ else }}{{ .Release.Name }}-tempo{{ end }}:3200
+          access: proxy
+          jsonData:
+            tracesToLogsV2:
+              datasourceUid: loki
+              spanStartTimeShift: -1m
+              spanEndTimeShift: 1m
+              filterByTraceID: false
+              filterBySpanID: false
+              customQuery: true
+              query: '{service="relay"} |= "$${__trace.traceId}"'
   sidecar:
     dashboards:
       enabled: true

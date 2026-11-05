@@ -46,6 +46,9 @@ non-root user with a read-only root filesystem.
 | `secrets.existingSecret` | `""` | A Secret whose keys all become environment variables: `JWT_SECRET` (required), plus optional ones such as `TYPESAFE_AI_KEY`. Unset: `JWT_SECRET` is generated once and kept. |
 | `extraEnv`, `extraEnvFrom` | `[]` | More environment for the server, e.g. `USAGE_RETENTION_DAYS` (days of usage events to keep, default 90; `0` keeps them forever), or the System One switches (`SYSTEM_ONE_CHECKS`, `SYSTEM_ONE_SAFETY`, with `TYPESAFE_AI_KEY` from a secret), or calls (on by default; `CALLS_ENABLED=false` turns them off; the limits `CALLS_MAX_TTL_DAYS`, `CALLS_DEFAULT_TTL_DAYS`, `CALLS_MAX_ACTIVE_PER_AGENT`, `CALLS_MAX_MESSAGES`; call memory with `CALLS_MEMORY_ENABLED`, `CALLS_TAG_THRESHOLD` and `CALLS_MEMORY_MC_PER_1K_TOKENS`, using `TYPESAFE_AI_KEY`), or MCP's public directory and agent endpoints (`MCP_AGENTS_ENABLED`, on by default with `DISCOVERY_V2`; `MCP_TOOL_WAIT_SECS`, `MCP_MAX_WAITERS`, `MCP_DIRECTORY_PER_IP_PER_MIN`; `TRUST_FORWARDED_FOR=true` when your ingress sets `X-Forwarded-For` to the client IP), or `OUTBOUND_ALLOW_PRIVATE=false` to stop the relay calling push agents on private addresses (on by default; set it off when untrusted users can register agents, since the relay pod can reach the cluster network), or the inbox pulls' longest wait and how many may wait at once (`INBOX_MAX_WAIT_SECS`, default 25; `INBOX_MAX_WAITERS`, default 2000; keep your ingress read timeout above the wait), or how long a claim holds and how long a call may wait to be answered (`CLAIM_LEASE_SECS`, default 600; `INVOCATION_DEFAULT_TTL`, default `24h`; `INVOCATION_HITL_TTL`, default `7d`), or `WAKE_URLS_ENABLED=false` to stop pinging pull agents' wake URLs (on by default; pings go through the same outbound guard) |
 | `metrics.enabled`, `metrics.port` | `true`, `9464` | Prometheus metrics on their own port, never on the Ingress |
+| `tracing.endpoint` | `""` | Your OTLP/HTTP collector's base URL for the server's traces. Empty: the bundled Tempo with `observability.bundled.enabled`, else tracing off. |
+| `tracing.sampler`, `.samplerArg` | `""`, `""` | `always_on`, `always_off` or `traceidratio`, and its ratio. Empty: every request. |
+| `tracing.headersSecret` | `""` | A Secret whose `OTEL_EXPORTER_OTLP_HEADERS` key holds a hosted backend's auth headers |
 | `service.type`, `service.appPort`, `service.relayPort` | `ClusterIP`, `8080`, `8090` | |
 | `ingress.enabled`, `ingress.className`, `ingress.annotations` | `false`, `""`, `{}` | E.g. `cert-manager.io/cluster-issuer` for TLS |
 | `ingress.hosts.app`, `ingress.hosts.relay` | `""` | Both required with an Ingress. The app host routes to 8080; the relay host (and MCP at `/mcp`) to 8090. |
@@ -72,7 +75,7 @@ non-root user with a read-only root filesystem.
 | `observability.alertRules.enabled`, `.labels`, `.namespace` | `true`, `grafana_alert: "1"`, the release's | The Kubernetes alert rules, for Grafana's alerts sidecar |
 | `observability.loki.enabled` | `false` | Your Grafana has a Loki with the chart's log labels: adds the Logs dashboard and the log rule. Implied by `bundled`. |
 | `observability.datasources.prometheus`, `.loki` | `prometheus`, `loki` | Your datasources' UIDs |
-| `observability.bundled.enabled` | `false` | Install Prometheus, Loki, Grafana and Alloy with the chart |
+| `observability.bundled.enabled` | `false` | Install Prometheus, Loki, Tempo, Grafana and Alloy with the chart |
 | `observability.alertChannel` | `none` | Bundled Grafana: `none`, `telegram`, `slack`, `email` or `webhook`, with settings from the Secret `chakramcp-alerts` |
 | `prometheus`, `loki`, `grafana`, `alloy` | small single-node stack | The bundled subcharts' own values |
 

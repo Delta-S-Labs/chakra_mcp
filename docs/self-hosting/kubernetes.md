@@ -170,5 +170,5 @@ Prometheus and Grafana (e.g. kube-prometheus-stack), that's a
 ServiceMonitor, a PrometheusRule with the alerts for Alertmanager, and
 ConfigMaps for Grafana's sidecars. Alternatively,
 `observability.bundled.enabled=true` installs a small Prometheus, Loki,
-Grafana and Alloy stack. Both are in
+Tempo, Grafana and Alloy stack. Both are in
 [observability.md](observability.md#kubernetes).

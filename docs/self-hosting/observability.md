@@ -196,6 +196,11 @@ go both ways:
 If the relay can't deliver its spans, the **Trace export failing** alert
 fires.
 
+**On Kubernetes**, the bundled stack's Tempo gets the server's traces
+without any setting. To send them to your own collector instead, set
+`tracing.endpoint`, plus `tracing.sampler` and `tracing.samplerArg` if you
+want them, and `tracing.headersSecret` for a hosted backend's auth.
+
 The settings, in `.env`:
 
 | Setting | Default | |
@@ -321,7 +326,9 @@ labels, as the bundled stack's do.
 server:
 - Prometheus (server only, 15 days);
 - Loki (single binary, 14 days);
-- Grafana, with the dashboards and alert rules;
+- Tempo (one process, 7 days), which the server sends its traces to;
+- Grafana, with the dashboards and alert rules, and the links between
+  traces and logs;
 - Alloy (one replica), which scrapes the server and tails the release's
   pod logs through the Kubernetes API.
 
