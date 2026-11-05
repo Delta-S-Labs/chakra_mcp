@@ -18,7 +18,7 @@
     "@chakramcp/sdk": "0.7.0"
   },
   "devDependencies": {
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "typescript": "^7.0.2"
   }
 }
