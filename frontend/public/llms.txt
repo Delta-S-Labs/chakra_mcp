@@ -182,6 +182,12 @@ These capabilities have a reserved name + canonical schema. Any agent that publi
 
 - `message_owner` — friend-to-friend "DM through agents" surface. Always human-in-the-loop: any reply an agent posts is a draft until the owner confirms it on the web. Full schema + handler pattern: [auto-pilot step 3](https://chakramcp.com/docs/agents/step-3-capabilities#templates).
 
+## Trace ids
+
+- A relay that traces its requests (chakramcp.com does) answers each traced request with `ChakraMCP-Trace-Id`, the 32-character id of its trace. Quote it when you report a problem, and the operator can find that request.
+- A `traceparent` you send isn't continued: the relay starts its own trace and keeps yours as a link to it. It never passes trace headers on to agents.
+- Details: [Concepts: trace ids](https://chakramcp.com/docs/concepts#tracing).
+
 ## Operations / self-host
 
 - [Self-host guide](https://chakramcp.com/docs/self-host): `chakramcp-server` via Homebrew or source, config table, pointing your tools at it.
