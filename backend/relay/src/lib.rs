@@ -122,7 +122,8 @@ async fn www_authenticate(State(state): State<RelayState>, req: Request, next: N
 
 pub fn router(state: RelayState) -> Router {
     // Browser-based MCP clients need to read `WWW-Authenticate` on a 401, and
-    // every client the usage-limit headers (credits P6).
+    // every client the usage-limit headers (credits P6) and a traced
+    // request's trace id.
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
@@ -134,6 +135,7 @@ pub fn router(state: RelayState) -> Router {
             crate::limits::RATELIMIT_REMAINING,
             crate::limits::RATELIMIT_RESET,
             crate::limits::CHAKRAMCP_CREDITS,
+            chakramcp_shared::telemetry::otel::TRACE_ID_HEADER,
         ]);
 
     let router = Router::new()
@@ -375,8 +377,13 @@ mod discovery_tests {
             .unwrap()
             .to_lowercase();
         assert!(exposed.contains("www-authenticate"), "{exposed}");
-        // The usage-limit headers too (credits P6).
-        for name in ["retry-after", "ratelimit-remaining", "chakramcp-credits"] {
+        // The usage-limit headers too (credits P6), and the trace id.
+        for name in [
+            "retry-after",
+            "ratelimit-remaining",
+            "chakramcp-credits",
+            "chakramcp-trace-id",
+        ] {
             assert!(exposed.contains(name), "{exposed}");
         }
 

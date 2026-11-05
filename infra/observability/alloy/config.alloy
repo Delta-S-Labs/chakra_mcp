@@ -234,6 +234,14 @@ loki.process "logs" {
 		action   = "drop"
 	}
 
+	// An idle Tempo logs each empty answer to its compactor's request for
+	// work twice (a warning and an error), about once a minute. Nothing else
+	// says "no jobs found".
+	stage.match {
+		selector = "{service=\"tempo\"} |= \"no jobs found\""
+		action   = "drop"
+	}
+
 	// The relay, Caddy and the house agents log JSON: lift `level` into a
 	// (lower-case) label.
 	stage.match {
