@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@types/qrcode": "^1.5.6",
-    "dodopayments-checkout": "2.0.1",
+    "dodopayments-checkout": "2.1.0",
     "next": "16.4.3",
     "next-auth": "5.0.0-beta.32",
     "posthog-js": "^1.438.23",
