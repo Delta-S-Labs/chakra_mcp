@@ -8,7 +8,7 @@ import { usePathname } from "next/navigation";
  *
  * Renders one of three shapes depending on auth state + current path:
  *
- *   • brandmark-only path (/concept, /brand, /cofounder) → renders nothing
+ *   • brandmark-only path (/brand) → renders nothing
  *   • logged out → single "Sign in" link to /login
  *   • logged in  → Docs (/docs) + App (/app) tabs, in that order
  *

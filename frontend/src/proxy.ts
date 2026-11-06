@@ -67,7 +67,7 @@ export default auth((req) => {
 });
 
 // Run only on the relay-app surfaces and the public auth pages. The
-// marketing site (/, /concept, /brand, /cofounder, /terms) and render
+// marketing site (/, /brand, /terms) and render
 // targets stay public.
 export const config = {
   matcher: [
