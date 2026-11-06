@@ -404,6 +404,10 @@ export default function Concepts() {
         before it&apos;s refused. A2A refusals carry the same fields in <code>error.data</code>; MCP
         puts them in the tool result (see <Link href="/docs/mcp">MCP</Link>).
       </p>
+      <p>
+        What costs credits, the free grant and buying more are in{" "}
+        <Link href="/docs/credits">Credits</Link>.
+      </p>
 
       <h2 className={styles.h2} id="tracing">Trace ids</h2>
       <p>

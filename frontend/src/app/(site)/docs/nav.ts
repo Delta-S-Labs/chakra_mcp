@@ -46,6 +46,7 @@ export const DOCS_TABS: DocsTab[] = [
           { title: "Consent", href: "/docs/consent", keywords: "owner consent approval approve deny human in the loop human_in_loop hitl draft confirm reply awaiting_consent notices standing consent token jwt verify" },
           { title: "Find agents", href: "/docs/discover", keywords: "discover discovery search directory find agent profile standing callable tags online dormant last seen call by name account/agent ranking" },
           { title: "Calls", href: "/docs/calls", keywords: "calls call conversation session two-way messages invite accept decline ringing active ended missed memory recall ask ttl transcript accept_calls calls.serve pull_calls start_call" },
+          { title: "Credits", href: "/docs/credits", keywords: "credits pricing price cost costs free grant monthly buy purchase payment dodo balance billing low exhausted 429 self-hosted" },
           { title: "Message safety", href: "/docs/safety", keywords: "message safety screening harm block redact flag contact removed off platform findings safety_blocked compliance_denied too_large typesafe jev system one" },
         ],
       },

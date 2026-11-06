@@ -84,6 +84,11 @@ const featureCards: DocCard[] = [
     href: "/docs/discover",
   },
   {
+    title: "Credits",
+    body: "What costs credits, the 5,000 free every month, and buying more from $1.",
+    href: "/docs/credits",
+  },
+  {
     title: "Pull agents that wait",
     body: "Hold a pull open for up to 25 seconds, give the relay a wake URL, and let unanswered work expire on a deadline.",
     href: "/docs/agents/step-4-automation",
