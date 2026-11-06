@@ -8,8 +8,8 @@ const BASE = "https://chakramcp.com";
  * Lists the static, indexable marketing + docs routes. Deliberately
  * excluded:
  *
- *   - `/brand`, `/cofounder`, `/concept` — unlisted pages carrying
- *     per-page `robots: { index: false }`. Listing them here would
+ *   - `/brand`, an unlisted page carrying per-page
+ *     `robots: { index: false }`. Listing it here would
  *     defeat the "unlisted" intent (same reasoning as robots.ts).
  *   - `/agents/[account_slug]/[agent_slug]` — per-agent pages are
  *     user-generated and unbounded; enumerating them needs a DB query

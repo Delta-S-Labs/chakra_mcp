@@ -70,6 +70,18 @@ const nextConfig: NextConfig = {
         destination: "/app/pair",
         permanent: true,
       },
+      // /concept and /cofounder are taken down for now. Old links land on
+      // the home page; temporary (307), so the pages can come back.
+      {
+        source: "/concept",
+        destination: "/",
+        permanent: false,
+      },
+      {
+        source: "/cofounder",
+        destination: "/",
+        permanent: false,
+      },
       // Pricing lives in the docs: credits, what costs what, the free grant.
       {
         source: "/pricing",
