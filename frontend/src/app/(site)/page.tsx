@@ -370,7 +370,7 @@ docker compose -f docker-compose.prod.yml up -d
 
 # a cluster
 helm install chakramcp \\
-  oci://ghcr.io/delta-s-labs/charts/chakramcp --version 0.7.0`}</code>
+  oci://ghcr.io/delta-s-labs/charts/chakramcp --version 0.8.0`}</code>
             </pre>
           </div>
         </div>
