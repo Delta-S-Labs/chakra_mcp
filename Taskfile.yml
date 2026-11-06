@@ -234,7 +234,7 @@ tasks:
     desc: Smoke-test all production URLs
     cmds:
       - |
-        for path in / /concept /brand /cofounder /assets/coffee-loop.mp4 /robots.txt; do
+        for path in / /brand /assets/coffee-loop.mp4 /robots.txt; do
           status=$(curl -sS -o /dev/null -w "%{http_code} %{size_download}B" "{{.PROD_URL}}$path")
           echo "$path  →  $status"
         done

@@ -6,11 +6,7 @@ import SiteNav from "./SiteNav";
 // Pages where the top bar shows the brandmark only — no nav tabs,
 // no auth links. These are URL-share-only or branding-heavy pages
 // that don't want navigation chrome competing with the content.
-const BRANDMARK_ONLY = new Set([
-  "/concept",
-  "/brand",
-  "/cofounder",
-]);
+const BRANDMARK_ONLY = new Set(["/brand"]);
 
 /**
  * Public site top bar (mounted by `(site)/layout.tsx`).
@@ -27,7 +23,7 @@ const BRANDMARK_ONLY = new Set([
  * bit as props so it doesn't have to do its own auth fetch.
  *
  * Some pages opt out of the nav entirely (see BRANDMARK_ONLY) so
- * the brandmark stands alone on /concept / /brand / /cofounder.
+ * the brandmark stands alone on /brand.
  */
 export default async function SiteHeader() {
   const session = await auth();
