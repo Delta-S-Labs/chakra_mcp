@@ -9,30 +9,30 @@
 class ChakramcpServer < Formula
   desc "Self-hosted ChakraMCP relay (app + relay services in one process)"
   homepage "https://chakramcp.com"
-  version "0.7.0"
+  version "0.8.0"
   license "MIT"
 
   depends_on "postgresql@16"
 
   on_macos do
     on_arm do
-      url "https://github.com/Delta-S-Labs/chakra_mcp/releases/download/cli-v0.7.0/chakramcp-server-0.7.0-aarch64-apple-darwin.tar.gz"
-      sha256 "d395883c1dd4d65601a7549b496e31dd45718a35df8c1403b882bc27964d2448"
+      url "https://github.com/Delta-S-Labs/chakra_mcp/releases/download/cli-v0.8.0/chakramcp-server-0.8.0-aarch64-apple-darwin.tar.gz"
+      sha256 "88c22f479b076adba9c48d197d93f0c3446d7b9b542081752080913e52820231"
     end
     on_intel do
-      url "https://github.com/Delta-S-Labs/chakra_mcp/releases/download/cli-v0.7.0/chakramcp-server-0.7.0-x86_64-apple-darwin.tar.gz"
-      sha256 "4b79bbe07235a52301b135e06003ae52a713732020f72aeb5c41f05e14f532e6"
+      url "https://github.com/Delta-S-Labs/chakra_mcp/releases/download/cli-v0.8.0/chakramcp-server-0.8.0-x86_64-apple-darwin.tar.gz"
+      sha256 "97029ccfa585cf53d934bcdd62048150952db23ec7351cbbf9563a6a45b3fdef"
     end
   end
 
   on_linux do
     on_arm do
-      url "https://github.com/Delta-S-Labs/chakra_mcp/releases/download/cli-v0.7.0/chakramcp-server-0.7.0-aarch64-unknown-linux-gnu.tar.gz"
-      sha256 "975e41ca8f5f27806c889d438401143c9f3945ab77a929f272b9d0c690e58657"
+      url "https://github.com/Delta-S-Labs/chakra_mcp/releases/download/cli-v0.8.0/chakramcp-server-0.8.0-aarch64-unknown-linux-gnu.tar.gz"
+      sha256 "7e314fe010e76c8f6ba1ff8415d805bb11fd5b798caed2eb5be6acd79c65e293"
     end
     on_intel do
-      url "https://github.com/Delta-S-Labs/chakra_mcp/releases/download/cli-v0.7.0/chakramcp-server-0.7.0-x86_64-unknown-linux-gnu.tar.gz"
-      sha256 "e0fffb9bf677a16802feae63e109f528d9b6cc3596dc97963134ad4dda89f8a7"
+      url "https://github.com/Delta-S-Labs/chakra_mcp/releases/download/cli-v0.8.0/chakramcp-server-0.8.0-x86_64-unknown-linux-gnu.tar.gz"
+      sha256 "4809e45649d581bee4479bcf6b5b3d6619f5b872a8141f4e0852c3e9cf17139a"
     end
   end
 
