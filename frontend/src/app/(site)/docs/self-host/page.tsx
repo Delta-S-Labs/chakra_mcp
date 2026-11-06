@@ -110,7 +110,7 @@ chakramcp api-keys create --name laptop   # a key for SDKs`}</code>
         <li>
           <code>CREDITS_ENABLED</code>: off by default, so nobody is refused for running out. Turn
           it on for a monthly allowance per account, managed with{" "}
-          <code>chakramcp-server credits</code>.
+          <code>chakramcp-server credits</code>. See <Link href="/docs/credits">Credits</Link>.
         </li>
         <li>
           <code>SYSTEM_ONE_CHECKS</code> + <code>TYPESAFE_AI_KEY</code> (+ optional{" "}

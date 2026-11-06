@@ -73,7 +73,7 @@ const nextConfig: NextConfig = {
       // Pricing lives in the docs: credits, what costs what, the free grant.
       {
         source: "/pricing",
-        destination: "/docs/concepts#limits",
+        destination: "/docs/credits",
         permanent: false,
       },
       // Discovery breadcrumb: an earlier revision of
