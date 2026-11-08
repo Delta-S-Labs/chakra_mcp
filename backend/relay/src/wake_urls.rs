@@ -121,12 +121,17 @@ pub fn signature(secret: &str, t: i64, body: &str) -> String {
 /// Check a wake URL before storing it: https on a managed server, and the
 /// outbound guard's rules. A refusal is a 400 with the reason.
 pub fn check_url(state: &RelayState, raw: &str) -> Result<String, ApiError> {
-    let url = crate::outbound::check_url(raw.trim(), state.outbound)
-        .map_err(|e| ApiError::InvalidRequest(format!("wake_url: {e}")))?;
+    allowed(state, raw).map_err(|reason| ApiError::InvalidRequest(format!("wake_url: {reason}")))
+}
+
+/// The URL in canonical form if this server may call it now, else why not.
+/// Run when a URL is stored and again before each ping: the settings may
+/// have tightened since it was stored, and a URL whose host is an IP
+/// address never reaches the guard's resolver.
+fn allowed(state: &RelayState, raw: &str) -> Result<String, String> {
+    let url = crate::outbound::check_url(raw.trim(), state.outbound).map_err(|e| e.to_string())?;
     if state.wake_urls.https_only && url.scheme() != "https" {
-        return Err(ApiError::InvalidRequest(
-            "wake_url: this server only calls https URLs".into(),
-        ));
+        return Err("this server only calls https URLs".into());
     }
     Ok(url.to_string())
 }
@@ -207,11 +212,21 @@ fn body(agent: Uuid, target: &Target, pending: &Pending) -> (String, &'static st
 }
 
 async fn send(
+    state: &RelayState,
     client: &reqwest::Client,
     agent: Uuid,
     target: &Target,
     pending: &Pending,
 ) -> PingResult {
+    // A refusal counts as a failure, so a URL the settings no longer allow
+    // is switched off after the usual run of them, with the usual notice.
+    if let Err(reason) = allowed(state, &target.url) {
+        return PingResult {
+            ok: false,
+            status: None,
+            error: Some(format!("not sent: {reason}")),
+        };
+    }
     let (body, content_type) = body(agent, target, pending);
     let mut request = client
         .post(&target.url)
@@ -342,7 +357,7 @@ pub async fn ping_now(state: &RelayState, agent: Uuid) -> Result<PingResult, Api
     })
     .ok_or(ApiError::NotFound)?;
     let counts = pending(&state.db, agent).await?;
-    let result = send(&client(state), agent, &target, &counts).await;
+    let result = send(state, &client(state), agent, &target, &counts).await;
     record(state, agent, &result).await?;
     counter!(WAKE_SENT_TOTAL, "result" => if result.ok { "ok" } else { "failed" }).increment(1);
     Ok(result)
@@ -416,7 +431,7 @@ async fn dispatch_one(
         secret: r.secret,
         handle: r.handle,
     };
-    let result = send(client, agent, &target, &counts).await;
+    let result = send(state, client, agent, &target, &counts).await;
     record(state, agent, &result).await?;
     counter!(WAKE_SENT_TOTAL, "result" => if result.ok { "ok" } else { "failed" }).increment(1);
     Ok(None)
