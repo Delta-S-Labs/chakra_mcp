@@ -406,6 +406,69 @@ async fn twenty_failures_switch_the_url_off(pool: PgPool) {
     );
 }
 
+/// A URL stored while the server allowed it isn't sent to once the settings
+/// tighten. The test server's URL has an IP-address host, which skips the
+/// guarded resolver, so only a check at send time stops it.
+#[sqlx::test(migrations = "../migrations")]
+async fn urls_the_settings_no_longer_allow_are_not_sent_to(pool: PgPool) {
+    let w = world(&pool).await;
+    let g = grant(&pool, w.b, w.a, "book_venue").await;
+    let (url, hooked) = server().await;
+    let path = format!("/v1/agents/{}/wake", w.b);
+    // Stored on a server that allows private addresses and plain http.
+    let (status, body) = put_wake(&relay(&pool), &w.bob.key, w.b, json!({ "url": url })).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // No throttle, so the dispatcher below sends as soon as it's woken.
+    let public_only =
+        relay_throttled(&pool, Duration::from_millis(1)).with_outbound(OutboundPolicy {
+            allow_private: false,
+        });
+    public_only.heartbeats.reload(&pool).await.unwrap();
+    assert!(public_only.heartbeats.has_wake(w.b));
+    let (status, tested) =
+        relay_post(&public_only, &w.bob.key, &format!("{path}/test"), json!({})).await;
+    assert_eq!(status, StatusCode::OK, "{tested}");
+    assert_eq!(tested["ok"], false, "{tested}");
+    assert_eq!(tested["status"], Value::Null, "{tested}");
+    assert!(
+        tested["error"]
+            .as_str()
+            .unwrap()
+            .contains("private or reserved address"),
+        "{tested}"
+    );
+    let (_, read) = get(&public_only, &w.bob.key, &path).await;
+    assert_eq!(read["failures"], 1, "a refusal counts as a failure: {read}");
+
+    let https_only = relay(&pool).with_wake_urls(WakeUrlSettings {
+        https_only: true,
+        ..WakeUrlSettings::default()
+    });
+    let (_, tested) = relay_post(&https_only, &w.bob.key, &format!("{path}/test"), json!({})).await;
+    assert_eq!(tested["ok"], false, "{tested}");
+    assert!(
+        tested["error"].as_str().unwrap().contains("https"),
+        "{tested}"
+    );
+
+    // The dispatcher refuses too: an invoke wakes it, it records a third
+    // failure, and nothing arrives.
+    crate::wake_urls::spawn(public_only.clone());
+    let queued = invoke(&public_only, &w, g).await;
+    assert_eq!(queued["peer"]["wake"], true, "{queued}");
+    let mut failures = Value::Null;
+    for _ in 0..100 {
+        failures = get(&public_only, &w.bob.key, &path).await.1["failures"].clone();
+        if failures == 3 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(failures, 3, "the dispatcher tried and refused");
+    assert_eq!(hooked.count(), 0, "nothing was sent to the stored URL");
+}
+
 #[sqlx::test(migrations = "../migrations")]
 async fn mcp_update_agent_sets_and_clears_the_wake_url(pool: PgPool) {
     let w = world(&pool).await;
