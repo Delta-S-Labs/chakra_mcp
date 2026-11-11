@@ -673,3 +673,58 @@ async fn the_lease_columns_never_park_readers_behind_their_lock(pool: PgPool) {
         ]
     );
 }
+
+// Round-2 QA N32: inputs and results are kept whole up to 16 KiB and
+// refused above it. Before, a larger input reached the agent as a
+// truncation marker, after skipping screening.
+#[sqlx::test(migrations = "../migrations")]
+async fn inputs_and_results_are_whole_up_to_16_kib(pool: PgPool) {
+    let w = world(&pool).await;
+    let g = grant(&pool, w.b, w.a, "book_venue").await;
+    let state = relay(&pool);
+
+    let (status, body) = invoke(
+        &state,
+        &w,
+        g,
+        json!({ "input": { "blob": "x".repeat(17 * 1024) } }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{body}");
+    assert_eq!(code(&body), "chk.request.too_large");
+
+    let blob = "y".repeat(15 * 1024);
+    let (status, body) = invoke(&state, &w, g, json!({ "input": { "blob": blob } })).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+    let pulled = claim(&state, &w, "").await;
+    assert_eq!(
+        pulled[0]["input_preview"]["blob"],
+        blob.as_str(),
+        "delivered whole"
+    );
+    let id = pulled[0]["id"].as_str().unwrap().to_owned();
+
+    let result = format!("/v1/invocations/{id}/result");
+    let (status, body) = post(
+        &state,
+        &w.bob.key,
+        &result,
+        json!({ "status": "succeeded", "output": { "blob": "z".repeat(17 * 1024) } }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{body}");
+    assert_eq!(code(&body), "chk.result.too_large");
+    let (status, body) = post(
+        &state,
+        &w.bob.key,
+        &result,
+        json!({ "status": "succeeded", "output": { "blob": blob } }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["output_preview"]["blob"],
+        blob.as_str(),
+        "returned whole"
+    );
+}

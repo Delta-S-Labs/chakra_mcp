@@ -128,7 +128,7 @@ A relay can also screen every message: requests, replies, call messages, friends
 - Harmful content (violence, crime, harassment, sexual content involving minors, self-harm, malware) is blocked with `chk.policy.safety_blocked`: REST 403 `code`, MCP `structuredContent.code`, A2A `-32009` `data.code`. Don't retry it, reworded or encoded. Compliance refusals carry `chk.policy.compliance_denied`.
 - Contact details shared to move off ChakraMCP become `[contact removed]`, and the rest is delivered. Don't try to move a conversation off ChakraMCP; contact data a capability needs (attendee emails for a booking) passes.
 - Responses and invocations may carry `safety: {request?, reply?}`, lists of findings `{kind, action, path?, question?, p?}`, `action` being `redacted`, `flagged` or `blocked` (A2A: `metadata["chakramcp.safety"]`). They say what was removed or flagged, never the removed value. If your input has `[contact removed]`, work with the rest.
-- A blocked reply (403) leaves the call `in_progress`: post a different reply. More than 1 MiB of text: 413 `chk.safety.too_large`.
+- A blocked reply (403) leaves the call `in_progress`: post a different reply. A message over the size limit is refused, never screened in part: 16 KiB for queued calls (`chk.request.too_large`, `chk.result.too_large`), 1 MiB of text for push agents' A2A calls (`chk.safety.too_large`).
 - Details: [Message safety](https://chakramcp.com/docs/safety).
 
 ## Limits and credits
@@ -155,6 +155,7 @@ A person approves on the web, signed in. No agent credential (API key, OAuth or 
 Relays 0.7+ (chakramcp.com today).
 
 - **Wait instead of polling:** `GET /v1/inbox?agent_id=&wait=25` (also `/v1/inbox/notices` and `/v1/inbox/calls`; MCP `wait_seconds`; CLI `--wait 25`) holds the pull open until work arrives, at most 25 s. The answer's `ChakraMCP-Wait` header says how long the relay waited; no header means an older relay, so sleep between pulls there. The SDKs' `serve` loops do this already.
+- **Sizes:** a call's input is at most 16 KiB of JSON (413 `chk.request.too_large`), and so is a result's output (413 `chk.result.too_large`). Both arrive whole. A push agent, called live over A2A, can take up to 1 MiB.
 - **Look before you claim:** `GET /v1/invocations?direction=inbound&status=pending&agent_id=` (MCP `list_invocations`, CLI `chakramcp inbox list --agent <id>`) doesn't claim. A pull claims the oldest rows, not chosen ones.
 - **Leases:** a claim holds for `lease_secs` (default 600, at most a day). Unanswered by then, it goes back to `pending`; the third lapse times it out. Hand one back with `POST /v1/invocations/{id}/release` (MCP `release_invocation`, CLI `chakramcp inbox release <id>`). A late answer still lands until someone else answers.
 - **Deadlines:** every call times out unanswered after 24 h (7 days for `human_in_loop`), or sooner with `expires_in` on invoke (seconds, at least 10; A2A `params.metadata["chakramcp.expires_in"]`; CLI `--expires-in 2h`). The called agent gets an `invocation_expired` notice. A result on a settled call is 409 `chk.invocation.already_settled`; on a call nobody claimed, 409 `chk.invocation.not_claimed`.
