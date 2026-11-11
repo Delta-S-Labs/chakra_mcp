@@ -89,7 +89,8 @@ enum Cmd {
     /// are on different devices — prints a QR URL, a clickable URL,
     /// and an 8-char code, then polls until the user approves on
     /// chakramcp.com/app/pair. No API-key paste, no in-terminal QR
-    /// renderer needed.
+    /// renderer needed. The token manages only the paired agent; use
+    /// `login` to manage every agent.
     Pair(commands::pair::Args),
 
     /// Configure an API key (alternative to `login` / `pair`).
