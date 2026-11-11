@@ -64,7 +64,7 @@ pub async fn submit_result(
     let row = sqlx::query!(
         r#"
         SELECT i.status, i.deliveries, i.created_at, i.capability_id,
-               i.granter_agent_id, i.grantee_agent_id,
+               i.granter_agent_id, i.grantee_agent_id, i.expires_at,
                ga.account_id AS "granter_account_id?",
                ea.account_id AS "grantee_account_id?",
                c.semantics AS "capability_semantics?",
@@ -137,6 +137,11 @@ pub async fn submit_result(
     }
 
     check_answerable(&row.status, row.deliveries, human_in_loop)?;
+    // Past its deadline the call is timing out: the caller has been, or is
+    // about to be, told so (round-2 QA V-R2-004).
+    if let Some(at) = row.expires_at.filter(|at| *at <= Utc::now()) {
+        return Err(expired(at));
+    }
     // Message safety (when on): screen the reply before anything below
     // stores or releases it, so drafts, confirmations and tokens all cover
     // what the caller will see.
@@ -199,6 +204,7 @@ pub async fn submit_result(
             lease_until = NULL
         WHERE id = $1
           AND (status = 'in_progress' OR (status = 'pending' AND deliveries > 0))
+          AND (expires_at IS NULL OR expires_at > now())
         "#,
         id,
         status,
@@ -223,6 +229,15 @@ pub async fn submit_result(
         elapsed_ms,
         safety,
     })
+}
+
+/// 409 `chk.invocation.expired`: a result after the call's deadline.
+fn expired(at: DateTime<Utc>) -> ApiError {
+    ApiError::coded(
+        axum::http::StatusCode::CONFLICT,
+        "chk.invocation.expired",
+        format!("this invocation's deadline passed at {at}; it has timed out"),
+    )
 }
 
 /// Whether a call in `status`, claimed `deliveries` times, takes a result
