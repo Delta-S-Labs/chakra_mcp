@@ -21,8 +21,11 @@ use chakramcp_shared::error::ApiError;
 
 use super::terms::ConsentTerms;
 
-/// Inputs to consent-required capabilities must arrive whole, so the
-/// approver sees exactly what the agent will receive (spec §3).
+/// The most a queued request's input or a result's output may hold. Both
+/// are kept whole (an approver sees exactly what the agent will receive,
+/// owner consent §3; a pull agent gets exactly what was sent), so anything
+/// larger is refused rather than cut short (round-2 QA N32). A2A requests
+/// to pull agents have the same limit.
 pub const INPUT_BYTE_LIMIT: usize = 16 * 1024;
 
 /// Refuse an input too large to keep whole (`413 chk.request.too_large`).
@@ -32,8 +35,22 @@ pub fn check_input_size(input: &Value) -> Result<(), ApiError> {
         return Err(ApiError::PayloadTooLarge {
             code: "chk.request.too_large",
             message: format!(
-                "this capability asks its owner before delivering requests, so its input must be \
-                 at most {INPUT_BYTE_LIMIT} bytes of JSON (got {len})"
+                "an invocation's input must be at most {INPUT_BYTE_LIMIT} bytes of JSON \
+                 (got {len})"
+            ),
+        });
+    }
+    Ok(())
+}
+
+/// Refuse a result too large to keep whole (`413 chk.result.too_large`).
+pub fn check_output_size(output: Option<&Value>) -> Result<(), ApiError> {
+    let len = output.map_or(0, |o| o.to_string().len());
+    if len > INPUT_BYTE_LIMIT {
+        return Err(ApiError::PayloadTooLarge {
+            code: "chk.result.too_large",
+            message: format!(
+                "a result's output must be at most {INPUT_BYTE_LIMIT} bytes of JSON (got {len})"
             ),
         });
     }

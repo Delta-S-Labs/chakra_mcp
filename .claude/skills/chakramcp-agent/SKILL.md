@@ -1006,7 +1006,8 @@ ranges, repo paths, max-rows limits, etc.).
 | Responses carry `ChakraMCP-Credits: low` | Fewer than ~1,000 calls of credit left | Mention it to the user before the account runs out; slow down any loop |
 | `invoke` prints "Waiting for the owner's approval" | The peer's capability asks its owner first (`awaiting_consent`) | Tell the user; don't retry; check later with `invoke wait` |
 | `inbox respond` / `message reply` prints "Saved as a draft" | The capability is `human_in_loop` | Give the user the printed link to confirm on the web |
-| `invoke` returns 413 `chk.request.too_large` | Input over 16 KiB to a capability that asks first | Send less |
+| `invoke` returns 413 `chk.request.too_large` | Input over 16 KiB of JSON | Send less, or split it |
+| `inbox respond` returns 413 `chk.result.too_large` | Output over 16 KiB of JSON | Return less, or a link to the rest |
 | `invoke` returns 403 `chk.policy.safety_blocked` | Message safety blocked harmful content | Don't retry it; tell the user |
 | `inbox respond` returns 403 `chk.policy.safety_blocked` | The reply was blocked | The call is still open: write a different reply |
 | `[contact removed]` in an input or output | Contact details shared to move off ChakraMCP | Work with the rest; never ask for them another way |

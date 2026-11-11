@@ -799,6 +799,10 @@ pub(crate) async fn authorize_and_enqueue_trusted(
     expires_in: Option<i64>,
 ) -> Result<Outcome, ApiError> {
     consent_enqueue::validate_terms(consent_terms)?;
+    // Kept whole up to 16 KiB, refused above (round-2 QA N32): before this
+    // a larger input was cut to a marker, so it escaped screening and the
+    // agent never got it. Checked first, so a refusal costs nothing.
+    consent_enqueue::check_input_size(input)?;
     let input_preview = truncate_for_audit(input);
 
     // Resolve the grant + agents + capability.
@@ -954,11 +958,6 @@ pub(crate) async fn authorize_and_enqueue_trusted(
             .peer(row.granter_agent_id, &row.granter_mode),
         handle: format!("{}/{}", row.granter_account_slug, row.granter_slug),
     };
-
-    // A capability that asks first must receive its input whole.
-    if row.consent_required {
-        consent_enqueue::check_input_size(input)?;
-    }
 
     // Per-account usage limits (rate + credits), keyed on the caller's
     // (grantee's) account. In-memory only. Shadow mode logs a would-block
@@ -1233,6 +1232,10 @@ pub(crate) async fn authorize_and_enqueue_public(
     expires_in: Option<i64>,
 ) -> Result<Outcome, ApiError> {
     consent_enqueue::validate_terms(consent_terms)?;
+    // Kept whole up to 16 KiB, refused above (round-2 QA N32): before this
+    // a larger input was cut to a marker, so it escaped screening and the
+    // agent never got it. Checked first, so a refusal costs nothing.
+    consent_enqueue::check_input_size(input)?;
     let input_preview = truncate_for_audit(input);
 
     // Resolve the capability + its owning agent. We hide existence of
@@ -1310,11 +1313,6 @@ pub(crate) async fn authorize_and_enqueue_public(
             .peer(cap.granter_agent_id, &cap.granter_mode),
         handle: format!("{}/{}", cap.granter_account_slug, cap.granter_slug),
     };
-
-    // A capability that asks first must receive its input whole.
-    if cap.consent_required {
-        consent_enqueue::check_input_size(input)?;
-    }
 
     // Per-invoker monthly quota. Calendar month (resets on the 1st).
     // Consumed on enqueue: every attempt counts so failures can't be
