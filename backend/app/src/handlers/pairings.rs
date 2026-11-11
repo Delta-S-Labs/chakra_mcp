@@ -179,6 +179,18 @@ pub async fn revoke(
     user: AuthUser,
     Path((kind, id)): Path<(String, Uuid)>,
 ) -> ApiResult<StatusCode> {
+    // Revoking the owner's other credentials is managing more than the
+    // agents a limited credential covers.
+    let own_key = kind == "api_key" && user.api_key_id == Some(id);
+    if !own_key
+        && crate::handlers::api_keys::narrowed_scope(&state, &user)
+            .await?
+            .is_some()
+    {
+        return Err(crate::handlers::api_keys::beyond_scope(
+            "revoke another credential",
+        ));
+    }
     match kind.as_str() {
         "device_flow" => revoke_device_flow(&state, user.user_id, id).await,
         "oauth" => revoke_oauth(&state, user.user_id, id).await,

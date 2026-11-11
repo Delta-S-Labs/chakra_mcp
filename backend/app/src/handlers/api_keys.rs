@@ -4,10 +4,40 @@ use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use axum::http::StatusCode;
 use chakramcp_shared::error::{ApiError, ApiResult};
+use chakramcp_shared::scope::{
+    grant_allows_agent, manageable_agent_ids, resolve_grant, AgentScopeMode, GrantScope,
+};
 
 use crate::auth::{generate_api_key, hash_api_key, key_prefix, AuthUser};
 use crate::state::AppState;
+
+/// The caller's agent-management scope when it's narrower than `all`.
+///
+/// A credential never creates or obtains one wider than itself (round-2 QA
+/// N12): without this, a key limited to its own agents could create an
+/// unrestricted key, or rotate one and receive the replacement.
+pub(crate) async fn narrowed_scope(
+    state: &AppState,
+    user: &AuthUser,
+) -> ApiResult<Option<GrantScope>> {
+    let grant = resolve_grant(&state.db, user.jti, user.api_key_id).await?;
+    Ok((grant.mode != AgentScopeMode::All).then_some(grant))
+}
+
+/// 403 `chk.auth.out_of_scope` for a credential limited to some agents
+/// asking for more than that.
+pub(crate) fn beyond_scope(what: &str) -> ApiError {
+    ApiError::coded(
+        StatusCode::FORBIDDEN,
+        "chk.auth.out_of_scope",
+        format!(
+            "this credential manages only some agents, so it can't {what}; \
+             use `chakramcp login` or the web app"
+        ),
+    )
+}
 
 #[derive(Debug, Serialize)]
 pub struct ApiKeyDto {
@@ -115,16 +145,51 @@ pub async fn create(
         }
     }
 
+    // A credential limited to some agents (a pairing token, a scoped key or
+    // client) never creates a wider key (round-2 QA N12). Asked for no scope,
+    // its key covers the agents it manages now, so a paired agent can make
+    // itself a key for the SDK.
+    let caller = narrowed_scope(&state, &user).await?;
+    let inherited = match (&caller, req.agent_scope.as_deref()) {
+        (Some(c), None) => {
+            let ids = manageable_agent_ids(&state.db, c)
+                .await?
+                .unwrap_or_default();
+            Some(
+                sqlx::query_scalar!(
+                    r#"
+                    SELECT a.id
+                    FROM agents a
+                    JOIN account_memberships m ON m.account_id = a.account_id
+                    WHERE m.user_id = $1 AND a.id = ANY($2) AND a.tombstoned_at IS NULL
+                    "#,
+                    user.user_id,
+                    &ids,
+                )
+                .fetch_all(&state.db)
+                .await?,
+            )
+        }
+        _ => None,
+    };
+
     // Agent-management scope for this key (scoped-agent-grants). Validate the
     // mode and, for 'selected', that every named agent is in an account the
     // key's owner belongs to.
-    let agent_scope = req.agent_scope.as_deref().unwrap_or("all");
+    let agent_scope = match &inherited {
+        Some(ids) if ids.is_empty() => "own",
+        Some(_) => "selected",
+        None => req.agent_scope.as_deref().unwrap_or("all"),
+    };
     if !matches!(agent_scope, "all" | "own" | "selected") {
         return Err(ApiError::InvalidRequest(
             "agent_scope must be all|own|selected".into(),
         ));
     }
-    let mut selected_ids = req.selected_agent_ids.clone().unwrap_or_default();
+    let mut selected_ids = match inherited {
+        Some(ids) => ids,
+        None => req.selected_agent_ids.clone().unwrap_or_default(),
+    };
     selected_ids.sort();
     selected_ids.dedup();
     if agent_scope == "selected" {
@@ -149,6 +214,19 @@ pub async fn create(
             return Err(ApiError::InvalidRequest(
                 "selected_agent_ids must all be agents in your accounts".into(),
             ));
+        }
+    }
+
+    // Asked for explicitly, a limited credential's key can be `own` (it
+    // starts with no agents) or `selected` within its own agents, never `all`.
+    if let Some(caller) = &caller {
+        if agent_scope == "all" {
+            return Err(beyond_scope("create a key for every agent"));
+        }
+        for aid in &selected_ids {
+            if !grant_allows_agent(&state.db, caller, *aid).await? {
+                return Err(beyond_scope("create a key for an agent it can't manage"));
+            }
         }
     }
 
@@ -234,6 +312,9 @@ pub async fn revoke(
     user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> ApiResult<axum::http::StatusCode> {
+    if user.api_key_id != Some(id) && narrowed_scope(&state, &user).await?.is_some() {
+        return Err(beyond_scope("revoke another credential"));
+    }
     let result = sqlx::query!(
         r#"
         UPDATE api_keys
@@ -271,6 +352,11 @@ pub async fn rotate(
     user: AuthUser,
     Path(id): Path<Uuid>,
 ) -> ApiResult<(axum::http::StatusCode, Json<CreateApiKeyResponse>)> {
+    // Rotating hands back the key's replacement, so a limited credential may
+    // rotate only itself.
+    if user.api_key_id != Some(id) && narrowed_scope(&state, &user).await?.is_some() {
+        return Err(beyond_scope("rotate another credential"));
+    }
     let mut tx = state.db.begin().await?;
 
     // Lock the source row so two concurrent rotations can't both
@@ -883,5 +969,180 @@ mod tests {
             Some(agent_id),
             "the default agent moves with the key"
         );
+    }
+
+    async fn send(
+        pool: &PgPool,
+        method: &str,
+        uri: &str,
+        bearer: &str,
+        body: Option<serde_json::Value>,
+    ) -> (StatusCode, serde_json::Value) {
+        let state = crate::AppState::new(pool.clone(), test_config());
+        let builder = Request::builder()
+            .method(method)
+            .uri(uri)
+            .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+            .header(header::CONTENT_TYPE, "application/json");
+        let req = match body {
+            Some(b) => builder.body(Body::from(b.to_string())),
+            None => builder.body(Body::empty()),
+        }
+        .unwrap();
+        let res = crate::router(state).oneshot(req).await.unwrap();
+        let status = res.status();
+        let bytes = res.into_body().collect().await.unwrap().to_bytes();
+        let json = serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
+        (status, json)
+    }
+
+    /// A key limited to `agent_id`, created through the API.
+    async fn limited_key(pool: &PgPool, jwt: &str, agent_id: uuid::Uuid) -> (String, String) {
+        let (status, v) = send(
+            pool,
+            "POST",
+            "/v1/api-keys",
+            jwt,
+            Some(serde_json::json!({
+                "name": "agent key",
+                "agent_scope": "selected",
+                "selected_agent_ids": [agent_id],
+            })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        (
+            v["api_key"]["id"].as_str().unwrap().to_string(),
+            v["plaintext"].as_str().unwrap().to_string(),
+        )
+    }
+
+    // Round-2 QA N12: a credential limited to some agents can't create a key
+    // wider than itself. `own` (starts with no agents) and `selected` within
+    // its own agents are fine.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn limited_key_cannot_create_a_wider_key(pool: PgPool) {
+        let (user, jwt, personal) = seed_user_with_personal(&pool, "alice").await;
+        let mine = seed_agent(&pool, personal, "mine", user.user_id).await;
+        let other = seed_agent(&pool, personal, "other", user.user_id).await;
+        let (_id, key) = limited_key(&pool, &jwt, mine).await;
+
+        let (status, v) = send(
+            &pool,
+            "POST",
+            "/v1/api-keys",
+            &key,
+            Some(serde_json::json!({ "name": "wide", "agent_scope": "all" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{v}");
+        assert_eq!(v["error"]["code"], "chk.auth.out_of_scope", "{v}");
+
+        // Asked for no scope, the key covers the same agents as its creator.
+        let (status, v) = send(
+            &pool,
+            "POST",
+            "/v1/api-keys",
+            &key,
+            Some(serde_json::json!({ "name": "sdk" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{v}");
+        let new_id = v["api_key"]["id"].as_str().unwrap().to_string();
+        let covered: Vec<uuid::Uuid> = sqlx::query_scalar(
+            "SELECT csa.agent_id FROM credential_scope_agents csa \
+             JOIN credential_scopes cs ON cs.id = csa.credential_scope_id \
+             WHERE cs.cred_kind = 'api_key' AND cs.cred_ref = $1 AND cs.agent_scope = 'selected'",
+        )
+        .bind(&new_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(covered, vec![mine]);
+
+        let (status, _) = send(
+            &pool,
+            "POST",
+            "/v1/api-keys",
+            &key,
+            Some(serde_json::json!({
+                "name": "other",
+                "agent_scope": "selected",
+                "selected_agent_ids": [other],
+            })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+
+        for body in [
+            serde_json::json!({ "name": "own", "agent_scope": "own" }),
+            serde_json::json!({
+                "name": "same",
+                "agent_scope": "selected",
+                "selected_agent_ids": [mine],
+            }),
+        ] {
+            let (status, v) = send(&pool, "POST", "/v1/api-keys", &key, Some(body)).await;
+            assert_eq!(status, StatusCode::OK, "{v}");
+        }
+
+        // The unrestricted web session still creates unrestricted keys.
+        let (status, _) = send(
+            &pool,
+            "POST",
+            "/v1/api-keys",
+            &jwt,
+            Some(serde_json::json!({ "name": "wide" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    // Round-2 QA N12: rotating returns the replacement key, so a limited
+    // credential may rotate (and revoke) only itself.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn limited_key_rotates_and_revokes_only_itself(pool: PgPool) {
+        let (user, jwt, personal) = seed_user_with_personal(&pool, "alice").await;
+        let mine = seed_agent(&pool, personal, "mine", user.user_id).await;
+        let (wide_id, _wide) = seed_api_key(&pool, user.user_id, "wide").await;
+        let (own_id, key) = limited_key(&pool, &jwt, mine).await;
+
+        let (status, _) = send(
+            &pool,
+            "POST",
+            &format!("/v1/api-keys/{wide_id}/rotate"),
+            &key,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let (status, _) = send(
+            &pool,
+            "DELETE",
+            &format!("/v1/api-keys/{wide_id}"),
+            &key,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let (status, _) = send(
+            &pool,
+            "POST",
+            &format!("/v1/pairings/api_key/{wide_id}/revoke"),
+            &key,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+
+        let (status, v) = send(
+            &pool,
+            "POST",
+            &format!("/v1/api-keys/{own_id}/rotate"),
+            &key,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{v}");
     }
 }
