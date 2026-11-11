@@ -61,6 +61,9 @@ pub async fn submit_result(
             "status must be 'succeeded' or 'failed'".into(),
         ));
     }
+    // Kept whole for the caller, so refused above 16 KiB rather than cut
+    // short (round-2 QA N32).
+    super::enqueue::check_output_size(output.as_ref())?;
     let row = sqlx::query!(
         r#"
         SELECT i.status, i.deliveries, i.created_at, i.capability_id,
