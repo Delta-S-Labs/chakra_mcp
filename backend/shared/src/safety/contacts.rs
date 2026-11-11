@@ -162,22 +162,39 @@ static EMAIL: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 fn emails(text: &str) -> Vec<(Range<usize>, ContactKind)> {
-    EMAIL
-        .find_iter(text)
-        .map(|m| m.range())
-        .filter(|r| bounded(text, r))
-        .filter(|r| {
-            let s = &text[r.clone()];
-            if !s.contains(char::is_whitespace) {
-                return true;
-            }
-            // Spaced or spelled-out forms need a known TLD, and a spelled
-            // `at` with a plain full stop is prose ("look at this. it").
-            let prose = !s.contains('@') && (s.contains(". ") || s.contains(" ."));
-            TLDS.contains(&last_label(s)) && !prose
-        })
-        .map(|r| (r, ContactKind::Email))
-        .collect()
+    let mut out = Vec::new();
+    let mut from = 0;
+    while let Some(m) = EMAIL.find_at(text, from) {
+        let r = m.range();
+        let s = m.as_str();
+        if bounded(text, &r) && plausible_email(s) {
+            out.push((r.clone(), ContactKind::Email));
+            from = r.end;
+            continue;
+        }
+        // A rejected spelled-out match mustn't hide an address inside it:
+        // in "directly at qa.offplatform@example.com" the first match is
+        // "directly at qa.offplatform", and resuming after it missed the
+        // address (round-2 QA N31). Look again from its last word. That's
+        // past where it began (it starts with a letter or digit), and only
+        // that word is scanned twice, so the scan stays linear.
+        from = match s.rfind(char::is_whitespace) {
+            Some(i) => r.start + i + s[i..].chars().next().map_or(1, char::len_utf8),
+            None => r.end,
+        };
+    }
+    out
+}
+
+/// Whether an email match is an address: plain forms always are. Spaced or
+/// spelled-out forms need a known TLD, and a spelled `at` with a plain full
+/// stop is prose ("look at this. it").
+fn plausible_email(s: &str) -> bool {
+    if !s.contains(char::is_whitespace) {
+        return true;
+    }
+    let prose = !s.contains('@') && (s.contains(". ") || s.contains(" ."));
+    TLDS.contains(&last_label(s)) && !prose
 }
 
 fn last_label(s: &str) -> &str {
@@ -455,6 +472,35 @@ mod tests {
         let found = kinds(text);
         assert_eq!(found.len(), 1, "{text}: {found:?}");
         found.into_iter().next().unwrap()
+    }
+
+    #[test]
+    // Round-2 QA N31: a spelled-out "at" before a dotted address used to
+    // swallow the start of the real one.
+    fn finds_an_address_after_the_word_at() {
+        for (text, email) in [
+            (
+                "let's take this off chakramcp. email me directly at qa.offplatform@example.com or call",
+                "qa.offplatform@example.com",
+            ),
+            ("reach me at john.doe@gmail.com", "john.doe@gmail.com"),
+            ("look at a.b.c then mail x.y@z.io", "x.y@z.io"),
+        ] {
+            let found: Vec<_> = find_in(text)
+                .into_iter()
+                .filter(|(_, k)| *k == ContactKind::Email)
+                .map(|(r, _)| text[r].to_owned())
+                .collect();
+            assert_eq!(found, vec![email.to_owned()], "{text}");
+        }
+    }
+
+    #[test]
+    fn a_long_run_of_spelled_out_near_misses_is_quick() {
+        let text = "word at a.b ".repeat(50_000);
+        let started = std::time::Instant::now();
+        let _ = find_in(&text);
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
     }
 
     #[test]
