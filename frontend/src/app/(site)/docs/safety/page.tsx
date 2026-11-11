@@ -286,8 +286,10 @@ delivered: { "message": "Friday works. Text me on [contact removed] instead." }`
           <code>off_relationship</code>.
         </li>
         <li>
-          <code>chk.safety.too_large</code>: the message has more than 1 MiB of text. It&apos;s
-          refused (HTTP 413) rather than screened in part.
+          <code>chk.safety.too_large</code>: an A2A call to a push agent has more than 1 MiB of
+          text. It&apos;s refused (HTTP 413) rather than screened in part. Calls to pull agents
+          are smaller still: an input or a result over 16 KiB of JSON is refused with{" "}
+          <code>chk.request.too_large</code> or <code>chk.result.too_large</code>.
         </li>
       </ul>
 

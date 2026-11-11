@@ -3090,26 +3090,30 @@ mod manage_agents_tests {
         assert_eq!(queued, 0, "refused before anything was queued");
     }
 
+    // Round-2 QA N32: an input over 16 KiB is refused, never cut to a
+    // marker the agent would receive instead.
     #[sqlx::test(migrations = "../migrations")]
-    async fn invoke_truncates_large_input(pool: PgPool) {
+    async fn invoke_refuses_input_over_16_kib(pool: PgPool) {
         let (token, a, grant, _) = seed_granted_pair(&pool).await;
         let big = "x".repeat(20 * 1024);
-        ok(&call(
+        let res = call(
             &pool,
             &token,
             "invoke",
             json!({ "grant_id": grant, "grantee_agent_id": a, "input": { "blob": big } }),
         )
-        .await);
-
-        let (status, _, input, _) = invocation_row(&pool, &grant).await;
-        assert_eq!(status, "pending");
+        .await;
+        assert_eq!(res["isError"], json!(true), "{res}");
         assert_eq!(
-            input["__chakramcp_truncated__"],
-            json!(true),
-            "input: {input}"
+            res["structuredContent"]["code"],
+            json!("chk.request.too_large"),
+            "{res}"
         );
-        assert!(input["original_byte_length"].as_u64().unwrap() > 20 * 1024);
+        let queued: i64 = sqlx::query_scalar("SELECT count(*) FROM relay_invocations")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(queued, 0);
     }
 
     #[sqlx::test(migrations = "../migrations")]
