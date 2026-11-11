@@ -4,7 +4,7 @@
 //! A claim holds a call for a lease (`CLAIM_LEASE_SECS`, or the pull's
 //! `lease_secs`); every call has a deadline (`INVOCATION_DEFAULT_TTL`, or
 //! `INVOCATION_HITL_TTL` for `human_in_loop`, or the caller's shorter
-//! `expires_in`). Every 30 s each relay process sweeps, in batches with
+//! `expires_in`). Every 5 s each relay process sweeps, in batches with
 //! `SKIP LOCKED`:
 //!
 //! 1. open calls from before the deadlines existed get one;
@@ -26,8 +26,11 @@ use metrics::counter;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-/// How often each process sweeps.
-pub const SWEEP_INTERVAL: Duration = Duration::from_secs(30);
+/// How often each process sweeps: a deadline or a lease is acted on within
+/// about this long (round-2 QA V-R2-004, N24: at 30 s, a 10 s deadline took
+/// 77 s). Each pass is a few indexed queries (migration 0054's partial
+/// indexes), so a short interval costs little.
+pub const SWEEP_INTERVAL: Duration = Duration::from_secs(5);
 /// The longest lease a pull may ask for.
 pub const MAX_LEASE_SECS: u32 = 86_400;
 /// The shortest `expires_in` a caller may set.

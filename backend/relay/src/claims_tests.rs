@@ -674,6 +674,54 @@ async fn the_lease_columns_never_park_readers_behind_their_lock(pool: PgPool) {
     );
 }
 
+// Round-2 QA V-R2-004: work past its deadline is never handed out, and a
+// result after the deadline is refused, before the sweep has settled it.
+#[sqlx::test(migrations = "../migrations")]
+async fn work_past_its_deadline_isnt_claimed_or_answered(pool: PgPool) {
+    let w = world(&pool).await;
+    let g = grant(&pool, w.b, w.a, "book_venue").await;
+    let state = relay(&pool);
+    let unclaimed = queued(&state, &w, g).await;
+    exec(
+        &pool,
+        "UPDATE relay_invocations SET expires_at = now() - interval '1 second' WHERE id = $1",
+        unclaimed,
+    )
+    .await;
+    let pulled = claim(&state, &w, "").await;
+    assert_eq!(pulled, json!([]), "{pulled}");
+    assert_eq!(row(&pool, unclaimed).await.status, "pending");
+
+    let claimed = queued(&state, &w, g).await;
+    let pulled = claim(&state, &w, "").await;
+    assert_eq!(pulled[0]["id"], claimed.to_string(), "{pulled}");
+    exec(
+        &pool,
+        "UPDATE relay_invocations SET expires_at = now() - interval '1 second' WHERE id = $1",
+        claimed,
+    )
+    .await;
+    let (status, body) = post(
+        &state,
+        &w.bob.key,
+        &format!("/v1/invocations/{claimed}/result"),
+        json!({ "status": "succeeded", "output": { "ok": true } }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(code(&body), "chk.invocation.expired");
+
+    // The sweep times both out.
+    let swept = sweep(&state).await;
+    assert_eq!((swept.not_picked_up, swept.not_answered), (1, 1));
+    assert_eq!(row(&pool, claimed).await.status, "timeout");
+}
+
+#[test]
+fn the_sweep_runs_every_few_seconds() {
+    assert!(crate::invocation_sweep::SWEEP_INTERVAL <= Duration::from_secs(5));
+}
+
 // Round-2 QA N32: inputs and results are kept whole up to 16 KiB and
 // refused above it. Before, a larger input reached the agent as a
 // truncation marker, after skipping screening.
@@ -682,7 +730,6 @@ async fn inputs_and_results_are_whole_up_to_16_kib(pool: PgPool) {
     let w = world(&pool).await;
     let g = grant(&pool, w.b, w.a, "book_venue").await;
     let state = relay(&pool);
-
     let (status, body) = invoke(
         &state,
         &w,

@@ -999,7 +999,7 @@ ranges, repo paths, max-rows limits, etc.).
 | `discover` returns 0 results | Filter too narrow, or relay's discovery_v2 is off | Drop `--capability`, use `-q`; or check `/healthz` on the relay |
 | Cron job fires but inbox stays full | Handler script is exit-1'ing silently | Check `~/chakramcp-inbox.log`; an unanswered claim goes back to pending after its lease (10 min), and times out after three |
 | `inbox respond` returns 409 `chk.invocation.not_claimed` | You never pulled it | `inbox pull` first; to look without claiming, `inbox list` |
-| `inbox respond` returns 409 `chk.invocation.already_settled` | It timed out, or was answered (e.g. by the owner on the web) | Drop it; an `invocation_expired` notice says when it timed out |
+| `inbox respond` returns 409 `chk.invocation.already_settled` or `chk.invocation.expired` | It timed out (or its deadline passed), or was answered (e.g. by the owner on the web) | Drop it; an `invocation_expired` notice says when it timed out |
 | `invoke` result's `peer.online` is false | The agent you called hasn't pulled lately (`peer.last_seen_at`) | Tell the user it may be slow; `peer.wake` says whether it gets pinged |
 | `invoke` returns 429 `account_rate_limited` | Over the account's per-minute limit | Wait `Retry-After` seconds (the rest of the minute), then retry once |
 | `invoke` returns 429 `account_credits_exhausted` | The account is out of credits | Don't sleep on `Retry-After` (it points at next month's free grant). Tell the user and share `credits_url` from the error if present, where they can buy credits |
