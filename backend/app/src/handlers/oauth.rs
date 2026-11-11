@@ -28,7 +28,7 @@ use chakramcp_shared::error::{ApiError, ApiResult};
 use chakramcp_shared::jwt;
 use sqlx::PgPool;
 
-use crate::auth::AuthUser;
+use crate::auth::{AuthUser, InteractiveUser};
 use crate::state::AppState;
 
 const AUTH_CODE_TTL_MINUTES: i64 = 10;
@@ -297,9 +297,12 @@ pub struct IssueCodeResponse {
     pub expires_in: i64,
 }
 
+/// Consenting to an OAuth client is the signed-in person's own act: an API
+/// key or a token minted for a client or device can't do it, so no
+/// credential can mint itself a wider one (round-2 QA N12).
 pub async fn issue_code(
     State(state): State<AppState>,
-    user: AuthUser,
+    InteractiveUser(user): InteractiveUser,
     Json(req): Json<IssueCodeRequest>,
 ) -> ApiResult<Json<IssueCodeResponse>> {
     Ok(Json(issue_code_for(&state.db, user.user_id, &req).await?))
@@ -1076,9 +1079,11 @@ fn is_valid_agent_slug(s: &str) -> bool {
         .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
+/// Approving a pairing is the signed-in person's own act, like consenting to
+/// an OAuth client (see [`issue_code`]).
 pub async fn device_approve(
     State(state): State<AppState>,
-    user: AuthUser,
+    InteractiveUser(user): InteractiveUser,
     Json(req): Json<DeviceApproveRequest>,
 ) -> ApiResult<Json<DeviceApproveResponse>> {
     Ok(Json(approve_device(&state.db, user.user_id, &req).await?))
@@ -1266,13 +1271,21 @@ pub async fn approve_device(
     // Agent-management scope for the token this pairing will mint
     // (scoped-agent-grants). Validate the mode and, for 'selected', that the
     // agents are in an account the approver belongs to.
-    let agent_scope = req.agent_scope.as_deref().unwrap_or("all");
+    //
+    // With no scope asked for, the token covers exactly the agent this
+    // pairing created or attached (round-2 QA N12): `chakramcp pair` hands
+    // the token to that agent, so it mustn't act for the whole account.
+    // `chakramcp login` is the way to a token that manages everything.
+    let agent_scope = req.agent_scope.as_deref().unwrap_or("selected");
     if !matches!(agent_scope, "all" | "own" | "selected") {
         return Err(ApiError::InvalidRequest(
             "agent_scope must be all|own|selected".into(),
         ));
     }
-    let mut selected_ids = req.selected_agent_ids.clone().unwrap_or_default();
+    let mut selected_ids = match req.agent_scope {
+        None => vec![final_id],
+        Some(_) => req.selected_agent_ids.clone().unwrap_or_default(),
+    };
     selected_ids.sort();
     selected_ids.dedup();
     if agent_scope == "selected" {
@@ -1367,7 +1380,7 @@ pub struct DeviceDenyRequest {
 
 pub async fn device_deny(
     State(state): State<AppState>,
-    _user: AuthUser,
+    _user: InteractiveUser,
     Json(req): Json<DeviceDenyRequest>,
 ) -> Result<StatusCode, ApiError> {
     deny_device(&state.db, &req.user_code).await?;
@@ -1676,5 +1689,122 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(n, 1, "the paired agent is enrolled");
+    }
+
+    /// An unapproved device session, as `/oauth/device_authorization`
+    /// leaves it. Returns its user code.
+    async fn pending_device(pool: &PgPool) -> String {
+        let user_code = "BCDF-GHJK".to_string();
+        sqlx::query(
+            "INSERT INTO oauth_device_codes \
+             (id, device_code_hash, user_code, scope, expires_at) \
+             VALUES ($1, $2, $3, 'relay.full', now() + interval '10 minutes')",
+        )
+        .bind(Uuid::now_v7())
+        .bind(format!("hash-{}", Uuid::now_v7()))
+        .bind(&user_code)
+        .execute(pool)
+        .await
+        .unwrap();
+        user_code
+    }
+
+    async fn post_json(
+        pool: &PgPool,
+        uri: &str,
+        bearer: &str,
+        body: serde_json::Value,
+    ) -> StatusCode {
+        let state = crate::AppState::new(pool.clone(), test_config());
+        crate::router(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(uri)
+                    .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .status()
+    }
+
+    // Round-2 QA N12: approving a pairing without choosing a scope gives a
+    // token for exactly the agent it pairs, not the whole account.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn device_approve_without_scope_covers_only_the_paired_agent(pool: PgPool) {
+        let (_user, jwt, _account) = seed_user_with_personal(&pool, "alice").await;
+        let user_code = pending_device(&pool).await;
+
+        let status = post_json(
+            &pool,
+            "/oauth/device-approve",
+            &jwt,
+            serde_json::json!({
+                "user_code": user_code,
+                "agent_slug": "paired-bot",
+                "agent_display_name": "Paired bot",
+            }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        let (scope, ids, agent): (String, Option<Vec<Uuid>>, Option<Uuid>) = sqlx::query_as(
+            "SELECT agent_scope, selected_agent_ids, approved_agent_id \
+             FROM oauth_device_codes WHERE user_code = $1",
+        )
+        .bind(&user_code)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(scope, "selected");
+        assert_eq!(ids, Some(vec![agent.expect("approved agent")]));
+    }
+
+    // Round-2 QA N12: consenting to an OAuth client and approving a pairing
+    // are the signed-in person's own acts. An API key can't do either, or
+    // any credential could mint itself an unrestricted one.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn api_keys_cannot_approve_pairings_or_issue_codes(pool: PgPool) {
+        let (user, _jwt, _account) = seed_user_with_personal(&pool, "alice").await;
+        let (_key_id, key) = seed_api_key(&pool, user.user_id, "agent key").await;
+        let user_code = pending_device(&pool).await;
+
+        let status = post_json(
+            &pool,
+            "/oauth/device-approve",
+            &key,
+            serde_json::json!({
+                "user_code": user_code,
+                "agent_slug": "sneaky-bot",
+                "agent_display_name": "Sneaky",
+                "agent_scope": "all",
+            }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let status = post_json(
+            &pool,
+            "/oauth/device-deny",
+            &key,
+            serde_json::json!({ "user_code": user_code }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+
+        let status = post_json(
+            &pool,
+            "/oauth/issue-code",
+            &key,
+            serde_json::json!({
+                "client_id": "mcp_test",
+                "redirect_uri": "https://app.test/cb",
+                "code_challenge": "x".repeat(43),
+            }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
     }
 }
