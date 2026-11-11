@@ -1278,11 +1278,13 @@ async fn pull_inbox(state: &RelayState, user: &AuthUser, args: Value) -> Result<
         .map_err(|e| ApiError::InvalidRequest(format!("bad pull_inbox args: {e}")))?;
     let limit = a.limit.unwrap_or(25).clamp(1, 100);
 
-    let agent_account =
-        sqlx::query_scalar!(r#"SELECT account_id FROM agents WHERE id = $1"#, a.agent_id,)
-            .fetch_optional(db)
-            .await?
-            .ok_or(ApiError::NotFound)?;
+    let agent_account = sqlx::query_scalar!(
+        r#"SELECT account_id FROM agents WHERE id = $1 AND tombstoned_at IS NULL"#,
+        a.agent_id,
+    )
+    .fetch_optional(db)
+    .await?
+    .ok_or(ApiError::NotFound)?;
     if !user_is_member(db, user.user_id, agent_account).await? {
         return Err(ApiError::Forbidden);
     }
@@ -1462,7 +1464,7 @@ async fn propose_friendship(
     }
 
     let proposer_account = sqlx::query_scalar!(
-        r#"SELECT account_id FROM agents WHERE id = $1"#,
+        r#"SELECT account_id FROM agents WHERE id = $1 AND tombstoned_at IS NULL"#,
         a.proposer_agent_id,
     )
     .fetch_optional(db)
@@ -1478,7 +1480,7 @@ async fn propose_friendship(
     crate::auth::require_scope(state, user, a.proposer_agent_id).await?;
     // Confirm target exists.
     let _t = sqlx::query_scalar!(
-        r#"SELECT account_id FROM agents WHERE id = $1"#,
+        r#"SELECT account_id FROM agents WHERE id = $1 AND tombstoned_at IS NULL"#,
         a.target_agent_id,
     )
     .fetch_optional(db)
@@ -1702,7 +1704,7 @@ async fn publish_capability(
 
     // Ownership: the caller must be a member of the agent's account.
     let agent = sqlx::query!(
-        r#"SELECT account_id, mode FROM agents WHERE id = $1"#,
+        r#"SELECT account_id, mode FROM agents WHERE id = $1 AND tombstoned_at IS NULL"#,
         a.agent_id
     )
     .fetch_optional(db)

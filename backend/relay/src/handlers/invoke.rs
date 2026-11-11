@@ -1275,9 +1275,15 @@ pub(crate) async fn authorize_and_enqueue_public(
         ))
     })?;
 
-    // Resolve the invoker agent + its account, then membership-check.
+    // Resolve the invoker agent + its account, then membership-check. A
+    // deleted agent, or one of a deleted account, doesn't call (round-2 QA
+    // N21), as on the trusted path.
     let invoker = sqlx::query!(
-        r#"SELECT account_id FROM agents WHERE id = $1"#,
+        r#"
+        SELECT a.account_id FROM agents a
+        JOIN accounts acc ON acc.id = a.account_id
+        WHERE a.id = $1 AND a.tombstoned_at IS NULL AND acc.tombstoned_at IS NULL
+        "#,
         grantee_agent_id,
     )
     .fetch_optional(&state.db)
@@ -5246,6 +5252,92 @@ mod deleted_agent_tests {
             !listed.contains(&f.granter_agent_id.to_string()),
             "{listed}"
         );
+
+        // Nor its notices (round-2 QA N22), nor new capabilities or grants.
+        let notices = format!("/v1/inbox/notices?agent_id={}", f.granter_agent_id);
+        let (status, _) = send(&pool, request("GET", &notices, &granter, None)).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        let cap = json!({ "name": "late.cap", "description": "too late" });
+        let (status, _) = send(&pool, request("POST", &caps, &granter, Some(cap))).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        let grant = json!({
+            "granter_agent_id": f.granter_agent_id,
+            "grantee_agent_id": f.grantee_agent_id,
+            "capability_id": f.capability_id,
+        });
+        let (status, _) = send(&pool, request("POST", "/v1/grants", &granter, Some(grant))).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        // MCP refuses it the same way: its inbox, proposals from it and to
+        // it, and publishing on it.
+        for (tool, args) in [
+            ("pull_inbox", json!({ "agent_id": f.granter_agent_id })),
+            (
+                "propose_friendship",
+                json!({
+                    "proposer_agent_id": f.granter_agent_id,
+                    "target_agent_id": f.grantee_agent_id,
+                }),
+            ),
+            (
+                "publish_capability",
+                json!({ "agent_id": f.granter_agent_id, "name": "late.cap" }),
+            ),
+        ] {
+            let rpc = json!({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": { "name": tool, "arguments": args },
+            });
+            let (_, body) = send(&pool, request("POST", "/mcp", &granter, Some(rpc))).await;
+            assert_eq!(body["result"]["isError"], true, "{tool}: {body}");
+        }
+        let rpc = json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": { "name": "propose_friendship", "arguments": {
+                "proposer_agent_id": f.grantee_agent_id,
+                "target_agent_id": f.granter_agent_id,
+            } },
+        });
+        let (_, body) = send(&pool, request("POST", "/mcp", &f.caller_token, Some(rpc))).await;
+        assert_eq!(body["result"]["isError"], true, "{body}");
+    }
+
+    // Round-2 QA N21: a deleted agent can't call a public capability
+    // either. Nothing is queued or charged.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn a_deleted_agent_cannot_call_a_public_capability(pool: PgPool) {
+        let f = seed_public(&pool, 5, false).await;
+        sqlx::query("UPDATE agents SET tombstoned_at = now() WHERE id = $1")
+            .bind(f.invoker_agent)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let (status, body) = send(
+            &pool,
+            invoke_req(
+                &f.invoker_token,
+                json!({
+                    "capability_id": f.public_cap,
+                    "grantee_agent_id": f.invoker_agent,
+                    "input": {"hi": 1}
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        let rows: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM relay_invocations WHERE grantee_agent_id = $1",
+        )
+        .bind(f.invoker_agent)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(rows, 0);
+        let charges: i64 = sqlx::query_scalar("SELECT count(*) FROM credit_charge_queue")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(charges, 0);
     }
 
     #[sqlx::test(migrations = "../migrations")]

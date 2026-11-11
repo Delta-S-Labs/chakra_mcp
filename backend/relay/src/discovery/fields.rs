@@ -110,8 +110,12 @@ pub async fn load(
                CASE WHEN a.mode = 'push' THEN COALESCE(a.agent_card_fetched_at, a.created_at)
                     ELSE COALESCE(h.last_polled_at, a.created_at) END AS "last_seen_at!",
                (SELECT count(*) FROM friendships f
+                  JOIN agents o ON o.id = CASE WHEN f.proposer_agent_id = a.id
+                                               THEN f.target_agent_id
+                                               ELSE f.proposer_agent_id END
                  WHERE f.status = 'accepted'
-                   AND (f.proposer_agent_id = a.id OR f.target_agent_id = a.id)) AS "friend_count!",
+                   AND (f.proposer_agent_id = a.id OR f.target_agent_id = a.id)
+                   AND o.tombstoned_at IS NULL) AS "friend_count!",
                (SELECT AVG(rating)::float8 FROM agent_reviews r
                  WHERE r.target_agent_id = a.id AND r.hidden_at IS NULL) AS avg_rating,
                (SELECT count(*) FROM agent_reviews r

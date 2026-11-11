@@ -132,7 +132,7 @@ async fn agent_for_member(
     agent_id: Uuid,
 ) -> Result<(Uuid, String), ApiError> {
     let row = sqlx::query!(
-        r#"SELECT account_id, visibility, mode FROM agents WHERE id = $1"#,
+        r#"SELECT account_id, visibility, mode FROM agents WHERE id = $1 AND tombstoned_at IS NULL"#,
         agent_id
     )
     .fetch_optional(&state.db)
