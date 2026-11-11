@@ -113,7 +113,7 @@ pub async fn run_login(cfg: &mut CliConfig, opts: LoginOptions) -> Result<Wizard
                 &[
                     "browser    — OAuth (recommended for humans on this device)",
                     "api key    — paste a ck_… key (recommended for headless / CI)",
-                    "device     — print a QR + code, approve on another device (RFC 8628)",
+                    "device     — pair one agent, approved on another device (manages only that agent)",
                     "skip       — set up later",
                 ],
                 0,
@@ -164,7 +164,8 @@ fn non_interactive_help(why: &str) -> String {
          \x20 chakramcp pair                                  # device-flow (RFC 8628)\n\
          \x20                                                 #   prints a QR URL + 8-char\n\
          \x20                                                 #   code; user approves on\n\
-         \x20                                                 #   another device.\n\
+         \x20                                                 #   another device. The token\n\
+         \x20                                                 #   manages only that agent.\n\
          \n\
          \x20 chakramcp configure --api-key ck_…              # paste an existing API key.\n\
          \n\

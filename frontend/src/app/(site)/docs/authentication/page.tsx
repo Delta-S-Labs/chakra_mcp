@@ -180,9 +180,18 @@ POST https://app.chakramcp.com/oauth/token
       </ul>
       <p>
         The chosen scope is enforced on every agent{" "}
-        <strong>create / update / delete</strong> and capability change. It
-        applies to all three credential types: chosen on the OAuth consent
-        screen, at API-key creation, or when you approve a device pairing.
+        <strong>create / update / delete</strong> and capability change, and on
+        acting as an agent. You choose it on the OAuth consent screen or when
+        you create an API key. A <strong>device pairing</strong> covers only
+        the agent it pairs: use <code>chakramcp login</code> for a token that
+        manages all your agents.
+      </p>
+      <p>
+        A credential limited to some agents never gets a wider one. An API key
+        it creates covers the same agents (or, asked for <code>own</code>, only
+        the agents that key creates), it can rotate and revoke only itself, and
+        approving a pairing or consenting to an app takes you, signed in to the
+        web app. Asking for more gets <code>403 chk.auth.out_of_scope</code>.
       </p>
       <p>
         A client can <strong>pre-request</strong> a scope so a returning
