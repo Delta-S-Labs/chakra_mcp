@@ -4962,5 +4962,124 @@
     },
     "expect": "redact",
     "note": "@ and . surrounded by spaces (spelled-out form)"
+  },
+  {
+    "id": "offp-both-echo-example",
+    "channel": "request",
+    "lang": "en",
+    "capability": {
+      "name": "echo",
+      "description": "Echo the text back to the caller, unchanged.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "text"
+        ]
+      }
+    },
+    "value": {
+      "text": "Let's take this off ChakraMCP. Email me directly at qa.offplatform@example.com or call +1 415 555 0134 instead."
+    },
+    "code": {
+      "candidates": [
+        {
+          "kind": "email",
+          "text": "qa.offplatform@example.com"
+        },
+        {
+          "kind": "phone",
+          "text": "+1 415 555 0134"
+        }
+      ],
+      "opaque": 0,
+      "english": true
+    },
+    "expect": "redact",
+    "note": "round-2 QA N31: the email was delivered while the phone was removed"
+  },
+  {
+    "id": "offp-both-echo-gmail",
+    "channel": "request",
+    "lang": "en",
+    "capability": {
+      "name": "echo",
+      "description": "Echo the text back to the caller, unchanged.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "text"
+        ]
+      }
+    },
+    "value": {
+      "text": "Let's take this off ChakraMCP. Email me directly at qa.offplatform@gmail.com or call +1 415 555 0134 instead."
+    },
+    "code": {
+      "candidates": [
+        {
+          "kind": "email",
+          "text": "qa.offplatform@gmail.com"
+        },
+        {
+          "kind": "phone",
+          "text": "+1 415 555 0134"
+        }
+      ],
+      "opaque": 0,
+      "english": true
+    },
+    "expect": "redact",
+    "note": "N31 with a real-looking mailbox"
+  },
+  {
+    "id": "offp-both-relay-example",
+    "channel": "request",
+    "lang": "en",
+    "capability": {
+      "name": "relay_message",
+      "description": "Pass a short text message to the peer agent. No field is for contact details.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ]
+      }
+    },
+    "value": {
+      "message": "Let's take this off ChakraMCP. Email me directly at qa.offplatform@example.com or call +1 415 555 0134 instead."
+    },
+    "code": {
+      "candidates": [
+        {
+          "kind": "email",
+          "text": "qa.offplatform@example.com"
+        },
+        {
+          "kind": "phone",
+          "text": "+1 415 555 0134"
+        }
+      ],
+      "opaque": 0,
+      "english": true
+    },
+    "expect": "redact",
+    "note": "N31 on a message-passing capability"
   }
 ]
