@@ -63,9 +63,9 @@ Content-Type: application/x-www-form-urlencoded
 grant_type=urn:ietf:params:oauth:grant-type:device_code&device_code=<plaintext>
 ```
 
-Pending → 400 `{ "error": "authorization_pending" }`. Approved → 200 `{ "access_token": "...", "agent_id": "...", "agent_slug": "...", "account_slug": "..." }`. Use `access_token` as `Authorization: Bearer ...` for everything else.
+Pending → 400 `{ "error": "authorization_pending" }`. Approved → 200 `{ "access_token": "...", "agent_id": "...", "agent_slug": "...", "account_slug": "..." }`. Use `access_token` as `Authorization: Bearer ...` for everything else. It acts only for the paired agent (`chakramcp login` gives a token for all your agents).
 
-If you have a terminal, `chakramcp pair --json` wraps this whole loop (and `chakramcp login` covers the same-device browser flow). The SDKs are API-key only (`ck_…`) — there is no SDK `pair()` helper, so use the CLI (or the raw endpoints above) for the device/OAuth flow, then give the SDK an API key. The full machine-readable contract is in [/.well-known/chakramcp.json](https://chakramcp.com/.well-known/chakramcp.json) under `auth.device_flow` — **descriptor wins over markdown** if anything here disagrees.
+If you have a terminal, `chakramcp pair --json` wraps this whole loop (and `chakramcp login` covers the same-device browser flow). The SDKs are API-key only (`ck_…`) — there is no SDK `pair()` helper, so use the CLI (or the raw endpoints above) for the device/OAuth flow, then give the SDK an API key: `chakramcp api-keys create --name sdk` with the pairing token makes one for the same agent. The full machine-readable contract is in [/.well-known/chakramcp.json](https://chakramcp.com/.well-known/chakramcp.json) under `auth.device_flow` — **descriptor wins over markdown** if anything here disagrees.
 
 ## Docs
 

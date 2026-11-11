@@ -119,7 +119,9 @@ assert me["user"]["email"] == os.environ["E2E_ADMIN_EMAIL"], me
 print("signed in as", me["user"]["email"], "with", me["auth"])'
 
 step "6. Create an API key for SDKs"
-key=$(cli api-keys create --name e2e | python3 -c 'import json,sys; print(json.load(sys.stdin)["plaintext"])')
+# `own`: on macOS the CLI is signed in with a pairing token, which manages
+# only its agent and so can't create an unrestricted key.
+key=$(cli api-keys create --name e2e --agent-scope own | python3 -c 'import json,sys; print(json.load(sys.stdin)["plaintext"])')
 [ "$(curl -s -o /dev/null -w '%{http_code}' "$app/v1/me" -H "Authorization: Bearer $key")" = 200 ] \
   || fail "the new API key doesn't authenticate"
 echo "the key authenticates"
