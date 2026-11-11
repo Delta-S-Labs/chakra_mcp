@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT account_id, visibility, mode FROM agents WHERE id = $1",
+  "query": "SELECT account_id, visibility, mode FROM agents WHERE id = $1 AND tombstoned_at IS NULL",
   "describe": {
     "columns": [
       {
@@ -48,5 +48,5 @@
       false
     ]
   },
-  "hash": "9a264f4b3acd4b956c3e902bf3178197d1513be4439e9dc5f7b9b191456e1372"
+  "hash": "23b95148e66ffd2b42796351ff0d4848cfef20ea0392a0d11d0ddbf4ab8cd043"
 }

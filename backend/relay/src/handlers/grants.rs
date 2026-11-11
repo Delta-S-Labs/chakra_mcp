@@ -325,7 +325,7 @@ pub async fn create(
         SELECT c.id, c.agent_id, c.name, c.description, ga.account_id as granter_account_id
         FROM agent_capabilities c
         JOIN agents ga ON ga.id = c.agent_id
-        WHERE c.id = $1
+        WHERE c.id = $1 AND ga.tombstoned_at IS NULL
         "#,
         req.capability_id,
     )
@@ -352,7 +352,7 @@ pub async fn create(
 
     // Grantee must exist.
     let _grantee_exists = sqlx::query_scalar!(
-        r#"SELECT id FROM agents WHERE id = $1"#,
+        r#"SELECT id FROM agents WHERE id = $1 AND tombstoned_at IS NULL"#,
         req.grantee_agent_id,
     )
     .fetch_optional(&state.db)

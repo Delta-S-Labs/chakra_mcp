@@ -92,10 +92,13 @@ pub async fn claim(
     wait: Option<u32>,
 ) -> ApiResult<(Vec<Notice>, u32)> {
     let limit = limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
-    let account = sqlx::query_scalar!(r#"SELECT account_id FROM agents WHERE id = $1"#, agent_id)
-        .fetch_optional(&state.db)
-        .await?
-        .ok_or(ApiError::NotFound)?;
+    let account = sqlx::query_scalar!(
+        r#"SELECT account_id FROM agents WHERE id = $1 AND tombstoned_at IS NULL"#,
+        agent_id
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(ApiError::NotFound)?;
     if !user_is_member(&state.db, user.user_id, account).await? {
         return Err(ApiError::Forbidden);
     }
