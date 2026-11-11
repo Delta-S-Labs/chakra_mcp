@@ -863,3 +863,24 @@ async fn the_network_list_keeps_its_fields(pool: PgPool) {
     assert_eq!(row["capability_count"], 1);
     assert_eq!(row["capabilities"][0]["name"], "ask");
 }
+
+// Round-2 QA N40: a friendship with a deleted agent isn't counted.
+#[sqlx::test(migrations = "../migrations")]
+async fn friend_count_skips_deleted_friends(pool: PgPool) {
+    let (_, bob_acct, _) = user(&pool, "bob").await;
+    let (_, carol_acct, _) = user(&pool, "carol").await;
+    let venue = agent(&pool, bob_acct, NewAgent::new("venue-bot")).await;
+    let fan = agent(&pool, carol_acct, NewAgent::new("fan")).await;
+    let gone = agent(&pool, carol_acct, NewAgent::new("gone")).await;
+    friends(&pool, fan, venue, "accepted").await;
+    friends(&pool, venue, gone, "accepted").await;
+    sqlx::query("UPDATE agents SET tombstoned_at = now() WHERE id = $1")
+        .bind(gone)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let (status, _, p) = get(&pool, true, "/v1/discovery/agents/bob/venue-bot", None).await;
+    assert_eq!(status, StatusCode::OK, "{p}");
+    assert_eq!(p["friend_count"], 1, "{p}");
+}

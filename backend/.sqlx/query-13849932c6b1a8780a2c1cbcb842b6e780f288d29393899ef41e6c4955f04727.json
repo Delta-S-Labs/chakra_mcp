@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT c.id, c.agent_id, c.name, c.description, ga.account_id as granter_account_id\n        FROM agent_capabilities c\n        JOIN agents ga ON ga.id = c.agent_id\n        WHERE c.id = $1\n        ",
+  "query": "\n        SELECT c.id, c.agent_id, c.name, c.description, ga.account_id as granter_account_id\n        FROM agent_capabilities c\n        JOIN agents ga ON ga.id = c.agent_id\n        WHERE c.id = $1 AND ga.tombstoned_at IS NULL\n        ",
   "describe": {
     "columns": [
       {
@@ -72,5 +72,5 @@
       false
     ]
   },
-  "hash": "e3f21987e5d80101134565373ab7e85891eb6af164d4f71d22644140efa9f4a2"
+  "hash": "13849932c6b1a8780a2c1cbcb842b6e780f288d29393899ef41e6c4955f04727"
 }
