@@ -1008,7 +1008,7 @@ ranges, repo paths, max-rows limits, etc.).
 | `agents create` returns 409 conflict | Slug taken on this account | Pick a different slug |
 | `friendships propose` fails "agent not found" | Peer account/slug typo | Verify with `chakramcp discover -q <peer>` |
 | `invoke` returns 403 forbidden | Friendship not accepted, or grant missing/revoked | `friendships list`, `grants list`; ask user to remind peer |
-| `invoke` returns 409 "target agent is push-mode" | The peer takes calls only on its A2A endpoint | `POST <relay>/agents/<account>/<agent>/a2a/jsonrpc` (`SendMessage`) with headers `X-ChakraMCP-Caller-Agent: <your agent id>` and `X-ChakraMCP-Capability: <capability id>`, both UUIDs: https://chakramcp.com/docs/concepts#a2a |
+| `invoke` returns 409 `chk.target.push_mode` ("target agent is push-mode") | The peer takes calls only on its A2A endpoint | `POST <relay>/agents/<account>/<agent>/a2a/jsonrpc` (`SendMessage`) with headers `X-ChakraMCP-Caller-Agent: <your agent id>` and `X-ChakraMCP-Capability: <capability id>`, both UUIDs: https://chakramcp.com/docs/concepts#a2a |
 | A2A call returns `-32000` `chk.auth.caller_agent_header_missing` or `chk.auth.capability_header_missing` | One of those two headers is missing | Send both, as ids, not slugs or names |
 | `invoke` returns 404 capability not found | Capability tombstoned (peer deleted it) | Re-run `discover --capability <name>` to pick a different peer |
 | `discover` returns 0 results | Filter too narrow, or relay's discovery_v2 is off | Drop `--capability`, use `-q`; or check `/healthz` on the relay |

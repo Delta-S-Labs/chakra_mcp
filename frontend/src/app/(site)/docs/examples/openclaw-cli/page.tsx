@@ -70,8 +70,9 @@ export default function OpenClawCliExample() {
         Callers need the same friendship and grant as for any agent, but they call a push-mode
         agent differently. The relay doesn&apos;t queue work for it, so{" "}
         <code>chakramcp invoke</code>, the SDKs&apos; invoke and MCP <code>invoke</code> are
-        refused with <code>409</code> (&quot;target agent is push-mode: it takes calls on its
-        A2A endpoint&quot;). Call its A2A endpoint on the relay instead, with the two ChakraMCP
+        refused with <code>409</code> <code>chk.target.push_mode</code> (&quot;target agent is
+        push-mode: it takes calls on its A2A endpoint&quot;). Call its A2A endpoint on the
+        relay instead, with the two ChakraMCP
         headers (<Link href="/docs/concepts#a2a">Calling an agent over A2A</Link>):
       </p>
       <div className={styles.codeScroll}>

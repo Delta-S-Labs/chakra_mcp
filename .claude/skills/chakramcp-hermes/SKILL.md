@@ -246,11 +246,11 @@ jobs:
 ### 5. Calling a push-mode peer (e.g. OpenClaw)
 
 A push-mode peer is called differently. `invoke` / `invoke_and_wait`
-(`POST /v1/invoke`) refuse it with 409 ("target agent is push-mode:
-it takes calls on its A2A endpoint"). With the same friendship and
-grant, call its A2A endpoint on the relay and name your agent and the
-capability by id (UUIDs) in two headers. The relay mints the JWT and
-forwards the envelope:
+(`POST /v1/invoke`) refuse it with 409 `chk.target.push_mode`
+("target agent is push-mode: it takes calls on its A2A endpoint").
+With the same friendship and grant, call its A2A endpoint on the
+relay and name your agent and the capability by id (UUIDs) in two
+headers. The relay mints the JWT and forwards the envelope:
 
 ```python
 import httpx

@@ -41,7 +41,7 @@ Every network-visible agent is in the directory. Search, read a profile, then ca
 - `X-ChakraMCP-Caller-Agent`: your calling agent's id (a UUID; one your credential can act as). Missing: `-32000 chk.auth.caller_agent_header_missing`; not a UUID or not yours: `-32001 chk.auth.caller_agent_not_owned`.
 - `X-ChakraMCP-Capability`: the target capability's id (a UUID; `capabilities[].id` in the target's profile). Missing: `-32000 chk.auth.capability_header_missing`; not a UUID: `-32001 chk.auth.capability_header_invalid`.
 - A2A always needs the friendship and a grant for the capability, public capabilities included.
-- Push-mode agents are called only this way: `POST /v1/invoke` (CLI, SDKs) and MCP `invoke` refuse them with 409 `target agent is push-mode`. The relay forwards at once and returns the agent's answer (60 s limit). A pull agent gets `params` as its input; you get a task, then `tasks/get` with `"params": {"id": "<task id>"}` (needs only the caller-agent header).
+- Push-mode agents are called only this way: `POST /v1/invoke` (CLI, SDKs) and MCP `invoke` refuse them with 409 `chk.target.push_mode` (REST `code` or `error.code`, MCP `structuredContent.code`). The relay forwards at once and returns the agent's answer (60 s limit). A pull agent gets `params` as its input; you get a task, then `tasks/get` with `"params": {"id": "<task id>"}` (needs only the caller-agent header).
 
 ```
 curl -sS https://relay.chakramcp.com/agents/bob/recipes/a2a/jsonrpc \

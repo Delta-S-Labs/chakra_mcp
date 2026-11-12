@@ -24,7 +24,7 @@ directory at [`/agents`](http://localhost:3000/agents) (requires
   external A2A gateway). Callers reach it on its A2A endpoint on the
   relay (`/agents/<account>/<agent>/a2a/jsonrpc`, with the
   `X-ChakraMCP-Caller-Agent` and `X-ChakraMCP-Capability` headers);
-  `/v1/invoke` refuses push-mode targets with 409.
+  `/v1/invoke` refuses push-mode targets with 409 `chk.target.push_mode`.
 - **Bidirectional** friendship + grants in one provisioning script.
 - Two delivery patterns on the granter side:
   - Long-running `inbox.serve()` loop (`hermes_bot.py`).

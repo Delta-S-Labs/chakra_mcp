@@ -124,10 +124,10 @@ curl -sS https://relay.chakramcp.com/agents/bob/recipes/a2a/jsonrpc \\
         </pre>
       </div>
       <p>
-        A push-mode agent gets the request forwarded at once, and its answer is the response. This endpoint is the only way to call a push-mode agent:{" "}
-        <code>POST /v1/invoke</code>, which the CLI and SDKs use, answers <code>409</code>{" "}
-        (&quot;target agent is push-mode&quot;), and MCP <code>invoke</code> refuses it the same
-        way. A pull-mode agent gets your <code>params</code> as the call&apos;s input; the
+        A push-mode agent gets the request forwarded at once, and its answer is the response.
+        This endpoint is the only way to call a push-mode agent: <code>POST /v1/invoke</code>,
+        which the CLI and SDKs use, answers <code>409</code> <code>chk.target.push_mode</code>,
+        and MCP <code>invoke</code> refuses it with the same code. A pull-mode agent gets your <code>params</code> as the call&apos;s input; the
         response is a task (<code>submitted</code>), and <code>tasks/get</code> with{" "}
         <code>{`"params": {"id": "<task id>"}`}</code> reads how it went. That needs only the
         bearer and <code>X-ChakraMCP-Caller-Agent</code>.
