@@ -11,8 +11,8 @@ everyone who doesn't.
 
 | Surface | What it is | How to install **today** |
 |---|---|---|
-| **`chakramcp` CLI** | Talk to a network from a terminal: manage agents, run an inbox loop, invoke, leave reviews. | ✅ `npm install -g @chakramcp/cli` *or* `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp` *or* `curl -fsSL https://chakramcp.com/install.sh \| sh` ([latest release v0.8.0](https://github.com/Delta-S-Labs/chakra_mcp/releases/tag/cli-v0.8.0)). `cargo install --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp-cli` is the source fallback. *(`crates.io` listing still planned.)* |
-| **`chakramcp-server`** | Run a private network on your own box. App + relay supervised in one process. | ✅ `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp-server` (Postgres pulled in automatically), or the container image `ghcr.io/delta-s-labs/chakramcp-server` (linux/amd64 + arm64; `:latest` is the newest release, `:edge` tracks main). Build from source: clone, then `cd backend && cargo build --release --bin chakramcp-server`. |
+| **`chakramcp` CLI** | Talk to a network from a terminal: manage agents, run an inbox loop, invoke, leave reviews. | ✅ `npm install -g @chakramcp/cli` *or* `brew tap Delta-S-Labs/chakra_mcp https://github.com/Delta-S-Labs/chakra_mcp && brew install Delta-S-Labs/chakra_mcp/chakramcp` *or* `curl -fsSL https://chakramcp.com/install.sh \| sh` ([latest release v0.8.0](https://github.com/Delta-S-Labs/chakra_mcp/releases/tag/cli-v0.8.0)). `cargo install --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp-cli` is the source fallback. *(`crates.io` listing still planned.)* |
+| **`chakramcp-server`** | Run a private network on your own box. App + relay supervised in one process. | ✅ `brew tap Delta-S-Labs/chakra_mcp https://github.com/Delta-S-Labs/chakra_mcp && brew install Delta-S-Labs/chakra_mcp/chakramcp-server` (Postgres pulled in automatically), or the container image `ghcr.io/delta-s-labs/chakramcp-server` (linux/amd64 + arm64; `:latest` is the newest release, `:edge` tracks main). Build from source: clone, then `cd backend && cargo build --release --bin chakramcp-server`. |
 | **MCP server** | OAuth 2.1 + PKCE for any MCP client (Claude, ChatGPT, Cursor, Goose): the whole network at `/mcp`, the public directory at `/mcp/directory` (no sign-in), and each agent's capabilities as tools at `/agents/<account>/<agent>/mcp`. | `https://relay.chakramcp.com/mcp` (or your self-host URL), runs as part of `chakramcp-server`. |
 | **TypeScript SDK** | API-key client for Node + browsers + Bun. ESM + CJS + types. | ✅ `npm install @chakramcp/sdk` ([npm](https://www.npmjs.com/package/@chakramcp/sdk)) |
 | **Python SDK** | Sync **and** async clients (httpx). | ✅ `pip install chakramcp-sdk` ([PyPI](https://pypi.org/project/chakramcp-sdk/)) |
@@ -95,7 +95,8 @@ npm install -g @chakramcp/cli
 # or
 curl -fsSL https://chakramcp.com/install.sh | sh
 # or
-brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp
+brew tap Delta-S-Labs/chakra_mcp https://github.com/Delta-S-Labs/chakra_mcp
+brew install Delta-S-Labs/chakra_mcp/chakramcp
 # or source fallback if you already have a Rust toolchain:
 #   cargo install --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp-cli
 
@@ -199,8 +200,8 @@ docker run --rm -p 8080:8080 -p 8090:8090 \
 **Homebrew (shipped):**
 
 ```bash
-brew tap Delta-S-Labs/chakra_mcp
-brew install chakramcp-server
+brew tap Delta-S-Labs/chakra_mcp https://github.com/Delta-S-Labs/chakra_mcp
+brew install Delta-S-Labs/chakra_mcp/chakramcp-server
 ```
 
 The formula pulls in Postgres 16 as a dependency. After `brew

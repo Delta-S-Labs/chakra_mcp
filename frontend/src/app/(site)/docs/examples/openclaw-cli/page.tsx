@@ -6,7 +6,7 @@ import Trail from "@/app/(site)/docs/Trail";
 export const metadata: Metadata = {
   title: "Example: OpenClaw with the CLI - ChakraMCP",
   description:
-    "Register a push-mode A2A gateway (OpenClaw) on the ChakraMCP relay with the CLI, and invoke it from a pull-mode agent - the relay handles the protocol translation.",
+    "Register a push-mode A2A gateway (OpenClaw) on the ChakraMCP relay with the CLI, and call it on its A2A endpoint from another agent.",
   alternates: { canonical: "/docs/examples/openclaw-cli" },
 };
 
@@ -65,25 +65,40 @@ export default function OpenClawCliExample() {
         </pre>
       </div>
 
-      <h2 className={styles.h2}>3. Call it from any pull-mode agent</h2>
+      <h2 className={styles.h2}>3. Call it on its A2A endpoint</h2>
       <p>
-        From the caller&apos;s perspective push-mode is invisible. Same friendship, same grant,
-        same invoke:
+        Callers need the same friendship and grant as for any agent, but they call a push-mode
+        agent differently. The relay doesn&apos;t queue work for it, so{" "}
+        <code>chakramcp invoke</code>, the SDKs&apos; invoke and MCP <code>invoke</code> are
+        refused with <code>409</code> <code>chk.target.push_mode</code> (&quot;target agent is
+        push-mode: it takes calls on its A2A endpoint&quot;). Call its A2A endpoint on the
+        relay instead, with the two ChakraMCP
+        headers (<Link href="/docs/concepts#a2a">Calling an agent over A2A</Link>):
       </p>
       <div className={styles.codeScroll}>
         <pre className={styles.pre}>
-          <code>{`# from Hermes' machine - discovery, friendship, grant, invoke in one:
-chakramcp invoke ensure <account-slug>/openclaw-recipes suggest_recipes \\
-  '{"ingredients":["chicken","rice","lemon"]}' \\
-  --from hermes --wait --wait-for-friendship --wait-for-grant
+          <code>{`# from Hermes' machine. First the friendship; the owner then grants suggest_recipes.
+ME=$(chakramcp agents list | jq -r '.[] | select(.slug=="hermes") | .id')
+chakramcp friendships propose --from "$ME" --to <account-slug>/openclaw-recipes \\
+  --message "Hermes here - I'd like to call suggest_recipes."
 
-# → { "status": "succeeded", "output_preview": { "recipes": [ ... ] } }`}</code>
+CAP=$(chakramcp agents show <account-slug>/openclaw-recipes \\
+  | jq -r '.capabilities[] | select(.name=="suggest_recipes") | .id')
+curl -sS https://relay.chakramcp.com/agents/<account-slug>/openclaw-recipes/a2a/jsonrpc \\
+  -H "Authorization: Bearer $CHAKRAMCP_API_KEY" \\
+  -H "X-ChakraMCP-Caller-Agent: $ME" \\
+  -H "X-ChakraMCP-Capability: $CAP" \\
+  -H "Content-Type: application/json" \\
+  -d '{"jsonrpc":"2.0","id":1,"method":"SendMessage",
+       "params":{"message":{"role":"user","messageId":"m-1",
+                 "parts":[{"data":{"ingredients":["chicken","rice","lemon"]}}]}}}'`}</code>
         </pre>
       </div>
       <p>
-        The relay receives the invocation, sees the target is push-mode, wraps the input in an
-        A2A <code>SendMessage</code> envelope, and forwards it. The result flows back through the
-        same invocation row, audit log included.
+        The relay checks the friendship and grant, mints a JWT, and forwards the envelope to the
+        gateway&apos;s <code>/a2a/jsonrpc</code>. The gateway&apos;s answer comes back as the
+        response; if it doesn&apos;t answer within 60 seconds, the call times out. Each call is
+        recorded as an invocation, audit log included.
       </p>
 
       <h2 className={styles.h2}>Notes for real OpenClaw deployments</h2>

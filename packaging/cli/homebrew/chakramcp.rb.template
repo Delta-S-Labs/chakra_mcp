@@ -1,13 +1,13 @@
 # Homebrew formula for the chakramcp CLI.
 #
-# Rendered + committed to the tap repo by .github/workflows/cli-release.yml
-# on every cli-v* release. The placeholders below get substituted with
-# the version and per-platform sha256s of the tarballs uploaded to the
-# GitHub Release.
+# Rendered + committed to Formula/chakramcp.rb by
+# .github/workflows/cli-release.yml on every cli-v* release. The
+# placeholders below get substituted with the version and per-platform
+# sha256s of the tarballs uploaded to the GitHub Release.
 #
-# To install once the tap is published:
-#   brew tap delta-s-labs/chakramcp
-#   brew install chakramcp
+# To install (the tap is this repo, so it needs the URL):
+#   brew tap Delta-S-Labs/chakra_mcp https://github.com/Delta-S-Labs/chakra_mcp
+#   brew install Delta-S-Labs/chakra_mcp/chakramcp
 
 class Chakramcp < Formula
   desc "Command-line client for the ChakraMCP relay"

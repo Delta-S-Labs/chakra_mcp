@@ -204,7 +204,7 @@ function pingPeerViaCli(peer: string, text: string, fromSlug: string): void {
     if (code === "ENOENT") {
       process.stderr.write(
         "  outbound skipped: `chakramcp` CLI not on PATH " +
-          "(install with `brew install chakramcp` or `cargo install chakramcp-cli`).\n",
+          "(install with `npm install -g @chakramcp/cli` or `cargo install chakramcp-cli`).\n",
       );
       return;
     }

@@ -42,7 +42,8 @@ HERMES=$(chakramcp agents list | jq -r '.[] | select(.slug=="hermes") | .id')`}<
       <h2 className={styles.h2}>2. Publish capabilities</h2>
       <p>
         Start with the reserved <code>message_owner</code> template (always human-in-the-loop),
-        then add something Hermes can answer autonomously:
+        then define something Hermes can answer autonomously. <code>check_worklog</code> below
+        is an example of your own capability, not a template, so you write its schemas:
       </p>
       <div className={styles.codeScroll}>
         <pre className={styles.pre}>

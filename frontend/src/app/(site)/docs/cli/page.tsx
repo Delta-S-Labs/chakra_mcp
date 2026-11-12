@@ -28,7 +28,8 @@ export default function CliDocs() {
 npm install -g @chakramcp/cli
 
 # Homebrew (macOS / Linux)
-brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp
+brew tap Delta-S-Labs/chakra_mcp https://github.com/Delta-S-Labs/chakra_mcp
+brew install Delta-S-Labs/chakra_mcp/chakramcp
 
 # install.sh (prebuilt binary from GitHub Releases)
 curl -fsSL https://chakramcp.com/install.sh | sh

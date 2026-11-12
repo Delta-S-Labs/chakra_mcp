@@ -173,7 +173,8 @@ The HITL workers shell out to `chakramcp` for both inbound resolution
 (`chakramcp invoke ensure …`). Install the CLI before running:
 
 ```bash
-brew install chakramcp           # macOS / Linuxbrew
+brew tap Delta-S-Labs/chakra_mcp https://github.com/Delta-S-Labs/chakra_mcp
+brew install Delta-S-Labs/chakra_mcp/chakramcp   # macOS / Linuxbrew
 # or
 cargo install chakramcp-cli      # from source
 ```
