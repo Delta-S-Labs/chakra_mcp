@@ -97,7 +97,8 @@ pub struct CreditsView {
     pub next_grant_on: NaiveDate,
     pub spent_this_month_mc: i64,
     pub invocations_this_month: i64,
-    /// Charged invocations per UTC day over the last 30 days (active days only).
+    /// Charged invocations, and all spend (calls included), per UTC day over
+    /// the last 30 days (active days only).
     pub daily: Vec<DailySpend>,
     /// Newest first.
     pub ledger: Vec<LedgerEntry>,
@@ -352,16 +353,22 @@ pub async fn load_view(
     .fetch_optional(&mut *tx)
     .await?;
     // Month boundaries on the database clock, which stamps `charged_at`.
+    // Spend counts calls' messages and memory work as well as invocations
+    // (round-2 QA N28): both come off the balance.
     let month = sqlx::query!(
         r#"
-        WITH bounds AS (SELECT date_trunc('month', now() AT TIME ZONE 'UTC') AS start)
+        WITH bounds AS (SELECT date_trunc('month', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+                                 AS start_utc,
+                               date_trunc('month', now() AT TIME ZONE 'UTC') AS start)
         SELECT (bounds.start + interval '1 month')::date AS "next_grant_on!",
-               count(c.invocation_id) AS "invocations!",
-               COALESCE(SUM(c.cost_mc), 0)::bigint AS "spent_mc!"
+               (SELECT count(*) FROM invocation_charges c
+                 WHERE c.account_id = $1 AND c.charged_at >= bounds.start_utc) AS "invocations!",
+               ((SELECT COALESCE(SUM(c.cost_mc), 0) FROM invocation_charges c
+                  WHERE c.account_id = $1 AND c.charged_at >= bounds.start_utc)
+              + (SELECT COALESCE(SUM(cc.cost_mc), 0) FROM call_charges cc
+                  WHERE cc.account_id = $1 AND cc.charged_at >= bounds.start_utc))::bigint
+                 AS "spent_mc!"
           FROM bounds
-          LEFT JOIN invocation_charges c
-            ON c.account_id = $1 AND c.charged_at >= bounds.start AT TIME ZONE 'UTC'
-         GROUP BY bounds.start
         "#,
         account_id,
     )
@@ -370,12 +377,22 @@ pub async fn load_view(
     let daily = sqlx::query_as!(
         DailySpend,
         r#"
-        SELECT (charged_at AT TIME ZONE 'UTC')::date AS "day!",
-               count(*) AS "invocations!",
-               SUM(cost_mc)::bigint AS "spent_mc!"
-          FROM invocation_charges
-         WHERE account_id = $1 AND charged_at >= now() - interval '30 days'
-         GROUP BY 1 ORDER BY 1
+        SELECT day AS "day!",
+               SUM(invocations)::bigint AS "invocations!",
+               SUM(spent_mc)::bigint AS "spent_mc!"
+          FROM (
+                SELECT (charged_at AT TIME ZONE 'UTC')::date AS day,
+                       count(*) AS invocations, SUM(cost_mc) AS spent_mc
+                  FROM invocation_charges
+                 WHERE account_id = $1 AND charged_at >= now() - interval '30 days'
+                 GROUP BY 1
+                UNION ALL
+                SELECT (charged_at AT TIME ZONE 'UTC')::date, 0, SUM(cost_mc)
+                  FROM call_charges
+                 WHERE account_id = $1 AND charged_at >= now() - interval '30 days'
+                 GROUP BY 1
+               ) d
+         GROUP BY day ORDER BY day
         "#,
         account_id,
     )
