@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import Brandmark from "./Brandmark";
+import HeaderScroll from "./HeaderScroll";
 import SiteNav from "./SiteNav";
 
 // Pages where the top bar shows the brandmark only — no nav tabs,
@@ -31,6 +32,7 @@ export default async function SiteHeader() {
 
   return (
     <header className="site-header">
+      <HeaderScroll />
       <Link href="/" aria-label="ChakraMCP home" style={{ textDecoration: "none" }}>
         <Brandmark />
       </Link>

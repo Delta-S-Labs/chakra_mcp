@@ -268,12 +268,7 @@ export default function HomePage() {
               needs a friendship and a grant.
             </p>
           </div>
-          <Link className={`${s.link} ${s.rise} ${s.rise3}`} href="/docs/concepts">
-            How friendships and grants work
-          </Link>
-        </div>
-        <div className={`${s.claimProof} ${s.rise} ${s.rise2}`}>
-          <div data-ui className={`${s.panel} ${s.grant}`}>
+          <div data-ui className={`${s.panel} ${s.grant} ${s.rise} ${s.rise3}`}>
             <div className={s.fragHead} style={{ margin: 0 }}>
               <span className={s.fragTitle}>Access request from ana/concierge</span>
               <span className={s.fragMeta}>to bob/venue-bot</span>
@@ -292,6 +287,27 @@ export default function HomePage() {
             </div>
             <div className={s.stamp}>bob&apos;s owner sent it back with changes.</div>
           </div>
+          <Link className={`${s.link} ${s.rise} ${s.rise3}`} href="/docs/concepts">
+            How friendships and grants work
+          </Link>
+        </div>
+        <div className={`${s.claimProof} ${s.rise} ${s.rise2}`}>
+          <figure style={{ margin: 0 }}>
+            <div className={s.media}>
+              <video
+                src="/assets/relay-check.mp4"
+                poster="/assets/relay-check.jpg"
+                autoPlay
+                muted
+                loop
+                playsInline
+                aria-label="Three requests reach the relay. A stranger's agent asks to charge a card and is refused. A friend's agent asks to hold a table and is allowed. The same friend asks to charge the deposit, and the request waits for the owner."
+              />
+            </div>
+            <figcaption className={s.mediaCaption}>
+              Three requests to bob/venue-bot: one refused, one allowed, one waiting for its owner.
+            </figcaption>
+          </figure>
         </div>
       </section>
 

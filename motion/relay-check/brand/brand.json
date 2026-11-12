@@ -1,0 +1,140 @@
+{
+  "name": "ChakraMCP",
+  "domain": "chakramcp.com",
+  "slogan": null,
+  "description": "A relay network for AI agents - register, friend, grant capability access, invoke, audit.",
+  "industry": null,
+  "voice": [],
+  "source": {
+    "styleguide": "brand/styleguide.json",
+    "css": "brand/brand.css",
+    "mode": "dark",
+    "thin": []
+  },
+  "palette": {
+    "primary": "#0a66c2",
+    "accent": "#f386a1",
+    "surface": "#1e1e1e",
+    "text_on_surface": "#f386a1",
+    "text_on_accent": "#1e1e1e"
+  },
+  "contrast": {
+    "text_on_surface": 6.9,
+    "text_on_accent": 6.9,
+    "accent_on_surface": 6.9
+  },
+  "colors": [
+    {
+      "name": "accent",
+      "hex": "#f386a1",
+      "css": "--brand-accent"
+    },
+    {
+      "name": "background",
+      "hex": "#1e1e1e",
+      "css": "--brand-background"
+    },
+    {
+      "name": "text",
+      "hex": "#f386a1",
+      "css": "--brand-text"
+    },
+    {
+      "name": "color 1",
+      "hex": "#0a66c2",
+      "css": "--brand-color-1"
+    },
+    {
+      "name": "color 2",
+      "hex": "#fefefe",
+      "css": "--brand-color-2"
+    },
+    {
+      "name": "color 3",
+      "hex": "#6b6b6b",
+      "css": "--brand-color-3"
+    },
+    {
+      "name": "color 4",
+      "hex": "#dedede",
+      "css": "--brand-color-4"
+    },
+    {
+      "name": "color 5",
+      "hex": "#ffffff",
+      "css": "--brand-color-5"
+    }
+  ],
+  "fonts": {
+    "heading": {
+      "kit": "Inter",
+      "site": "Geist"
+    },
+    "body": {
+      "kit": "Inter",
+      "site": "Geist"
+    }
+  },
+  "scale": {
+    "h1": {
+      "family": "Inter",
+      "site_family": "Geist",
+      "size": 67.2,
+      "weight": 500,
+      "line": 64.5,
+      "tracking": -0.7
+    },
+    "h2": {
+      "family": "Inter",
+      "site_family": "Geist",
+      "size": 49.6,
+      "weight": 500,
+      "line": 50.6,
+      "tracking": -0.6
+    },
+    "h3": {
+      "family": "Inter",
+      "site_family": "Geist",
+      "size": 17.6,
+      "weight": 600,
+      "line": 22,
+      "tracking": -0.5
+    },
+    "p": {
+      "family": "Inter",
+      "site_family": "Geist",
+      "size": 17,
+      "weight": 400,
+      "line": 27.2
+    }
+  },
+  "button": null,
+  "radius": 1.6,
+  "shadow": null,
+  "logos": [
+    {
+      "file": "media/brand/chakramcp.com-logo.svg",
+      "type": "logo",
+      "mode": null,
+      "on": "any",
+      "width": 64,
+      "height": 64
+    },
+    {
+      "file": "media/brand/chakramcp.com-icon.png",
+      "type": "icon",
+      "mode": null,
+      "on": "any",
+      "width": 180,
+      "height": 180
+    },
+    {
+      "file": "media/brand/chakramcp.com-og-image.png",
+      "type": "og-image",
+      "mode": null,
+      "on": "any",
+      "width": 1200,
+      "height": 630
+    }
+  ]
+}
