@@ -141,10 +141,13 @@ pub fn api_err_to_rpc(e: ApiError) -> RpcError {
         }
         Database(_) | Auth(_) | Internal(_) => (ERR_INTERNAL, e.to_string()),
     };
+    // Every refusal carries a code, the one REST answers with (`not_found`,
+    // `invalid_request`, …), so a client can match on it (round-2 QA N03,
+    // N20, N42).
     RpcError {
         code,
         message: msg,
-        data: None,
+        data: Some(json!({ "code": e.code() })),
     }
 }
 

@@ -223,6 +223,13 @@ export default function Concepts() {
         </li>
       </ul>
       <p>
+        Invoking through a revoked grant is refused with 409{" "}
+        <code>chk.grant.revoked</code>, through an expired one with 409{" "}
+        <code>chk.grant.expired</code>. A capability that isn&apos;t public
+        and that you hold no grant for is refused with 403{" "}
+        <code>chk.policy.grant_required</code>.
+      </p>
+      <p>
         Only one <code>active</code> grant exists per (granter, grantee,
         capability) triple at a time. History - every revoked or
         expired row - is preserved so the audit log stays meaningful.
