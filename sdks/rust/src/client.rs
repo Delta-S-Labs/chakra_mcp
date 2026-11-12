@@ -24,6 +24,8 @@ const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 const WAIT_TIMEOUT_MARGIN: Duration = Duration::from_secs(30);
 /// The header in which a relay from 0.7 says how long a pull waited.
 const WAIT_HEADER: &str = "chakramcp-wait";
+/// The header carrying the trace id of a request the server traced.
+const TRACE_ID_HEADER: &str = "chakramcp-trace-id";
 
 /// Top-level client. Cheap to clone - wraps an `Arc`-backed reqwest
 /// client internally so handing it to multiple tasks is fine.
@@ -329,6 +331,7 @@ pub(crate) async fn decode<T: DeserializeOwned>(resp: Response) -> Result<T> {
     }
     let status = resp.status();
     let retry_after = retry_after_header(&resp);
+    let trace_id = trace_id_header(&resp);
     let body = resp.text().await?;
     if status.is_success() {
         if body.is_empty() {
@@ -336,7 +339,7 @@ pub(crate) async fn decode<T: DeserializeOwned>(resp: Response) -> Result<T> {
         }
         return serde_json::from_str(&body).map_err(Into::into);
     }
-    Err(api_error(status, retry_after, body))
+    Err(api_error(status, retry_after, trace_id, body))
 }
 
 pub(crate) async fn decode_no_body(resp: Response) -> Result<()> {
@@ -345,8 +348,9 @@ pub(crate) async fn decode_no_body(resp: Response) -> Result<()> {
     }
     let status = resp.status();
     let retry_after = retry_after_header(&resp);
+    let trace_id = trace_id_header(&resp);
     let body = resp.text().await?;
-    Err(api_error(status, retry_after, body))
+    Err(api_error(status, retry_after, trace_id, body))
 }
 
 /// The `ChakraMCP-Wait` header, when it's a whole number of seconds.
@@ -365,15 +369,28 @@ fn retry_after_header(resp: &Response) -> Option<u64> {
         .ok()
 }
 
+/// The `ChakraMCP-Trace-Id` header, set when the server traced the request.
+fn trace_id_header(resp: &Response) -> Option<String> {
+    let id = resp.headers().get(TRACE_ID_HEADER)?.to_str().ok()?.trim();
+    (!id.is_empty()).then(|| id.to_string())
+}
+
 /// Turn a non-2xx response into an [`Error`]. `retry_after` is the
 /// `Retry-After` header; the body's `retry_after_secs` stands in when
-/// it's missing.
-fn api_error(status: StatusCode, retry_after: Option<u64>, body: String) -> Error {
+/// it's missing. `trace_id` is the `ChakraMCP-Trace-Id` header.
+fn api_error(
+    status: StatusCode,
+    retry_after: Option<u64>,
+    trace_id: Option<String>,
+    body: String,
+) -> Error {
     if let Ok(env) = serde_json::from_str::<serde_json::Value>(&body) {
         if let Some(obj) = env.get("error").and_then(|e| e.as_object()) {
             let retry_after_secs =
                 retry_after.or_else(|| obj.get("retry_after_secs").and_then(|v| v.as_u64()));
-            if let Some(err) = decode_usage_limit(status, &env, obj, retry_after_secs) {
+            if let Some(err) =
+                decode_usage_limit(status, &env, obj, retry_after_secs, trace_id.as_deref())
+            {
                 return err;
             }
             return Error::Api {
@@ -381,6 +398,7 @@ fn api_error(status: StatusCode, retry_after: Option<u64>, body: String) -> Erro
                 code: str_field(obj, "code").unwrap_or("unknown").to_string(),
                 message: str_field(obj, "message").unwrap_or("").to_string(),
                 retry_after_secs,
+                trace_id,
             };
         }
         // A refused invoke answers `{invocation_id, status, error, code}`:
@@ -395,6 +413,7 @@ fn api_error(status: StatusCode, retry_after: Option<u64>, body: String) -> Erro
                     .to_string(),
                 message: reason.to_string(),
                 retry_after_secs: retry_after,
+                trace_id,
             };
         }
     }
@@ -403,6 +422,7 @@ fn api_error(status: StatusCode, retry_after: Option<u64>, body: String) -> Erro
         code: "unknown".to_string(),
         message: body,
         retry_after_secs: retry_after,
+        trace_id,
     }
 }
 
@@ -414,11 +434,13 @@ fn decode_usage_limit(
     env: &serde_json::Value,
     err_obj: &serde_json::Map<String, serde_json::Value>,
     retry_after_secs: Option<u64>,
+    trace_id: Option<&str>,
 ) -> Option<Error> {
     if status != StatusCode::TOO_MANY_REQUESTS {
         return None;
     }
     let message = str_field(err_obj, "message").unwrap_or("").to_string();
+    let trace_id = trace_id.map(str::to_string);
     match str_field(err_obj, "code")? {
         // Public-invoke monthly quota on the target capability.
         "monthly_quota_exhausted" => {
@@ -429,18 +451,21 @@ fn decode_usage_limit(
                 quota,
                 resets_at,
                 retry_after_secs,
+                trace_id,
             })
         }
         // The calling account's own limits.
         "account_rate_limited" => Some(Error::RateLimited {
             message,
             retry_after_secs,
+            trace_id,
         }),
         "account_credits_exhausted" => Some(Error::CreditsExhausted {
             message,
             retry_after_secs,
             next_grant_at: str_field(err_obj, "next_grant_at").and_then(parse_utc),
             credits_url: str_field(err_obj, "credits_url").map(str::to_string),
+            trace_id,
         }),
         _ => None,
     }

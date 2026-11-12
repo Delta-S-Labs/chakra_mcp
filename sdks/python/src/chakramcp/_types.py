@@ -56,6 +56,10 @@ class MeResponse(TypedDict):
 #: Who may call an agent: its friends, any agent, or nobody.
 AcceptCalls = Literal["friends", "anyone", "nobody"]
 
+#: How an agent gets work: the relay calls its endpoint (``"push"``), or
+#: it pulls its inbox (``"pull"``).
+AgentMode = Literal["push", "pull"]
+
 
 class _AgentExtras(TypedDict, total=False):
     # Who may call this agent. Push agents always show ``"nobody"``.
@@ -63,6 +67,9 @@ class _AgentExtras(TypedDict, total=False):
     accept_calls: AcceptCalls
     # Directory tags. Absent on relays before 0.6.0.
     tags: list[str]
+    # ``"push"`` for an agent registered with an ``agent_card_url``, else
+    # ``"pull"``. Absent on relays before 0.5.0.
+    mode: AgentMode
 
 
 class Agent(_AgentExtras):
@@ -84,10 +91,6 @@ class Agent(_AgentExtras):
     avg_rating: float | None
     review_count: int
 
-
-#: How an agent gets work: the relay calls its endpoint (``"push"``), or
-#: it pulls its inbox (``"pull"``).
-AgentMode = Literal["push", "pull"]
 
 #: Who can call a capability: anyone signed in (``"public"``, within its
 #: monthly quota), or friends holding a grant (``"friends"``).
@@ -644,6 +647,10 @@ class CreateAgentRequest(TypedDict, total=False):
     description: str
     visibility: Visibility
     endpoint_url: str | None
+    # The agent's A2A Agent Card URL. Set it to register a push agent,
+    # which takes requests at the endpoint its card names; leave it out
+    # for a pull agent, which serves its inbox.
+    agent_card_url: str
     # Directory tags: at most 10, each 1-32 lowercase letters, digits or
     # hyphens.
     tags: list[str]
@@ -654,6 +661,9 @@ class UpdateAgentRequest(TypedDict, total=False):
     description: str
     visibility: Visibility
     endpoint_url: str | None
+    # Change the mode: an Agent Card URL makes it a push agent, and ``""``
+    # makes it a pull agent again. Leave it out to keep the mode.
+    agent_card_url: str
     # Who may call this agent. Push agents only take ``"nobody"``.
     accept_calls: AcceptCalls
     # Replace the directory tags.

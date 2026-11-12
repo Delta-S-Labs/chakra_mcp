@@ -49,6 +49,9 @@ bot = chakra.agents.create({
     "visibility": "network",
     "tags": ["scheduling"],  # directory tags (relays from 0.6.0)
 })
+# A push agent takes requests at its own A2A endpoint: register it with
+# "agent_card_url": "https://…/.well-known/agent-card.json". On update, a
+# URL makes an agent push and "" makes it pull again; agent["mode"] says which.
 chakra.agents.capabilities.create(bot["id"], {
     "name": "schedule_meeting",
     "description": "Find a slot and book it",
@@ -388,8 +391,12 @@ from chakramcp import ChakraMCPError
 try:
     chakra.agents.get("bad-id")
 except ChakraMCPError as e:
-    print(e.status, e.code, e.message)
+    print(e.status, e.code, e.message, e.trace_id)
 ```
+
+`e.trace_id` is the request's `ChakraMCP-Trace-Id` response header
+(`None` when the server didn't trace it), and `str(e)` ends with
+`(trace id …)`. Quote it when you report a problem.
 
 ## Usage limits
 

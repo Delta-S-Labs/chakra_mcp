@@ -22,6 +22,10 @@ type Error struct {
 	// retry_after_secs. Nil when it says neither (most errors, and
 	// older servers).
 	RetryAfterSecs *int64
+	// TraceID is the request's trace id, from the ChakraMCP-Trace-Id
+	// response header. Quote it when you report a problem. Empty when
+	// the server didn't trace the request. Error() ends with it.
+	TraceID string
 	// Raw is the full response body. Useful when the server returns
 	// something other than the standard envelope (e.g. a stray HTML
 	// page from a misconfigured proxy).
@@ -29,7 +33,17 @@ type Error struct {
 }
 
 func (e *Error) Error() string {
-	return fmt.Sprintf("chakramcp: [%d %s] %s", e.Status, e.Code, e.Message)
+	return fmt.Sprintf("chakramcp: [%d %s] %s%s", e.Status, e.Code, e.Message, traceSuffix(e.TraceID))
+}
+
+// traceHeader carries the trace id of a request the server traced.
+const traceHeader = "ChakraMCP-Trace-Id"
+
+func traceSuffix(traceID string) string {
+	if traceID == "" {
+		return ""
+	}
+	return " (trace id " + traceID + ")"
 }
 
 // QuotaExhaustedError is returned when a public-invoke call exceeds
@@ -49,8 +63,8 @@ type QuotaExhaustedError struct {
 
 func (e *QuotaExhaustedError) Error() string {
 	return fmt.Sprintf(
-		"chakramcp: [429 monthly_quota_exhausted] %s (quota=%d, resets_at=%s)",
-		e.Err.Message, e.Quota, e.ResetsAt.Format(time.RFC3339),
+		"chakramcp: [429 monthly_quota_exhausted] %s (quota=%d, resets_at=%s)%s",
+		e.Err.Message, e.Quota, e.ResetsAt.Format(time.RFC3339), traceSuffix(e.Err.TraceID),
 	)
 }
 
@@ -67,8 +81,8 @@ type RateLimitedError struct {
 
 func (e *RateLimitedError) Error() string {
 	return fmt.Sprintf(
-		"chakramcp: [429 account_rate_limited] %s%s",
-		e.Err.Message, retryAfterSuffix(e.Err.RetryAfterSecs),
+		"chakramcp: [429 account_rate_limited] %s%s%s",
+		e.Err.Message, retryAfterSuffix(e.Err.RetryAfterSecs), traceSuffix(e.Err.TraceID),
 	)
 }
 
@@ -100,7 +114,7 @@ func (e *CreditsExhaustedError) Error() string {
 	if e.CreditsURL != "" {
 		msg += " (credits_url=" + e.CreditsURL + ")"
 	}
-	return msg
+	return msg + traceSuffix(e.Err.TraceID)
 }
 
 func (e *CreditsExhaustedError) Unwrap() error { return e.Err }
@@ -129,6 +143,7 @@ func retryAfterSecs(h http.Header, fromBody *int64) *int64 {
 func errorFromResponse(resp *http.Response) error {
 	body, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
+	traceID := strings.TrimSpace(resp.Header.Get(traceHeader))
 
 	// Try the rich shape first: { error: {code,message}, quota, resets_at }.
 	// Public-invoke monthly quota 429 is the only error today that uses it;
@@ -151,6 +166,7 @@ func errorFromResponse(resp *http.Response) error {
 					Code:           richEnv.Error.Code,
 					Message:        richEnv.Error.Message,
 					RetryAfterSecs: retryAfterSecs(resp.Header, richEnv.Error.RetryAfterSecs),
+					TraceID:        traceID,
 					Raw:            body,
 				},
 				Quota:    richEnv.Quota,
@@ -176,6 +192,7 @@ func errorFromResponse(resp *http.Response) error {
 			Code:           env.Error.Code,
 			Message:        env.Error.Message,
 			RetryAfterSecs: retryAfterSecs(resp.Header, env.Error.RetryAfterSecs),
+			TraceID:        traceID,
 			Raw:            body,
 		}
 		if resp.StatusCode == http.StatusTooManyRequests {
@@ -211,6 +228,7 @@ func errorFromResponse(resp *http.Response) error {
 			Code:           code,
 			Message:        refusal.Error,
 			RetryAfterSecs: retryAfterSecs(resp.Header, nil),
+			TraceID:        traceID,
 			Raw:            body,
 		}
 	}
@@ -219,6 +237,7 @@ func errorFromResponse(resp *http.Response) error {
 		Code:           "unknown",
 		Message:        string(body),
 		RetryAfterSecs: retryAfterSecs(resp.Header, nil),
+		TraceID:        traceID,
 		Raw:            body,
 	}
 }

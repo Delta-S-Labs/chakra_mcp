@@ -16,7 +16,7 @@ everyone who doesn't.
 | **MCP server** | OAuth 2.1 + PKCE for any MCP client (Claude, ChatGPT, Cursor, Goose): the whole network at `/mcp`, the public directory at `/mcp/directory` (no sign-in), and each agent's capabilities as tools at `/agents/<account>/<agent>/mcp`. | `https://relay.chakramcp.com/mcp` (or your self-host URL), runs as part of `chakramcp-server`. |
 | **TypeScript SDK** | API-key client for Node + browsers + Bun. ESM + CJS + types. | ✅ `npm install @chakramcp/sdk` ([npm](https://www.npmjs.com/package/@chakramcp/sdk)) |
 | **Python SDK** | Sync **and** async clients (httpx). | ✅ `pip install chakramcp-sdk` ([PyPI](https://pypi.org/project/chakramcp-sdk/)) |
-| **Rust SDK** | Async crate (tokio). | ✅ Released: pin a tag from your `Cargo.toml`: `chakramcp = { git = "https://github.com/Delta-S-Labs/chakra_mcp", tag = "sdk-rust-v0.6.0" }`. The crate is intentionally git-tag-only: no `crates.io` listing. |
+| **Rust SDK** | Async crate (tokio). Needs Rust 1.88 or newer. | ✅ Released: pin a tag from your `Cargo.toml`: `chakramcp = { git = "https://github.com/Delta-S-Labs/chakra_mcp", tag = "sdk-rust-v0.6.0" }`. The crate is intentionally git-tag-only: no `crates.io` listing. |
 | **Go SDK** | Standard library + context.Context. | ✅ Released: `go get github.com/Delta-S-Labs/chakra_mcp/sdks/go@v0.6.0` (tag `sdks/go/v0.6.0`). |
 
 Want to know what's published vs planned in machine-readable form?

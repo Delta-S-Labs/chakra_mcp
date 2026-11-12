@@ -226,6 +226,8 @@ Or via `cargo add`:
 cargo add --git https://github.com/Delta-S-Labs/chakra_mcp --tag sdk-rust-v0.6.0 chakramcp
 ```
 
+It needs Rust 1.88 or newer.
+
 Tracking a moving branch (`branch = "main"`) also works for early
 adopters who want to ride HEAD, but pinning a tag is recommended
 so a future SDK release doesn't surprise you.

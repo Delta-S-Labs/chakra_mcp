@@ -215,3 +215,40 @@ async def test_async_agent_update_sends_tags() -> None:
         agent = await c.agents.update("a1", {"tags": ["booking", "venues"]})
     assert json.loads(route.calls.last.request.content) == {"tags": ["booking", "venues"]}
     assert agent["tags"] == ["booking", "venues"]
+
+
+# ─── Push registration ────────────────────────────────────
+
+_CARD = "https://gateway.example/.well-known/agent-card.json"
+
+
+@respx.mock
+def test_agent_create_sends_agent_card_url_and_reads_mode() -> None:
+    route = respx.post(f"{RELAY}/v1/agents").respond(
+        201, json={**_agent([]), "slug": "gateway", "mode": "push"}
+    )
+    with _client() as c:
+        agent = c.agents.create(
+            {
+                "account_id": "acc1",
+                "slug": "gateway",
+                "display_name": "Gateway",
+                "agent_card_url": _CARD,
+            }
+        )
+    assert json.loads(route.calls.last.request.content) == {
+        "account_id": "acc1",
+        "slug": "gateway",
+        "display_name": "Gateway",
+        "agent_card_url": _CARD,
+    }
+    assert agent["mode"] == "push"
+
+
+@respx.mock
+async def test_async_agent_update_switches_to_pull() -> None:
+    route = respx.patch(f"{RELAY}/v1/agents/a1").respond(200, json={**_agent([]), "mode": "pull"})
+    async with _aclient() as c:
+        agent = await c.agents.update("a1", {"agent_card_url": ""})
+    assert json.loads(route.calls.last.request.content) == {"agent_card_url": ""}
+    assert agent["mode"] == "pull"

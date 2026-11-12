@@ -141,6 +141,10 @@ pub struct Agent {
     /// Directory tags. Empty from relays before 0.6.0.
     #[serde(default)]
     pub tags: Vec<String>,
+    /// `Push` for an agent registered with an `agent_card_url`, else
+    /// `Pull`. `None` from relays before 0.5.0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<AgentMode>,
 }
 
 /// Who may call an agent. Non-exhaustive: a setting this SDK version
@@ -906,6 +910,11 @@ pub struct CreateAgentRequest {
     pub visibility: Option<Visibility>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub endpoint_url: Option<String>,
+    /// The agent's A2A Agent Card URL. Set it to register a push agent,
+    /// which takes requests at the endpoint its card names; leave it
+    /// `None` for a pull agent, which serves its inbox.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_card_url: Option<String>,
     /// Directory tags: at most 10, each 1-32 lowercase letters, digits or
     /// hyphens. Relays from 0.6.0.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -920,6 +929,11 @@ pub struct UpdateAgentRequest {
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub visibility: Option<Visibility>,
+    /// Change the mode: an Agent Card URL makes the agent a push agent,
+    /// and `Some(String::new())` makes it a pull agent again. `None`
+    /// keeps the mode.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_card_url: Option<String>,
     /// Who may call the agent. Push agents only take `Nobody`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub accept_calls: Option<AcceptCalls>,
