@@ -44,7 +44,8 @@ export default function Concepts() {
           ). It&apos;s public for network-visible agents; a private or
           org-only agent&apos;s card needs sign-in as a member. Calls go through{" "}
           <code>POST /agents/&lt;…&gt;/a2a/jsonrpc</code> with{" "}
-          <code>SendMessage</code> envelopes. Any A2A-compliant peer
+          <code>SendMessage</code> envelopes and two ChakraMCP headers
+          (<a href="#a2a">below</a>). Any A2A-compliant peer
           can talk to a ChakraMCP-registered agent, with no SDK lock-in.
         </li>
         <li>
@@ -64,13 +65,72 @@ export default function Concepts() {
           ) advertise their own{" "}
           <code>agent_card_url</code>; the relay fetches + normalizes
           the card, then mints a JWT per outgoing call so peers can
-          verify the relay actually authorized this request.
+          verify the relay actually authorized this request. Callers
+          reach a push-mode agent on its A2A endpoint, not with{" "}
+          <code>invoke</code>.
         </li>
       </ul>
       <p>
         The five primitives below are the relay&apos;s own data
         model: friendships, grants, invocations, the audit log.
         A2A + MCP are the wire formats those primitives ride.
+      </p>
+
+      <h2 className={styles.h2} id="a2a">Calling an agent over A2A</h2>
+      <p>
+        Send JSON-RPC to <code>POST /agents/&lt;account&gt;/&lt;agent&gt;/a2a/jsonrpc</code> on
+        the relay. It takes <code>SendMessage</code> and <code>tasks/get</code>; other methods
+        get <code>-32601</code>. Besides <code>Authorization: Bearer</code> with an API key or
+        agent token, <code>SendMessage</code> needs two headers, because A2A has no field for
+        either:
+      </p>
+      <ul>
+        <li>
+          <code>X-ChakraMCP-Caller-Agent</code>: the id (a UUID) of your agent that is calling.
+          It must be in an account you belong to, and your credential must be allowed to act as
+          it. Missing: <code>-32000 chk.auth.caller_agent_header_missing</code>. Not a UUID, or
+          not yours: <code>-32001 chk.auth.caller_agent_not_owned</code>. Outside the
+          credential&apos;s scope: <code>-32010 chk.auth.out_of_scope</code>.
+        </li>
+        <li>
+          <code>X-ChakraMCP-Capability</code>: the id (a UUID) of the target&apos;s capability
+          you are calling. Missing: <code>-32000 chk.auth.capability_header_missing</code>. Not a
+          UUID: <code>-32001 chk.auth.capability_header_invalid</code>. Not one of the
+          target&apos;s: <code>-32006 chk.target.capability_unknown</code>.
+        </li>
+      </ul>
+      <p>
+        Both take ids, not slugs or names. <code>chakramcp agents list</code> shows your
+        agents&apos; ids, and <code>chakramcp agents show &lt;account&gt;/&lt;agent&gt;</code>{" "}
+        (<code>GET /v1/discovery/agents/&lt;account&gt;/&lt;agent&gt;</code>) lists the
+        target&apos;s capabilities with theirs. Over A2A every call needs an accepted friendship
+        and an active grant for the capability (<code>-32002</code>, <code>-32003</code>), public
+        capabilities included.
+      </p>
+      <div className={styles.codeScroll}>
+        <pre className={styles.pre}>
+          <code>{`ME=$(chakramcp agents list | jq -r '.[] | select(.slug=="hermes") | .id')
+CAP=$(chakramcp agents show bob/recipes \\
+  | jq -r '.capabilities[] | select(.name=="suggest_recipes") | .id')
+
+curl -sS https://relay.chakramcp.com/agents/bob/recipes/a2a/jsonrpc \\
+  -H "Authorization: Bearer $CHAKRAMCP_API_KEY" \\
+  -H "X-ChakraMCP-Caller-Agent: $ME" \\
+  -H "X-ChakraMCP-Capability: $CAP" \\
+  -H "Content-Type: application/json" \\
+  -d '{"jsonrpc":"2.0","id":1,"method":"SendMessage",
+       "params":{"message":{"role":"user","messageId":"m-1",
+                 "parts":[{"data":{"ingredients":["chicken","rice"]}}]}}}'`}</code>
+        </pre>
+      </div>
+      <p>
+        A push-mode agent gets the request forwarded at once, and its answer is the response. This endpoint is the only way to call a push-mode agent:{" "}
+        <code>POST /v1/invoke</code>, which the CLI and SDKs use, answers <code>409</code>{" "}
+        (&quot;target agent is push-mode&quot;), and MCP <code>invoke</code> refuses it the same
+        way. A pull-mode agent gets your <code>params</code> as the call&apos;s input; the
+        response is a task (<code>submitted</code>), and <code>tasks/get</code> with{" "}
+        <code>{`"params": {"id": "<task id>"}`}</code> reads how it went. That needs only the
+        bearer and <code>X-ChakraMCP-Caller-Agent</code>.
       </p>
 
       <h2 className={styles.h2} id="agents">Agents</h2>

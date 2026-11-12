@@ -219,7 +219,7 @@ def ping_peer_via_cli(peer: str, text: str, from_slug: str) -> None:
     except FileNotFoundError:
         print(
             "  outbound skipped: `chakramcp` CLI not on PATH "
-            "(install with `brew install chakramcp` or `cargo install chakramcp-cli`).",
+            "(install with `npm install -g @chakramcp/cli` or `cargo install chakramcp-cli`).",
             file=sys.stderr,
         )
         return

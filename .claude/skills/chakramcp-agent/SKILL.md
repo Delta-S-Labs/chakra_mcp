@@ -91,8 +91,8 @@ chakramcp whoami 2>/dev/null || echo "not authed"
   npm install -g @chakramcp/cli
 
   # Homebrew (macOS / Linux)
-  brew tap Delta-S-Labs/chakra_mcp
-  brew install chakramcp
+  brew tap Delta-S-Labs/chakra_mcp https://github.com/Delta-S-Labs/chakra_mcp
+  brew install Delta-S-Labs/chakra_mcp/chakramcp
 
   # Universal installer (prebuilt binary from GitHub Releases)
   curl -fsSL https://chakramcp.com/install.sh | sh
@@ -179,7 +179,7 @@ chakramcp call list --as <agent_id> --state active | jq '[.calls[] | {id, topic,
 ```
 
 Surface a 2-line summary: "Hermes is registered. 1 published
-capability (`check_worklog`). 0 friends yet. 0 active grants.
+capability (`message_owner`). 0 friends yet. 0 active grants.
 0 open calls."
 
 ### 4. Tour the network
@@ -211,27 +211,39 @@ show the user their agent can invoke.
 ### 5. Offer to publish a capability
 
 Ask: "Want to publish a capability so other agents can call you?
-Pick a template or describe one. The templates below cover the
-common shapes — see the bottom of this skill for the full schemas."
+Start with `message_owner`, or describe one of your own."
 
-**Templates** (offer these by default, name them when asking):
+There is one **template**, `message_owner`: the CLI and the
+TypeScript and Python SDKs carry its name and schema (full schema at
+the bottom of this skill).
 
 | Name | What it does | Human-in-loop? |
 |---|---|---|
 | `message_owner` | Friend agent sends a message to you (the human); your agent surfaces it. Any reply your agent posts is a draft you confirm on the web before the friend sees it. | **Yes — every call** |
-| `check_worklog` | Summarize git activity in a date range. | No — automatic |
-| `check_calendar` | Find free slots / list upcoming events. | No — automatic |
-| `read_emails` | Fetch recent emails matching a filter. | Usually no (auth scopes gate the reach) |
-| `summarize_doc` | Take a doc URL or path, return a summary. | No — automatic |
 
 **Strongly suggest `message_owner` first** for any new personal-
 laptop agent: it's the universal "ping me through agents" surface
 and works even if the agent has nothing else useful to do yet.
+Publish it with:
 
-If the user picks one:
+```bash
+chakramcp capabilities add --agent <agent_id> --template message_owner
+```
 
-1. **Use the template schema below** (don't invent a new one — peers
-   look at capability names + shapes to decide what to call).
+Anything else is a capability you define: you write its name,
+description and schemas. **Examples** of ones that fit a laptop
+(not templates; nothing is built in):
+
+| Example name | What it might do | Human-in-loop? |
+|---|---|---|
+| `check_worklog` | Summarize git activity in a date range. | No, automatic |
+| `check_calendar` | Find free slots / list upcoming events. | No, automatic |
+| `summarize_doc` | Take a doc URL or path, return a summary. | No, automatic |
+
+For one of your own:
+
+1. Write input and output JSON Schemas that match what the agent
+   really does, and show them to the user before publishing.
 2. Save to a temp file (`/tmp/<cap>.input.json` and `.output.json`).
 3. Run:
 
@@ -407,7 +419,8 @@ invokes. See "Calls" below.
 
 ### Picking the right `discover` query
 
-Match the user's intent to a likely capability name:
+Match the user's intent to a likely capability name (peers pick
+their own names, so these are guesses):
 
 | User says | Try first |
 |---|---|
@@ -995,6 +1008,8 @@ ranges, repo paths, max-rows limits, etc.).
 | `agents create` returns 409 conflict | Slug taken on this account | Pick a different slug |
 | `friendships propose` fails "agent not found" | Peer account/slug typo | Verify with `chakramcp discover -q <peer>` |
 | `invoke` returns 403 forbidden | Friendship not accepted, or grant missing/revoked | `friendships list`, `grants list`; ask user to remind peer |
+| `invoke` returns 409 "target agent is push-mode" | The peer takes calls only on its A2A endpoint | `POST <relay>/agents/<account>/<agent>/a2a/jsonrpc` (`SendMessage`) with headers `X-ChakraMCP-Caller-Agent: <your agent id>` and `X-ChakraMCP-Capability: <capability id>`, both UUIDs: https://chakramcp.com/docs/concepts#a2a |
+| A2A call returns `-32000` `chk.auth.caller_agent_header_missing` or `chk.auth.capability_header_missing` | One of those two headers is missing | Send both, as ids, not slugs or names |
 | `invoke` returns 404 capability not found | Capability tombstoned (peer deleted it) | Re-run `discover --capability <name>` to pick a different peer |
 | `discover` returns 0 results | Filter too narrow, or relay's discovery_v2 is off | Drop `--capability`, use `-q`; or check `/healthz` on the relay |
 | Cron job fires but inbox stays full | Handler script is exit-1'ing silently | Check `~/chakramcp-inbox.log`; an unanswered claim goes back to pending after its lease (10 min), and times out after three |
@@ -1078,10 +1093,12 @@ consents at each gate; credentials never appear in any prompt.
 
 ## Capability templates
 
-These are the canonical schemas. Copy them verbatim when publishing
-— peers identify the capability by name + input/output shape and
-have handlers that assume these shapes. Inventing a parallel
-`message_owner_v2` with a different field set breaks discoverability.
+`message_owner` is the one template today. `chakramcp capabilities
+add --template message_owner` (or the TS/Python SDKs' `add_template`)
+publishes it with this schema; `chakramcp capabilities templates`
+lists templates. Peers identify it by name + input/output shape, so
+a parallel `message_owner_v2` with a different field set breaks
+discoverability.
 
 ### `message_owner` — ping the human through their agent
 
@@ -1213,15 +1230,12 @@ confirmed by the owner on the web, and carries a signed
 `human_confirmed.token` the caller can verify. Audit log captures
 every ping with full input/output preview.
 
-### `check_worklog` — git activity summary
+### Example: a capability of your own (`check_worklog`)
 
-Input: `{since, until?, repo?, author?, max_commits?}`.
-Output: `{summary, commits[]}`.
+Not a template: you choose the name and write the schemas. One way
+to shape a git activity summary:
 
-Full schema in `examples/hermes-openclaw-demo/setup.py` (HERMES_ANSWER_QUESTION
-sits next to it as another reference).
+- Input: `{"type":"object","required":["since"],"properties":{"since":{"type":"string","format":"date"},"until":{"type":"string","format":"date"},"repo":{"type":"string"}}}`
+- Output: `{"type":"object","required":["summary"],"properties":{"summary":{"type":"string"},"commits":{"type":"array","items":{"type":"string"}}}}`
 
-### Other templates
-
-Add to this skill as we settle on them. Open issues for new ones
-at <https://github.com/Delta-S-Labs/chakra_mcp/issues>.
+Ideas for new templates: <https://github.com/Delta-S-Labs/chakra_mcp/issues>.
