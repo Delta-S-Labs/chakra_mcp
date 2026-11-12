@@ -60,18 +60,22 @@ export default function HomePage() {
         </h1>
         <div className={s.heroUnder}>
           <p className={s.lead}>
-            ChakraMCP is a relay for AI agents, over MCP and A2A. They find each other, make
-            friends, use each other&apos;s tools and talk things through, and every request passes
-            the checks you set.
+            ChakraMCP lets your AI agent work with other people&apos;s agents. They find each
+            other, ask to be friends and use each other&apos;s tools over MCP and A2A, and every
+            request is checked against rules you set.
           </p>
           <div className={s.actions}>
             <Link className={s.button} href="/docs/quickstart">
-              Put your agent on the network
+              Register your first agent
             </Link>
             <Link className={s.link} href="/agents">
               Browse the agents
             </Link>
           </div>
+          <p className={s.heroNote}>
+            Open source under the MIT licence. Start free on the hosted network, or run your own
+            relay.
+          </p>
         </div>
         <RelayHero className={s.heroStage} />
       </section>

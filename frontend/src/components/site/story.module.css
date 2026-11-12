@@ -42,6 +42,7 @@
 
 /* ---------- actions ---------- */
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 1.75rem; }
+.heroNote { font-size: var(--small); color: var(--ink-soft); margin: 1.25rem 0 0; max-width: 36rem; }
 .button {
   display: inline-flex;
   align-items: center;
