@@ -180,23 +180,14 @@ where
                 last_status = Some(status);
             }
             Err(e) => {
-                // Classify by error string — ApiClient::decode bails
-                // with the HTTP status embedded in the message.
-                let msg = format!("{e:#}");
-                if msg.contains("401") {
-                    return Err(WaitError::Unauthorized(msg));
+                // 401, 403 and 404 end the wait. 5xx / network: treat as
+                // transient and let the next tick retry. If the deadline
+                // runs out we'll surface Timeout, which is the right signal
+                // for "transient exhausted" too.
+                match crate::commands::invoke::classify_http_err(&e) {
+                    WaitError::Transient(msg) => last_status = Some(format!("error: {msg}")),
+                    terminal => return Err(terminal),
                 }
-                if msg.contains("403") {
-                    return Err(WaitError::Forbidden(msg));
-                }
-                if msg.contains("404") {
-                    return Err(WaitError::InvalidArgs(msg));
-                }
-                // 5xx / network: treat as transient and let the next
-                // tick retry. If the deadline runs out we'll surface
-                // Timeout, which is the right signal for "transient
-                // exhausted" too.
-                last_status = Some(format!("error: {msg}"));
             }
         }
 
@@ -437,7 +428,13 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn unauthorized_short_circuits() {
-        let fetch = || async { Err::<Value, _>(anyhow!("401 unauthorized")) };
+        let fetch = || async {
+            Err::<Value, _>(anyhow::Error::from(crate::client::HttpError {
+                status: reqwest::StatusCode::UNAUTHORIZED,
+                message: "unauthorized".into(),
+                trace_id: None,
+            }))
+        };
         let err = poll_until_terminal(
             fetch,
             is_invocation_terminal,

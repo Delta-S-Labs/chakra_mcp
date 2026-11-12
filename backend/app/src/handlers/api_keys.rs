@@ -49,6 +49,31 @@ pub struct ApiKeyDto {
     pub expires_at: Option<DateTime<Utc>>,
     pub revoked_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
+    /// Which agents the key may manage: `all`, `own` or `selected` (round-2
+    /// QA N17).
+    pub agent_scope: String,
+    /// The agents a `selected` key may manage.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub selected_agent_ids: Vec<Uuid>,
+}
+
+/// A key's agent scope: `all` when it has no scope row (keys from before
+/// scopes, and unscoped keys), and a `selected` key's agents.
+async fn scope_of(db: &sqlx::PgPool, key: Uuid) -> Result<(String, Vec<Uuid>), sqlx::Error> {
+    let row = sqlx::query!(
+        r#"SELECT cs.agent_scope,
+                  ARRAY(SELECT csa.agent_id FROM credential_scope_agents csa
+                         WHERE csa.credential_scope_id = cs.id
+                         ORDER BY csa.agent_id) AS "selected!"
+             FROM credential_scopes cs
+            WHERE cs.cred_kind = 'api_key' AND cs.cred_ref = $1::uuid::text"#,
+        key,
+    )
+    .fetch_optional(db)
+    .await?;
+    Ok(row
+        .map(|r| (r.agent_scope, r.selected))
+        .unwrap_or_else(|| ("all".to_owned(), Vec::new())))
 }
 
 #[derive(Debug, Deserialize)]
@@ -85,10 +110,17 @@ pub async fn list(
 ) -> ApiResult<Json<Vec<ApiKeyDto>>> {
     let rows = sqlx::query!(
         r#"
-        SELECT id, name, key_prefix, account_id, last_used_at, expires_at, revoked_at, created_at
-        FROM api_keys
-        WHERE user_id = $1
-        ORDER BY created_at DESC
+        SELECT k.id, k.name, k.key_prefix, k.account_id, k.last_used_at, k.expires_at,
+               k.revoked_at, k.created_at,
+               COALESCE(cs.agent_scope, 'all') AS "agent_scope!",
+               ARRAY(SELECT csa.agent_id FROM credential_scope_agents csa
+                      WHERE csa.credential_scope_id = cs.id
+                      ORDER BY csa.agent_id) AS "selected_agent_ids!"
+        FROM api_keys k
+        LEFT JOIN credential_scopes cs
+               ON cs.cred_kind = 'api_key' AND cs.cred_ref = k.id::text
+        WHERE k.user_id = $1
+        ORDER BY k.created_at DESC
         "#,
         user.user_id
     )
@@ -106,6 +138,8 @@ pub async fn list(
                 expires_at: r.expires_at,
                 revoked_at: r.revoked_at,
                 created_at: r.created_at,
+                agent_scope: r.agent_scope,
+                selected_agent_ids: r.selected_agent_ids,
             })
             .collect(),
     ))
@@ -288,6 +322,7 @@ pub async fn create(
         }
     }
     tx.commit().await?;
+    let (agent_scope, selected_agent_ids) = scope_of(&state.db, inserted.id).await?;
 
     Ok(Json(CreateApiKeyResponse {
         api_key: ApiKeyDto {
@@ -299,6 +334,8 @@ pub async fn create(
             expires_at: inserted.expires_at,
             revoked_at: inserted.revoked_at,
             created_at: inserted.created_at,
+            agent_scope,
+            selected_agent_ids,
         },
         plaintext,
     }))
@@ -450,6 +487,7 @@ pub async fn rotate(
     .await?;
 
     tx.commit().await?;
+    let (agent_scope, selected_agent_ids) = scope_of(&state.db, inserted.id).await?;
 
     Ok((
         axum::http::StatusCode::CREATED,
@@ -463,6 +501,8 @@ pub async fn rotate(
                 expires_at: inserted.expires_at,
                 revoked_at: inserted.revoked_at,
                 created_at: inserted.created_at,
+                agent_scope,
+                selected_agent_ids,
             },
             plaintext,
         }),
@@ -701,6 +741,31 @@ mod tests {
         let bytes = res.into_body().collect().await.unwrap().to_bytes();
         let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         let key_id = v["api_key"]["id"].as_str().unwrap();
+        // The key says what it may manage (round-2 QA N17), on create and in
+        // the list.
+        assert_eq!(v["api_key"]["agent_scope"], "selected");
+        assert_eq!(
+            v["api_key"]["selected_agent_ids"],
+            serde_json::json!([agent_id])
+        );
+        let listed = crate::router(crate::AppState::new(pool.clone(), test_config()))
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/api-keys")
+                    .header(header::AUTHORIZATION, format!("Bearer {jwt}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let listed: serde_json::Value =
+            serde_json::from_slice(&listed.into_body().collect().await.unwrap().to_bytes())
+                .unwrap();
+        assert_eq!(listed[0]["agent_scope"], "selected", "{listed}");
+        assert_eq!(
+            listed[0]["selected_agent_ids"],
+            serde_json::json!([agent_id])
+        );
 
         let (scope,): (String,) = sqlx::query_as(
             "SELECT agent_scope FROM credential_scopes WHERE cred_kind = 'api_key' AND cred_ref = $1",

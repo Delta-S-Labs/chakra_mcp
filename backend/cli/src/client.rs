@@ -3,7 +3,7 @@
 //! Authentication is whatever the active network's auth produces — OAuth
 //! access_token or API key — both delivered as a Bearer header.
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, Result};
 use reqwest::{Client, Method, Response, StatusCode};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -182,21 +182,90 @@ impl ApiClient {
     }
 }
 
+/// A refused or failed request: the HTTP status, the server's message, and
+/// the trace id to quote when reporting a problem (`ChakraMCP-Trace-Id`,
+/// present when the request was traced; round-2 QA N15).
+#[derive(Debug)]
+pub struct HttpError {
+    pub status: StatusCode,
+    pub message: String,
+    pub trace_id: Option<String>,
+}
+
+impl std::fmt::Display for HttpError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} ({})", self.message, self.status)?;
+        if let Some(trace) = &self.trace_id {
+            write!(f, " [trace id {trace}]")?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for HttpError {}
+
+/// The HTTP status of a failed request, if `e` is one.
+pub fn http_status(e: &anyhow::Error) -> Option<StatusCode> {
+    e.chain()
+        .find_map(|cause| cause.downcast_ref::<HttpError>())
+        .map(|h| h.status)
+}
+
 async fn decode<T: DeserializeOwned>(resp: Response) -> Result<T> {
     let status = resp.status();
     if status == StatusCode::NO_CONTENT {
         let v: serde_json::Value = serde_json::Value::Null;
         return Ok(serde_json::from_value(v)?);
     }
+    let trace_id = resp
+        .headers()
+        .get("chakramcp-trace-id")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
     let body = resp.text().await?;
     if !status.is_success() {
-        if let Ok(env) = serde_json::from_str::<serde_json::Value>(&body) {
-            if let Some(msg) = env.pointer("/error/message").and_then(|m| m.as_str()) {
-                bail!("{} ({})", msg, status);
-            }
+        let message = serde_json::from_str::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|env| {
+                env.pointer("/error/message")
+                    .or_else(|| env.get("error").filter(|e| e.is_string()))
+                    .and_then(|m| m.as_str())
+                    .map(str::to_owned)
+            })
+            .unwrap_or(body);
+        return Err(HttpError {
+            status,
+            message,
+            trace_id,
         }
-        bail!("{}: {}", status, body);
+        .into());
     }
     serde_json::from_str::<T>(&body)
         .map_err(|e| anyhow!("decoding response failed: {} — body: {}", e, body))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_failed_request_shows_its_trace_id_and_keeps_its_status() {
+        let e: anyhow::Error = HttpError {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: "boom".into(),
+            trace_id: Some("4f12404b".into()),
+        }
+        .into();
+        assert_eq!(
+            format!("{e:#}"),
+            "boom (500 Internal Server Error) [trace id 4f12404b]"
+        );
+        // The digits in a trace id don't change how the error is classed.
+        assert_eq!(http_status(&e), Some(StatusCode::INTERNAL_SERVER_ERROR));
+        let wrapped = e.context("inviting");
+        assert_eq!(
+            http_status(&wrapped),
+            Some(StatusCode::INTERNAL_SERVER_ERROR)
+        );
+    }
 }
