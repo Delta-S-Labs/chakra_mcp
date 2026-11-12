@@ -15,7 +15,7 @@ const BRANDMARK_ONLY = new Set(["/brand"]);
  * the nav to the caller's auth state without an extra round-trip
  * or a SessionProvider wrapping the public surface:
  *
- *   • Logged out → a single "Sign in" call-to-action (links to /login)
+ *   • Logged out → "Sign in" (/login) and a "Sign up" button (/signup)
  *   • Logged in  → Docs + App tabs (in that order, per product ask)
  *
  * Pathname-aware active-state highlighting lives in `<SiteNav />`

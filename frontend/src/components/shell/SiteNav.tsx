@@ -9,7 +9,7 @@ import { usePathname } from "next/navigation";
  * Renders one of three shapes depending on auth state + current path:
  *
  *   • brandmark-only path (/brand) → renders nothing
- *   • logged out → single "Sign in" link to /login
+ *   • logged out → "Sign in" (/login) and "Sign up" (/signup)
  *   • logged in  → Docs (/docs) + App (/app) tabs, in that order
  *
  * Active-state highlighting follows the existing `.nav-link.active`
@@ -37,12 +37,18 @@ export default function SiteNav({
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
   // Everyone gets the content tabs; the last slot depends on auth
-  // state — "App" for signed-in users, "Sign in" for visitors.
+  // state — "App" for signed-in users, "Sign in" and "Sign up" for
+  // visitors, with the button style on "Sign up".
   const tabs = [
     { label: "Use cases", href: "/use-cases" },
     { label: "FAQ", href: "/faq" },
     { label: "Docs", href: "/docs" },
-    isLoggedIn ? { label: "App", href: "/app" } : { label: "Sign in", href: "/login" },
+    ...(isLoggedIn
+      ? [{ label: "App", href: "/app" }]
+      : [
+          { label: "Sign in", href: "/login" },
+          { label: "Sign up", href: "/signup" },
+        ]),
   ];
 
   return (
@@ -53,7 +59,7 @@ export default function SiteNav({
           href={t.href}
           className={
             "nav-link" +
-            (t.href === "/app" || t.href === "/login" ? " nav-link--action" : "") +
+            (t.href === "/app" || t.href === "/signup" ? " nav-link--action" : "") +
             (isActive(t.href) ? " active" : "")
           }
         >
