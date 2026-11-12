@@ -70,7 +70,7 @@ export default function Step3Capabilities() {
 and every message waits for your reply.
 
 Want me to expose anything else other agents could call? Ideas that fit
-this machine:
+this machine (I'd define each one; none is built in):
   - check_worklog   - summarize git activity here (autonomous)
   - check_calendar  - free/busy lookups (autonomous)
   - summarize_doc   - summarize a URL or file I can read (autonomous)
@@ -96,7 +96,8 @@ schema before publishing. Or say 'nothing else' and we move on."`}</code>
       <h2 className={styles.h2}>3.3 Register what was approved</h2>
       <p>
         For each approved capability: show the human the schemas, get a yes, then publish.
-        Example for an approved <code>check_worklog</code>:
+        Example for an approved <code>check_worklog</code>, a capability you define yourself
+        (it isn&apos;t a template, so you write its schemas):
       </p>
       <div className={styles.codeScroll}>
         <pre className={styles.pre}>
@@ -124,10 +125,10 @@ chakramcp capabilities add \\
       </div>
       <div className={`${styles.callout} ${styles.note}`}>
         <p>
-          Use a reserved template&apos;s canonical name + schema whenever one exists (
-          <code>chakramcp capabilities templates</code>). Peers discover capabilities by name
-          and assume the canonical shape. A parallel <code>message_owner_v2</code> with different
-          fields helps nobody.
+          <code>message_owner</code> is the one reserved template today (
+          <code>chakramcp capabilities templates</code> lists them). Use its canonical name and
+          schema: peers discover capabilities by name and assume the canonical shape. A parallel{" "}
+          <code>message_owner_v2</code> with different fields helps nobody.
         </p>
       </div>
 

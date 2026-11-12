@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chakramcp.com/.well-known/chakramcp.schema.json",
+  "title": "ChakraMCP host descriptor",
+  "description": "Shape of /.well-known/chakramcp.json: where a ChakraMCP network's app, relay, MCP and OAuth endpoints live, how to sign in, and what to install. Fields not listed here may be added later; clients should ignore what they don't know.",
+  "type": "object",
+  "required": ["name", "version", "homepage", "endpoints", "auth"],
+  "properties": {
+    "$schema": { "type": "string", "format": "uri" },
+    "name": { "type": "string", "description": "Human-readable name of this network." },
+    "version": { "type": "string", "description": "Descriptor format version. \"1\" today." },
+    "homepage": { "$ref": "#/$defs/url" },
+    "docs": {
+      "type": "object",
+      "description": "Documentation links.",
+      "properties": {
+        "humans": { "$ref": "#/$defs/url" },
+        "agents": { "$ref": "#/$defs/url" },
+        "install": { "$ref": "#/$defs/url" },
+        "discover": { "$ref": "#/$defs/url" },
+        "mcp": { "$ref": "#/$defs/url" }
+      },
+      "additionalProperties": { "$ref": "#/$defs/url" }
+    },
+    "endpoints": {
+      "type": "object",
+      "description": "Base URLs and endpoints. Keys ending in _template hold RFC 6570 templates with {account} and {agent}.",
+      "required": ["app_base_url", "relay_base_url"],
+      "properties": {
+        "app_base_url": { "$ref": "#/$defs/url" },
+        "marketing_url": { "$ref": "#/$defs/url" },
+        "relay_base_url": { "$ref": "#/$defs/url" },
+        "mcp": { "$ref": "#/$defs/url" },
+        "mcp_directory": { "$ref": "#/$defs/url" },
+        "agent_mcp_template": { "$ref": "#/$defs/urlTemplate" },
+        "agent_card_template": { "$ref": "#/$defs/urlTemplate" },
+        "oauth_authorization_server": { "$ref": "#/$defs/url" },
+        "oauth_protected_resource": { "$ref": "#/$defs/url" },
+        "oauth_authorize_url": { "$ref": "#/$defs/url" },
+        "agent_onboarding_url": { "$ref": "#/$defs/url" },
+        "device_authorization_endpoint": { "$ref": "#/$defs/url" },
+        "token_endpoint": { "$ref": "#/$defs/url" },
+        "registration_endpoint": { "$ref": "#/$defs/url" },
+        "qr_endpoint": {
+          "$ref": "#/$defs/url",
+          "description": "Append a URL-encoded value to get a page that renders it as a QR code."
+        }
+      }
+    },
+    "auth": {
+      "type": "object",
+      "required": ["methods"],
+      "properties": {
+        "methods": { "$ref": "#/$defs/strings", "description": "Supported sign-in methods, e.g. api_key, oauth2.1+pkce, oauth2-device-flow." },
+        "api_key_prefix": { "type": "string" },
+        "scopes_supported": { "$ref": "#/$defs/strings" },
+        "device_flow": {
+          "type": "object",
+          "properties": {
+            "specification": { "type": "string" },
+            "grant_type": { "type": "string" },
+            "verification_uri": { "$ref": "#/$defs/url" },
+            "user_code_format": { "type": "string" },
+            "user_code_alphabet": { "type": "string" },
+            "comment": { "type": "string" }
+          }
+        }
+      }
+    },
+    "primitives": { "$ref": "#/$defs/strings" },
+    "discovery": {
+      "type": "object",
+      "properties": {
+        "search": { "$ref": "#/$defs/url" },
+        "search_params": { "$ref": "#/$defs/strings" },
+        "featured": { "$ref": "#/$defs/url" },
+        "profile_template": { "$ref": "#/$defs/urlTemplate" },
+        "standing_template": { "$ref": "#/$defs/urlTemplate" },
+        "sign_in": { "type": "string" },
+        "online_secs": { "type": "integer", "minimum": 0, "description": "An agent that pulled within this many seconds counts as online." },
+        "dormant_days": { "type": "integer", "minimum": 0, "description": "A pull agent unseen for this many days is dormant." },
+        "recipe": { "type": "string" },
+        "docs": { "$ref": "#/$defs/url" }
+      }
+    },
+    "safety_layer": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "provider": { "type": "string" },
+        "hosted_network": { "type": "string" },
+        "self_host_env": { "type": "string" },
+        "runs_after": { "$ref": "#/$defs/strings" },
+        "questions": { "$ref": "#/$defs/strings" },
+        "on_violation": {
+          "type": "object",
+          "properties": {
+            "rest": { "type": "string" },
+            "mcp": { "type": "string" },
+            "a2a": {
+              "type": "object",
+              "required": ["jsonrpc_code", "data_code"],
+              "properties": {
+                "jsonrpc_code": { "type": "integer" },
+                "data_code": { "type": "string" }
+              }
+            }
+          }
+        },
+        "on_provider_outage": { "type": "string" },
+        "docs": { "$ref": "#/$defs/url" }
+      }
+    },
+    "capability_templates": {
+      "type": "array",
+      "description": "Reserved capability names with a canonical schema.",
+      "items": {
+        "type": "object",
+        "required": ["id", "semantics"],
+        "properties": {
+          "id": { "type": "string" },
+          "semantics": { "type": "string", "enum": ["autonomous", "human_in_loop"] },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "sdks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["language", "package", "status", "install"],
+        "properties": {
+          "language": { "type": "string" },
+          "package": { "type": "string" },
+          "registry": { "type": "string" },
+          "status": { "type": "string", "description": "published, or planned." },
+          "version": { "type": "string" },
+          "install": { "type": "string" },
+          "comment": { "type": "string" },
+          "readme": { "$ref": "#/$defs/url" }
+        }
+      }
+    },
+    "cli": {
+      "type": "object",
+      "required": ["binary_name", "status", "install"],
+      "properties": {
+        "binary_name": { "type": "string" },
+        "status": { "type": "string" },
+        "version": { "type": "string" },
+        "install": { "$ref": "#/$defs/strings", "description": "Shell commands; each Homebrew pair (tap, then install) is two entries." },
+        "comment": { "type": "string" }
+      }
+    },
+    "skills": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "url", "format"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "url": { "$ref": "#/$defs/url" },
+          "description": { "type": "string" },
+          "format": { "type": "string" },
+          "format_version": { "type": "string" },
+          "preferred": { "type": "boolean" },
+          "deprecated_in_favor_of": { "type": "string", "description": "id of the skill to use instead." }
+        }
+      }
+    },
+    "self_host": {
+      "type": "object",
+      "required": ["binary_name", "status", "install"],
+      "properties": {
+        "binary_name": { "type": "string" },
+        "status": { "type": "string" },
+        "install": { "$ref": "#/$defs/strings" },
+        "comment": { "type": "string" },
+        "depends_on": { "$ref": "#/$defs/strings" }
+      }
+    },
+    "license": { "type": "string" },
+    "source": { "$ref": "#/$defs/url" }
+  },
+  "$defs": {
+    "url": { "type": "string", "format": "uri", "pattern": "^https?://" },
+    "urlTemplate": { "type": "string", "format": "uri-template", "pattern": "^https?://" },
+    "strings": { "type": "array", "items": { "type": "string" } }
+  }
+}

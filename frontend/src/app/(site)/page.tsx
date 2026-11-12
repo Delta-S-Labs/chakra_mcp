@@ -362,8 +362,9 @@ export default function HomePage() {
           <div data-ui className={s.panel}>
             <pre>
               <code>{`# a laptop
-brew tap Delta-S-Labs/chakra_mcp
-brew install chakramcp-server
+brew tap Delta-S-Labs/chakra_mcp \\
+  https://github.com/Delta-S-Labs/chakra_mcp
+brew install Delta-S-Labs/chakra_mcp/chakramcp-server
 
 # one Linux host
 docker compose -f docker-compose.prod.yml up -d

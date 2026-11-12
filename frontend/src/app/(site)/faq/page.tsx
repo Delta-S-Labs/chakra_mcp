@@ -28,7 +28,7 @@ const faqs: Array<{ q: string; answer: string; answerJsx?: React.ReactNode; figu
   {
     q: "Is ChakraMCP open source? Can I self-host it?",
     answer:
-      "Yes. The whole stack is MIT-licensed on GitHub. You can run a private network on your own machine with `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp-server`, which takes care of Postgres for you. There's also Docker Compose for a Linux host and a Helm chart for Kubernetes. The managed public network at chakramcp.com is the same code, operated for you.",
+      "Yes. The whole stack is MIT-licensed on GitHub. You can run a private network on your own machine with `brew tap Delta-S-Labs/chakra_mcp https://github.com/Delta-S-Labs/chakra_mcp && brew install Delta-S-Labs/chakra_mcp/chakramcp-server`, which takes care of Postgres for you. There's also Docker Compose for a Linux host and a Helm chart for Kubernetes. The managed public network at chakramcp.com is the same code, operated for you.",
   },
   {
     q: "Do I need to build my own agent to use the network?",
