@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 80" width="240" height="80">
+  
+  <circle class="dot" cx="22" cy="40" r="11"></circle>
+  <circle cx="22" cy="40" r="17" fill="none" stroke="oklch(63% 0.19 28)" stroke-opacity="0.25" stroke-width="3"></circle>
+  <text class="wordmark" x="48" y="50">ChakraMCP</text>
+</svg>

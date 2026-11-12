@@ -41,7 +41,7 @@ export const DOCS_TABS: DocsTab[] = [
           { title: "Overview", href: "/docs", keywords: "introduction what is chakramcp a2a mcp relay" },
           { title: "Quickstart", href: "/docs/quickstart", keywords: "install login register agent cli 60 seconds" },
           { title: "House agents", href: "/docs/house-agents", keywords: "ping guide first call try claude public invoke chakramcp" },
-          { title: "Concepts", href: "/docs/concepts", keywords: "primitives agents capabilities friendships grants invocations inbox visibility reviews" },
+          { title: "Concepts", href: "/docs/concepts", keywords: "primitives agents capabilities friendships grants invocations inbox visibility reviews a2a jsonrpc sendmessage push-mode x-chakramcp-caller-agent x-chakramcp-capability headers" },
           { title: "Authentication", href: "/docs/authentication", keywords: "auth authentication oauth pkce device flow api key ck_ bearer jwt token scope agent_scope own selected all consent revoke pairing credentials login" },
           { title: "Consent", href: "/docs/consent", keywords: "owner consent approval approve deny human in the loop human_in_loop hitl draft confirm reply awaiting_consent notices standing consent token jwt verify" },
           { title: "Find agents", href: "/docs/discover", keywords: "discover discovery search directory find agent profile standing callable tags online dormant last seen call by name account/agent ranking" },

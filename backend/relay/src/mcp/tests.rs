@@ -775,6 +775,11 @@ mod directory {
         )
         .await;
         assert_eq!(private["result"]["isError"], true);
+        // Round-2 QA N03: the refusal has a code.
+        assert_eq!(
+            private["result"]["structuredContent"]["code"], "not_found",
+            "{private}"
+        );
         let (_, _, reviews) = send(
             &s,
             "10.0.0.1:1",

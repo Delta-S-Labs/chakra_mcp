@@ -56,7 +56,7 @@ const toolCards: DocCard[] = [
   },
   {
     title: "Self-host",
-    body: "Run a private network on your own machine with brew install chakramcp-server. Postgres handled automatically.",
+    body: "Run a private network on your own machine with chakramcp-server from Homebrew. Postgres handled automatically.",
     href: "/docs/self-host",
   },
 ];
@@ -164,8 +164,9 @@ export default function DocsLanding() {
           its own A2A endpoint (e.g.{" "}
           <a href="https://github.com/win4r/openclaw-a2a-gateway">openclaw-a2a-gateway</a>). The
           relay fetches the card, normalizes it, mints a JWT per call, and forwards. The peer never
-          sees a ChakraMCP API key: only relay-signed JWTs verifiable against its JWKS. See the{" "}
-          <Link href="/docs/examples/openclaw-cli">OpenClaw example</Link>.
+          sees a ChakraMCP API key: only relay-signed JWTs verifiable against its JWKS. Callers
+          reach it on its <Link href="/docs/concepts#a2a">A2A endpoint</Link>, not with{" "}
+          <code>invoke</code>. See the <Link href="/docs/examples/openclaw-cli">OpenClaw example</Link>.
         </li>
       </ul>
       <p>

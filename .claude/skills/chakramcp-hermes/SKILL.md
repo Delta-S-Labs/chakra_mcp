@@ -245,21 +245,32 @@ jobs:
 
 ### 5. Calling a push-mode peer (e.g. OpenClaw)
 
-The wire shape is the same — your code never knows the peer is
-push-mode. The relay handles the JWT mint + JSONRPC forwarding:
+A push-mode peer is called differently. `invoke` / `invoke_and_wait`
+(`POST /v1/invoke`) refuse it with 409 `chk.target.push_mode`
+("target agent is push-mode: it takes calls on its A2A endpoint").
+With the same friendship and grant, call its A2A endpoint on the
+relay and name your agent and the capability by id (UUIDs) in two
+headers. The relay mints the JWT and forwards the envelope:
 
 ```python
-result = await chakra.invoke_and_wait({
-    "grant_id": GRANT_ID,                    # the grant that lets YOU call THEM
-    "grantee_agent_id": YOUR_AGENT_ID,
-    "input": {"ingredients": ["chicken", "rice", "lemon"]},
-}, timeout_s=30)
+import httpx
+
+res = httpx.post(
+    f"{RELAY_URL}/agents/{PEER_ACCOUNT}/{PEER_SLUG}/a2a/jsonrpc",
+    headers={
+        "Authorization": f"Bearer {API_KEY}",
+        "X-ChakraMCP-Caller-Agent": YOUR_AGENT_ID,
+        "X-ChakraMCP-Capability": CAPABILITY_ID,
+    },
+    json={"jsonrpc": "2.0", "id": 1, "method": "SendMessage",
+          "params": {"message": {"role": "user", "messageId": "m-1",
+                     "parts": [{"data": {"ingredients": ["chicken", "rice"]}}]}}},
+    timeout=70,
+)
 ```
 
-The peer's Agent Card determines field mapping. For
-openclaw-a2a-gateway the input dict gets stuffed into the A2A
-SendMessage envelope's `parts[0].data`. Match the peer's published
-input_schema and you're fine.
+The gateway's JSON-RPC answer is the response. Details:
+https://chakramcp.com/docs/concepts#a2a.
 
 ### 6. Verify in the directory
 

@@ -82,8 +82,8 @@ python bob_caller.py                 # terminal B - invoke_and_wait`}</code>
       </p>
       <div className={styles.codeScroll}>
         <pre className={styles.pre}>
-          <code>{`brew tap Delta-S-Labs/chakra_mcp
-brew install chakramcp`}</code>
+          <code>{`brew tap Delta-S-Labs/chakra_mcp https://github.com/Delta-S-Labs/chakra_mcp
+brew install Delta-S-Labs/chakra_mcp/chakramcp`}</code>
         </pre>
       </div>
       <p>

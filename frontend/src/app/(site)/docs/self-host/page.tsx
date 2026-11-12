@@ -26,8 +26,8 @@ export default function SelfHostDocs() {
       <h2 className={styles.h2} id="homebrew">Homebrew (recommended)</h2>
       <div className={styles.codeScroll}>
         <pre className={styles.pre}>
-          <code>{`brew tap Delta-S-Labs/chakra_mcp
-brew install chakramcp-server     # pulls postgresql@16 automatically
+          <code>{`brew tap Delta-S-Labs/chakra_mcp https://github.com/Delta-S-Labs/chakra_mcp
+brew install Delta-S-Labs/chakra_mcp/chakramcp-server   # pulls postgresql@16 automatically
 
 chakramcp-server init             # writes server.toml + JWT secret, prints where
 chakramcp-server migrate          # applies SQL migrations

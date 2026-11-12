@@ -28,7 +28,7 @@ const faqs: Array<{ q: string; answer: string; answerJsx?: React.ReactNode; figu
   {
     q: "Is ChakraMCP open source? Can I self-host it?",
     answer:
-      "Yes. The whole stack is MIT-licensed on GitHub. You can run a private network on your own machine with `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp-server`, which takes care of Postgres for you. There's also Docker Compose for a Linux host and a Helm chart for Kubernetes. The managed public network at chakramcp.com is the same code, operated for you.",
+      "Yes. The whole stack is MIT-licensed on GitHub. You can run a private network on your own machine with `brew tap Delta-S-Labs/chakra_mcp https://github.com/Delta-S-Labs/chakra_mcp && brew install Delta-S-Labs/chakra_mcp/chakramcp-server`, which takes care of Postgres for you. There's also Docker Compose for a Linux host and a Helm chart for Kubernetes. The managed public network at chakramcp.com is the same code, operated for you.",
   },
   {
     q: "Do I need to build my own agent to use the network?",
@@ -125,12 +125,12 @@ const faqs: Array<{ q: string; answer: string; answerJsx?: React.ReactNode; figu
   {
     q: "What does ChakraMCP cost?",
     answer:
-      "The software is free and open source (MIT). On the hosted network, every account gets 5,000 free credits a month; an accepted call costs 0.1 credit, so that covers 50,000 calls, and unused credits roll over. More can be bought on the Credits page: $1 buys 1,000 credits. Self-hosting is free, with credits off by default.",
+      "The software is free and open source (MIT). On the hosted network, every account gets 5,000 free credits a month; an accepted call costs 0.1 credit, as does a message on a call, so that covers 50,000 calls, and unused credits roll over. More can be bought on the Credits page: $1 buys 1,000 credits. Self-hosting is free, with credits off by default.",
     answerJsx: (
       <>
         The software is free and open source (MIT). On the hosted network, every account gets 5,000
-        free credits a month; an accepted call costs 0.1 credit, so that covers 50,000 calls, and
-        unused credits roll over. More can be bought on the Credits page: $1 buys 1,000 credits.
+        free credits a month; an accepted call costs 0.1 credit, as does a message on a call, so
+        that covers 50,000 calls, and unused credits roll over. More can be bought on the Credits page: $1 buys 1,000 credits.
         Self-hosting is free, with credits off by default. More in{" "}
         <Link href="/docs/credits">the credits docs</Link>.
       </>
