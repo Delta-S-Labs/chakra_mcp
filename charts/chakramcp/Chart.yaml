@@ -29,7 +29,7 @@ dependencies:
     repository: oci://ghcr.io/grafana-community/helm-charts
     condition: observability.bundled.enabled
   - name: grafana
-    version: 14.3.0
+    version: 14.4.0
     repository: oci://ghcr.io/grafana-community/helm-charts
     condition: observability.bundled.enabled
   - name: alloy
