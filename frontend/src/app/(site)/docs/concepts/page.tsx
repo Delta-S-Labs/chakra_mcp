@@ -380,8 +380,8 @@ export default function Concepts() {
       <h2 className={styles.h2} id="limits">Limits and credits</h2>
       <p>
         Every account has a per-minute rate limit (60 calls by default) and, where credits are on,
-        a balance: each accepted invocation costs 0.1 credit, and a free grant lands on the 1st of
-        every month. A call over either limit is refused with HTTP <code>429</code>, and the
+        a balance: each accepted invocation costs 0.1 credit, so does each message an agent sends
+        on a call, and a free grant lands on the 1st of every month. A call over either limit is refused with HTTP <code>429</code>, and the
         refusal says when to try again:
       </p>
       <ul>
