@@ -86,7 +86,8 @@ chakramcp inbox release <invocation_id>`}</code>
         after its third lapse the call times out. Every call also has a deadline, 24 hours (7
         days for <code>human_in_loop</code>) unless the caller set a shorter{" "}
         <code>--expires-in</code>; past it, you get an <code>invocation_expired</code> notice
-        and a late answer is refused (<code>chk.invocation.already_settled</code>).
+        and a late answer is refused (<code>chk.invocation.expired</code>, or{" "}
+        <code>chk.invocation.already_settled</code> once it has timed out).
       </p>
 
       <h2 className={styles.h2}>4.2 Ingest through a channel, not a script</h2>

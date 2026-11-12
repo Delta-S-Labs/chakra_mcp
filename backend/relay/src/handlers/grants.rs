@@ -79,7 +79,11 @@ async fn fetch_grant(db: &PgPool, user_id: Uuid, id: Uuid) -> Result<GrantDto, A
     let r = sqlx::query!(
         r#"
         SELECT
-            g.id, g.status, g.capability_id,
+            g.id, g.capability_id,
+            -- An active grant past its expires_at reads `expired` (round-2
+            -- QA N35); nothing rewrites the row when it lapses.
+            CASE WHEN g.status = 'active' AND g.expires_at <= now()
+                 THEN 'expired' ELSE g.status END AS "status!",
             g.granted_at, g.expires_at, g.purpose, g.revoked_at, g.revoke_reason,
             ga.id   as g_agent_id,   ga.slug as g_agent_slug,   ga.display_name as g_agent_display_name,
             gacc.id as g_acct_id,    gacc.slug as g_acct_slug,  gacc.display_name as g_acct_display_name,
@@ -188,7 +192,11 @@ pub async fn list(
     let rows = sqlx::query!(
         r#"
         SELECT
-            g.id, g.status, g.capability_id,
+            g.id, g.capability_id,
+            -- An active grant past its expires_at reads `expired` (round-2
+            -- QA N35); nothing rewrites the row when it lapses.
+            CASE WHEN g.status = 'active' AND g.expires_at <= now()
+                 THEN 'expired' ELSE g.status END AS "status!",
             g.granted_at, g.expires_at, g.purpose, g.revoked_at, g.revoke_reason,
             ga.id   as g_agent_id,   ga.slug as g_agent_slug,   ga.display_name as g_agent_display_name,
             gacc.id as g_acct_id,    gacc.slug as g_acct_slug,  gacc.display_name as g_acct_display_name,
@@ -208,7 +216,9 @@ pub async fn list(
                 ($2::boolean AND EXISTS(SELECT 1 FROM account_memberships m WHERE m.account_id = ga.account_id AND m.user_id = $1))
              OR ($3::boolean AND EXISTS(SELECT 1 FROM account_memberships m WHERE m.account_id = ea.account_id AND m.user_id = $1))
             )
-            AND ($4::text IS NULL OR g.status = $4)
+            AND ($4::text IS NULL OR $4 = CASE
+                WHEN g.status = 'active' AND g.expires_at <= now() THEN 'expired'
+                ELSE g.status END)
             AND ga.tombstoned_at  IS NULL
             AND ea.tombstoned_at  IS NULL
             AND gacc.tombstoned_at IS NULL
@@ -325,7 +335,7 @@ pub async fn create(
         SELECT c.id, c.agent_id, c.name, c.description, ga.account_id as granter_account_id
         FROM agent_capabilities c
         JOIN agents ga ON ga.id = c.agent_id
-        WHERE c.id = $1
+        WHERE c.id = $1 AND ga.tombstoned_at IS NULL
         "#,
         req.capability_id,
     )
@@ -352,7 +362,7 @@ pub async fn create(
 
     // Grantee must exist.
     let _grantee_exists = sqlx::query_scalar!(
-        r#"SELECT id FROM agents WHERE id = $1"#,
+        r#"SELECT id FROM agents WHERE id = $1 AND tombstoned_at IS NULL"#,
         req.grantee_agent_id,
     )
     .fetch_optional(&state.db)
@@ -377,6 +387,18 @@ pub async fn create(
             ..Default::default()
         },
     )
+    .await?;
+    // A lapsed grant still stored as active would block the new one (one
+    // active grant per granter, grantee and capability): mark it expired.
+    sqlx::query!(
+        r#"UPDATE grants SET status = 'expired'
+            WHERE granter_agent_id = $1 AND grantee_agent_id = $2 AND capability_id = $3
+              AND status = 'active' AND expires_at <= now()"#,
+        req.granter_agent_id,
+        req.grantee_agent_id,
+        req.capability_id,
+    )
+    .execute(&state.db)
     .await?;
     let id = Uuid::now_v7();
     let inserted = sqlx::query!(

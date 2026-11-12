@@ -456,6 +456,41 @@ async fn store_rejection_report(db: &PgPool, id: Uuid, report: Value) -> Result<
 /// row would sit `pending` forever.
 const PUSH_TARGET_ERROR: &str = "target agent is push-mode: it takes calls on its A2A endpoint \
      (POST /agents/<account>/<slug>/a2a/jsonrpc), not as queued invocations";
+/// Its code (round-2 QA V-R2-006).
+const PUSH_TARGET_CODE: &str = "chk.target.push_mode";
+
+/// The refusal for a capability that isn't public: `chk.policy.grant_required`
+/// when the caller can see it, as MCP answers (round-2 QA N35), else the
+/// uniform 404 that hides it. Only a refused call gets here.
+async fn not_public(
+    state: &RelayState,
+    user: &AuthUser,
+    agent: Uuid,
+    visibility: &str,
+    capability: &str,
+) -> Result<ApiError, ApiError> {
+    let seen = crate::discovery::profile::resolve(
+        state,
+        Some(user.user_id),
+        &crate::discovery::profile::AgentRef::Id(agent),
+    )
+    .await?
+    .filter(|t| t.relation.sees(visibility));
+    Ok(match seen {
+        Some(t) => {
+            let name = format!("{}/{}", t.summary.account_slug, t.summary.slug);
+            ApiError::Policy {
+                code: "chk.policy.grant_required",
+                message: format!(
+                    "`{capability}` on {name} isn't public: call it with your grant's grant_id, \
+                     or propose a friendship with {name} and, once it's accepted, ask its \
+                     owner to grant `{capability}`"
+                ),
+            }
+        }
+        None => ApiError::NotFound,
+    })
+}
 
 /// Capability descriptions default to `''`; treat blank as absent so the
 /// capability-fit question only runs when there's something to fit.
@@ -799,6 +834,10 @@ pub(crate) async fn authorize_and_enqueue_trusted(
     expires_in: Option<i64>,
 ) -> Result<Outcome, ApiError> {
     consent_enqueue::validate_terms(consent_terms)?;
+    // Kept whole up to 16 KiB, refused above (round-2 QA N32): before this
+    // a larger input was cut to a marker, so it escaped screening and the
+    // agent never got it. Checked first, so a refusal costs nothing.
+    consent_enqueue::check_input_size(input)?;
     let input_preview = truncate_for_audit(input);
 
     // Resolve the grant + agents + capability.
@@ -865,7 +904,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
     // to a call the caller is on.
     crate::calls::link::check(state, user, call, grantee_agent_id, row.granter_agent_id).await?;
 
-    let reject = |status: StatusCode, error: String| {
+    let reject = |status: StatusCode, code: &'static str, error: String| {
         let db = state.db.clone();
         let input_preview = &input_preview;
         let row = &row;
@@ -891,7 +930,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
                 invocation_id,
                 status,
                 error,
-                code: None,
+                code: Some(code),
                 safety: None,
             })
         }
@@ -900,6 +939,7 @@ pub(crate) async fn authorize_and_enqueue_trusted(
     if row.grantee_agent_id != grantee_agent_id {
         return reject(
             StatusCode::BAD_REQUEST,
+            "invalid_request",
             "grantee_agent_id does not match the grant".into(),
         )
         .await;
@@ -913,10 +953,21 @@ pub(crate) async fn authorize_and_enqueue_trusted(
     // discovery spec §4.2), not membership alone.
     crate::auth::require_scope(state, user, row.grantee_agent_id).await?;
 
-    // Grant must be active and not expired.
+    // Grant must be active and not expired; each refusal has its own code
+    // (round-2 QA N35).
+    let expired = row.expires_at.is_some_and(|exp| exp <= Utc::now());
+    if row.grant_status == "expired" || (row.grant_status == "active" && expired) {
+        return reject(
+            StatusCode::CONFLICT,
+            "chk.grant.expired",
+            "grant has expired; ask its granter for a new one".into(),
+        )
+        .await;
+    }
     if row.grant_status != "active" {
         return reject(
             StatusCode::CONFLICT,
+            "chk.grant.revoked",
             format!(
                 "grant is {}; only active grants can be invoked",
                 row.grant_status
@@ -924,14 +975,12 @@ pub(crate) async fn authorize_and_enqueue_trusted(
         )
         .await;
     }
-    if row.expires_at.is_some_and(|exp| exp <= Utc::now()) {
-        return reject(StatusCode::CONFLICT, "grant has expired".into()).await;
-    }
 
     // The relationship that authorised the grant must still hold.
     if row.friendship_id.is_none() {
         return reject(
             StatusCode::FORBIDDEN,
+            "chk.policy.friendship_required",
             "no accepted friendship between the granter and grantee agents".into(),
         )
         .await;
@@ -942,7 +991,12 @@ pub(crate) async fn authorize_and_enqueue_trusted(
     // endpoint — so a queued row would never be delivered. Refuse up front,
     // before usage limits or compliance spend anything on it.
     if row.granter_mode == "push" {
-        return reject(StatusCode::CONFLICT, PUSH_TARGET_ERROR.into()).await;
+        return reject(
+            StatusCode::CONFLICT,
+            PUSH_TARGET_CODE,
+            PUSH_TARGET_ERROR.into(),
+        )
+        .await;
     }
     let ttl_secs = state
         .invocations
@@ -954,11 +1008,6 @@ pub(crate) async fn authorize_and_enqueue_trusted(
             .peer(row.granter_agent_id, &row.granter_mode),
         handle: format!("{}/{}", row.granter_account_slug, row.granter_slug),
     };
-
-    // A capability that asks first must receive its input whole.
-    if row.consent_required {
-        consent_enqueue::check_input_size(input)?;
-    }
 
     // Per-account usage limits (rate + credits), keyed on the caller's
     // (grantee's) account. In-memory only. Shadow mode logs a would-block
@@ -1085,7 +1134,12 @@ pub(crate) async fn authorize_and_enqueue_trusted(
             Ok(None) => {}
             Ok(Some(report)) => compliance::attach_report(&mut trust_snapshot, report),
             Err((reason, report)) => {
-                let outcome = reject(StatusCode::FORBIDDEN, reason).await?;
+                let outcome = reject(
+                    StatusCode::FORBIDDEN,
+                    "chk.policy.compliance_denied",
+                    reason,
+                )
+                .await?;
                 if let Outcome::Rejected { invocation_id, .. } = &outcome {
                     compliance::attach_report(&mut trust_snapshot, report);
                     sqlx::query!(
@@ -1233,6 +1287,10 @@ pub(crate) async fn authorize_and_enqueue_public(
     expires_in: Option<i64>,
 ) -> Result<Outcome, ApiError> {
     consent_enqueue::validate_terms(consent_terms)?;
+    // Kept whole up to 16 KiB, refused above (round-2 QA N32): before this
+    // a larger input was cut to a marker, so it escaped screening and the
+    // agent never got it. Checked first, so a refusal costs nothing.
+    consent_enqueue::check_input_size(input)?;
     let input_preview = truncate_for_audit(input);
 
     // Resolve the capability + its owning agent. We hide existence of
@@ -1244,6 +1302,7 @@ pub(crate) async fn authorize_and_enqueue_public(
                cap.semantics,
                cap.public_invoke, cap.public_monthly_quota_per_agent,
                cap.consent_required, cap.consent_max_validity_secs, cap.consent_wait_secs,
+               cap.visibility,
                ga.visibility AS granter_visibility, ga.mode AS granter_mode,
                ga.slug AS granter_slug, gacc.slug AS granter_account_slug
         FROM agent_capabilities cap
@@ -1261,7 +1320,14 @@ pub(crate) async fn authorize_and_enqueue_public(
     .ok_or(ApiError::NotFound)?;
 
     if !cap.public_invoke || cap.granter_visibility != "network" {
-        return Err(ApiError::NotFound);
+        return Err(not_public(
+            state,
+            user,
+            cap.granter_agent_id,
+            &cap.visibility,
+            &cap.name,
+        )
+        .await?);
     }
     let quota = cap.public_monthly_quota_per_agent.ok_or_else(|| {
         // Belt: the CHECK guarantees this, but if a row ever slipped
@@ -1272,9 +1338,15 @@ pub(crate) async fn authorize_and_enqueue_public(
         ))
     })?;
 
-    // Resolve the invoker agent + its account, then membership-check.
+    // Resolve the invoker agent + its account, then membership-check. A
+    // deleted agent, or one of a deleted account, doesn't call (round-2 QA
+    // N21), as on the trusted path.
     let invoker = sqlx::query!(
-        r#"SELECT account_id FROM agents WHERE id = $1"#,
+        r#"
+        SELECT a.account_id FROM agents a
+        JOIN accounts acc ON acc.id = a.account_id
+        WHERE a.id = $1 AND a.tombstoned_at IS NULL AND acc.tombstoned_at IS NULL
+        "#,
         grantee_agent_id,
     )
     .fetch_optional(&state.db)
@@ -1298,7 +1370,11 @@ pub(crate) async fn authorize_and_enqueue_public(
     // Public invokes are queued for the owner to pull too, so a push-mode
     // owner would never receive them (see the trusted path).
     if cap.granter_mode == "push" {
-        return Err(ApiError::Conflict(PUSH_TARGET_ERROR.into()));
+        return Err(ApiError::coded(
+            StatusCode::CONFLICT,
+            PUSH_TARGET_CODE,
+            PUSH_TARGET_ERROR,
+        ));
     }
     let ttl_secs = state
         .invocations
@@ -1310,11 +1386,6 @@ pub(crate) async fn authorize_and_enqueue_public(
             .peer(cap.granter_agent_id, &cap.granter_mode),
         handle: format!("{}/{}", cap.granter_account_slug, cap.granter_slug),
     };
-
-    // A capability that asks first must receive its input whole.
-    if cap.consent_required {
-        consent_enqueue::check_input_size(input)?;
-    }
 
     // Per-invoker monthly quota. Calendar month (resets on the 1st).
     // Consumed on enqueue: every attempt counts so failures can't be
@@ -1453,7 +1524,7 @@ pub(crate) async fn authorize_and_enqueue_public(
                     invocation_id: id,
                     status: StatusCode::FORBIDDEN,
                     error: reason,
-                    code: None,
+                    code: Some("chk.policy.compliance_denied"),
                     safety: None,
                 });
             }
@@ -1799,6 +1870,9 @@ pub(crate) async fn claim_invocations(
               LEFT JOIN agent_capabilities c ON c.id = r.capability_id
              WHERE r.granter_agent_id = $1
                AND r.status = 'pending'
+               -- Past its deadline it's timing out, not work (round-2 QA
+               -- V-R2-004); the sweep settles it.
+               AND (r.expires_at IS NULL OR r.expires_at > now())
              ORDER BY r.created_at ASC
              LIMIT $2
                FOR UPDATE OF r SKIP LOCKED
@@ -2806,6 +2880,7 @@ pub(crate) mod legacy_v01_contract_tests {
             serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
         assert_eq!(body["status"], "rejected");
         assert!(body["error"].as_str().unwrap().contains("push-mode"));
+        assert_eq!(body["code"], "chk.target.push_mode");
 
         // Recorded as rejected (auditable, never charged); nothing parked.
         let statuses: Vec<String> =
@@ -2815,6 +2890,114 @@ pub(crate) mod legacy_v01_contract_tests {
                 .await
                 .unwrap();
         assert_eq!(statuses, vec!["rejected".to_owned()]);
+    }
+
+    async fn send(app: &axum::Router, req: Request<Body>) -> (StatusCode, serde_json::Value) {
+        let res = app.clone().oneshot(req).await.unwrap();
+        let status = res.status();
+        let bytes = res.into_body().collect().await.unwrap().to_bytes();
+        (status, serde_json::from_slice(&bytes).unwrap_or_default())
+    }
+
+    fn get(token: &str, uri: &str) -> Request<Body> {
+        Request::builder()
+            .uri(uri)
+            .header(header::AUTHORIZATION, format!("Bearer {token}"))
+            .body(Body::empty())
+            .unwrap()
+    }
+
+    /// Round-2 QA N35: a revoked or expired grant is refused with its own
+    /// code, and an expired grant reads `expired`, not `active`.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn revoked_and_expired_grants_say_so(pool: PgPool) {
+        let f = seed_demo(&pool).await;
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        let grant = format!("/v1/grants/{}", f.grant_id);
+
+        sqlx::query("UPDATE grants SET expires_at = now() - interval '1 second' WHERE id = $1")
+            .bind(f.grant_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let (status, body) = send(&app, trusted_invoke(&f)).await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        assert_eq!(body["code"], "chk.grant.expired");
+        let (_, shown) = send(&app, get(&f.caller_token, &grant)).await;
+        assert_eq!(shown["status"], "expired", "{shown}");
+        let (_, listed) = send(&app, get(&f.caller_token, "/v1/grants?status=expired")).await;
+        assert_eq!(listed[0]["id"], f.grant_id.to_string(), "{listed}");
+        let (_, active) = send(&app, get(&f.caller_token, "/v1/grants?status=active")).await;
+        assert_eq!(active, serde_json::json!([]));
+
+        sqlx::query(
+            "UPDATE grants SET expires_at = NULL, status = 'revoked', revoked_at = now() WHERE id = $1",
+        )
+        .bind(f.grant_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let (status, body) = send(&app, trusted_invoke(&f)).await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        assert_eq!(body["code"], "chk.grant.revoked");
+    }
+
+    /// A grant that lapsed while still stored as active doesn't block a new
+    /// one for the same capability.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn a_new_grant_replaces_an_expired_one(pool: PgPool) {
+        let f = seed_demo(&pool).await;
+        sqlx::query("UPDATE grants SET expires_at = now() - interval '1 second' WHERE id = $1")
+            .bind(f.grant_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let granter_user: Uuid = sqlx::query_scalar(
+            "SELECT m.user_id FROM agents a
+               JOIN account_memberships m ON m.account_id = a.account_id
+              WHERE a.id = $1 LIMIT 1",
+        )
+        .bind(f.granter_agent_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let token = chakramcp_shared::jwt::encode_jwt(
+            &chakramcp_shared::jwt::UserClaims::new(
+                granter_user,
+                format!("{granter_user}@t.local"),
+                false,
+                1,
+            ),
+            "test-secret",
+        )
+        .unwrap();
+        let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
+        let (status, body) = send(
+            &app,
+            Request::builder()
+                .method("POST")
+                .uri("/v1/grants")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .body(Body::from(
+                    serde_json::to_vec(&serde_json::json!({
+                        "granter_agent_id": f.granter_agent_id,
+                        "grantee_agent_id": f.grantee_agent_id,
+                        "capability_id": f.capability_id,
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["status"], "active");
+        let old: String = sqlx::query_scalar("SELECT status FROM grants WHERE id = $1")
+            .bind(f.grant_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(old, "expired");
     }
 
     /// Full flow mirrors what `chakramcp.AsyncChakraMCP.invoke_and_wait`
@@ -3645,6 +3828,9 @@ mod public_invoke_tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::CONFLICT);
+        let body: Value =
+            serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        assert_eq!(body["error"]["code"], "chk.target.push_mode");
 
         let rows: i64 =
             sqlx::query_scalar("SELECT count(*) FROM relay_invocations WHERE capability_id = $1")
@@ -3777,23 +3963,35 @@ mod public_invoke_tests {
         let _ = (f.granter_user, f.invoker_user, f.granter_agent);
     }
 
-    /// Friend-only capability via the public path → 404. Don't leak
-    /// whether a non-public capability exists.
+    /// A friends-only capability via the public path: the caller who can
+    /// see it is told it needs a grant, as MCP says (round-2 QA N35); one
+    /// it's hidden from gets a 404, so its existence doesn't leak.
     #[sqlx::test(migrations = "../migrations")]
-    async fn friend_only_capability_via_public_path_is_404(pool: PgPool) {
+    async fn friend_only_capability_via_public_path_needs_a_grant(pool: PgPool) {
         let f = seed_public(&pool, 5, false).await;
         let app = crate::router(crate::state::RelayState::new(pool.clone(), config()));
-        let res = app
-            .oneshot(invoke_req(
+        let call = || {
+            invoke_req(
                 &f.invoker_token,
                 serde_json::json!({
                     "capability_id": f.friend_only_cap,
                     "grantee_agent_id": f.invoker_agent,
                     "input": {}
                 }),
-            ))
+            )
+        };
+        let res = app.clone().oneshot(call()).await.unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        let body: Value =
+            serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        assert_eq!(body["error"]["code"], "chk.policy.grant_required");
+
+        sqlx::query("UPDATE agent_capabilities SET visibility = 'private' WHERE id = $1")
+            .bind(f.friend_only_cap)
+            .execute(&pool)
             .await
             .unwrap();
+        let res = app.oneshot(call()).await.unwrap();
         assert_eq!(res.status(), StatusCode::NOT_FOUND);
     }
 
@@ -5248,6 +5446,92 @@ mod deleted_agent_tests {
             !listed.contains(&f.granter_agent_id.to_string()),
             "{listed}"
         );
+
+        // Nor its notices (round-2 QA N22), nor new capabilities or grants.
+        let notices = format!("/v1/inbox/notices?agent_id={}", f.granter_agent_id);
+        let (status, _) = send(&pool, request("GET", &notices, &granter, None)).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        let cap = json!({ "name": "late.cap", "description": "too late" });
+        let (status, _) = send(&pool, request("POST", &caps, &granter, Some(cap))).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        let grant = json!({
+            "granter_agent_id": f.granter_agent_id,
+            "grantee_agent_id": f.grantee_agent_id,
+            "capability_id": f.capability_id,
+        });
+        let (status, _) = send(&pool, request("POST", "/v1/grants", &granter, Some(grant))).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        // MCP refuses it the same way: its inbox, proposals from it and to
+        // it, and publishing on it.
+        for (tool, args) in [
+            ("pull_inbox", json!({ "agent_id": f.granter_agent_id })),
+            (
+                "propose_friendship",
+                json!({
+                    "proposer_agent_id": f.granter_agent_id,
+                    "target_agent_id": f.grantee_agent_id,
+                }),
+            ),
+            (
+                "publish_capability",
+                json!({ "agent_id": f.granter_agent_id, "name": "late.cap" }),
+            ),
+        ] {
+            let rpc = json!({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": { "name": tool, "arguments": args },
+            });
+            let (_, body) = send(&pool, request("POST", "/mcp", &granter, Some(rpc))).await;
+            assert_eq!(body["result"]["isError"], true, "{tool}: {body}");
+        }
+        let rpc = json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": { "name": "propose_friendship", "arguments": {
+                "proposer_agent_id": f.grantee_agent_id,
+                "target_agent_id": f.granter_agent_id,
+            } },
+        });
+        let (_, body) = send(&pool, request("POST", "/mcp", &f.caller_token, Some(rpc))).await;
+        assert_eq!(body["result"]["isError"], true, "{body}");
+    }
+
+    // Round-2 QA N21: a deleted agent can't call a public capability
+    // either. Nothing is queued or charged.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn a_deleted_agent_cannot_call_a_public_capability(pool: PgPool) {
+        let f = seed_public(&pool, 5, false).await;
+        sqlx::query("UPDATE agents SET tombstoned_at = now() WHERE id = $1")
+            .bind(f.invoker_agent)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let (status, body) = send(
+            &pool,
+            invoke_req(
+                &f.invoker_token,
+                json!({
+                    "capability_id": f.public_cap,
+                    "grantee_agent_id": f.invoker_agent,
+                    "input": {"hi": 1}
+                }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        let rows: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM relay_invocations WHERE grantee_agent_id = $1",
+        )
+        .bind(f.invoker_agent)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(rows, 0);
+        let charges: i64 = sqlx::query_scalar("SELECT count(*) FROM credit_charge_queue")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(charges, 0);
     }
 
     #[sqlx::test(migrations = "../migrations")]

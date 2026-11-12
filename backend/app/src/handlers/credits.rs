@@ -296,6 +296,28 @@ mod tests {
         assert_eq!(view["daily"].as_array().unwrap().len(), 1);
         assert_eq!(view["daily"][0]["invocations"], 3);
         assert_eq!(view["daily"][0]["spent_mc"], 300);
+
+        // A call's message and memory work count as spend too (round-2 QA
+        // N28), not as invocations.
+        for (kind, cost) in [("message", 100), ("memory", 42)] {
+            sqlx::query(
+                "INSERT INTO call_charges (id, account_id, call_id, kind, cost_mc, created_at)
+                 VALUES ($1, $2, $3, $4, $5, now())",
+            )
+            .bind(Uuid::now_v7())
+            .bind(account)
+            .bind(Uuid::now_v7())
+            .bind(kind)
+            .bind(cost as i64)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        let view = member_view(&pool, &token, account).await;
+        assert_eq!(view["spent_this_month_mc"], 442);
+        assert_eq!(view["invocations_this_month"], 3);
+        assert_eq!(view["daily"][0]["invocations"], 3);
+        assert_eq!(view["daily"][0]["spent_mc"], 442);
         let entry = &view["ledger"][0];
         assert_eq!(entry["kind"], "free_grant");
         assert_eq!(entry["delta_mc"], 100_000);

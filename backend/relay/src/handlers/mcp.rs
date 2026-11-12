@@ -438,13 +438,18 @@ fn tools_list_result(calls: bool, discovery: bool) -> Value {
                 "Write (or update) a rating + review of an agent from one of your agents.",
                 json!({
                     "type": "object",
-                    "required": ["target_agent_id", "reviewer_agent_id", "rating"],
+                    "required": ["target_agent_id", "reviewer_agent_id", "rating", "tagged_capability_ids"],
                     "properties": {
                         "target_agent_id":      { "type": "string", "format": "uuid" },
                         "reviewer_agent_id":    { "type": "string", "format": "uuid", "description": "One of your agents." },
                         "rating":               { "type": "integer", "minimum": 1, "maximum": 5 },
                         "comment":              { "type": "string" },
-                        "tagged_capability_ids":{ "type": "array", "items": { "type": "string", "format": "uuid" } }
+                        "tagged_capability_ids":{
+                            "type": "array",
+                            "minItems": 1,
+                            "items": { "type": "string", "format": "uuid" },
+                            "description": "The target's capabilities you used, at least one."
+                        }
                     }
                 })),
             tool("review_eligibility",
@@ -876,7 +881,9 @@ async fn list_grants(state: &RelayState, user: &AuthUser, args: Value) -> Result
 
     let rows = sqlx::query!(
         r#"
-        SELECT g.id, g.status,
+        SELECT g.id,
+               CASE WHEN g.status = 'active' AND g.expires_at <= now()
+                    THEN 'expired' ELSE g.status END AS "status!",
                g.granter_agent_id, ga.display_name as granter_display_name,
                g.grantee_agent_id, ea.display_name as grantee_display_name,
                g.capability_id, cap.name as capability_name,
@@ -1278,11 +1285,13 @@ async fn pull_inbox(state: &RelayState, user: &AuthUser, args: Value) -> Result<
         .map_err(|e| ApiError::InvalidRequest(format!("bad pull_inbox args: {e}")))?;
     let limit = a.limit.unwrap_or(25).clamp(1, 100);
 
-    let agent_account =
-        sqlx::query_scalar!(r#"SELECT account_id FROM agents WHERE id = $1"#, a.agent_id,)
-            .fetch_optional(db)
-            .await?
-            .ok_or(ApiError::NotFound)?;
+    let agent_account = sqlx::query_scalar!(
+        r#"SELECT account_id FROM agents WHERE id = $1 AND tombstoned_at IS NULL"#,
+        a.agent_id,
+    )
+    .fetch_optional(db)
+    .await?
+    .ok_or(ApiError::NotFound)?;
     if !user_is_member(db, user.user_id, agent_account).await? {
         return Err(ApiError::Forbidden);
     }
@@ -1462,7 +1471,7 @@ async fn propose_friendship(
     }
 
     let proposer_account = sqlx::query_scalar!(
-        r#"SELECT account_id FROM agents WHERE id = $1"#,
+        r#"SELECT account_id FROM agents WHERE id = $1 AND tombstoned_at IS NULL"#,
         a.proposer_agent_id,
     )
     .fetch_optional(db)
@@ -1478,7 +1487,7 @@ async fn propose_friendship(
     crate::auth::require_scope(state, user, a.proposer_agent_id).await?;
     // Confirm target exists.
     let _t = sqlx::query_scalar!(
-        r#"SELECT account_id FROM agents WHERE id = $1"#,
+        r#"SELECT account_id FROM agents WHERE id = $1 AND tombstoned_at IS NULL"#,
         a.target_agent_id,
     )
     .fetch_optional(db)
@@ -1702,7 +1711,7 @@ async fn publish_capability(
 
     // Ownership: the caller must be a member of the agent's account.
     let agent = sqlx::query!(
-        r#"SELECT account_id, mode FROM agents WHERE id = $1"#,
+        r#"SELECT account_id, mode FROM agents WHERE id = $1 AND tombstoned_at IS NULL"#,
         a.agent_id
     )
     .fetch_optional(db)
@@ -2337,6 +2346,47 @@ mod manage_agents_tests {
         .await
         .unwrap();
         assert_eq!(count, Some(0));
+    }
+
+    /// Round-2 QA N20: every tool error carries a code, the one REST uses.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn tool_errors_carry_a_code(pool: PgPool) {
+        let (_uid, account_id, token) = seed_user_with_jwt(&pool).await;
+        let missing = call(
+            &pool,
+            &token,
+            "poll_invocation",
+            json!({ "invocation_id": Uuid::now_v7() }),
+        )
+        .await;
+        assert_eq!(missing["isError"], json!(true), "{missing}");
+        assert_eq!(missing["structuredContent"]["code"], "not_found");
+        let bad = call(
+            &pool,
+            &token,
+            "create_agent",
+            json!({ "account_id": account_id, "slug": "Bad Slug!", "display_name": "X" }),
+        )
+        .await;
+        assert_eq!(bad["structuredContent"]["code"], "invalid_request", "{bad}");
+    }
+
+    /// Round-2 QA N42: the schema says what the handler needs.
+    #[test]
+    fn write_review_requires_a_tagged_capability() {
+        let list = super::tools_list_result(true, true);
+        let tool = list["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["name"] == "write_review")
+            .unwrap();
+        let schema = &tool["inputSchema"];
+        assert!(schema["required"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("tagged_capability_ids")));
+        assert_eq!(schema["properties"]["tagged_capability_ids"]["minItems"], 1);
     }
 
     #[sqlx::test(migrations = "../migrations")]
@@ -3088,26 +3138,30 @@ mod manage_agents_tests {
         assert_eq!(queued, 0, "refused before anything was queued");
     }
 
+    // Round-2 QA N32: an input over 16 KiB is refused, never cut to a
+    // marker the agent would receive instead.
     #[sqlx::test(migrations = "../migrations")]
-    async fn invoke_truncates_large_input(pool: PgPool) {
+    async fn invoke_refuses_input_over_16_kib(pool: PgPool) {
         let (token, a, grant, _) = seed_granted_pair(&pool).await;
         let big = "x".repeat(20 * 1024);
-        ok(&call(
+        let res = call(
             &pool,
             &token,
             "invoke",
             json!({ "grant_id": grant, "grantee_agent_id": a, "input": { "blob": big } }),
         )
-        .await);
-
-        let (status, _, input, _) = invocation_row(&pool, &grant).await;
-        assert_eq!(status, "pending");
+        .await;
+        assert_eq!(res["isError"], json!(true), "{res}");
         assert_eq!(
-            input["__chakramcp_truncated__"],
-            json!(true),
-            "input: {input}"
+            res["structuredContent"]["code"],
+            json!("chk.request.too_large"),
+            "{res}"
         );
-        assert!(input["original_byte_length"].as_u64().unwrap() > 20 * 1024);
+        let queued: i64 = sqlx::query_scalar("SELECT count(*) FROM relay_invocations")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(queued, 0);
     }
 
     #[sqlx::test(migrations = "../migrations")]
