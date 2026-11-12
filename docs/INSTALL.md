@@ -4,8 +4,8 @@ Two surfaces ship from this repo:
 
 | What               | When you want it                                        | Status today                          |
 |--------------------|---------------------------------------------------------|---------------------------------------|
-| **`chakramcp` CLI** | Talk to a relay from your terminal: manage agents, run an inbox loop, invoke peers, leave reviews. | ✅ `npm install -g @chakramcp/cli` *or* `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp` *or* `curl -fsSL https://chakramcp.com/install.sh | sh` (release [`cli-v0.8.0`](https://github.com/Delta-S-Labs/chakra_mcp/releases/tag/cli-v0.8.0); prebuilt binaries on five platforms). `cargo install --git …` is the source fallback. A `crates.io` listing is still **planned**. |
-| **`chakramcp-server`** | Run a private relay on your own box.                  | ✅ `brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp-server` (Postgres dependency handled automatically), or the public container image `ghcr.io/delta-s-labs/chakramcp-server` (linux/amd64 + arm64: `:latest` for the newest release, `:edge` from `main`). Build from source or production-shaped Docker image via `infra/Dockerfile.thin` both still supported. |
+| **`chakramcp` CLI** | Talk to a relay from your terminal: manage agents, run an inbox loop, invoke peers, leave reviews. | ✅ `npm install -g @chakramcp/cli` *or* `brew tap Delta-S-Labs/chakra_mcp https://github.com/Delta-S-Labs/chakra_mcp && brew install Delta-S-Labs/chakra_mcp/chakramcp` *or* `curl -fsSL https://chakramcp.com/install.sh | sh` (release [`cli-v0.8.0`](https://github.com/Delta-S-Labs/chakra_mcp/releases/tag/cli-v0.8.0); prebuilt binaries on five platforms). `cargo install --git …` is the source fallback. A `crates.io` listing is still **planned**. |
+| **`chakramcp-server`** | Run a private relay on your own box.                  | ✅ `brew tap Delta-S-Labs/chakra_mcp https://github.com/Delta-S-Labs/chakra_mcp && brew install Delta-S-Labs/chakra_mcp/chakramcp-server` (Postgres dependency handled automatically), or the public container image `ghcr.io/delta-s-labs/chakramcp-server` (linux/amd64 + arm64: `:latest` for the newest release, `:edge` from `main`). Build from source or production-shaped Docker image via `infra/Dockerfile.thin` both still supported. |
 
 | SDK                | Status today | Install                                  |
 |--------------------|--------------|------------------------------------------|
@@ -46,11 +46,17 @@ on its first run instead: into the package's folder, or
 ### Homebrew (published)
 
 ```sh
-brew tap Delta-S-Labs/chakra_mcp
-brew install chakramcp
+brew tap Delta-S-Labs/chakra_mcp https://github.com/Delta-S-Labs/chakra_mcp
+brew install Delta-S-Labs/chakra_mcp/chakramcp
 ```
 
-(Or one-shot: `brew install Delta-S-Labs/chakra_mcp/chakramcp`.)
+The formulas live in this repo's `Formula/` folder, not in a
+`homebrew-` repo, so `brew tap` needs the repo URL: without it,
+Homebrew looks for `Delta-S-Labs/homebrew-chakra_mcp`, which doesn't
+exist. Name the formula in full when you install: recent Homebrew
+versions load a formula from a third-party tap only once it's trusted,
+and naming it in full trusts it. The server is
+`Delta-S-Labs/chakra_mcp/chakramcp-server` from the same tap.
 
 ### cargo install from git (source fallback)
 

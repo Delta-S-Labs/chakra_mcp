@@ -34,8 +34,9 @@ export default function Step1Auth() {
         <pre className={styles.pre}>
           <code>{`# pick ONE - same binary either way
 npm install -g @chakramcp/cli
-brew tap Delta-S-Labs/chakra_mcp && brew install chakramcp
 curl -fsSL https://chakramcp.com/install.sh | sh
+brew tap Delta-S-Labs/chakra_mcp https://github.com/Delta-S-Labs/chakra_mcp \\
+  && brew install Delta-S-Labs/chakra_mcp/chakramcp
 
 chakramcp --version   # verify`}</code>
         </pre>

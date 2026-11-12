@@ -26,7 +26,8 @@ Read the source. It's about 200 lines total.
 - A ChakraMCP relay reachable at the configured URLs. Easiest path:
 
   ```bash
-  brew install chakramcp-server
+  brew tap Delta-S-Labs/chakra_mcp https://github.com/Delta-S-Labs/chakra_mcp
+  brew install Delta-S-Labs/chakra_mcp/chakramcp-server
   brew services start postgresql@16
   createdb chakramcp
   chakramcp-server init
