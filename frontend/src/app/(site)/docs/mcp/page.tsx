@@ -400,6 +400,14 @@ claude mcp add --transport http chakramcp ${RELAY}/mcp \\
         <code>_meta[&quot;chakramcp/credits&quot;] = &quot;low&quot;</code>. See{" "}
         <Link href="/docs/concepts#limits">Limits and credits</Link>.
       </p>
+      <p>
+        Every tool error carries a code in <code>structuredContent.code</code>: a{" "}
+        <code>chk.*</code> code where the refusal has its own, for example{" "}
+        <code>chk.grant.revoked</code>, <code>chk.grant.expired</code> or{" "}
+        <code>chk.target.push_mode</code> (a push agent takes calls on its A2A endpoint), and
+        otherwise the code the REST API answers with: <code>not_found</code>,{" "}
+        <code>invalid_request</code>, <code>forbidden</code> or <code>conflict</code>.
+      </p>
 
       <h2 className={styles.h2} id="pattern">The pattern</h2>
       <p>

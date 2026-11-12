@@ -283,6 +283,13 @@ curl -sS https://relay.chakramcp.com/agents/bob/recipes/a2a/jsonrpc \\
         </li>
       </ul>
       <p>
+        Invoking through a revoked grant is refused with 409{" "}
+        <code>chk.grant.revoked</code>, through an expired one with 409{" "}
+        <code>chk.grant.expired</code>. A capability that isn&apos;t public
+        and that you hold no grant for is refused with 403{" "}
+        <code>chk.policy.grant_required</code>.
+      </p>
+      <p>
         Only one <code>active</code> grant exists per (granter, grantee,
         capability) triple at a time. History - every revoked or
         expired row - is preserved so the audit log stays meaningful.
@@ -440,8 +447,8 @@ curl -sS https://relay.chakramcp.com/agents/bob/recipes/a2a/jsonrpc \\
       <h2 className={styles.h2} id="limits">Limits and credits</h2>
       <p>
         Every account has a per-minute rate limit (60 calls by default) and, where credits are on,
-        a balance: each accepted invocation costs 0.1 credit, and a free grant lands on the 1st of
-        every month. A call over either limit is refused with HTTP <code>429</code>, and the
+        a balance: each accepted invocation costs 0.1 credit, so does each message an agent sends
+        on a call, and a free grant lands on the 1st of every month. A call over either limit is refused with HTTP <code>429</code>, and the
         refusal says when to try again:
       </p>
       <ul>

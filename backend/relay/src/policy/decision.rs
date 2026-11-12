@@ -136,11 +136,15 @@ impl DenyReason {
         match self {
             Self::AuthMissing => "authentication required",
             Self::AuthInvalid => "invalid token",
-            Self::CallerAgentHeaderMissing => "caller agent header required",
+            Self::CallerAgentHeaderMissing => {
+                "send X-ChakraMCP-Caller-Agent: the id of your agent you're calling as"
+            }
             Self::CallerAgentNotOwnedByCaller => "caller agent not owned by authenticated user",
             Self::CallerAgentOutOfScope => "this credential can't act as that agent",
-            Self::CapabilityHeaderMissing => "capability header required",
-            Self::CapabilityHeaderInvalid => "capability header is not a valid UUID",
+            Self::CapabilityHeaderMissing => {
+                "send X-ChakraMCP-Capability: the id of the capability you're calling"
+            }
+            Self::CapabilityHeaderInvalid => "X-ChakraMCP-Capability is not a valid UUID",
             Self::TargetAccountNotFound => "target account not found",
             Self::TargetAgentNotFound => "target agent not found",
             Self::TargetTombstoned => "target agent has been deleted",
