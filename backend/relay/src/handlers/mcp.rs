@@ -438,13 +438,18 @@ fn tools_list_result(calls: bool, discovery: bool) -> Value {
                 "Write (or update) a rating + review of an agent from one of your agents.",
                 json!({
                     "type": "object",
-                    "required": ["target_agent_id", "reviewer_agent_id", "rating"],
+                    "required": ["target_agent_id", "reviewer_agent_id", "rating", "tagged_capability_ids"],
                     "properties": {
                         "target_agent_id":      { "type": "string", "format": "uuid" },
                         "reviewer_agent_id":    { "type": "string", "format": "uuid", "description": "One of your agents." },
                         "rating":               { "type": "integer", "minimum": 1, "maximum": 5 },
                         "comment":              { "type": "string" },
-                        "tagged_capability_ids":{ "type": "array", "items": { "type": "string", "format": "uuid" } }
+                        "tagged_capability_ids":{
+                            "type": "array",
+                            "minItems": 1,
+                            "items": { "type": "string", "format": "uuid" },
+                            "description": "The target's capabilities you used, at least one."
+                        }
                     }
                 })),
             tool("review_eligibility",
@@ -876,7 +881,9 @@ async fn list_grants(state: &RelayState, user: &AuthUser, args: Value) -> Result
 
     let rows = sqlx::query!(
         r#"
-        SELECT g.id, g.status,
+        SELECT g.id,
+               CASE WHEN g.status = 'active' AND g.expires_at <= now()
+                    THEN 'expired' ELSE g.status END AS "status!",
                g.granter_agent_id, ga.display_name as granter_display_name,
                g.grantee_agent_id, ea.display_name as grantee_display_name,
                g.capability_id, cap.name as capability_name,
@@ -2339,6 +2346,47 @@ mod manage_agents_tests {
         .await
         .unwrap();
         assert_eq!(count, Some(0));
+    }
+
+    /// Round-2 QA N20: every tool error carries a code, the one REST uses.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn tool_errors_carry_a_code(pool: PgPool) {
+        let (_uid, account_id, token) = seed_user_with_jwt(&pool).await;
+        let missing = call(
+            &pool,
+            &token,
+            "poll_invocation",
+            json!({ "invocation_id": Uuid::now_v7() }),
+        )
+        .await;
+        assert_eq!(missing["isError"], json!(true), "{missing}");
+        assert_eq!(missing["structuredContent"]["code"], "not_found");
+        let bad = call(
+            &pool,
+            &token,
+            "create_agent",
+            json!({ "account_id": account_id, "slug": "Bad Slug!", "display_name": "X" }),
+        )
+        .await;
+        assert_eq!(bad["structuredContent"]["code"], "invalid_request", "{bad}");
+    }
+
+    /// Round-2 QA N42: the schema says what the handler needs.
+    #[test]
+    fn write_review_requires_a_tagged_capability() {
+        let list = super::tools_list_result(true, true);
+        let tool = list["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["name"] == "write_review")
+            .unwrap();
+        let schema = &tool["inputSchema"];
+        assert!(schema["required"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("tagged_capability_ids")));
+        assert_eq!(schema["properties"]["tagged_capability_ids"]["minItems"], 1);
     }
 
     #[sqlx::test(migrations = "../migrations")]
