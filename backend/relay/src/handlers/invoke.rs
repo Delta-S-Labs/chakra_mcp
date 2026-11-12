@@ -1803,6 +1803,9 @@ pub(crate) async fn claim_invocations(
               LEFT JOIN agent_capabilities c ON c.id = r.capability_id
              WHERE r.granter_agent_id = $1
                AND r.status = 'pending'
+               -- Past its deadline it's timing out, not work (round-2 QA
+               -- V-R2-004); the sweep settles it.
+               AND (r.expires_at IS NULL OR r.expires_at > now())
              ORDER BY r.created_at ASC
              LIMIT $2
                FOR UPDATE OF r SKIP LOCKED
