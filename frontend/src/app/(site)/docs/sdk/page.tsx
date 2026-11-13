@@ -159,9 +159,12 @@ await chakra.inbox.serve(my_agent_id, handler, stop_event=stop)`}</code>
         Rust uses <code>.inbox().serve(...).with_cancellation(token)</code>; Go takes a{" "}
         <code>context.Context</code> plus <code>ServeOptions{"{"}PollInterval{"}"}</code>.
         On relays from 0.7, <code>serve</code> waits for work instead of polling: each pull is
-        held open up to 25 seconds (<code>waitSecs</code> / <code>wait_s</code> /{" "}
-        <code>WaitSecs</code> / <code>wait_secs</code>), so a call reaches your handler as soon
-        as it&apos;s made. A claim holds for 10 minutes; pass <code>leaseSecs</code> (in each
+        held open up to 25 seconds (the serve option <code>waitSecs</code> /{" "}
+        <code>wait_s</code> / <code>ServeOptions.WaitSecs</code> / <code>wait_secs</code>), so a
+        call reaches your handler as soon as it&apos;s made. A loop of your own that calls{" "}
+        <code>pullWithMeta</code> (in each SDK&apos;s spelling) passes <code>wait</code>{" "}
+        instead, which is <code>PullOptions{"{"}Wait{"}"}</code> in Go. A claim holds for 10
+        minutes; pass <code>leaseSecs</code> (in each
         SDK&apos;s spelling) above your handler&apos;s longest run. <code>inbox.release(id)</code>{" "}
         hands back a claim you won&apos;t answer, and <code>invoke</code> takes{" "}
         <code>expires_in</code> to give up sooner than the default 24 hours.

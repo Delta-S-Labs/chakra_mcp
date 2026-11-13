@@ -252,15 +252,28 @@ export class ChakraMCP {
     if (res.status === 204) return { body: undefined as T, headers: res.headers };
 
     const text = await res.text();
+    const traceId = traceIdFrom(res);
     let parsed: unknown = null;
     if (text) {
       try {
         parsed = JSON.parse(text);
       } catch {
         if (!res.ok) {
-          throw new ChakraMCPError(res.status, "invalid_response", text, retryAfterSecs(res, null));
+          throw new ChakraMCPError(
+            res.status,
+            "invalid_response",
+            text,
+            retryAfterSecs(res, null),
+            traceId,
+          );
         }
-        throw new ChakraMCPError(res.status, "invalid_response", `non-JSON response: ${text}`);
+        throw new ChakraMCPError(
+          res.status,
+          "invalid_response",
+          `non-JSON response: ${text}`,
+          undefined,
+          traceId,
+        );
       }
     }
     if (!res.ok) {
@@ -281,11 +294,16 @@ export class ChakraMCP {
             env.quota,
             env.resets_at,
             retryAfter,
+            traceId,
           );
         }
         // The calling account's own limits.
         if (env?.error?.code === "account_rate_limited") {
-          throw new RateLimitedError(env.error.message ?? "rate limit exceeded", retryAfter);
+          throw new RateLimitedError(
+            env.error.message ?? "rate limit exceeded",
+            retryAfter,
+            traceId,
+          );
         }
         if (env?.error?.code === "account_credits_exhausted") {
           throw new CreditsExhaustedError(
@@ -293,6 +311,7 @@ export class ChakraMCP {
             retryAfter,
             stringOrUndefined(env.error.next_grant_at),
             stringOrUndefined(env.error.credits_url),
+            traceId,
           );
         }
       }
@@ -304,6 +323,7 @@ export class ChakraMCP {
         env?.error?.code ?? stringOrUndefined(refusal?.code) ?? "unknown",
         env?.error?.message ?? stringOrUndefined(refusal?.error) ?? res.statusText,
         retryAfter,
+        traceId,
       );
     }
     return { body: parsed as T, headers: res.headers };
@@ -359,6 +379,11 @@ function retryAfterSecs(res: Response, env: ErrorEnvelope | null): number | unde
   const body = env?.error?.retry_after_secs;
   if (typeof body === "number" && Number.isInteger(body) && body >= 0) return body;
   return undefined;
+}
+
+/** The `ChakraMCP-Trace-Id` header: set when the server traced the request. */
+function traceIdFrom(res: Response): string | undefined {
+  return res.headers.get("chakramcp-trace-id")?.trim() || undefined;
 }
 
 function stringOrUndefined(v: unknown): string | undefined {

@@ -291,6 +291,82 @@ async fn agents_create_and_update_send_tags() {
     clear.assert_async().await;
 }
 
+#[tokio::test]
+async fn agents_register_push_with_agent_card_url_and_read_mode() {
+    let card = "https://gateway.example/.well-known/agent-card.json";
+    let server = MockServer::start_async().await;
+    let agent = |mode: &str| {
+        json!({
+            "id": "a1", "account_id": "acc1", "account_slug": "alice",
+            "account_display_name": "Alice", "slug": "gateway", "display_name": "Gateway",
+            "description": "", "visibility": "private", "endpoint_url": null,
+            "created_at": "2026-10-27T10:00:00Z", "updated_at": "2026-10-27T10:00:00Z",
+            "is_mine": true, "capability_count": 0, "avg_rating": null, "review_count": 0,
+            "accept_calls": "nobody", "tags": [], "mode": mode,
+        })
+    };
+    let create = server
+        .mock_async(|when, then| {
+            when.method(POST).path("/v1/agents").json_body(json!({
+                "account_id": "acc1", "slug": "gateway", "display_name": "Gateway",
+                "agent_card_url": card,
+            }));
+            then.status(200).json_body(agent("push"));
+        })
+        .await;
+    // `Some("")` makes it a pull agent again.
+    let to_pull = server
+        .mock_async(|when, then| {
+            when.method(PATCH)
+                .path("/v1/agents/a1")
+                .json_body(json!({ "agent_card_url": "" }));
+            then.status(200).json_body(agent("pull"));
+        })
+        .await;
+    let chakra = build(&server);
+
+    let created = chakra
+        .agents()
+        .create(&CreateAgentRequest {
+            account_id: "acc1".into(),
+            slug: "gateway".into(),
+            display_name: "Gateway".into(),
+            agent_card_url: Some(card.into()),
+            ..Default::default()
+        })
+        .await
+        .expect("creates");
+    create.assert_async().await;
+    assert_eq!(created.mode, Some(AgentMode::Push));
+
+    let pulled = chakra
+        .agents()
+        .update(
+            "a1",
+            &UpdateAgentRequest {
+                agent_card_url: Some(String::new()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("updates");
+    to_pull.assert_async().await;
+    assert_eq!(pulled.mode, Some(AgentMode::Pull));
+}
+
+#[test]
+fn agents_from_older_relays_have_no_mode() {
+    let agent: chakramcp::Agent = serde_json::from_value(json!({
+        "id": "a1", "account_id": "acc1", "account_slug": "alice",
+        "account_display_name": "Alice", "slug": "rooms", "display_name": "Rooms",
+        "description": "", "visibility": "private", "endpoint_url": null,
+        "created_at": "2026-10-27T10:00:00Z", "updated_at": "2026-10-27T10:00:00Z",
+        "is_mine": true, "capability_count": 0, "avg_rating": null, "review_count": 0,
+    }))
+    .expect("parses");
+    assert_eq!(agent.mode, None);
+}
+
 #[test]
 fn network_agents_carry_the_listing_fields() {
     // The relay's network list is a search result's fields plus these.

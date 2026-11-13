@@ -51,6 +51,11 @@ export interface Agent {
   accept_calls?: AcceptCalls;
   /** Directory tags. Absent on relays before 0.6.0. */
   tags?: string[];
+  /**
+   * `"push"` for an agent registered with an `agent_card_url`, else
+   * `"pull"`. Absent on relays before 0.5.0.
+   */
+  mode?: AgentMode;
 }
 
 /** Who may start a call with an agent. */
@@ -637,6 +642,12 @@ export interface CreateAgentRequest {
   description?: string;
   visibility?: Visibility;
   endpoint_url?: string | null;
+  /**
+   * The agent's A2A Agent Card URL. Set it to register a push agent, which
+   * takes requests at the endpoint its card names; leave it out for a pull
+   * agent, which serves its inbox.
+   */
+  agent_card_url?: string;
   /** Directory tags: at most 10, each 1-32 lowercase letters, digits or hyphens. */
   tags?: string[];
 }
@@ -646,6 +657,11 @@ export interface UpdateAgentRequest {
   description?: string;
   visibility?: Visibility;
   endpoint_url?: string | null;
+  /**
+   * Change the mode: an Agent Card URL makes it a push agent, and `""`
+   * makes it a pull agent again. Leave it out to keep the mode.
+   */
+  agent_card_url?: string;
   /** Who may call this agent. Push agents only take `"nobody"`. */
   accept_calls?: AcceptCalls;
   /** Replace the directory tags. */
@@ -778,8 +794,14 @@ export class ChakraMCPError extends Error {
      * Undefined when it says neither (most errors, and older servers).
      */
     public readonly retry_after_secs?: number,
+    /**
+     * The request's trace id, from the `ChakraMCP-Trace-Id` response
+     * header. Quote it when you report a problem. Undefined when the
+     * server didn't trace the request. The message ends with it too.
+     */
+    public readonly trace_id?: string,
   ) {
-    super(message);
+    super(trace_id ? `${message} (trace id ${trace_id})` : message);
     this.name = "ChakraMCPError";
   }
 }
@@ -797,8 +819,9 @@ export class QuotaExhaustedError extends ChakraMCPError {
     public readonly quota: number,
     public readonly resets_at: string,
     retry_after_secs?: number,
+    trace_id?: string,
   ) {
-    super(429, "monthly_quota_exhausted", message, retry_after_secs);
+    super(429, "monthly_quota_exhausted", message, retry_after_secs, trace_id);
     this.name = "QuotaExhaustedError";
   }
 }
@@ -809,8 +832,8 @@ export class QuotaExhaustedError extends ChakraMCPError {
  * is the rest of the minute. The SDK doesn't retry on its own.
  */
 export class RateLimitedError extends ChakraMCPError {
-  constructor(message: string, retry_after_secs?: number) {
-    super(429, "account_rate_limited", message, retry_after_secs);
+  constructor(message: string, retry_after_secs?: number, trace_id?: string) {
+    super(429, "account_rate_limited", message, retry_after_secs, trace_id);
     this.name = "RateLimitedError";
   }
 }
@@ -829,8 +852,9 @@ export class CreditsExhaustedError extends ChakraMCPError {
     retry_after_secs?: number,
     public readonly next_grant_at?: string,
     public readonly credits_url?: string,
+    trace_id?: string,
   ) {
-    super(429, "account_credits_exhausted", message, retry_after_secs);
+    super(429, "account_credits_exhausted", message, retry_after_secs, trace_id);
     this.name = "CreditsExhaustedError";
   }
 }

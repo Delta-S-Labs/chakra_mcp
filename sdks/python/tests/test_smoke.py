@@ -488,6 +488,91 @@ def test_other_errors_carry_retry_after_only_when_sent(app_url: str, relay_url: 
     assert unavailable.retry_after_secs == 5
 
 
+_TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
+
+
+@respx.mock
+def test_errors_carry_the_trace_id(app_url: str, relay_url: str) -> None:
+    traced = {"ChakraMCP-Trace-Id": _TRACE_ID}
+    forbidden = _invoke_error(
+        app_url,
+        relay_url,
+        403,
+        {"error": {"code": "forbidden", "message": "forbidden"}},
+        traced,
+    )
+    assert forbidden.trace_id == _TRACE_ID
+    assert forbidden.message == "forbidden"
+    assert str(forbidden) == f"[403 forbidden] forbidden (trace id {_TRACE_ID})"
+
+    refused = _invoke_error(
+        app_url,
+        relay_url,
+        403,
+        {"error": "blocked", "code": "chk.policy.safety_blocked"},
+        traced,
+    )
+    assert refused.trace_id == _TRACE_ID
+
+    rate = _invoke_error(
+        app_url,
+        relay_url,
+        429,
+        {"error": {"code": "account_rate_limited", "message": "rate limit exceeded"}},
+        traced,
+    )
+    assert isinstance(rate, RateLimitedError)
+    assert rate.trace_id == _TRACE_ID
+    assert str(rate).endswith(f"(trace id {_TRACE_ID})")
+
+    credits = _invoke_error(
+        app_url,
+        relay_url,
+        429,
+        {"error": {"code": "account_credits_exhausted", "message": "insufficient credits"}},
+        traced,
+    )
+    assert isinstance(credits, CreditsExhaustedError)
+    assert credits.trace_id == _TRACE_ID
+
+    quota = _invoke_error(
+        app_url,
+        relay_url,
+        429,
+        {
+            "error": {"code": "monthly_quota_exhausted", "message": "monthly quota exhausted"},
+            "quota": 100,
+            "resets_at": "2026-11-01T00:00:00Z",
+        },
+        traced,
+    )
+    assert isinstance(quota, QuotaExhaustedError)
+    assert quota.trace_id == _TRACE_ID
+
+    # A server that doesn't trace the request sends no header.
+    untraced = _invoke_error(
+        app_url,
+        relay_url,
+        403,
+        {"error": {"code": "forbidden", "message": "forbidden"}},
+    )
+    assert untraced.trace_id is None
+    assert str(untraced) == "[403 forbidden] forbidden"
+
+
+@respx.mock
+async def test_async_errors_carry_the_trace_id(app_url: str, relay_url: str) -> None:
+    respx.get(f"{relay_url}/v1/agents").respond(
+        502, text="bad gateway", headers={"ChakraMCP-Trace-Id": _TRACE_ID}
+    )
+    async with AsyncChakraMCP(api_key="ck_test", app_url=app_url, relay_url=relay_url) as c:
+        with pytest.raises(ChakraMCPError) as ei:
+            await c.agents.list()
+    assert ei.value.status == 502
+    assert ei.value.trace_id == _TRACE_ID
+    assert str(ei.value) == f"[502 unknown] bad gateway (trace id {_TRACE_ID})"
+
+
 def _hitl_inv_json(inv_id: str = "inv-hitl", *, semantics: str = "human_in_loop") -> dict:
     """Helper — minimal Invocation JSON shaped like the relay returns."""
     return {

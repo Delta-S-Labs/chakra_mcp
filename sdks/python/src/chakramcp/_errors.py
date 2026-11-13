@@ -13,7 +13,12 @@ class ChakraMCPError(Exception):
     ``retry_after_secs`` is how long to wait before retrying, when the
     server says: the ``Retry-After`` header, else the body's
     ``retry_after_secs``. ``None`` when it says neither (most errors,
-    and older servers)."""
+    and older servers).
+
+    ``trace_id`` is the request's trace id, from the
+    ``ChakraMCP-Trace-Id`` response header: quote it when you report a
+    problem. ``None`` when the server didn't trace the request. The
+    error's string form ends with it."""
 
     def __init__(
         self,
@@ -21,12 +26,17 @@ class ChakraMCPError(Exception):
         code: str,
         message: str,
         retry_after_secs: int | None = None,
+        trace_id: str | None = None,
     ) -> None:
-        super().__init__(f"[{status} {code}] {message}")
+        text = f"[{status} {code}] {message}"
+        if trace_id:
+            text += f" (trace id {trace_id})"
+        super().__init__(text)
         self.status = status
         self.code = code
         self.message = message
         self.retry_after_secs = retry_after_secs
+        self.trace_id = trace_id
 
 
 class QuotaExhaustedError(ChakraMCPError):
@@ -42,8 +52,9 @@ class QuotaExhaustedError(ChakraMCPError):
         quota: int,
         resets_at: str,
         retry_after_secs: int | None = None,
+        trace_id: str | None = None,
     ) -> None:
-        super().__init__(429, "monthly_quota_exhausted", message, retry_after_secs)
+        super().__init__(429, "monthly_quota_exhausted", message, retry_after_secs, trace_id)
         self.quota = quota
         self.resets_at = resets_at
 
@@ -54,8 +65,13 @@ class RateLimitedError(ChakraMCPError):
     ``retry_after_secs`` is the rest of the minute. The SDK doesn't
     retry on its own."""
 
-    def __init__(self, message: str, retry_after_secs: int | None = None) -> None:
-        super().__init__(429, "account_rate_limited", message, retry_after_secs)
+    def __init__(
+        self,
+        message: str,
+        retry_after_secs: int | None = None,
+        trace_id: str | None = None,
+    ) -> None:
+        super().__init__(429, "account_rate_limited", message, retry_after_secs, trace_id)
 
 
 class CreditsExhaustedError(ChakraMCPError):
@@ -72,8 +88,9 @@ class CreditsExhaustedError(ChakraMCPError):
         retry_after_secs: int | None = None,
         next_grant_at: str | None = None,
         credits_url: str | None = None,
+        trace_id: str | None = None,
     ) -> None:
-        super().__init__(429, "account_credits_exhausted", message, retry_after_secs)
+        super().__init__(429, "account_credits_exhausted", message, retry_after_secs, trace_id)
         self.next_grant_at = next_grant_at
         self.credits_url = credits_url
 
@@ -95,6 +112,12 @@ def _str_or_none(value: Any) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def _trace_id(response: httpx.Response) -> str | None:
+    """The ``ChakraMCP-Trace-Id`` header, set when the server traced the
+    request."""
+    return response.headers.get("chakramcp-trace-id", "").strip() or None
+
+
 def raise_for_response(response: httpx.Response) -> None:
     """Decode the standard `{"error": {"code", "message"}}` envelope."""
     if response.is_success:
@@ -104,6 +127,7 @@ def raise_for_response(response: httpx.Response) -> None:
         body = response.json()
     except Exception:
         body = None
+    trace_id = _trace_id(response)
     if isinstance(body, dict) and isinstance(body.get("error"), dict):
         err = body["error"]
         code = err.get("code", "unknown")
@@ -119,18 +143,21 @@ def raise_for_response(response: httpx.Response) -> None:
                 and isinstance(body.get("quota"), int)
                 and isinstance(body.get("resets_at"), str)
             ):
-                raise QuotaExhaustedError(message, body["quota"], body["resets_at"], retry_after)
+                raise QuotaExhaustedError(
+                    message, body["quota"], body["resets_at"], retry_after, trace_id
+                )
             # The calling account's own limits.
             if code == "account_rate_limited":
-                raise RateLimitedError(message, retry_after)
+                raise RateLimitedError(message, retry_after, trace_id)
             if code == "account_credits_exhausted":
                 raise CreditsExhaustedError(
                     message,
                     retry_after,
                     _str_or_none(err.get("next_grant_at")),
                     _str_or_none(err.get("credits_url")),
+                    trace_id,
                 )
-        raise ChakraMCPError(response.status_code, code, message, retry_after)
+        raise ChakraMCPError(response.status_code, code, message, retry_after, trace_id)
     # A refused invoke answers `{invocation_id, status, error, code}`:
     # `error` is the reason, `code` says which check refused it.
     if isinstance(body, dict) and isinstance(body.get("error"), str):
@@ -139,10 +166,12 @@ def raise_for_response(response: httpx.Response) -> None:
             _str_or_none(body.get("code")) or "unknown",
             body["error"],
             _retry_after_secs(response, {}),
+            trace_id,
         )
     raise ChakraMCPError(
         response.status_code,
         "unknown",
         response.text or response.reason_phrase,
         _retry_after_secs(response, {}),
+        trace_id,
     )
