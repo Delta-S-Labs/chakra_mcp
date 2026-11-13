@@ -622,6 +622,47 @@ async fn profiles(pool: PgPool) {
     }
 }
 
+/// A push agent takes calls only on its A2A endpoint, so its profile's
+/// call is a curl `SendMessage` there, not `invoke ensure` (which `/v1/invoke`
+/// refuses with `chk.target.push_mode`). Leftover from round-2 QA V-R2-006.
+#[sqlx::test(migrations = "../migrations")]
+async fn a_push_agents_profile_calls_its_a2a_endpoint(pool: PgPool) {
+    let (_, bob_acct, _) = user(&pool, "bob").await;
+    let gate = agent(&pool, bob_acct, NewAgent::new("gateway")).await;
+    sqlx::query(
+        "UPDATE agents SET mode = 'push', agent_card_url = 'https://gw.example/card.json'
+          WHERE id = $1",
+    )
+    .bind(gate)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let cap = capability(&pool, gate, "suggest_recipes", "network", false).await;
+
+    let (status, _, p) = get(&pool, true, "/v1/discovery/agents/bob/gateway", None).await;
+    assert_eq!(status, StatusCode::OK, "{p}");
+    assert_eq!(p["mode"], "push");
+    let cli = p["how_to_call"]["cli"].as_str().unwrap();
+    assert!(
+        cli.starts_with("curl -sS https://relay.example/agents/bob/gateway/a2a/jsonrpc -H "),
+        "{cli}"
+    );
+    assert!(
+        cli.contains(&format!("X-ChakraMCP-Capability: {cap}")),
+        "{cli}"
+    );
+    assert!(
+        cli.contains("X-ChakraMCP-Caller-Agent: <your-agent-id>"),
+        "{cli}"
+    );
+    assert!(cli.contains(r#""method":"SendMessage""#), "{cli}");
+    assert!(!cli.contains("invoke ensure"), "{cli}");
+    assert!(
+        p["how_to_call"].get("mcp").is_none(),
+        "push agents have no MCP endpoint"
+    );
+}
+
 /// Private and org agents' profiles are for members (and org-sharers);
 /// with `DISCOVERY_V2` off, profiles need sign-in.
 #[sqlx::test(migrations = "../migrations")]
