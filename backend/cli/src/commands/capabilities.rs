@@ -95,6 +95,7 @@ pub enum Cmd {
     ///     capability. The full triple is required when not using
     ///     a template.
     Add {
+        /// Your agent: its id, `account/agent`, or a slug.
         #[arg(long)]
         agent: String,
         /// Reserved-template id. When set, `--name` /
@@ -228,6 +229,8 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             monthly_quota,
             consent,
         } => {
+            // Named by id, `account/agent`, or a slug (round-2 QA N26).
+            let agent = crate::resolve::my_agent_id(&api, &agent).await?;
             let mut payload = if let Some(tpl_id) = template {
                 // Template path: load the canonical body, then apply
                 // optional description / visibility / semantics overrides.
@@ -316,6 +319,7 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             semantics,
             consent,
         } => {
+            let agent = crate::resolve::my_agent_id(&api, &agent).await?;
             let mut payload = serde_json::Map::new();
             if let Some(s) = semantics {
                 payload.insert("semantics".into(), Value::String(s));
@@ -359,6 +363,7 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             print(&body)
         }
         Cmd::Delete { agent, cap } => {
+            let agent = crate::resolve::my_agent_id(&api, &agent).await?;
             let _: Value = api
                 .delete_relay(&format!("/v1/agents/{agent}/capabilities/{cap}"))
                 .await?;

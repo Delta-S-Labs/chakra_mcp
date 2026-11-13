@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT cs.agent_scope,\n                  ARRAY(SELECT csa.agent_id FROM credential_scope_agents csa\n                         WHERE csa.credential_scope_id = cs.id\n                         ORDER BY csa.agent_id) AS \"selected!\"\n             FROM credential_scopes cs\n            WHERE cs.cred_kind = 'api_key' AND cs.cred_ref = $1::uuid::text",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "agent_scope",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "credential_scopes",
+            "name": "agent_scope"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "selected!",
+        "type_info": "UuidArray",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "c8d8df36567d4247950c959c079fc18da04057ae70847b951b4b9ce8d01c5fd7"
+}
