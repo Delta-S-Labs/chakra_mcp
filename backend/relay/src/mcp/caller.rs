@@ -3,7 +3,8 @@
 //!
 //! Per capability: a named agent of yours (`as`), else one of yours holding
 //! a grant for it (the oldest grant), else — for a public capability — your
-//! default agent, else `chk.policy.grant_required`.
+//! default agent, else `chk.policy.grant_required`. A push agent is refused
+//! with `chk.target.push_mode`: it takes calls only on its A2A endpoint.
 
 use axum::http::StatusCode;
 use uuid::Uuid;
@@ -14,7 +15,7 @@ use crate::auth::{AgentScopeMode, AuthUser};
 use crate::discovery::fields::Access;
 use crate::discovery::profile::{self, AgentRef};
 use crate::discovery::standing::{self, Mine};
-use crate::handlers::invoke::Target;
+use crate::handlers::invoke::{Target, PUSH_TARGET_CODE};
 use crate::state::RelayState;
 
 /// A call by name, resolved: the grant or public capability to invoke, and
@@ -43,6 +44,19 @@ pub(crate) async fn resolve(
                 format!("no agent {name} you can see"),
             )
         })?;
+    // A push agent takes calls only on its A2A endpoint, from friends with
+    // a grant; the queued invocation this resolves to would never reach it.
+    if target.summary.mode == "push" {
+        let full = format!("{}/{}", target.summary.account_slug, target.summary.slug);
+        return Err(ApiError::coded(
+            StatusCode::CONFLICT,
+            PUSH_TARGET_CODE,
+            format!(
+                "{full} is a push agent: it takes calls on its A2A endpoint \
+                 (POST /agents/{full}/a2a/jsonrpc) from friends holding a grant"
+            ),
+        ));
+    }
     let cap = sqlx::query!(
         r#"SELECT id, public_invoke, visibility FROM agent_capabilities
             WHERE agent_id = $1 AND name = $2"#,
@@ -59,7 +73,11 @@ pub(crate) async fn resolve(
             format!("{name} has no capability `{capability}` you can see"),
         )
     })?;
-    let public = Access::of(cap.public_invoke, &target.summary.visibility) == Access::Public;
+    let public = Access::of(
+        cap.public_invoke,
+        &target.summary.visibility,
+        &target.summary.mode,
+    ) == Access::Public;
     let mine = standing::my_agents(state, user).await?;
 
     let candidates: Vec<Uuid> = match as_agent {

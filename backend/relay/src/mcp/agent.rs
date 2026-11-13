@@ -251,8 +251,11 @@ impl Endpoint<'_> {
             .into_iter()
             .filter(|c| self.target.relation.sees(&c.visibility))
         {
-            let public =
-                Access::of(c.public_invoke, &self.target.summary.visibility) == Access::Public;
+            let public = Access::of(
+                c.public_invoke,
+                &self.target.summary.visibility,
+                &self.target.summary.mode,
+            ) == Access::Public;
             if !(public || granted.contains(&c.id)) {
                 not_yet.push(c.name);
                 continue;

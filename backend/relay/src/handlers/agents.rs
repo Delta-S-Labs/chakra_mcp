@@ -970,21 +970,31 @@ pub async fn update(
     };
 
     // The relay forwards calls to a push agent at once, so it can't hold
-    // them for the owner's approval (owner consent §11).
+    // them for the owner's approval (owner consent §11); and its A2A
+    // endpoint needs a friendship and a grant from every caller, so none of
+    // its capabilities can be public.
     if matches!(card_change, CardChange::SetToPush(_)) {
-        let asks_first = sqlx::query_scalar!(
-            r#"SELECT EXISTS (
-                   SELECT 1 FROM agent_capabilities
-                    WHERE agent_id = $1 AND consent_required
-               ) AS "asks_first!""#,
+        let caps = sqlx::query!(
+            r#"SELECT
+                   COALESCE(bool_or(consent_required), false) AS "asks_first!",
+                   COALESCE(bool_or(public_invoke), false) AS "public!"
+                 FROM agent_capabilities
+                WHERE agent_id = $1"#,
             id,
         )
         .fetch_one(&state.db)
         .await?;
-        if asks_first {
+        if caps.asks_first {
             return Err(ApiError::Conflict(
                 "this agent has capabilities that ask its owner before delivering requests; \
                  turn that off before giving it an endpoint"
+                    .into(),
+            ));
+        }
+        if caps.public {
+            return Err(ApiError::Conflict(
+                "this agent has public capabilities, and a push agent takes calls only from \
+                 friends with a grant; turn public_invoke off before giving it an endpoint"
                     .into(),
             ));
         }

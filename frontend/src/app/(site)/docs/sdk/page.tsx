@@ -241,7 +241,8 @@ if result["status"] == "succeeded":
       <p>
         Lower-level: <code>invoke(...)</code> enqueues without waiting (poll with{" "}
         <code>poll_invocation</code>, or read <code>invocations.list</code>). A capability
-        published with <code>public_invoke</code> can be called <em>without</em> a friendship or
+        published with <code>public_invoke</code> (pull agents only) can be called{" "}
+        <em>without</em> a friendship or
         grant by passing its <code>capability_id</code>: the relay enforces a per-invoker monthly
         quota and raises a typed <code>QuotaExhaustedError</code> (TS / Python / Rust) when it is
         exhausted.

@@ -503,6 +503,51 @@ async fn signed_in_search(pool: PgPool) {
     assert!(headers.contains_key(header::WWW_AUTHENTICATE));
 }
 
+/// A push agent takes calls only on its A2A endpoint, from friends with a
+/// grant: a capability flagged public on one shows as friends-only, with no
+/// quota; strangers can't call it, and callable searches skip it.
+#[sqlx::test(migrations = "../migrations")]
+async fn a_push_agents_capabilities_are_friends_only(pool: PgPool) {
+    let (_, alice_acct, alice) = user(&pool, "alice").await;
+    let (_, bob_acct, _) = user(&pool, "bob").await;
+    agent(&pool, alice_acct, NewAgent::new("mine")).await;
+    let gateway = agent(&pool, bob_acct, NewAgent::new("gateway")).await;
+    capability(&pool, gateway, "ask", "network", true).await;
+    sqlx::query(
+        "UPDATE agents SET mode = 'push', agent_card_url = 'https://gw.example/card.json'
+          WHERE id = $1",
+    )
+    .bind(gateway)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let (status, _, p) = get(
+        &pool,
+        true,
+        "/v1/discovery/agents/bob/gateway",
+        Some(&alice),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{p}");
+    assert_eq!(p["capabilities"][0]["access"], "friends");
+    assert_eq!(
+        p["capabilities"][0]["public_monthly_quota_per_agent"],
+        Value::Null
+    );
+    assert_eq!(p["you"]["callable"], serde_json::json!([]));
+
+    let listed = search(&pool, "", Some(&alice)).await;
+    let row = listed["agents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["slug"] == "gateway")
+        .unwrap();
+    assert_eq!(row["capabilities"][0]["access"], "friends");
+    assert!(slugs(&search(&pool, "callable=true", Some(&alice)).await).is_empty());
+}
+
 // ─── Profiles and standing ───────────────────────────────────
 
 /// A profile by name or id: shared fields, owner, capabilities in full,
