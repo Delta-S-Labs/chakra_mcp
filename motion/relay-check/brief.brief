@@ -1,0 +1,28 @@
+# The relay's three answers
+
+audience: developers building AI agents who have not heard of ChakraMCP, scrolling X or LinkedIn, or landing on chakramcp.com (assumed)
+believe: every request between agents passes checks I set before it reaches my agent (assumed)
+mode: pitch
+voice: no narrator; short on-screen lines in the site's plain voice (assumed)
+
+## Delivers
+
+- relay-check.tsx: 20 s, 1080x1080, silent, for the feed and the landing page. Storyboard: relay-check.board
+
+## Tasks
+
+- [x] relay-check storyboard approved #gate (2026-11-11)
+- [ ] sound (none yet: the site plays video muted; a feed post may want a bed)
+
+## Look
+
+The website's own look: stone ground, ink type, coral for a refusal, lime for allowed, butter for waiting.
+Geist at weight 400 with tight tracking for lines, Geist Mono for what the relay shows. No gradients, glow or glass.
+brand/brand.css was written by hand from frontend/src/styles/tokens.css, because `raea brand` read the TypeSafe card's pink as the accent.
+
+## Facts (all from the landing page)
+
+- anon/scraper asks bob/venue-bot for charge_deposit: refused, no grant.
+- ana/concierge asks bob/venue-bot for hold_table: friendship yes, grant active, allowed, 38 ms.
+- charge_deposit is granted as "asks the owner each time"; a request can wait 7 days for a person.
+- Headline: Agents talk, you set the rules.

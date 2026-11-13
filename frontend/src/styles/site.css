@@ -1,7 +1,7 @@
 /* Website UI kit for the public site. The look: a flat stone ground, ink
-   and coral fields, Geist for display and text. Glass in two places only,
-   the sticky bar and the hero's relay card; otherwise no gradients,
-   shadows or hairlines. */
+   and coral fields, Geist for display and text. Glass on the floating bar,
+   the hero's relay card and the board's tiles (over the board's drifting
+   colour); elsewhere no gradients, shadows or hairlines. */
 :root { --gutter: clamp(16px, 3.4vw, 56px); }
 body {
   margin: 0;
@@ -17,30 +17,43 @@ body {
 .hero-block, .audience-strip, .story-grid, .flow-layout,
 .closing-panel, .concept-at-a-glance, .concept-stage { width: min(1180px, calc(100% - 1.5rem)); margin: 0 auto; }
 
-/* A plain bar: the wordmark, a few text links, one action. */
+/* A floating glass bar: rounded, clear of the page's edges, and it draws
+   in once the page has scrolled (HeaderScroll.tsx sets html[data-scrolled]). */
 .site-header {
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem 1.5rem;
-  padding: 0.85rem var(--gutter);
-  position: sticky; top: 0; z-index: 40;
-  /* Frosted glass: the page shows through, blurred, as it scrolls under. */
-  background: color-mix(in oklab, var(--paper) 72%, transparent);
-  -webkit-backdrop-filter: blur(18px) saturate(160%);
-  backdrop-filter: blur(18px) saturate(160%);
+  width: calc(100% - 2 * var(--gutter)); max-width: 1320px; margin: 12px auto 0;
+  padding: 0.6rem 0.75rem 0.6rem 1.4rem;
+  border-radius: 999px;
+  position: sticky; top: 12px; z-index: 40;
+  /* Glass: the page shows through, blurred, with a lit rim. */
+  background: color-mix(in oklab, var(--paper-soft) 68%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  backdrop-filter: blur(22px) saturate(180%);
+  border: 1px solid color-mix(in oklab, white 70%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, white 85%, transparent),
+    0 10px 30px color-mix(in oklab, var(--ink) 8%, transparent);
+  transition: max-width 420ms var(--ease-gentle), padding 420ms var(--ease-gentle), box-shadow 420ms var(--ease-gentle);
 }
-/* The bar's lower edge shows once the page has moved under it. */
-@supports (animation-timeline: scroll()) {
-  .site-header { animation: header-edge linear both; animation-timeline: scroll(root); animation-range: 0 72px; }
+html[data-scrolled] .site-header {
+  max-width: 760px;
+  padding: 0.3rem 0.4rem 0.3rem 1.1rem;
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, white 85%, transparent),
+    0 14px 40px color-mix(in oklab, var(--ink) 14%, transparent);
 }
-@keyframes header-edge {
-  from { box-shadow: 0 1px 0 transparent; }
-  to { box-shadow: 0 1px 0 color-mix(in oklab, var(--ink) 12%, transparent); }
-}
+.site-header .brand-mark { transition: font-size 420ms var(--ease-gentle); }
+html[data-scrolled] .site-header .brand-mark { font-size: 1.125rem; }
 /* Anchors land below the bar. */
 html:has(.site-header) { scroll-padding-top: 5.5rem; }
 /* On phones the bar wraps to two rows, too tall to keep on screen. */
 @media (max-width: 720px) {
-  .site-header { position: relative; animation: none; background: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .site-header { position: relative; top: 0; border-radius: 24px; padding: 0.6rem 1rem; }
+  html[data-scrolled] .site-header { max-width: 1320px; padding: 0.6rem 1rem; }
   html:has(.site-header) { scroll-padding-top: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .site-header, .site-header .brand-mark { transition: none; }
 }
 .brand-lockup { display: flex; align-items: center; }
 .brand-mark { font-family: var(--font-display); font-weight: 600; font-size: 1.375rem; letter-spacing: -0.04em; line-height: 1; display: inline-flex; align-items: center; gap: 0.55rem; }
@@ -50,7 +63,9 @@ html:has(.site-header) { scroll-padding-top: 5.5rem; }
 .nav-link { display: inline-flex; align-items: center; min-height: 2.75rem; color: var(--ink); font: 500 1.0625rem/1 var(--font-body); text-decoration: underline; text-decoration-color: transparent; text-decoration-thickness: 2px; text-underline-offset: 0.35em; transition: text-decoration-color 160ms var(--ease-out-quart); }
 .nav-link:hover, .nav-link:focus-visible { text-decoration-color: currentColor; }
 .nav-link.active { text-decoration-color: var(--accent-coral); }
-.nav-link--action { font-weight: 650; }
+/* The last link is the bar's one action: an ink pill. */
+.nav-link--action { font-weight: 600; padding: 0 1.1rem; border-radius: 999px; background: var(--ink); color: var(--on-ink); text-decoration: none; transition: background 160ms var(--ease-out-quart); }
+.nav-link--action:hover, .nav-link--action:focus-visible { background: var(--accent-ink); }
 
 /* minmax(0, 1fr): an implicit `auto` track grows to the widest child's
    min-content, which widened every section past a phone's viewport. */

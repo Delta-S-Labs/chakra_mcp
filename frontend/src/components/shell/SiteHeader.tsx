@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import Brandmark from "./Brandmark";
+import HeaderScroll from "./HeaderScroll";
 import SiteNav from "./SiteNav";
 
 // Pages where the top bar shows the brandmark only — no nav tabs,
@@ -15,7 +16,7 @@ const BRANDMARK_ONLY = new Set(["/brand"]);
  * the nav to the caller's auth state without an extra round-trip
  * or a SessionProvider wrapping the public surface:
  *
- *   • Logged out → a single "Sign in" call-to-action (links to /login)
+ *   • Logged out → "Sign in" (/login) and a "Sign up" button (/signup)
  *   • Logged in  → Docs + App tabs (in that order, per product ask)
  *
  * Pathname-aware active-state highlighting lives in `<SiteNav />`
@@ -31,6 +32,7 @@ export default async function SiteHeader() {
 
   return (
     <header className="site-header">
+      <HeaderScroll />
       <Link href="/" aria-label="ChakraMCP home" style={{ textDecoration: "none" }}>
         <Brandmark />
       </Link>

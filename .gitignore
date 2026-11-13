@@ -75,3 +75,7 @@ backend/.env.dodo-test
 # Python bytecode
 __pycache__/
 *.pyc
+
+# raea working files
+motion/**/stills/
+.taste-skill/
