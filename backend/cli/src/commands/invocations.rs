@@ -35,6 +35,8 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
         } => {
             let mut qs: Vec<String> = vec![format!("direction={direction}")];
             if let Some(a) = agent {
+                // Named by id, `account/agent`, or a slug (round-2 QA N26).
+                let a = crate::resolve::my_agent_id(&api, &a).await?;
                 qs.push(format!("agent_id={a}"));
             }
             if let Some(s) = status {

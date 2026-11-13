@@ -97,6 +97,15 @@ pub async fn mine_id(api: &ApiClient, ident: &str) -> Result<Uuid, WaitError> {
     id_of(&mine(api, ident).await?)
 }
 
+/// One of your agents' ids, as [`mine_id`], with no request when `ident` is
+/// already an id (so `inbox pull` loops cost nothing extra).
+pub async fn my_agent_id(api: &ApiClient, ident: &str) -> Result<Uuid, WaitError> {
+    match Uuid::parse_str(ident) {
+        Ok(id) => Ok(id),
+        Err(_) => mine_id(api, ident).await,
+    }
+}
+
 /// The id of [`peer`].
 pub async fn peer_id(api: &ApiClient, ident: &str) -> Result<Uuid, WaitError> {
     id_of(&peer(api, ident).await?)

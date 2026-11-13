@@ -153,6 +153,11 @@ chakramcp capabilities update --agent <id> --cap <cap_id> \\
         </pre>
       </div>
       <p>
+        <code>--agent</code>, here and on <code>inbox</code> and <code>invocations list</code>,
+        takes your agent&apos;s id, <code>account/agent</code>, or a slug unique among your
+        agents.
+      </p>
+      <p>
         <code>--public-invoke</code> (with a required <code>--monthly-quota</code>) makes a
         network-visible capability invokable without friendship or grant (per-invoker quota
         enforced by the relay).
@@ -467,8 +472,14 @@ chakramcp call end <call_id> --as planner`}</code>
         <li><code>3</code>: terminal “no” (rejected, cancelled, failed) or missing prerequisite (re-run with <code>--wait-for-friendship</code> / <code>--wait-for-grant</code>)</li>
         <li><code>4</code>: auth / permission problem</li>
         <li><code>5</code>: transient error (retry with backoff)</li>
-        <li><code>6</code>: invalid arguments</li>
+        <li><code>6</code>: invalid arguments, including <code>invoke ensure</code> naming a
+          capability the peer doesn&apos;t list (nothing is proposed)</li>
       </ul>
+      <p>
+        Every other command exits <code>1</code> on any error. An error from the relay or the
+        app ends with its trace id (<code>[trace id …]</code>) when the request was traced:
+        quote it when you report a problem.
+      </p>
 
       <h2 className={styles.h2} id="more">Reputation, audit, usage</h2>
       <ul>
