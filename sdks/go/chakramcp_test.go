@@ -495,6 +495,55 @@ func TestOtherErrorsCarryRetryAfterOnlyWhenSent(t *testing.T) {
 	assertRetryAfter(t, err, secs(5))
 }
 
+func TestErrorsCarryTheTraceID(t *testing.T) {
+	const traceID = "4bf92f3577b34da6a3ce929d0e0e4736"
+	suffix := " (trace id " + traceID + ")"
+	for _, tc := range []struct {
+		name   string
+		status int
+		body   string
+		want   string
+	}{
+		{"envelope", http.StatusForbidden, `{"error":{"code":"forbidden","message":"forbidden"}}`,
+			"chakramcp: [403 forbidden] forbidden" + suffix},
+		{"refusal", http.StatusForbidden, `{"error":"blocked","code":"chk.policy.safety_blocked"}`,
+			"chakramcp: [403 chk.policy.safety_blocked] blocked" + suffix},
+		{"not json", http.StatusBadGateway, `bad gateway`,
+			"chakramcp: [502 unknown] bad gateway" + suffix},
+		{"rate limited", http.StatusTooManyRequests, `{"error":{"code":"account_rate_limited","message":"slow down"}}`,
+			"chakramcp: [429 account_rate_limited] slow down" + suffix},
+		{"credits", http.StatusTooManyRequests, `{"error":{"code":"account_credits_exhausted","message":"no credits"}}`,
+			"chakramcp: [429 account_credits_exhausted] no credits" + suffix},
+		{"quota", http.StatusTooManyRequests,
+			`{"error":{"code":"monthly_quota_exhausted","message":"quota"},"quota":1,"resets_at":"2026-12-01T00:00:00Z"}`,
+			"chakramcp: [429 monthly_quota_exhausted] quota (quota=1, resets_at=2026-12-01T00:00:00Z)" + suffix},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := invokeError(t, tc.status, map[string]string{"ChakraMCP-Trace-Id": traceID}, tc.body)
+			var apiErr *Error
+			if !errors.As(err, &apiErr) {
+				t.Fatalf("errors.As(*Error) failed for %T: %v", err, err)
+			}
+			if apiErr.TraceID != traceID {
+				t.Errorf("TraceID = %q, want %q", apiErr.TraceID, traceID)
+			}
+			if err.Error() != tc.want {
+				t.Errorf("Error() = %q, want %q", err.Error(), tc.want)
+			}
+		})
+	}
+
+	// A server that doesn't trace the request sends no header.
+	err := invokeError(t, http.StatusForbidden, nil, `{"error":{"code":"forbidden","message":"forbidden"}}`)
+	var apiErr *Error
+	if !errors.As(err, &apiErr) || apiErr.TraceID != "" {
+		t.Fatalf("got %#v, want an *Error with no TraceID", err)
+	}
+	if got := err.Error(); got != "chakramcp: [403 forbidden] forbidden" {
+		t.Errorf("Error() = %q", got)
+	}
+}
+
 // ─── Waiting pulls ────────────────────────────────────────
 
 // pullLog records the URL of each pull a fake relay answers.

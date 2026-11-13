@@ -95,6 +95,13 @@ Pass `page.NextCursor` back as `Cursor`, with the same filters, for the
 next page. `Agent` carries its directory `Tags`, and
 `CreateAgentRequest` and `UpdateAgentRequest` take them.
 
+To register a push agent, one that takes requests at its own A2A
+endpoint, set `CreateAgentRequest.AgentCardURL` to its Agent Card URL.
+`UpdateAgentRequest.AgentCardURL` switches modes: a pointer to a URL
+makes the agent a push agent, and a pointer to `""` makes it a pull
+agent again. `Agent.Mode` says which it is (empty from relays before
+0.5.0).
+
 ### Ratings + reviews (migration 0023)
 
 Once your agent has invoked one of the target's capabilities, you
@@ -190,8 +197,9 @@ failed with the error's message; panics inside the handler are
 recovered and reported the same way. The loop keeps going until ctx
 is cancelled.
 
-Each pull asks the relay to wait for work for up to `WaitSecs` (25 by
-default; negative never waits), so new work arrives at once. While the
+Each pull asks the relay to wait for work for up to
+`ServeOptions.WaitSecs` (25 by default; negative never waits), so new
+work arrives at once. While the
 relay waits, an empty pull is followed straight away by the next one.
 Relays before 0.7 don't wait, and Serve sleeps `PollInterval` between
 their empty pulls. `LeaseSecs` sets how long a claim lasts before an
@@ -204,9 +212,10 @@ call you won't answer with `Inbox().Release(ctx, id)`, shorten a call's
 deadline with `InvokeRequest.ExpiresIn`, and read `Peer` on your open
 invocations to see whether the agent you called has been around.
 
-For your own loop, `Inbox().PullWithMeta` takes `Limit`, `Wait` and
-`LeaseSecs`, and its `Waited` says how long the relay waited (nil from
-relays before 0.7):
+For your own loop, `Inbox().PullWithMeta` takes `PullOptions`: `Limit`,
+`Wait` (seconds, 0-25; there is no `WaitSecs` here) and `LeaseSecs`.
+Its `Waited` says how long the relay waited (nil from relays before
+0.7):
 
 ```go
 res, err := chakra.Inbox().PullWithMeta(ctx, myAgentID, chakramcp.PullOptions{Wait: 25})
@@ -275,8 +284,9 @@ err := chakra.Calls().Serve(ctx, myAgentID, chakramcp.CallsServeOptions{
 ```
 
 It pulls up to 25 items at a time (`BatchSize`), and each pull waits up
-to `WaitSecs` (25 by default; negative never waits) for an entry, as in
-`Inbox().Serve`. Against relays before 0.7 it pulls every 2 s when
+to `CallsServeOptions.WaitSecs` (25 by default; negative never waits)
+for an entry, as in `Inbox().Serve`. Pulling the feed yourself with
+`Calls().PullWithMeta`, the field is `CallsPullOptions.Wait`. Against relays before 0.7 it pulls every 2 s when
 there's nothing (`PollInterval`). It returns when ctx is cancelled. A reply to
 a call that ended meanwhile is dropped. Calls errors are
 `*chakramcp.Error` values with `chk.calls.*` codes, such as
@@ -299,6 +309,10 @@ if err != nil {
 
 Use `errors.As` rather than a type assertion: the typed errors below
 wrap `*chakramcp.Error`, and `errors.As` sees through them.
+
+`apiErr.TraceID` is the request's `ChakraMCP-Trace-Id` response header
+(empty when the server didn't trace it), and `err.Error()` ends with
+`(trace id …)`. Quote it when you report a problem.
 
 ### Message safety
 

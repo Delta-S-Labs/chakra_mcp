@@ -365,6 +365,19 @@ async fn inbox_serve_dispatches_and_responds_then_cancels() {
 /// Run `invoke` against a server that answers with one canned error
 /// and return what it got back.
 async fn invoke_error(status: u16, retry_after: Option<&str>, body: serde_json::Value) -> Error {
+    let headers: Vec<(&str, &str)> = retry_after
+        .map(|v| ("retry-after", v))
+        .into_iter()
+        .collect();
+    invoke_error_with_headers(status, &headers, body).await
+}
+
+/// [`invoke_error`] with any response headers.
+async fn invoke_error_with_headers(
+    status: u16,
+    headers: &[(&str, &str)],
+    body: serde_json::Value,
+) -> Error {
     let server = MockServer::start_async().await;
     server
         .mock_async(|when, then| {
@@ -372,8 +385,8 @@ async fn invoke_error(status: u16, retry_after: Option<&str>, body: serde_json::
             let mut then = then
                 .status(status)
                 .header("content-type", "application/json");
-            if let Some(v) = retry_after {
-                then = then.header("retry-after", v);
+            for (name, value) in headers {
+                then = then.header(*name, *value);
             }
             then.json_body(body);
         })
@@ -414,6 +427,7 @@ async fn rate_limited_uses_retry_after_header() {
         Error::RateLimited {
             message,
             retry_after_secs,
+            ..
         } => {
             assert_eq!(message, "rate limit exceeded");
             assert_eq!(retry_after_secs, Some(23));
@@ -672,4 +686,88 @@ async fn other_errors_carry_retry_after_only_when_sent() {
         ),
         "got {unavailable:?}"
     );
+}
+
+const TRACE_ID: &str = "4bf92f3577b34da6a3ce929d0e0e4736";
+
+#[tokio::test]
+async fn errors_carry_the_trace_id() {
+    let traced = [("ChakraMCP-Trace-Id", TRACE_ID)];
+    let suffix = format!(" (trace id {TRACE_ID})");
+
+    let forbidden = invoke_error_with_headers(
+        403,
+        &traced,
+        json!({ "error": { "code": "forbidden", "message": "forbidden" } }),
+    )
+    .await;
+    assert_eq!(forbidden.trace_id(), Some(TRACE_ID));
+    assert!(
+        matches!(&forbidden, Error::Api { message, trace_id: Some(id), .. }
+            if message == "forbidden" && id == TRACE_ID),
+        "got {forbidden:?}"
+    );
+    assert_eq!(
+        forbidden.to_string(),
+        format!("[403 forbidden] forbidden{suffix}")
+    );
+
+    let refused = invoke_error_with_headers(
+        403,
+        &traced,
+        json!({ "error": "blocked", "code": "chk.policy.safety_blocked" }),
+    )
+    .await;
+    assert_eq!(refused.trace_id(), Some(TRACE_ID));
+
+    let rate = invoke_error_with_headers(
+        429,
+        &traced,
+        json!({ "error": { "code": "account_rate_limited", "message": "slow down" } }),
+    )
+    .await;
+    assert!(matches!(rate, Error::RateLimited { .. }), "got {rate:?}");
+    assert_eq!(rate.trace_id(), Some(TRACE_ID));
+    assert_eq!(
+        rate.to_string(),
+        format!("[429 account_rate_limited] slow down{suffix}")
+    );
+
+    let credits = invoke_error_with_headers(
+        429,
+        &traced,
+        json!({ "error": { "code": "account_credits_exhausted", "message": "no credits" } }),
+    )
+    .await;
+    assert!(
+        matches!(credits, Error::CreditsExhausted { .. }),
+        "got {credits:?}"
+    );
+    assert!(credits.to_string().ends_with(&suffix), "{credits}");
+
+    let quota = invoke_error_with_headers(
+        429,
+        &traced,
+        json!({
+            "error": { "code": "monthly_quota_exhausted", "message": "quota" },
+            "quota": 1,
+            "resets_at": "2026-12-01T00:00:00Z",
+        }),
+    )
+    .await;
+    assert!(
+        matches!(quota, Error::QuotaExhausted { .. }),
+        "got {quota:?}"
+    );
+    assert!(quota.to_string().ends_with(&suffix), "{quota}");
+
+    // A server that doesn't trace the request sends no header.
+    let untraced = invoke_error(
+        403,
+        None,
+        json!({ "error": { "code": "forbidden", "message": "forbidden" } }),
+    )
+    .await;
+    assert_eq!(untraced.trace_id(), None);
+    assert_eq!(untraced.to_string(), "[403 forbidden] forbidden");
 }

@@ -126,6 +126,9 @@ type Agent struct {
 	AcceptCalls AcceptCalls `json:"accept_calls,omitempty"`
 	// Tags are its directory tags. Nil on relays before 0.6.0.
 	Tags []string `json:"tags,omitempty"`
+	// Mode is AgentModePush for an agent registered with an
+	// AgentCardURL, else AgentModePull. Empty on relays before 0.5.0.
+	Mode AgentMode `json:"mode,omitempty"`
 }
 
 // AgentMode is how an agent gets work: AgentModePush (the relay calls
@@ -726,6 +729,10 @@ type CreateAgentRequest struct {
 	Description string     `json:"description,omitempty"`
 	Visibility  Visibility `json:"visibility,omitempty"`
 	EndpointURL *string    `json:"endpoint_url,omitempty"`
+	// AgentCardURL is the agent's A2A Agent Card URL. Set it to register
+	// a push agent, which takes requests at the endpoint its card names;
+	// leave it empty for a pull agent, which serves its inbox.
+	AgentCardURL string `json:"agent_card_url,omitempty"`
 	// Tags are directory tags: at most 10, each 1-32 lowercase letters,
 	// digits or hyphens.
 	Tags []string `json:"tags,omitempty"`
@@ -735,6 +742,10 @@ type UpdateAgentRequest struct {
 	DisplayName string     `json:"display_name,omitempty"`
 	Description string     `json:"description,omitempty"`
 	Visibility  Visibility `json:"visibility,omitempty"`
+	// AgentCardURL changes the mode: nil keeps it, a pointer to an Agent
+	// Card URL makes the agent a push agent, and a pointer to "" makes it
+	// a pull agent again.
+	AgentCardURL *string `json:"agent_card_url,omitempty"`
 	// AcceptCalls sets who may call the agent; empty keeps it.
 	AcceptCalls AcceptCalls `json:"accept_calls,omitempty"`
 	// Tags replaces the directory tags; nil keeps them, and a pointer to

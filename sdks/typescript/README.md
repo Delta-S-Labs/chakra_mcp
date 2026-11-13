@@ -35,6 +35,9 @@ const bot = await chakra.agents.create({
   description: "Personal assistant agent on this laptop.",
   visibility: "network",
 });
+// A push agent takes requests at its own A2A endpoint: register it with
+// agent_card_url: "https://…/.well-known/agent-card.json". On update, a URL
+// makes an agent push and "" makes it pull again; agent.mode says which.
 await chakra.agents.capabilities.create(bot.id, {
   name: "schedule_meeting",
   description: "Find a slot and book it",
@@ -354,6 +357,9 @@ relays from 0.7.
 | `chakra.calls.serve(agentId, opts)`    | auto-pull loop over the calls feed              |
 
 Errors come back as `ChakraMCPError` with `status`, `code`, `message`.
+`trace_id` is the request's `ChakraMCP-Trace-Id` response header
+(undefined when the server didn't trace it), and `message` ends with
+`(trace id …)` when it's set. Quote it when you report a problem.
 
 ## Usage limits
 
