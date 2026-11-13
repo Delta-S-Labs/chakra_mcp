@@ -66,7 +66,7 @@ pub struct SendArgs {
     #[arg(long)]
     pub capability: Option<String>,
     /// Your agent that's making the call (the grantee side).
-    #[arg(long = "as")]
+    #[arg(long = "as", visible_alias = "from")]
     pub as_agent: Option<String>,
     /// Input — JSON literal, or `@path` to read from a file, or `@-` for stdin.
     #[arg(long, default_value = "{}")]
@@ -177,7 +177,7 @@ pub struct EnsureArgs {
     /// Input — JSON literal, or `@path` to read from a file, or `@-` for stdin.
     pub input_json: String,
     /// Your agent (id, slug, or `account/agent`): the side that makes the call.
-    #[arg(long)]
+    #[arg(long, visible_alias = "as")]
     pub from: String,
 
     /// After enqueueing, poll until the invocation reaches a terminal
@@ -512,18 +512,14 @@ async fn find_grant(
 }
 
 /// Map an `anyhow::Error` from `api.get_relay` / `post_relay` into our
-/// `WaitError` taxonomy. The decode helper bails with the HTTP status
-/// in the message; we sniff for it.
+/// `WaitError` taxonomy, by the failed request's HTTP status.
 pub(crate) fn classify_http_err(e: &anyhow::Error) -> WaitError {
     let msg = format!("{e:#}");
-    if msg.contains("401") {
-        WaitError::Unauthorized(msg)
-    } else if msg.contains("403") {
-        WaitError::Forbidden(msg)
-    } else if msg.contains("404") {
-        WaitError::InvalidArgs(msg)
-    } else {
-        WaitError::Transient(msg)
+    match crate::client::http_status(e).map(|s| s.as_u16()) {
+        Some(401) => WaitError::Unauthorized(msg),
+        Some(403) => WaitError::Forbidden(msg),
+        Some(404) => WaitError::InvalidArgs(msg),
+        _ => WaitError::Transient(msg),
     }
 }
 
@@ -565,17 +561,34 @@ pub(crate) async fn ensure_run(e: EnsureArgs, api: &ApiClient) -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("my agent row missing id"))?
         .to_string();
 
-    // 1b. A public capability needs no friendship or grant: call it directly.
-    // The peer's profile says which ones are public (relays from 0.6.0; an
-    // older relay has no profiles, and the friendship-and-grant path runs).
-    if let Some(capability_id) = public_capability(api, &peer_agent_id, &e.capability_name).await {
-        let body = json!({
-            "capability_id": capability_id,
-            "grantee_agent_id": my_agent_id,
-            "input": input,
-        });
-        let via = json!({ "access": "public", "capability": e.capability_name });
-        return invoke_and_wait(api, &e, body, &peer_display, via, poll).await;
+    // 1b. The peer's profile lists the capabilities you can see (relays from
+    // 0.6.0; an older relay has no profiles, and the friendship-and-grant
+    // path runs). A public one needs no friendship or grant: call it
+    // directly. One that isn't listed is refused before anything is
+    // proposed (round-2 QA N14), unless you already hold a grant for it.
+    match peer_capability(api, &peer_agent_id, &e.capability_name).await {
+        PeerCapability::Public(capability_id) => {
+            let body = json!({
+                "capability_id": capability_id,
+                "grantee_agent_id": my_agent_id,
+                "input": input,
+            });
+            let via = json!({ "access": "public", "capability": e.capability_name });
+            return invoke_and_wait(api, &e, body, &peer_display, via, poll).await;
+        }
+        PeerCapability::Unlisted => {
+            let held = find_grant(api, &my_agent_id, &peer_agent_id, &e.capability_name)
+                .await
+                .map_err(anyhow::Error::from)?;
+            if held.is_none() {
+                return Err(anyhow::anyhow!(WaitError::InvalidArgs(format!(
+                    "{peer_display} has no capability `{}` you can see; its profile \
+                     (`chakramcp discover`, or /v1/discovery/agents/{peer_display}) lists them",
+                    e.capability_name
+                ))));
+            }
+        }
+        PeerCapability::Listed | PeerCapability::Unknown => {}
     }
 
     // 2. Friendship.
@@ -747,24 +760,40 @@ pub(crate) async fn ensure_run(e: EnsureArgs, api: &ApiClient) -> Result<()> {
     invoke_and_wait(api, &e, body, &peer_display, via, poll).await
 }
 
-/// The id of `capability` on `peer` when anyone signed in may call it, from
-/// the peer's profile. `None` when it needs a grant, isn't there, or the
-/// profile can't be read (an older relay): the caller then takes the
-/// friendship-and-grant path.
-async fn public_capability(api: &ApiClient, peer: &str, capability: &str) -> Option<String> {
-    let profile: Value = api
-        .get_relay(&format!("/v1/discovery/agents/{peer}"))
-        .await
-        .ok()?;
-    public_capability_in(&profile, capability)
+/// What the peer's profile says about a capability.
+#[derive(Debug, PartialEq)]
+enum PeerCapability {
+    /// Public: call it by this id, no friendship or grant needed.
+    Public(String),
+    /// Listed, but it needs a friendship and a grant.
+    Listed,
+    /// Not among the capabilities you can see.
+    Unlisted,
+    /// No profile to go by (a relay before 0.6.0, or the lookup failed).
+    Unknown,
 }
 
-fn public_capability_in(profile: &Value, capability: &str) -> Option<String> {
-    profile["capabilities"]
-        .as_array()?
-        .iter()
-        .find(|c| c["name"] == capability && c["access"] == "public")
-        .and_then(|c| c["id"].as_str().map(str::to_owned))
+async fn peer_capability(api: &ApiClient, peer: &str, capability: &str) -> PeerCapability {
+    match api
+        .get_relay::<Value>(&format!("/v1/discovery/agents/{peer}"))
+        .await
+    {
+        Ok(profile) => capability_in(&profile, capability),
+        Err(_) => PeerCapability::Unknown,
+    }
+}
+
+fn capability_in(profile: &Value, capability: &str) -> PeerCapability {
+    let Some(capabilities) = profile["capabilities"].as_array() else {
+        return PeerCapability::Unknown;
+    };
+    match capabilities.iter().find(|c| c["name"] == capability) {
+        None => PeerCapability::Unlisted,
+        Some(c) => match (c["access"].as_str(), c["id"].as_str()) {
+            (Some("public"), Some(id)) => PeerCapability::Public(id.to_owned()),
+            _ => PeerCapability::Listed,
+        },
+    }
 }
 
 /// `body`'s envelope fields plus `via`'s: how the call was allowed (a
@@ -936,18 +965,21 @@ mod tests {
     }
 
     #[test]
-    fn public_capabilities_come_from_the_profile() {
+    fn the_profile_says_which_capabilities_exist_and_which_are_public() {
         let profile = json!({ "capabilities": [
             { "id": "c1", "name": "guide.ask", "access": "public" },
             { "id": "c2", "name": "hold", "access": "friends" },
         ]});
         assert_eq!(
-            public_capability_in(&profile, "guide.ask").as_deref(),
-            Some("c1")
+            capability_in(&profile, "guide.ask"),
+            PeerCapability::Public("c1".into())
         );
-        assert_eq!(public_capability_in(&profile, "hold"), None);
-        assert_eq!(public_capability_in(&profile, "missing"), None);
-        assert_eq!(public_capability_in(&json!({}), "guide.ask"), None);
+        assert_eq!(capability_in(&profile, "hold"), PeerCapability::Listed);
+        assert_eq!(capability_in(&profile, "missing"), PeerCapability::Unlisted);
+        assert_eq!(
+            capability_in(&json!({}), "guide.ask"),
+            PeerCapability::Unknown
+        );
     }
 
     #[test]
@@ -982,19 +1014,38 @@ mod tests {
         ));
     }
 
+    fn http(status: u16) -> anyhow::Error {
+        crate::client::HttpError {
+            status: reqwest::StatusCode::from_u16(status).unwrap(),
+            message: "refused".into(),
+            // A trace id's digits don't decide the class.
+            trace_id: Some("aa401403404bb".into()),
+        }
+        .into()
+    }
+
     #[test]
     fn classify_status_codes() {
         assert!(matches!(
-            classify_http_err(&anyhow::anyhow!("HTTP 401 unauthorized")),
+            classify_http_err(&http(401)),
             WaitError::Unauthorized(_)
         ));
         assert!(matches!(
-            classify_http_err(&anyhow::anyhow!("403 forbidden")),
+            classify_http_err(&http(403)),
             WaitError::Forbidden(_)
         ));
         assert!(matches!(
-            classify_http_err(&anyhow::anyhow!("404 not found")),
+            classify_http_err(&http(404)),
             WaitError::InvalidArgs(_)
+        ));
+        assert!(matches!(
+            classify_http_err(&http(500)),
+            WaitError::Transient(_)
+        ));
+        // Not an HTTP refusal (e.g. the network): transient, whatever it says.
+        assert!(matches!(
+            classify_http_err(&anyhow::anyhow!("HTTP 401 unauthorized")),
+            WaitError::Transient(_)
         ));
         assert!(matches!(
             classify_http_err(&anyhow::anyhow!("connection refused")),

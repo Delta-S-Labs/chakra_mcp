@@ -263,3 +263,60 @@ func TestUpdateAgentTagsKeepOrClear(t *testing.T) {
 		}
 	}
 }
+
+// A push agent registers with its Agent Card URL, and Agent reads its mode.
+func TestAgentsCreateSendsAgentCardURL(t *testing.T) {
+	const card = "https://gateway.example/.well-known/agent-card.json"
+	var body map[string]any
+	_, c := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/agents" {
+			http.NotFound(w, r)
+			return
+		}
+		body = readBody(t, r)
+		_, _ = w.Write([]byte(`{"id":"a1","slug":"gateway","display_name":"Gateway","mode":"push"}`))
+	})
+	agent, err := c.Agents().Create(context.Background(), &CreateAgentRequest{
+		AccountID: "acc1", Slug: "gateway", DisplayName: "Gateway", AgentCardURL: card,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if body["agent_card_url"] != card {
+		t.Errorf("sent agent_card_url = %v, want %s", body["agent_card_url"], card)
+	}
+	if agent.Mode != AgentModePush {
+		t.Errorf("agent.Mode = %q, want push", agent.Mode)
+	}
+
+	// A pull agent sends none.
+	b, err := json.Marshal(CreateAgentRequest{AccountID: "acc1", Slug: "rooms", DisplayName: "Rooms"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "agent_card_url") {
+		t.Errorf("body = %s, want no agent_card_url", b)
+	}
+}
+
+// UpdateAgentRequest.AgentCardURL: nil keeps the mode, "" makes it a pull
+// agent, and a URL makes it a push agent.
+func TestUpdateAgentCardURLKeepsOrSwitchesMode(t *testing.T) {
+	empty, card := "", "https://gateway.example/card.json"
+	for _, tc := range []struct {
+		url  *string
+		want string
+	}{
+		{nil, `{"display_name":"Gateway"}`},
+		{&empty, `{"display_name":"Gateway","agent_card_url":""}`},
+		{&card, `{"display_name":"Gateway","agent_card_url":"https://gateway.example/card.json"}`},
+	} {
+		body, err := json.Marshal(UpdateAgentRequest{DisplayName: "Gateway", AgentCardURL: tc.url})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(body) != tc.want {
+			t.Errorf("body = %s, want %s", body, tc.want)
+		}
+	}
+}

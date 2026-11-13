@@ -14,6 +14,10 @@ Rust SDK for the [ChakraMCP](https://chakramcp.com) relay. Async, tokio-based.
 > Or via `cargo add`:
 > `cargo add --git https://github.com/Delta-S-Labs/chakra_mcp --tag sdk-rust-v0.6.0 chakramcp`.
 
+It needs Rust 1.88 or newer (`rust-version` in its `Cargo.toml`). The
+SDK's own code builds on older compilers, but the current releases of
+its dependencies (the ICU crates `url` uses for domain names) need 1.88.
+
 API-key only - for OAuth, use the CLI (`chakramcp login`).
 
 ## Quick start
@@ -111,6 +115,12 @@ let featured = chakra.discovery().featured().await?;
 Pass `next_cursor` back as `cursor`, with the same filters, for the
 next page. `CreateAgentRequest` and `UpdateAgentRequest` take `tags`
 (`Some(vec![])` on update clears them), and `Agent` returns them.
+
+To register a push agent, one that takes requests at its own A2A
+endpoint, set `agent_card_url` on `CreateAgentRequest` to its Agent
+Card URL. On `UpdateAgentRequest`, a URL makes an agent a push agent
+and `Some(String::new())` makes it a pull agent again. `Agent.mode` says
+which it is (`None` from relays before 0.5.0).
 
 ## Two ergonomic helpers
 
@@ -309,6 +319,13 @@ match err {
     _ => { /* … */ }
 }
 ```
+
+`Api` and the usage-limit variants below also carry `trace_id`, the
+request's `ChakraMCP-Trace-Id` response header (`None` when the server
+didn't trace it), and their `Display` ends with `(trace id …)`.
+`err.trace_id()` reads it from any variant. Quote it when you report a
+problem. A pattern that lists every field of one of these variants
+needs `..`.
 
 ### Message safety
 

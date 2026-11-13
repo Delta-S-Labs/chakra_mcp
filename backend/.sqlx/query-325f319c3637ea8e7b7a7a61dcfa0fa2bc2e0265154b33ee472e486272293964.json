@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, name, key_prefix, account_id, last_used_at, expires_at, revoked_at, created_at\n        FROM api_keys\n        WHERE user_id = $1\n        ORDER BY created_at DESC\n        ",
+  "query": "\n        SELECT k.id, k.name, k.key_prefix, k.account_id, k.last_used_at, k.expires_at,\n               k.revoked_at, k.created_at,\n               COALESCE(cs.agent_scope, 'all') AS \"agent_scope!\",\n               ARRAY(SELECT csa.agent_id FROM credential_scope_agents csa\n                      WHERE csa.credential_scope_id = cs.id\n                      ORDER BY csa.agent_id) AS \"selected_agent_ids!\"\n        FROM api_keys k\n        LEFT JOIN credential_scopes cs\n               ON cs.cred_kind = 'api_key' AND cs.cred_ref = k.id::text\n        WHERE k.user_id = $1\n        ORDER BY k.created_at DESC\n        ",
   "describe": {
     "columns": [
       {
@@ -90,6 +90,18 @@
             "name": "created_at"
           }
         }
+      },
+      {
+        "ordinal": 8,
+        "name": "agent_scope!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "selected_agent_ids!",
+        "type_info": "UuidArray",
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -105,8 +117,10 @@
       true,
       true,
       true,
-      false
+      false,
+      null,
+      null
     ]
   },
-  "hash": "880aecb6183b1ce8e62b68729623e5d83f20cc58568bbdc351c70bae1bc684e9"
+  "hash": "325f319c3637ea8e7b7a7a61dcfa0fa2bc2e0265154b33ee472e486272293964"
 }

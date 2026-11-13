@@ -50,7 +50,8 @@ pub struct SendArgs {
     pub no_reply_expected: bool,
     /// One of your agent slugs — required only if multiple of your
     /// agents have a grant to call this peer's `message_owner`.
-    #[arg(long = "as")]
+    /// `--from` works too (round-2 QA N48).
+    #[arg(long = "as", visible_alias = "from")]
     pub as_agent: Option<String>,
     /// Override the visible "from" name on the peer's side. Defaults
     /// to your agent's display_name as the relay sees it.
@@ -108,7 +109,7 @@ pub struct EnsureArgs {
     /// Message body.
     pub text: String,
     /// Your agent slug — the grantee that will send the message.
-    #[arg(long)]
+    #[arg(long, visible_alias = "as")]
     pub from: String,
 
     /// Poll until the message_owner invocation reaches a terminal state.
@@ -435,6 +436,19 @@ mod tests {
                 assert_eq!(r.reply, "");
             }
             _ => panic!("expected Reply"),
+        }
+    }
+
+    /// Round-2 QA N48: `--as` and `--from` both name your agent.
+    #[test]
+    fn message_takes_as_or_from() {
+        let sent = Args::try_parse_from(["message", "bob/venue", "hi", "--from", "me"]).unwrap();
+        assert_eq!(sent.send.as_agent.as_deref(), Some("me"));
+        let ensured =
+            Args::try_parse_from(["message", "ensure", "bob/venue", "hi", "--as", "me"]).unwrap();
+        match ensured.sub {
+            Some(Sub::Ensure(e)) => assert_eq!(e.from, "me"),
+            other => panic!("expected Ensure, got {other:?}"),
         }
     }
 }

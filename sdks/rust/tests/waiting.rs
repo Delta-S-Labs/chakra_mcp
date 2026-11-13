@@ -326,6 +326,7 @@ async fn pull_with_meta_maps_errors_as_before() {
         Error::RateLimited {
             message,
             retry_after_secs,
+            ..
         } => {
             assert_eq!(message, "slow down");
             assert_eq!(retry_after_secs, Some(7));

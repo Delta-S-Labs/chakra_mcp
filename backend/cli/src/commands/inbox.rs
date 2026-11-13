@@ -12,6 +12,7 @@ pub enum Cmd {
     /// unanswered call then goes back to pending for another pull. To look
     /// without claiming, use `inbox list`.
     Pull {
+        /// Your agent: its id, `account/agent`, or a slug.
         #[arg(long)]
         agent: String,
         #[arg(long, default_value_t = 25)]
@@ -28,6 +29,7 @@ pub enum Cmd {
     /// List your agent's pending invocations without claiming them:
     /// `invocations list --direction inbound --status pending --agent …`.
     List {
+        /// Your agent: its id, `account/agent`, or a slug.
         #[arg(long)]
         agent: String,
     },
@@ -52,6 +54,7 @@ pub enum Cmd {
     /// `consent_requested` notice means a call is waiting for your approval:
     /// open its `approve_url`, signed in, to approve or deny it.
     Notices {
+        /// Your agent: its id, `account/agent`, or a slug.
         #[arg(long)]
         agent: String,
         #[arg(long, default_value_t = 25)]
@@ -82,6 +85,8 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             wait,
             lease_secs,
         } => {
+            // Named by id, `account/agent`, or a slug (round-2 QA N26).
+            let agent = crate::resolve::my_agent_id(&api, &agent).await?;
             let mut path = format!("/v1/inbox?agent_id={agent}&limit={limit}&wait={wait}");
             if let Some(lease) = lease_secs {
                 path.push_str(&format!("&lease_secs={lease}"));
@@ -90,6 +95,7 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             print(&v)
         }
         Cmd::List { agent } => {
+            let agent = crate::resolve::my_agent_id(&api, &agent).await?;
             let v: Value = api
                 .get_relay(&format!(
                     "/v1/invocations?direction=inbound&status=pending&agent_id={agent}"
@@ -135,6 +141,7 @@ pub async fn run(cmd: Cmd, api: ApiClient) -> Result<()> {
             print(&v)
         }
         Cmd::Notices { agent, limit, wait } => {
+            let agent = crate::resolve::my_agent_id(&api, &agent).await?;
             let v: Value = api
                 .get_relay(&format!(
                     "/v1/inbox/notices?agent_id={agent}&limit={limit}&wait={wait}"

@@ -105,4 +105,37 @@ describe("discovery", () => {
     expect(sent).toMatchObject({ tags: ["booking"] });
     expect(agent.tags).toEqual(["booking"]);
   });
+
+  it("agents.create and update send agent_card_url, and Agent reads mode", async () => {
+    const sent: unknown[] = [];
+    const sdk = new ChakraMCP({
+      apiKey: "ck_test",
+      relayUrl: "http://relay",
+      fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body)) as { agent_card_url?: string };
+        sent.push(body);
+        const mode = body.agent_card_url ? "push" : "pull";
+        return new Response(JSON.stringify({ id: "a1", mode }), { status: 200 });
+      }) as typeof fetch,
+    });
+    const card = "https://gateway.example/.well-known/agent-card.json";
+    const pushed = await sdk.agents.create({
+      account_id: "acc1",
+      slug: "gateway",
+      display_name: "Gateway",
+      agent_card_url: card,
+    });
+    expect(sent[0]).toEqual({
+      account_id: "acc1",
+      slug: "gateway",
+      display_name: "Gateway",
+      agent_card_url: card,
+    });
+    expect(pushed.mode).toBe("push");
+
+    // `""` on update makes it a pull agent again.
+    const pulled = await sdk.agents.update("a1", { agent_card_url: "" });
+    expect(sent[1]).toEqual({ agent_card_url: "" });
+    expect(pulled.mode).toBe("pull");
+  });
 });
