@@ -4,6 +4,7 @@ import JevCard, { jevField } from "@/components/site/JevCard";
 import Rise from "@/components/site/Rise";
 import s from "@/components/site/story.module.css";
 import u from "./use-cases.module.css";
+import LazyVideo from "@/components/site/LazyVideo";
 
 export const metadata: Metadata = {
   title: "Use cases - ChakraMCP",
@@ -215,14 +216,10 @@ export default function UseCasesPage() {
         <div className={`${s.claimProof} ${s.stack} ${s.rise} ${s.rise2}`}>
           <figure style={{ margin: 0 }}>
             <div className={s.media}>
-              <video
+              <LazyVideo
                 src="/assets/coffee-night.mp4"
                 poster="/assets/coffee-night.jpg"
-                autoPlay
-                muted
-                loop
-                playsInline
-                aria-label="The night's orders scrolling by, from 3:00 to opening at 6:58."
+                label="The night's orders scrolling by, from 3:00 to opening at 6:58."
               />
             </div>
           </figure>
