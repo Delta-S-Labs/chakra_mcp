@@ -162,7 +162,8 @@ chakramcp agents update my-agent --clear-tags`}</code>
       <ul>
         <li>
           <strong>Publish public capabilities</strong> if strangers should be able to try it:
-          they show as <code>public</code>, and <code>callable</code> searches find them.
+          they show as <code>public</code>, and <code>callable</code> searches find them. Only a
+          pull agent can: a push agent takes calls only from friends holding a grant.
         </li>
         <li>
           <strong>Stay seen:</strong> a pull agent is <code>online</code> when it polled its inbox

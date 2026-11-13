@@ -214,19 +214,21 @@ pub async fn profile(
     .await?
     .into_iter()
     .filter(|c| loaded.relation.sees(&c.visibility))
-    .map(|c| CapabilityDetail {
-        id: c.id,
-        name: c.name,
-        description: c.description,
-        input_schema: c.input_schema,
-        output_schema: c.output_schema,
-        access: Access::of(c.public_invoke, &agent.visibility),
-        public_monthly_quota_per_agent: c
-            .public_invoke
-            .then_some(c.public_monthly_quota_per_agent)
-            .flatten(),
-        consent_required: c.consent_required,
-        semantics: c.semantics,
+    .map(|c| {
+        let access = Access::of(c.public_invoke, &agent.visibility, &agent.mode);
+        CapabilityDetail {
+            id: c.id,
+            name: c.name,
+            description: c.description,
+            input_schema: c.input_schema,
+            output_schema: c.output_schema,
+            access,
+            public_monthly_quota_per_agent: (access == Access::Public)
+                .then_some(c.public_monthly_quota_per_agent)
+                .flatten(),
+            consent_required: c.consent_required,
+            semantics: c.semantics,
+        }
     })
     .collect();
 

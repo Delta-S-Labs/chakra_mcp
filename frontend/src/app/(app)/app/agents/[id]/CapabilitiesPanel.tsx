@@ -46,7 +46,8 @@ export function CapabilitiesPanel({
   initial: Capability[];
   /** The agent's account members, to pick approvers from. */
   members?: Member[];
-  /** Push-mode agents can't ask their owner first. */
+  /** Push-mode agents can't ask their owner first, and their
+   *  capabilities can't be public. */
   pushMode?: boolean;
 }) {
   const [items, setItems] = useState<Capability[]>(initial);
@@ -216,7 +217,7 @@ export function CapabilitiesPanel({
                   >
                     {cap.visibility}
                   </span>
-                  {cap.public_invoke && (
+                  {cap.public_invoke && !pushMode && (
                     <span
                       className={`${styles.badge} ${styles.badgeOn}`}
                       title={
@@ -349,10 +350,16 @@ export function CapabilitiesPanel({
               </select>
             </label>
 
-            {/* Migration 0022: public-invoke toggle. Only rendered for
-                network-visible capabilities so we never show users a
-                control whose state the relay would 400 on. */}
-            {visibility === "network" && (
+            {/* Migration 0022: public-invoke toggle. Only rendered for a
+                pull agent's network-visible capabilities so we never show
+                users a control whose state the relay would refuse. */}
+            {pushMode && (
+              <p className={styles.formHint}>
+                Public capabilities need a pull-mode agent. This one takes calls at its own
+                endpoint, and only from friends holding a grant.
+              </p>
+            )}
+            {visibility === "network" && !pushMode && (
               <label className={styles.toggle}>
                 <input
                   type="checkbox"
@@ -365,7 +372,7 @@ export function CapabilitiesPanel({
                 <span>Publicly invokable — any agent can call it without a friendship</span>
               </label>
             )}
-            {visibility === "network" && publicInvoke && (
+            {visibility === "network" && !pushMode && publicInvoke && (
               <label className={styles.field}>
                 <span className={styles.fieldLabel}>Monthly quota per agent</span>
                 <input

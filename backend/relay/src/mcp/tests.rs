@@ -369,6 +369,48 @@ async fn public_by_name_calls_as_the_personal_agent(pool: PgPool) {
     assert_eq!(key_points_at, replacement);
 }
 
+/// A push agent takes calls only on its A2A endpoint: a call by name is
+/// refused up front, through a grant or to a capability flagged public, and
+/// nothing is queued.
+#[sqlx::test(migrations = "../migrations")]
+async fn by_name_to_a_push_agent_is_refused(pool: PgPool) {
+    let alice = person(&pool, "alice").await;
+    let bob = person(&pool, "bob").await;
+    let planner = agent(&pool, alice.account, "planner").await;
+    let gateway = agent(&pool, bob.account, "gateway").await;
+    let hold = capability(&pool, gateway, "hold", None).await;
+    befriend_and_grant(&pool, gateway, planner, hold).await;
+    capability(&pool, gateway, "check", Some(100)).await;
+    sqlx::query(
+        "UPDATE agents SET mode = 'push', agent_card_url = 'https://gw.example/card.json'
+          WHERE id = $1",
+    )
+    .bind(gateway)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    for capability in ["hold", "check"] {
+        let refused = tool(
+            &pool,
+            &alice.token,
+            "invoke",
+            json!({ "agent": "bob/gateway", "capability": capability, "input": {} }),
+        )
+        .await;
+        assert_eq!(code(&refused), "chk.target.push_mode", "{capability}");
+        assert!(refused["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("/agents/bob/gateway/a2a/jsonrpc"));
+    }
+    let queued: i64 = sqlx::query_scalar("SELECT count(*) FROM relay_invocations")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(queued, 0);
+}
+
 /// Concurrent first calls make one default agent; two users of one OAuth
 /// client each get their own client agent.
 #[sqlx::test(migrations = "../migrations")]

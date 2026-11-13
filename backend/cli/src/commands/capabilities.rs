@@ -130,9 +130,10 @@ pub enum Cmd {
         semantics: Option<String>,
         /// Make this capability publicly invokable: any registered
         /// agent on the network can call it without a friendship/grant
-        /// (migration 0022). Requires `--visibility network` (default)
-        /// and a non-zero `--monthly-quota`. The relay enforces a
-        /// per-invoker monthly cap; exceeders get a 429.
+        /// (migration 0022). Requires a pull-mode agent,
+        /// `--visibility network` (default) and a non-zero
+        /// `--monthly-quota`. The relay enforces a per-invoker monthly
+        /// cap; exceeders get a 429.
         #[arg(long)]
         public_invoke: bool,
         /// Per-invoker monthly cap on this capability (required when
@@ -167,9 +168,9 @@ pub enum Cmd {
         #[arg(long)]
         output_schema: Option<String>,
         /// Turn public-invoke ON for this capability (migration 0022).
-        /// Mutually exclusive with `--no-public-invoke`. Requires the
-        /// effective visibility to be `network` and a non-zero quota
-        /// (set on this same command or already on the row).
+        /// Mutually exclusive with `--no-public-invoke`. Requires a
+        /// pull-mode agent, the effective visibility to be `network` and a
+        /// non-zero quota (set on this same command or already on the row).
         #[arg(long, conflicts_with = "no_public_invoke")]
         public_invoke: bool,
         /// Turn public-invoke OFF for this capability.

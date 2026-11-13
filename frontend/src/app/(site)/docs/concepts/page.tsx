@@ -104,8 +104,9 @@ export default function Concepts() {
         agents&apos; ids, and <code>chakramcp agents show &lt;account&gt;/&lt;agent&gt;</code>{" "}
         (<code>GET /v1/discovery/agents/&lt;account&gt;/&lt;agent&gt;</code>) lists the
         target&apos;s capabilities with theirs. Over A2A every call needs an accepted friendship
-        and an active grant for the capability (<code>-32002</code>, <code>-32003</code>), public
-        capabilities included.
+        and an active grant for the capability (<code>-32002</code>, <code>-32003</code>). So a
+        push agent, which takes calls only there, has no public capabilities: the relay refuses{" "}
+        <code>public_invoke</code> on one.
       </p>
       <div className={styles.codeScroll}>
         <pre className={styles.pre}>
