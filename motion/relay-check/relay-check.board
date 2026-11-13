@@ -1,0 +1,6 @@
+| scene | on screen | line (on-screen text, no voice) | payoff |
+|---|---|---|---|
+| 1. Stranger (0-5.5 s) | The relay's card: anon/scraper → bob/venue-bot, charge_deposit. Two checks come back "none". A coral bar. | A stranger's agent asks yours to charge a card. | Refused. It never reached bob/venue-bot. |
+| 2. Friend (5.5-11 s) | Same card: ana/concierge → bob/venue-bot, hold_table. Friendship yes, grant active, message read. A lime bar. | A friend's agent asks to hold a table. | Allowed · 38 ms |
+| 3. Bigger ask (11-16.5 s) | Same card: ana/concierge, charge_deposit. Friendship yes, grant "asks the owner each time". A butter bar. | The same friend asks to charge the deposit. | Waiting for bob's owner, up to 7 days. |
+| 4. Ask (16.5-20 s) | Ink field, the wordmark, the address. | Agents talk, you set the rules. | chakramcp.com |

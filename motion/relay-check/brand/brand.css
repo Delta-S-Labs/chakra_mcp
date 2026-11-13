@@ -1,0 +1,29 @@
+/* ChakraMCP brand kit, written by hand from frontend/src/styles/tokens.css (the site's tokens, oklch turned to hex).
+   `raea brand chakramcp.com` read the TypeSafe card's pink and a LinkedIn blue, so its output was replaced. */
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap");
+
+:root {
+  --brand-accent: #e54d42;        /* --accent-coral */
+  --brand-background: #ebeae6;    /* --paper, stone */
+  --brand-text: #2c191a;          /* --ink */
+  --brand-paper-warm: #dedcd8;
+  --brand-paper-soft: #f4f4f1;
+  --brand-ink-soft: #5a4847;
+  --brand-ink-muted: #675a58;
+  --brand-lime: #b2e46b;
+  --brand-butter: #fbe176;
+  --brand-on-ink: #e9e8e3;
+  --brand-on-ink-muted: #bcb6b1;
+  --brand-on-coral: #180808;
+  --brand-font-heading: "Geist", system-ui, sans-serif;
+  --brand-font: "Geist", system-ui, sans-serif;
+  --brand-font-mono: "Geist Mono", ui-monospace, Menlo, monospace;
+  --brand-h1-size: 67.2px;
+  --brand-h1-weight: 400;
+  --brand-h1-line: 64.5px;
+  --brand-h1-tracking: -0.05em;
+  --brand-p-size: 17px;
+  --brand-p-weight: 400;
+  --brand-p-line: 27.2px;
+  --brand-radius: 1.6rem;
+}

@@ -12,7 +12,7 @@
   --lead: clamp(19px, 1.45vw, 22px);
   --text: 1.1875rem;
   --small: 1rem;
-  --radius: 10px;
+  --radius: 22px;
 }
 
 .grid {
@@ -42,6 +42,7 @@
 
 /* ---------- actions ---------- */
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 1.75rem; }
+.heroNote { font-size: var(--small); color: var(--ink-soft); margin: 1.25rem 0 0; max-width: 36rem; }
 .button {
   display: inline-flex;
   align-items: center;
@@ -158,9 +159,41 @@
 
 /* ---------- the board ---------- */
 .board {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   background: var(--paper-warm);
   padding: var(--section) var(--gutter);
 }
+/* Colour drifting behind the board, so the glass tiles have something to
+   bend. Two soft fields, each on its own slow path. */
+.board::before,
+.board::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  width: 62vw;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  filter: blur(90px);
+  pointer-events: none;
+}
+.board::before {
+  top: 4%;
+  left: -12%;
+  background: radial-gradient(closest-side, color-mix(in oklab, var(--accent-coral) 52%, transparent), transparent);
+  animation: driftA 38s ease-in-out infinite alternate;
+}
+.board::after {
+  bottom: -6%;
+  right: -14%;
+  background:
+    radial-gradient(closest-side at 35% 40%, color-mix(in oklab, var(--accent-lime) 62%, transparent), transparent),
+    radial-gradient(closest-side at 70% 65%, color-mix(in oklab, var(--accent-butter) 80%, transparent), transparent);
+  animation: driftB 46s ease-in-out infinite alternate;
+}
+@keyframes driftA { to { transform: translate(34vw, 22%) scale(1.15); } }
+@keyframes driftB { to { transform: translate(-30vw, -26%) scale(0.9); } }
 .boardHead {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
@@ -173,7 +206,7 @@
 .tiles {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: 8px;
+  gap: 14px;
   grid-template-areas:
     "vid  vid  vid  vid  vid  vid  vid  wake wake wake wake wake"
     "call call call call ask  ask  ask  ask  chk  chk  chk  chk"
@@ -181,7 +214,14 @@
 }
 .tile {
   border-radius: var(--radius);
-  background: var(--paper-soft);
+  /* Glass: the board's colour shows through, blurred, under a lit rim. */
+  background: color-mix(in oklab, var(--paper-soft) 46%, transparent);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+  border: 1px solid color-mix(in oklab, white 62%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, white 88%, transparent),
+    0 18px 44px color-mix(in oklab, var(--ink) 7%, transparent);
   padding: clamp(20px, 2vw, 28px);
   display: flex;
   flex-direction: column;
@@ -190,7 +230,7 @@
 }
 .tileInk { background: var(--ink); color: var(--on-ink); }
 .tileCoral { background: var(--accent-coral); color: var(--on-coral); }
-.tileStone { background: var(--paper); }
+.tileStone { background: color-mix(in oklab, var(--paper) 40%, transparent); }
 .tileMedia { padding: 0; overflow: hidden; background: var(--paper); }
 .tileVid { grid-area: vid; }
 .tileCall { grid-area: call; }
@@ -204,9 +244,11 @@
 .caption { padding: 14px 20px 18px; font-size: var(--small); line-height: 1.4; background: var(--paper-soft); margin: 0; max-width: none; }
 
 /* ---------- product fragments (data-ui) ---------- */
-.frag { border-radius: 8px; background: var(--paper-warm); padding: 18px 20px; font-size: 1.0625rem; line-height: 1.4; }
+.frag { border-radius: 14px; background: color-mix(in oklab, var(--paper-warm) 62%, transparent); padding: 18px 20px; font-size: 1.0625rem; line-height: 1.4; }
 .tileInk .frag { background: color-mix(in oklab, var(--ink) 82%, var(--paper)); }
-.tileCoral .frag, .tileStone .frag { background: var(--paper-soft); }
+.tileStone .frag { background: color-mix(in oklab, var(--paper-soft) 70%, transparent); }
+/* Solid on coral: a see-through panel turns pink and its grey labels stop being readable. */
+.tileCoral .frag { background: var(--paper-soft); }
 .fragHead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 12px; margin-bottom: 12px; }
 .fragTitle { font-weight: 650; }
 .fragMeta { font-size: 0.9375rem; color: var(--ink-soft); }
@@ -304,14 +346,19 @@
 .fieldCoral .link:hover { text-decoration-color: var(--paper-soft); }
 
 .panel { border-radius: var(--radius); background: var(--paper-warm); padding: clamp(20px, 2vw, 28px); }
-.fieldInk .panel { background: color-mix(in oklab, var(--ink) 82%, var(--paper)); }
+/* On ink, a panel is smoked glass: a faint fill and a lit rim. */
+.fieldInk .panel {
+  background: color-mix(in oklab, white 7%, transparent);
+  border: 1px solid color-mix(in oklab, white 14%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, white 16%, transparent);
+}
 .fieldCoral .panel { background: var(--paper-soft); color: var(--ink); }
 .panel code, .tile code { color: inherit; }
 .panel pre { font-family: var(--font-mono); font-size: 0.9375rem; line-height: 1.7; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: inherit; }
 .panel pre + p { margin-top: 16px; }
 
 .grant { display: grid; gap: 14px; }
-.grantRow { display: flex; justify-content: space-between; gap: 16px; padding: 12px 14px; border-radius: 8px; background: var(--paper-soft); font-size: 1.0625rem; }
+.grantRow { display: flex; justify-content: space-between; gap: 16px; padding: 12px 14px; border-radius: 12px; background: var(--paper-soft); font-size: 1.0625rem; }
 .grantNote { font-size: 1rem; color: var(--ink-soft); margin: 0; max-width: none; }
 
 .media { border-radius: var(--radius); overflow: hidden; background: var(--paper-warm); }
@@ -331,7 +378,7 @@
 .pending { opacity: 0; transform: translateY(28px); }
 @media (prefers-reduced-motion: reduce) {
   .rise { transition: none; }
-  .heroLine > span, .heroUnder, .heroStage, .tapeTrack, .note { animation: none; }
+  .heroLine > span, .heroUnder, .heroStage, .tapeTrack, .note, .board::before, .board::after { animation: none; }
   .tape { overflow-x: auto; }
 }
 
