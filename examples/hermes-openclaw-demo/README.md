@@ -52,8 +52,9 @@ directory at [`/agents`](http://localhost:3000/agents) (requires
   task dev:frontend    # next.js on :3000 (optional, for the directory)
   ```
 
-  The relay must have `DISCOVERY_V2=true` set for the directory
-  page to render new agents.
+  The relay must have `DISCOVERY_V2=true` set: the directory page
+  needs it to render new agents, and the A2A endpoint that
+  `invoke_openclaw.py` calls needs it too.
 
 ## Run it
 
@@ -76,7 +77,7 @@ python setup.py
 # Terminal 3 — Hermes pull-mode bot, listening for invocations:
 python hermes_bot.py
 
-# Terminal 4 — Hermes invokes OpenClaw (push-mode forwarder path):
+# Terminal 4 — Hermes calls OpenClaw on its A2A endpoint (push-mode forwarder path):
 python invoke_openclaw.py --ingredients chicken,rice,lemon
 
 # Terminal 4 (later) — OpenClaw invokes Hermes (pull-mode inbox path):
@@ -94,10 +95,10 @@ OpenClaw alone.
 
 ```
 signed in as demo-hermes-…@example.com  (Hermes side)
-target     : openclaw-recipes.suggest-recipes  (grant 019dcf…)
+target     : openclaw-recipes.suggest-recipes over A2A  (grant 019dcf…)
 ingredients: ['chicken', 'rice', 'lemon']
 
-  status     : succeeded
+  state      : completed
   elapsed_ms : 184
   source     : openclaw-mock
   recipes    : 3

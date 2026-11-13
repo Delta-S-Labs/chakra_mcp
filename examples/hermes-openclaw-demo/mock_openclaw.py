@@ -125,11 +125,15 @@ def make_handler(port: int):
                 )
 
             params = envelope.get("params") or {}
-            ingredients = (
+            data = (
                 params.get("message", {}).get("parts", [{}])[0].get("data", {})
             ) or params  # tolerate either wire shape
+            # {"ingredients": [...]} (invoke_openclaw.py), or a dict of strings.
+            items = data.get("ingredients") if isinstance(data, dict) else None
+            if not isinstance(items, list):
+                items = list(data.values()) if isinstance(data, dict) else []
             recipes = [
-                f"Lemon herb roast (uses {', '.join(str(i) for i in (ingredients or {}).values()) or 'pantry items'})",
+                f"Lemon herb roast (uses {', '.join(str(i) for i in items) or 'pantry items'})",
                 "One-pot rice pilaf",
                 "Pan-seared protein with citrus glaze",
             ]

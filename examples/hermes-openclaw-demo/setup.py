@@ -73,7 +73,7 @@ def http(method: str, url: str, *, token: str | None = None, body: dict | None =
 
 
 def signup(app_url: str, label: str) -> dict:
-    """Create a fresh user. Returns {token, user_id, account_id, email}."""
+    """Create a fresh user. Returns {token, user_id, account_id, account_slug, email}."""
     suffix = secrets.token_hex(4)
     email = f"demo-{label}-{int(time.time())}-{suffix}@example.com"
     print(f"  signup: {email}")
@@ -100,6 +100,7 @@ def signup(app_url: str, label: str) -> dict:
         "token": res["token"],
         "user_id": res["user"]["id"],
         "account_id": res["memberships"][0]["account_id"],
+        "account_slug": res["memberships"][0]["slug"],
     }
 
 
@@ -373,6 +374,7 @@ def main() -> int:
             "email": hermes["email"],
             "api_key": hermes_key,
             "account_id": hermes["account_id"],
+            "account_slug": hermes["account_slug"],
             "agent_id": hermes_agent,
             "agent_slug": "hermes",
             "capability_id": hermes_cap,
@@ -381,6 +383,7 @@ def main() -> int:
             "email": openclaw["email"],
             "api_key": openclaw_key,
             "account_id": openclaw["account_id"],
+            "account_slug": openclaw["account_slug"],
             "agent_id": openclaw_agent,
             "agent_slug": "openclaw-recipes",
             "capability_id": openclaw_cap,

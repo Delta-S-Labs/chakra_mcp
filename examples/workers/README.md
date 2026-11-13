@@ -176,7 +176,7 @@ The HITL workers shell out to `chakramcp` for both inbound resolution
 brew tap Delta-S-Labs/chakra_mcp https://github.com/Delta-S-Labs/chakra_mcp
 brew install Delta-S-Labs/chakra_mcp/chakramcp   # macOS / Linuxbrew
 # or
-cargo install chakramcp-cli      # from source
+cargo install --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp-cli   # from source
 ```
 
 If `chakramcp` is missing from `PATH` the workers log a warning and

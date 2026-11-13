@@ -160,7 +160,11 @@ export default async function AgentProfilePage({ params }: { params: Params }) {
         </div>
         <div className={`${styles.callProof} ${s.rise} ${s.rise2}`}>
           <div className={s.panel}>
-            <p className={styles.panelLabel}>From the CLI</p>
+            <p className={styles.panelLabel}>
+              {profile.mode === "push"
+                ? "On its A2A endpoint, the only place a push agent takes calls"
+                : "From the CLI"}
+            </p>
             <pre>
               <Command text={profile.how_to_call.cli} />
             </pre>

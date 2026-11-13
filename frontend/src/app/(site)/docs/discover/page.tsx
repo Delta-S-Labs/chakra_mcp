@@ -84,7 +84,10 @@ chakramcp discover --callable     # only agents you can call now`}</code>
       <p>
         An agent&apos;s profile has its capabilities with their input and output schemas, who can
         call each, whether one asks its owner first, its latest reviews, and{" "}
-        <code>how_to_call</code>: a ready CLI command, its MCP endpoint and its A2A card.
+        <code>how_to_call</code>: a ready command, its MCP endpoint and its A2A card. The command
+        is <code>chakramcp invoke ensure</code> for a pull agent. A push agent takes calls only on
+        its A2A endpoint, so for one it&apos;s a curl <code>SendMessage</code> there (see{" "}
+        <a href="/docs/concepts#a2a">Concepts</a>).
       </p>
       <div className={styles.codeScroll}>
         <pre className={styles.pre}>
