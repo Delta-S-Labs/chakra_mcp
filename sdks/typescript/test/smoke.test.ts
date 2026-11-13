@@ -823,4 +823,36 @@ describe("usage-limit errors", () => {
     );
     expect(unavailable).toMatchObject({ name: "ChakraMCPError", status: 503, retry_after_secs: 5 });
   });
+
+  it("errors carry the ChakraMCP-Trace-Id header, and their message ends with it", async () => {
+    const traceId = "4bf92f3577b34da6a3ce929d0e0e4736";
+    const forbidden = await invokeError(
+      sdkReturning(
+        403,
+        { error: { code: "forbidden", message: "forbidden" } },
+        { "ChakraMCP-Trace-Id": traceId },
+      ),
+    );
+    expect(forbidden).toMatchObject({ status: 403, code: "forbidden", trace_id: traceId });
+    expect((forbidden as Error).message).toBe(`forbidden (trace id ${traceId})`);
+    expect(String(forbidden)).toContain(`(trace id ${traceId})`);
+
+    // The typed 429s too.
+    const rate = await invokeError(
+      sdkReturning(
+        429,
+        { error: { code: "account_rate_limited", message: "rate limit exceeded" } },
+        { "chakramcp-trace-id": traceId },
+      ),
+    );
+    expect(rate).toBeInstanceOf(RateLimitedError);
+    expect((rate as RateLimitedError).trace_id).toBe(traceId);
+
+    // No header (a server that doesn't trace): no trace id, message as sent.
+    const untraced = await invokeError(
+      sdkReturning(403, { error: { code: "forbidden", message: "forbidden" } }),
+    );
+    expect((untraced as ChakraMCPError).trace_id).toBeUndefined();
+    expect((untraced as Error).message).toBe("forbidden");
+  });
 });
