@@ -50,10 +50,12 @@ pub enum Access {
 
 impl Access {
     /// A capability is public when its owner opted in (`public_invoke`, which
-    /// requires a network-visible capability) and the agent is
-    /// network-visible: the public invoke path refuses anything else.
-    pub fn of(public_invoke: bool, agent_visibility: &str) -> Self {
-        if public_invoke && agent_visibility == "network" {
+    /// requires a network-visible capability) and the agent is a
+    /// network-visible pull agent: the public invoke path refuses anything
+    /// else, and a push agent's A2A endpoint needs a friendship and a grant
+    /// from every caller.
+    pub fn of(public_invoke: bool, agent_visibility: &str, agent_mode: &str) -> Self {
+        if public_invoke && agent_visibility == "network" && agent_mode == "pull" {
             Self::Public
         } else {
             Self::Friends
@@ -172,7 +174,7 @@ pub async fn load(
                 .map(|c| CapabilityBrief {
                     id: c.id,
                     name: c.name.clone(),
-                    access: Access::of(c.public_invoke, &r.visibility),
+                    access: Access::of(c.public_invoke, &r.visibility, &r.mode),
                 })
                 .collect();
             Loaded {

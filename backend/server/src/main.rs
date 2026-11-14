@@ -2,7 +2,9 @@
 //! API (chakramcp-app) and the inter-agent relay (chakramcp-relay) in
 //! one tokio runtime, sharing a Postgres pool and a JWT secret. Aimed
 //! at users who want to host a private ChakraMCP network on their own
-//! machine via `brew install chakramcp-server`.
+//! machine via Homebrew (`brew tap Delta-S-Labs/chakra_mcp
+//! https://github.com/Delta-S-Labs/chakra_mcp`, then
+//! `brew install Delta-S-Labs/chakra_mcp/chakramcp-server`).
 //!
 //! Subcommands:
 //!

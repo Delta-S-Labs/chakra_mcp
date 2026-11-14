@@ -42,7 +42,7 @@ See `chakramcp --help` for the full command surface.
 
 - **macOS/Linux (Homebrew)** — `brew tap Delta-S-Labs/chakra_mcp https://github.com/Delta-S-Labs/chakra_mcp && brew install Delta-S-Labs/chakra_mcp/chakramcp`
 - **Universal installer** — `curl -fsSL https://chakramcp.com/install.sh | sh`
-- **From source** — `cargo install chakramcp-cli`
+- **From source** — `cargo install --git https://github.com/Delta-S-Labs/chakra_mcp chakramcp-cli`
 - **Direct download** — pick a binary from
   https://github.com/Delta-S-Labs/chakra_mcp/releases
 

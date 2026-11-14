@@ -206,9 +206,10 @@ pub async fn search(
                       AND (c.visibility = 'network' OR ($11::uuid IS NOT NULL AND EXISTS (
                           SELECT 1 FROM account_memberships m
                            WHERE m.account_id = a.account_id AND m.user_id = $11)))))
-           -- Callable now: something public, or a grant to one of yours.
+           -- Callable now: something public (a push agent's capabilities
+           -- never are), or a grant to one of yours.
            AND (NOT $13::boolean
-                OR (a.visibility = 'network' AND EXISTS (
+                OR (a.visibility = 'network' AND a.mode = 'pull' AND EXISTS (
                        SELECT 1 FROM agent_capabilities c
                         WHERE c.agent_id = a.id AND c.public_invoke = true))
                 OR EXISTS (

@@ -503,6 +503,51 @@ async fn signed_in_search(pool: PgPool) {
     assert!(headers.contains_key(header::WWW_AUTHENTICATE));
 }
 
+/// A push agent takes calls only on its A2A endpoint, from friends with a
+/// grant: a capability flagged public on one shows as friends-only, with no
+/// quota; strangers can't call it, and callable searches skip it.
+#[sqlx::test(migrations = "../migrations")]
+async fn a_push_agents_capabilities_are_friends_only(pool: PgPool) {
+    let (_, alice_acct, alice) = user(&pool, "alice").await;
+    let (_, bob_acct, _) = user(&pool, "bob").await;
+    agent(&pool, alice_acct, NewAgent::new("mine")).await;
+    let gateway = agent(&pool, bob_acct, NewAgent::new("gateway")).await;
+    capability(&pool, gateway, "ask", "network", true).await;
+    sqlx::query(
+        "UPDATE agents SET mode = 'push', agent_card_url = 'https://gw.example/card.json'
+          WHERE id = $1",
+    )
+    .bind(gateway)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let (status, _, p) = get(
+        &pool,
+        true,
+        "/v1/discovery/agents/bob/gateway",
+        Some(&alice),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{p}");
+    assert_eq!(p["capabilities"][0]["access"], "friends");
+    assert_eq!(
+        p["capabilities"][0]["public_monthly_quota_per_agent"],
+        Value::Null
+    );
+    assert_eq!(p["you"]["callable"], serde_json::json!([]));
+
+    let listed = search(&pool, "", Some(&alice)).await;
+    let row = listed["agents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["slug"] == "gateway")
+        .unwrap();
+    assert_eq!(row["capabilities"][0]["access"], "friends");
+    assert!(slugs(&search(&pool, "callable=true", Some(&alice)).await).is_empty());
+}
+
 // ─── Profiles and standing ───────────────────────────────────
 
 /// A profile by name or id: shared fields, owner, capabilities in full,
@@ -620,6 +665,47 @@ async fn profiles(pool: PgPool) {
         let (status, _, _) = get(&pool, true, missing, None).await;
         assert_eq!(status, StatusCode::NOT_FOUND, "{missing}");
     }
+}
+
+/// A push agent takes calls only on its A2A endpoint, so its profile's
+/// call is a curl `SendMessage` there, not `invoke ensure` (which `/v1/invoke`
+/// refuses with `chk.target.push_mode`). Leftover from round-2 QA V-R2-006.
+#[sqlx::test(migrations = "../migrations")]
+async fn a_push_agents_profile_calls_its_a2a_endpoint(pool: PgPool) {
+    let (_, bob_acct, _) = user(&pool, "bob").await;
+    let gate = agent(&pool, bob_acct, NewAgent::new("gateway")).await;
+    sqlx::query(
+        "UPDATE agents SET mode = 'push', agent_card_url = 'https://gw.example/card.json'
+          WHERE id = $1",
+    )
+    .bind(gate)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let cap = capability(&pool, gate, "suggest_recipes", "network", false).await;
+
+    let (status, _, p) = get(&pool, true, "/v1/discovery/agents/bob/gateway", None).await;
+    assert_eq!(status, StatusCode::OK, "{p}");
+    assert_eq!(p["mode"], "push");
+    let cli = p["how_to_call"]["cli"].as_str().unwrap();
+    assert!(
+        cli.starts_with("curl -sS https://relay.example/agents/bob/gateway/a2a/jsonrpc -H "),
+        "{cli}"
+    );
+    assert!(
+        cli.contains(&format!("X-ChakraMCP-Capability: {cap}")),
+        "{cli}"
+    );
+    assert!(
+        cli.contains("X-ChakraMCP-Caller-Agent: <your-agent-id>"),
+        "{cli}"
+    );
+    assert!(cli.contains(r#""method":"SendMessage""#), "{cli}");
+    assert!(!cli.contains("invoke ensure"), "{cli}");
+    assert!(
+        p["how_to_call"].get("mcp").is_none(),
+        "push agents have no MCP endpoint"
+    );
 }
 
 /// Private and org agents' profiles are for members (and org-sharers);

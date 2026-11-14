@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n                   COALESCE(bool_or(consent_required), false) AS \"asks_first!\",\n                   COALESCE(bool_or(public_invoke), false) AS \"public!\"\n                 FROM agent_capabilities\n                WHERE agent_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "asks_first!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "public!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "771435f1fa4b67b1c85f7a602af717a7ed161787b15e66ec53676695bf1a908f"
+}

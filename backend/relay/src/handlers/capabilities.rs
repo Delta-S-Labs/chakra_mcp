@@ -124,6 +124,20 @@ fn validate_public_invoke_combo(
     }
 }
 
+/// A push agent takes calls only on its A2A endpoint, where every caller
+/// needs a friendship and a grant, so none of its capabilities can be
+/// public.
+fn refuse_public_on_push(public_invoke: bool, agent_mode: &str) -> Result<(), ApiError> {
+    if public_invoke && agent_mode == "push" {
+        return Err(ApiError::Conflict(
+            "this agent takes calls at its own endpoint (push mode), where every caller needs \
+             a friendship and a grant; public_invoke needs a pull-mode agent"
+                .into(),
+        ));
+    }
+    Ok(())
+}
+
 /// The agent's account and mode (`pull` or `push`), once the caller is
 /// shown to be allowed to change its capabilities.
 async fn agent_for_member(
@@ -297,6 +311,7 @@ pub async fn create(
         visibility,
         req.public_monthly_quota_per_agent,
     )?;
+    refuse_public_on_push(public_invoke, &mode)?;
     // When `public_invoke` is false the quota column is meaningless;
     // we store NULL so a later flip to true forces the owner to set a
     // fresh quota rather than reusing a stale leftover value.
@@ -437,6 +452,8 @@ pub async fn update(
         effective_visibility,
         effective_quota,
     )?;
+    // Only turning it on is refused, so a push agent can still turn it off.
+    refuse_public_on_push(req.public_invoke == Some(true), &mode)?;
     if let Some(s) = req.semantics.as_deref() {
         if !matches!(s, "autonomous" | "human_in_loop") {
             return Err(ApiError::InvalidRequest(

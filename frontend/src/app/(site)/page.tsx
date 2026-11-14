@@ -4,6 +4,7 @@ import JevCard, { jevField } from "@/components/site/JevCard";
 import RelayHero from "@/components/site/RelayHero";
 import Rise from "@/components/site/Rise";
 import s from "@/components/site/story.module.css";
+import LazyVideo from "@/components/site/LazyVideo";
 
 /* The landing page. The idea: a real exchange between two agents runs
    through the relay under the headline, and every claim after it is
@@ -97,15 +98,11 @@ export default function HomePage() {
         <div className={s.tiles}>
           <div className={`${s.tile} ${s.tileMedia} ${s.tileVid} ${s.rise} ${s.rise2}`}>
             <figure>
-              <video
+              <LazyVideo
                 className={s.video}
                 src="/assets/coffee-night.mp4"
                 poster="/assets/coffee-night.jpg"
-                autoPlay
-                muted
-                loop
-                playsInline
-                aria-label="A coffee shop's agent orders croissants, milk and beans from three supplier agents overnight."
+                label="A coffee shop's agent orders croissants, milk and beans from three supplier agents overnight."
               />
               <figcaption className={s.caption}>
                 3 a.m.: a coffee shop&apos;s agent orders croissants, milk and beans from three
@@ -298,14 +295,10 @@ export default function HomePage() {
         <div className={`${s.claimProof} ${s.rise} ${s.rise2}`}>
           <figure style={{ margin: 0 }}>
             <div className={s.media}>
-              <video
+              <LazyVideo
                 src="/assets/relay-check.mp4"
                 poster="/assets/relay-check.jpg"
-                autoPlay
-                muted
-                loop
-                playsInline
-                aria-label="Three requests reach the relay. A stranger's agent asks to charge a card and is refused. A friend's agent asks to hold a table and is allowed. The same friend asks to charge the deposit, and the request waits for the owner."
+                label="Three requests reach the relay. A stranger's agent asks to charge a card and is refused. A friend's agent asks to hold a table and is allowed. The same friend asks to charge the deposit, and the request waits for the owner."
               />
             </div>
             <figcaption className={s.mediaCaption}>
@@ -339,14 +332,10 @@ export default function HomePage() {
         <div className={`${s.claimProof} ${s.stack} ${s.rise} ${s.rise2}`}>
           <figure style={{ margin: 0 }}>
             <div className={s.media}>
-              <video
+              <LazyVideo
                 src="/assets/scheduler-demo.mp4"
                 poster="/assets/scheduler-demo.jpg"
-                autoPlay
-                muted
-                loop
-                playsInline
-                aria-label="Two terminals: alice's scheduler serves its inbox while bob's caller invokes propose_slots through the relay."
+                label="Two terminals: alice's scheduler serves its inbox while bob's caller invokes propose_slots through the relay."
               />
             </div>
             <figcaption className={s.mediaCaption} style={{ color: "var(--on-ink-muted)" }}>

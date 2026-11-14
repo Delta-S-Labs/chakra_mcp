@@ -89,6 +89,10 @@ pub struct CapabilityDetail {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct HowToCall {
+    /// A command that calls its first capability: `chakramcp invoke ensure`
+    /// for a pull agent; for a push agent, which takes calls only on its
+    /// A2A endpoint (`/v1/invoke` refuses it with `chk.target.push_mode`),
+    /// a curl `SendMessage` to that endpoint.
     pub cli: String,
     /// The agent's A2A card (network-visible agents).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -210,19 +214,21 @@ pub async fn profile(
     .await?
     .into_iter()
     .filter(|c| loaded.relation.sees(&c.visibility))
-    .map(|c| CapabilityDetail {
-        id: c.id,
-        name: c.name,
-        description: c.description,
-        input_schema: c.input_schema,
-        output_schema: c.output_schema,
-        access: Access::of(c.public_invoke, &agent.visibility),
-        public_monthly_quota_per_agent: c
-            .public_invoke
-            .then_some(c.public_monthly_quota_per_agent)
-            .flatten(),
-        consent_required: c.consent_required,
-        semantics: c.semantics,
+    .map(|c| {
+        let access = Access::of(c.public_invoke, &agent.visibility, &agent.mode);
+        CapabilityDetail {
+            id: c.id,
+            name: c.name,
+            description: c.description,
+            input_schema: c.input_schema,
+            output_schema: c.output_schema,
+            access,
+            public_monthly_quota_per_agent: (access == Access::Public)
+                .then_some(c.public_monthly_quota_per_agent)
+                .flatten(),
+            consent_required: c.consent_required,
+            semantics: c.semantics,
+        }
     })
     .collect();
 
@@ -230,31 +236,27 @@ pub async fn profile(
 
     let name = format!("{}/{}", agent.account_slug, agent.slug);
     let public = agent.visibility == "network";
-    let how_to_call = HowToCall {
-        cli: format!(
+    let relay = state.config.relay_base_url.trim_end_matches('/');
+    let first = capabilities.first();
+    let cli = if agent.mode == "push" {
+        push_call(relay, &name, first.map(|c| c.id))
+    } else {
+        format!(
             "chakramcp invoke ensure {name} {} '{{}}' --from <your-agent> --wait",
-            capabilities
-                .first()
-                .map_or("<capability>", |c| c.name.as_str()),
-        ),
-        a2a_card: public.then(|| {
-            format!(
-                "{}/agents/{name}/.well-known/agent-card.json",
-                state.config.relay_base_url.trim_end_matches('/')
-            )
-        }),
+            first.map_or("<capability>", |c| c.name.as_str()),
+        )
+    };
+    let how_to_call = HowToCall {
+        cli,
+        a2a_card: public.then(|| format!("{relay}/agents/{name}/.well-known/agent-card.json")),
         profile: public.then(|| {
             format!(
                 "{}/agents/{name}",
                 state.config.frontend_base_url.trim_end_matches('/')
             )
         }),
-        mcp: (state.mcp.agents_enabled && agent.mode == "pull").then(|| {
-            format!(
-                "{}/agents/{name}/mcp",
-                state.config.relay_base_url.trim_end_matches('/')
-            )
-        }),
+        mcp: (state.mcp.agents_enabled && agent.mode == "pull")
+            .then(|| format!("{relay}/agents/{name}/mcp")),
     };
 
     let you = match viewer {
@@ -283,4 +285,18 @@ pub async fn profile(
         you,
         agent: loaded.summary,
     })
+}
+
+/// A push agent's call: a curl `SendMessage` to its A2A endpoint, as the
+/// Concepts docs show it, with the capability's id when it has one.
+fn push_call(relay: &str, name: &str, capability: Option<Uuid>) -> String {
+    let capability = capability.map_or_else(|| "<capability-id>".to_owned(), |id| id.to_string());
+    format!(
+        "curl -sS {relay}/agents/{name}/a2a/jsonrpc \
+         -H \"Authorization: Bearer $CHAKRAMCP_API_KEY\" \
+         -H \"X-ChakraMCP-Caller-Agent: <your-agent-id>\" \
+         -H \"X-ChakraMCP-Capability: {capability}\" \
+         -H 'Content-Type: application/json' \
+         -d '{{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"SendMessage\",\"params\":{{\"message\":{{\"role\":\"user\",\"messageId\":\"m-1\",\"parts\":[{{\"data\":{{}}}}]}}}}}}'"
+    )
 }

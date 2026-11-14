@@ -457,7 +457,7 @@ async fn store_rejection_report(db: &PgPool, id: Uuid, report: Value) -> Result<
 const PUSH_TARGET_ERROR: &str = "target agent is push-mode: it takes calls on its A2A endpoint \
      (POST /agents/<account>/<slug>/a2a/jsonrpc), not as queued invocations";
 /// Its code (round-2 QA V-R2-006).
-const PUSH_TARGET_CODE: &str = "chk.target.push_mode";
+pub(crate) const PUSH_TARGET_CODE: &str = "chk.target.push_mode";
 
 /// The refusal for a capability that isn't public: `chk.policy.grant_required`
 /// when the caller can see it, as MCP answers (round-2 QA N35), else the
@@ -3839,6 +3839,88 @@ mod public_invoke_tests {
                 .await
                 .unwrap();
         assert_eq!(rows, 0, "a refused public invoke writes no row");
+    }
+
+    /// The owner's request through a fresh router: (status, JSON body).
+    async fn send(
+        pool: &PgPool,
+        token: &str,
+        method: &str,
+        uri: &str,
+        body: Value,
+    ) -> (StatusCode, Value) {
+        let res = crate::router(crate::state::RelayState::new(pool.clone(), config()))
+            .oneshot(
+                Request::builder()
+                    .method(method)
+                    .uri(uri)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                    .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = res.status();
+        let bytes = res.into_body().collect().await.unwrap().to_bytes();
+        (
+            status,
+            serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+        )
+    }
+
+    /// A push agent's A2A endpoint needs a friendship and a grant from every
+    /// caller, so its capabilities can't be made public, and an agent with a
+    /// public capability can't become push until it's turned off.
+    #[sqlx::test(migrations = "../migrations")]
+    async fn public_capabilities_need_a_pull_agent(pool: PgPool) {
+        let f = seed_public(&pool, 5, false).await;
+        let owner = encode_jwt(
+            &UserClaims::new(
+                f.granter_user,
+                format!("{}@t.local", f.granter_user),
+                false,
+                1,
+            ),
+            "test-secret",
+        )
+        .unwrap();
+        let agent = format!("/v1/agents/{}", f.granter_agent);
+        let card = serde_json::json!({
+            "agent_card_url": "https://granter.example/.well-known/agent-card.json"
+        });
+        let public_cap = format!("{agent}/capabilities/{}", f.public_cap);
+
+        let (status, body) = send(&pool, &owner, "PATCH", &agent, card.clone()).await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        assert!(body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("public capabilities"));
+
+        let off = serde_json::json!({"public_invoke": false});
+        let (status, body) = send(&pool, &owner, "PATCH", &public_cap, off).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let (status, body) = send(&pool, &owner, "PATCH", &agent, card).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["mode"], "push");
+
+        let on = serde_json::json!({"public_invoke": true, "public_monthly_quota_per_agent": 5});
+        let (status, body) = send(&pool, &owner, "PATCH", &public_cap, on).await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        assert!(body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("pull-mode"));
+        let new_public = serde_json::json!({
+            "name": "open_op", "public_invoke": true, "public_monthly_quota_per_agent": 5
+        });
+        let caps = format!("{agent}/capabilities");
+        let (status, body) = send(&pool, &owner, "POST", &caps, new_public).await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        let friends_only = serde_json::json!({"name": "open_op"});
+        let (status, body) = send(&pool, &owner, "POST", &caps, friends_only).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
     }
 
     #[sqlx::test(migrations = "../migrations")]
