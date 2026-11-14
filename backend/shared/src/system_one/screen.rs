@@ -15,7 +15,7 @@ use super::questions::{
 use super::{post, ComplianceChecker, Relationship, Subject};
 use crate::error::ApiError;
 use crate::safety::{
-    self, Action, Channel, Chunk, Context, Finding, FindingKind, Plan, Scan, Source, TooLarge,
+    self, Action, Channel, Chunk, Context, Finding, FindingKind, Plan, Scan, TooLarge,
 };
 
 /// Why a message was blocked: the reason the sender sees, and its code.
@@ -432,13 +432,18 @@ fn decide(channel: Channel, scan: &Scan, plan: &Plan, a: &Answered) -> Decided {
                 .and_then(|n| n.parse::<usize>().ok())
                 .filter(|cid| *cid < scan.candidates.len())
             {
-                // Redaction acts at ACT in every language. When
-                // `off_platform` fired too, it acts at CORROBORATED, or
-                // whatever the answer for a contact hidden in an encoding.
+                // Redaction acts at ACT in every language. A contact hidden
+                // in an encoding or spread out to get past filters needs
+                // only CORROBORATED: hiding it is evidence of its own. When
+                // `off_platform` fired too, any contact acts at
+                // CORROBORATED, and a hidden one whatever the answer.
                 let c = &scan.candidates[cid];
-                let hidden = matches!(c.source, Source::Decoded { .. });
+                let hidden = c.evasive();
                 let kind = c.kind.finding();
-                if p >= ACT || (off_platform && (hidden || p >= CORROBORATED)) {
+                if p >= ACT
+                    || (hidden && p >= CORROBORATED)
+                    || (off_platform && (hidden || p >= CORROBORATED))
+                {
                     redact.push(cid);
                     findings.push(judged(id, p, kind, Action::Redacted, Some(path_of(cid))));
                 }
@@ -776,6 +781,33 @@ mod tests {
         );
         // Without `off_platform`, its own low answer stands.
         let (s, _) = screen_with(fake(&[("contact_0", 0.2)]), input.clone()).await;
+        assert_eq!(s.value, input);
+        // Hiding it backs up a middling answer on its own.
+        let (s, _) = screen_with(fake(&[("contact_0", 0.55)]), input.clone()).await;
+        assert_eq!(s.value["message"], "base64: [contact removed]");
+    }
+
+    #[tokio::test]
+    async fn a_phone_spread_out_digit_by_digit_needs_less_evidence() {
+        // Round-2 eval miss adv-split-phone: 0.55–0.59 on its own question,
+        // `off_platform` near 0.5.
+        let input = json!({ "message": "Here: 98 45 0 1 2 3 4 5 6 7" });
+        let (s, f) = screen_with(
+            fake(&[("contact_0", 0.55), ("off_platform", 0.5)]),
+            input.clone(),
+        )
+        .await;
+        let body = f.last_body.lock().unwrap().clone().unwrap();
+        assert_eq!(body["state"]["candidates"][0]["spread"], true);
+        assert_eq!(s.value["message"], "Here: [contact removed]");
+        // Below CORROBORATED it stays.
+        let (s, _) = screen_with(fake(&[("contact_0", 0.3)]), input).await;
+        assert_eq!(s.value["message"], "Here: 98 45 0 1 2 3 4 5 6 7");
+        // A number written the usual way still needs ACT, or `off_platform`.
+        let input = json!({ "message": "Here: 98450 12345" });
+        let (s, f) = screen_with(fake(&[("contact_0", 0.55)]), input.clone()).await;
+        let body = f.last_body.lock().unwrap().clone().unwrap();
+        assert!(body["state"]["candidates"][0].get("spread").is_none());
         assert_eq!(s.value, input);
     }
 

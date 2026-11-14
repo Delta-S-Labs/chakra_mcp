@@ -158,6 +158,9 @@ pub fn plan(channel: Channel, scan: &Scan, context: &Context) -> Plan {
             if let Some(format) = scan.formats.get(c.id).and_then(Option::as_ref) {
                 v["format"] = json!(fit(format, 64));
             }
+            if c.spread() {
+                v["spread"] = json!(true);
+            }
             v
         })
         .collect();

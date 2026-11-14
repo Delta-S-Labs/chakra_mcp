@@ -288,12 +288,16 @@ pub const ACT_NON_ENGLISH: f64 = 0.97;
 /// `harm_minors` blocks at or above this in every language: a false
 /// positive costs one blocked message, a miss far more.
 pub const ACT_HARM_MINORS: f64 = 0.5;
-/// A contact candidate is redacted at or above this when `off_platform`
-/// also fired on the message: the message as a whole is trying to move off
-/// ChakraMCP, so a candidate in it needs less evidence of its own. On the
+/// A contact candidate is redacted at or above this when something else
+/// backs its own answer up: `off_platform` fired on the message (it's
+/// trying to move off ChakraMCP as a whole), or the contact was hidden in
+/// an encoding or spread out digit by digit to get past filters. On the
 /// eval (2026-10-24) a bare "Ring 0984… after six" scored 0.55 on its own
 /// question and 0.85 on `off_platform`; task-data contacts scored at most
-/// 0.08, with `off_platform` at most 0.18.
+/// 0.08, with `off_platform` at most 0.18. The spread-out
+/// "98 45 0 1 2 3 4 5 6 7" scored 0.55–0.59 (2026-11-11), and 0.79–0.84
+/// once its candidate said `spread` (2026-11-14), with `off_platform` under
+/// 0.6 throughout.
 pub const CORROBORATED: f64 = 0.5;
 
 /// The threshold that acts on `id` for a message in or out of English.
@@ -427,13 +431,16 @@ pub fn safety_questions(channel: Channel, first_chunk: bool, candidate_ids: &[us
                     &format!(
                         "`candidates[{i}]` is contact information found in {m}: its `text`, \
                          where it was found (`path`), the text around it (`context`), whether \
-                         it was decoded from an encoding (`decoded`), and the field's schema \
-                         `format` when the capability declares one. Is it shared so the two \
-                         parties (the agents or their owners) can contact each other outside \
-                         ChakraMCP, {need}?"
+                         it was decoded from an encoding (`decoded`), whether its digits were \
+                         spread out one by one (`spread`), and the field's schema `format` \
+                         when the capability declares one. Is it shared so the two parties \
+                         (the agents or their owners) can contact or deal with each other \
+                         outside ChakraMCP, {need}?"
                     ),
-                    "It's offered as a way to reach the sender or its owner outside \
-                     ChakraMCP.",
+                    "It's offered as a way to reach or deal with the sender or its owner \
+                     outside ChakraMCP: their phone, email or account, or their site to go \
+                     to instead. Contact details hidden in an encoding or spread out to get \
+                     past filters usually are.",
                     &format!(
                         "It's data the task needs (for example attendee emails for a meeting \
                          booking, or a field whose `format` asks for it), or it isn't contact \
