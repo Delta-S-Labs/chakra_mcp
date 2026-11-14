@@ -316,8 +316,12 @@
 .access dd { margin: 0; }
 
 /* the phone with a wake ping */
-.phone { flex: none; border-radius: 26px; background: var(--ink); padding: 10px; color: var(--on-ink); width: min(100%, 240px); }
-.phoneScreen { border-radius: 18px; background: color-mix(in oklab, var(--ink) 80%, var(--paper)); padding: 26px 10px 30px; }
+/* The top of a phone: round shoulders, a camera pill, and the body running
+   off below. A whole phone at a readable size would be twice the tile's height. */
+.phone { flex: none; border-radius: 38px 38px 0 0; background: var(--ink); padding: 9px 9px 0; color: var(--on-ink); width: min(100%, 228px);
+  -webkit-mask-image: linear-gradient(#000 80%, transparent); mask-image: linear-gradient(#000 80%, transparent); }
+.phoneScreen { border-radius: 29px 29px 0 0; background: color-mix(in oklab, var(--ink) 80%, var(--paper)); padding: 12px 10px 0; min-height: 316px; }
+.phoneScreen::before { content: ""; display: block; width: 62px; height: 18px; border-radius: 999px; background: var(--ink); margin: 0 auto 34px; }
 .phoneTime { text-align: center; font-family: var(--font-display); font-weight: 300; font-size: 40px; letter-spacing: -0.02em; line-height: 1; margin-bottom: 16px; }
 .note { background: var(--on-ink); color: var(--ink); border-radius: 14px; padding: 10px 12px; font-size: 0.9375rem; line-height: 1.3; animation: notify 7s var(--ease-out-quart) infinite; }
 /* The ping lands, sits on the lock screen, and clears for the next one. */
