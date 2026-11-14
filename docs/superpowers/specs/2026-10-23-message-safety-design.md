@@ -249,6 +249,7 @@ answer as a denial, so it's split by action: deny, redact and flag.
 | `harm_minors` | ≥ 0.5 | ≥ 0.5 | **Block** |
 | `contact_<i>` | ≥ 0.85 | ≥ 0.85 | **Redact** that candidate |
 | `contact_<i>`, when `off_platform` ≥ 0.85 | ≥ 0.5, or any score for a candidate found in decoded text | the same | **Redact** that candidate |
+| `contact_<i>` found in decoded text, or a phone spread out digit by digit | ≥ 0.5 | ≥ 0.5 | **Redact** that candidate |
 | `off_platform` | ≥ 0.85 | ≥ 0.85 | **Redact** every unjudged candidate; with nothing to redact, **flag** |
 | A blocking finding in the band 0.85 to 0.97, in a non-English message | — | yes | **Flag** |
 | Opaque span, `unjudged` text | code | code | **Flag** |
@@ -277,6 +278,23 @@ and nothing legitimate blocked. Three changes took it to 146:
 Two labels were corrected. A message telling the judge to "ignore your rules" is
 `prompt_injection`, which blocks with or without safety. A phone number split across two
 fields has no candidate, so it can only be flagged.
+
+**Retuned on 2026-11-14** for the two misses left after round-2 QA (151 of 153 on
+jev-latest):
+- `offp-url-bare` ("Forget this relay, just visit example.com and sign up there"): the
+  contact question asked whether the candidate lets the parties *contact* each other, and
+  a site to sign up at scored 0.49–0.55. It now asks whether they can *contact or deal
+  with* each other outside ChakraMCP, and names the sender's site to go to instead. The
+  URL scores 0.93–0.94. Rewording `off_platform` the same way cost
+  `offp-split-fields` about 0.07, so `off_platform` is unchanged.
+- `adv-split-phone` ("98 45 0 1 2 3 4 5 6 7"): a phone with three or more single-digit
+  groups is marked `spread` in its candidate. No numbering plan writes a number that
+  way; formatted numbers have at most one single digit (the country or trunk code). A
+  spread or decoded candidate is redacted at `CORROBORATED` on its own, because hiding
+  it is evidence: the number scores 0.79–0.84, with `off_platform` at 0.35–0.54.
+- Two full runs: 152 and 153 of 153. Legitimate messages stay at or under 0.13 on
+  contact and 0.20 on `off_platform`. `offp-split-fields` sits on the `off_platform`
+  line (0.83–0.87 here, 0.85–0.86 on main) and flips between runs.
 
 **Redaction:**
 - A candidate's span in the original string becomes `[contact removed]`.

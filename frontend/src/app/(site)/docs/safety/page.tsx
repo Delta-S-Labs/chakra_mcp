@@ -201,6 +201,11 @@ delivered: { "message": "Friday works. Text me on [contact removed] instead." }`
         </li>
         <li>A contact detail found in decoded text replaces the whole encoded span.</li>
         <li>
+          A contact detail hidden in an encoding, or a phone number spread out digit by digit
+          (<code>9 8 4 5 0 1 2 3 4 5</code>), needs less evidence of its own: hiding it counts
+          against it.
+        </li>
+        <li>
           A string or number that is only the contact detail becomes the string{" "}
           <code>&quot;[contact removed]&quot;</code>. An object key becomes{" "}
           <code>[contact removed 1]</code>, <code>[contact removed 2]</code> and so on.

@@ -68,6 +68,25 @@ impl Candidate {
             Source::Decoded { decoded: d } => decoded[*d].item,
         }
     }
+
+    /// A phone number broken into single digits, like
+    /// "98 45 0 1 2 3 4 5 6 7". No numbering plan writes a number that
+    /// way: it was spread out to get past filters. Real formats have at
+    /// most one single digit, the country or trunk code ("+1 415 555 0134").
+    pub fn spread(&self) -> bool {
+        self.kind == ContactKind::Phone
+            && self
+                .text
+                .split(|c: char| !c.is_ascii_digit())
+                .filter(|group| group.len() == 1)
+                .count()
+                >= 3
+    }
+
+    /// Hidden from a plain reading: decoded from an encoding, or spread out.
+    pub fn evasive(&self) -> bool {
+        matches!(self.source, Source::Decoded { .. }) || self.spread()
+    }
 }
 
 /// Find candidates in the items and the decoded spans, numbered in order.
@@ -547,6 +566,44 @@ mod tests {
             one("double five one two three four five six").1,
             ContactKind::Phone
         );
+    }
+
+    #[test]
+    fn tells_a_spread_out_phone_from_a_formatted_one() {
+        let spread = |text: &str| {
+            let (found, kind) = kinds(text)
+                .into_iter()
+                .find(|(_, k)| *k == ContactKind::Phone)
+                .unwrap_or_else(|| panic!("no phone in {text:?}"));
+            Candidate {
+                id: 0,
+                kind,
+                source: Source::Item {
+                    item: 0,
+                    range: 0..0,
+                },
+                text: found,
+                context: String::new(),
+            }
+            .spread()
+        };
+        for formatted in [
+            "call +1 415 555 0134",
+            "call +1 (415) 555-0134",
+            "call 1-800-555-0134",
+            "call 0 98450 12345",
+            "call 06 12 34 56 78",
+            "call +91 98450 12345",
+        ] {
+            assert!(!spread(formatted), "{formatted}");
+        }
+        for spread_out in [
+            "Here: 98 45 0 1 2 3 4 5 6 7",
+            "9 8 4 5 0 1 2 3 4 5",
+            "+91 9-8-4-5-0-1-2-3-4-5",
+        ] {
+            assert!(spread(spread_out), "{spread_out}");
+        }
     }
 
     #[test]
