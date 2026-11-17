@@ -69,18 +69,10 @@ impl Candidate {
         }
     }
 
-    /// A phone number broken into single digits, like
-    /// "98 45 0 1 2 3 4 5 6 7". No numbering plan writes a number that
-    /// way: it was spread out to get past filters. Real formats have at
-    /// most one single digit, the country or trunk code ("+1 415 555 0134").
+    /// A phone number broken into single digits to get past filters, like
+    /// "98 45 0 1 2 3 4 5 6 7" or "9.8.4.5.0.1.2.3.4.5" (see `spread_out`).
     pub fn spread(&self) -> bool {
-        self.kind == ContactKind::Phone
-            && self
-                .text
-                .split(|c: char| !c.is_ascii_digit())
-                .filter(|group| group.len() == 1)
-                .count()
-                >= 3
+        self.kind == ContactKind::Phone && spread_out(&self.text)
     }
 
     /// Hidden from a plain reading: decoded from an encoding, or spread out.
@@ -349,6 +341,21 @@ static INDIAN: LazyLock<Regex> = LazyLock::new(|| {
 });
 static SEPARATED: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\(?\d[\d\s\-\.\(\)]{8,22}\d").expect("separated regex"));
+/// 10–15 single digits with a space, dot or dash between each, spacing
+/// allowed around the dot or dash ("9 . 8 . 4 . 5 …"): too long for
+/// `SEPARATED`.
+static SPREAD: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\d(?:\s*[\-\.]\s*\d|\s+\d){9,14}").expect("spread regex"));
+
+/// Three or more single-digit groups, like "98 45 0 1 2 3 4 5 6 7" or
+/// "9.8.4.5.0.1.2.3.4.5". No numbering plan writes a number that way:
+/// real formats have at most one single digit, the country or trunk code.
+fn spread_out(s: &str) -> bool {
+    s.split(|c: char| !c.is_ascii_digit())
+        .filter(|group| group.len() == 1)
+        .count()
+        >= 3
+}
 
 fn digits(s: &str) -> usize {
     s.chars().filter(char::is_ascii_digit).count()
@@ -375,6 +382,11 @@ fn phones(text: &str) -> Vec<(Range<usize>, ContactKind)> {
             out.push(m.range());
         }
     }
+    for m in SPREAD.find_iter(text) {
+        if bounded(text, &m.range()) {
+            out.push(m.range());
+        }
+    }
     out.into_iter().map(|r| (r, ContactKind::Phone)).collect()
 }
 
@@ -395,21 +407,36 @@ fn phone_number_item(digits_text: &str) -> Vec<(Range<usize>, ContactKind)> {
 }
 
 /// Spans that look like numbers but aren't phones: dates, times, amounts,
-/// versions, UUIDs, and digits inside longer tokens.
+/// versions and IP addresses, UUIDs, and digits inside longer tokens.
 fn exclusions(text: &str) -> Vec<Range<usize>> {
     static NOT_PHONES: LazyLock<Regex> = LazyLock::new(|| {
+        // A whole run of three or more dotted groups is judged first, so a
+        // date or an amount can't claim the start of a dotted phone.
         Regex::new(concat!(
-            r"\d{4}-\d{2}-\d{2}(?:[t\s]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:z|[+\-]\d{2}:?\d{2})?)?",
+            r"(?P<dotted>v?\d+(?:\.\d+){2,}(?:[\-+][0-9a-z.\-]+)?)",
+            r"|\d{4}-\d{2}-\d{2}(?:[t\s]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:z|[+\-]\d{2}:?\d{2})?)?",
             r"|\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4}",
             r"|\d{1,2}:\d{2}(?::\d{2})?",
             r"|[$€£₹¥]\s?\d[\d,]*(?:\.\d+)?|\d[\d,]*\.\d{2}\b",
-            r"|v?\d+\.\d+\.\d+(?:[\-+][0-9a-z.\-]+)?",
             r"|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
             r"|[a-z_]+\d[a-z0-9_]*|\d+[a-z_][a-z0-9_]*",
         ))
         .expect("exclusion regex")
     });
-    NOT_PHONES.find_iter(text).map(|m| m.range()).collect()
+    NOT_PHONES
+        .captures_iter(text)
+        .filter(|c| !c.name("dotted").is_some_and(|m| dotted_phone(m.as_str())))
+        .filter_map(|c| c.get(0).map(|m| m.range()))
+        .collect()
+}
+
+/// A run of digits and dots that is a phone, not a version or an IP
+/// address: spread out digit by digit ("9.8.4.5.0.1.2.3.4.5"), or the
+/// North American 3-3-4 ("415.555.0134", "1.415.555.0134").
+fn dotted_phone(s: &str) -> bool {
+    static NANP: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^(?:1\.)?\d{3}\.\d{3}\.\d{4}$").expect("nanp regex"));
+    spread_out(s) || NANP.is_match(s)
 }
 
 // ─── Digits written as words ─────────────────────────────
@@ -552,6 +579,9 @@ mod tests {
             "9845012345",
             "091-98450-12345",
             "415-555-0134 ext",
+            "415.555.0134",
+            "+1 415.555.0134",
+            "1.415.555.0134",
         ] {
             let found = kinds(&format!("call {phone}"));
             assert!(
@@ -566,6 +596,20 @@ mod tests {
             one("double five one two three four five six").1,
             ContactKind::Phone
         );
+        // Spread out with dots, which a version number also has. The whole
+        // number is the candidate.
+        for spread_out in [
+            "9.8.4.5.0.1.2.3.4.5",
+            "+91 9.8.4.5.0.1.2.3.4.5",
+            "98.45.0.1.2.3.4.5.6.7",
+            "9 . 8 . 4 . 5 . 0 . 1 . 2 . 3 . 4 . 5",
+            "9 - 8 - 4 - 5 - 0 - 1 - 2 - 3 - 4 - 5",
+        ] {
+            assert_eq!(
+                one(&format!("text me on {spread_out} tonight")),
+                (spread_out.to_owned(), ContactKind::Phone)
+            );
+        }
     }
 
     #[test]
@@ -594,6 +638,7 @@ mod tests {
             "call 0 98450 12345",
             "call 06 12 34 56 78",
             "call +91 98450 12345",
+            "call 415.555.0134",
         ] {
             assert!(!spread(formatted), "{formatted}");
         }
@@ -601,6 +646,8 @@ mod tests {
             "Here: 98 45 0 1 2 3 4 5 6 7",
             "9 8 4 5 0 1 2 3 4 5",
             "+91 9-8-4-5-0-1-2-3-4-5",
+            "9.8.4.5.0.1.2.3.4.5",
+            "9 . 8 . 4 . 5 . 0 . 1 . 2 . 3 . 4 . 5",
         ] {
             assert!(spread(spread_out), "{spread_out}");
         }
@@ -616,6 +663,11 @@ mod tests {
             "$12,345,678.90",
             "v2.3.1",
             "10.4.12",
+            "v2.3.1-beta.1",
+            "chrome 120.0.6099.109",
+            "windows 10.0.19041.1234",
+            "host 192.168.100.200",
+            "1.2.3.4",
             "9b2e6c1e-3f4a-4c2b-9d1e-1234567890ab",
             "order ord1234567890",
             "build 20261023",
