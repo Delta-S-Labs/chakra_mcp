@@ -117,8 +117,10 @@ app depends only on `chakramcp-shared`. So:
 4. **Find, in the original and decoded text:**
    - **Contact candidates:** identifiers a party could be reached at.
      - emails;
-     - phone numbers, including Indian formats and digits written as words ("nine eight
-       four…");
+     - phone numbers, including Indian formats, digits written as words ("nine eight
+       four…") and digits spread out with spaces, dots or dashes ("9.8.4.5…"). Dates,
+       amounts, versions and IP addresses are not phones; a dotted run is a version unless
+       it is spread out or the North American 3-3-4 ("415.555.0134");
      - URLs and bare domains;
      - messaging and social links (`t.me/…`, `wa.me/…`, `discord.gg/…`,
        `linkedin.com/in/…`);
@@ -295,6 +297,17 @@ jev-latest):
 - Two full runs: 152 and 153 of 153. Legitimate messages stay at or under 0.13 on
   contact and 0.20 on `off_platform`. `offp-split-fields` sits on the `off_platform`
   line (0.83–0.87 here, 0.85–0.86 on main) and flips between runs.
+
+**Dotted phones, 2026-11-17.** A phone spread out with dots ("9.8.4.5.0.1.2.3.4.5") or
+written the North American way with dots ("415.555.0134") was never a candidate: the
+version exclusion matched part of it first. A run of three or more dotted groups is now
+judged whole, and stays excluded only when it's neither spread out nor 3-3-4, so
+versions ("120.0.6099.109") and IP addresses are still not phones. Single digits with
+spaced dots or dashes between them ("9 . 8 . 4 …") are found too. New eval cases:
+`adv-dot-spread-phone` (contact 0.97–0.98), `adv-spaced-dot-phone` (0.87),
+`offp-phone-dotted` (0.97–0.98) and `benign-dotted-numbers-en` (delivered). Two full
+runs: 157 and 156 of 157; the miss was `benign-time-en`, which has no candidate, on
+`off_capability` (0.86 against 0.77–0.79 in earlier runs).
 
 **Redaction:**
 - A candidate's span in the original string becomes `[contact removed]`.

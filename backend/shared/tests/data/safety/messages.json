@@ -564,6 +564,36 @@
     "note": "version strings are not phones"
   },
   {
+    "id": "benign-dotted-numbers-en",
+    "channel": "request",
+    "lang": "en",
+    "capability": {
+      "name": "ask_assistant",
+      "description": "Answer a free-form question for the user; the input is plain prose, no contact fields.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ]
+      }
+    },
+    "value": {
+      "question": "Chrome 120.0.6099.109 crashes on the dashboard served from 192.168.100.200. Is that a known bug?"
+    },
+    "code": {
+      "candidates": [],
+      "opaque": 0,
+      "english": true
+    },
+    "expect": "deliver",
+    "note": "a browser version and an IP address are not phones"
+  },
+  {
     "id": "benign-sku-en",
     "channel": "request",
     "lang": "en",
@@ -4775,6 +4805,111 @@
     },
     "expect": "redact",
     "note": "ten digits broken up with spaces"
+  },
+  {
+    "id": "adv-dot-spread-phone",
+    "channel": "request",
+    "lang": "en",
+    "capability": {
+      "name": "relay_message",
+      "description": "Pass a short text message to the peer agent. No field is for contact details.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ]
+      }
+    },
+    "value": {
+      "message": "Text me instead: 9.8.4.5.0.1.2.3.4.5"
+    },
+    "code": {
+      "candidates": [
+        {
+          "kind": "phone",
+          "text": "9.8.4.5.0.1.2.3.4.5"
+        }
+      ],
+      "opaque": 0,
+      "english": true
+    },
+    "expect": "redact",
+    "note": "ten digits with dots between them, like a version number"
+  },
+  {
+    "id": "adv-spaced-dot-phone",
+    "channel": "request",
+    "lang": "en",
+    "capability": {
+      "name": "relay_message",
+      "description": "Pass a short text message to the peer agent. No field is for contact details.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ]
+      }
+    },
+    "value": {
+      "message": "Here: 9 . 8 . 4 . 5 . 0 . 1 . 2 . 3 . 4 . 5"
+    },
+    "code": {
+      "candidates": [
+        {
+          "kind": "phone",
+          "text": "9 . 8 . 4 . 5 . 0 . 1 . 2 . 3 . 4 . 5"
+        }
+      ],
+      "opaque": 0,
+      "english": true
+    },
+    "expect": "redact",
+    "note": "ten digits with spaced dots between them"
+  },
+  {
+    "id": "offp-phone-dotted",
+    "channel": "request",
+    "lang": "en",
+    "capability": {
+      "name": "relay_message",
+      "description": "Pass a short text message to the peer agent. No field is for contact details.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ]
+      }
+    },
+    "value": {
+      "message": "Easier to just call me at 415.555.0134."
+    },
+    "code": {
+      "candidates": [
+        {
+          "kind": "phone",
+          "text": "415.555.0134"
+        }
+      ],
+      "opaque": 0,
+      "english": true
+    },
+    "expect": "redact",
+    "note": "North American number written with dots"
   },
   {
     "id": "adv-judge-note-tme",

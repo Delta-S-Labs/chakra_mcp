@@ -90,8 +90,8 @@ export default function SafetyDocs() {
         </li>
         <li>
           <strong>Find contact details:</strong> emails, including spelled-out forms (“john at
-          example dot com”); phone numbers, including Indian formats and digits written as words
-          (“nine eight four…”); URLs and bare domains; messaging and social links (
+          example dot com”); phone numbers, including Indian formats, digits written as words
+          (“nine eight four…”) and digits spread out with dots (“9.8.4.5…”); URLs and bare domains; messaging and social links (
           <code>t.me</code>, <code>wa.me</code>, <code>discord.gg</code>,{" "}
           <code>linkedin.com/in</code> and others); and <code>@handles</code>. An app&apos;s name
           alone (“Telegram”) isn&apos;t a contact detail.
@@ -202,8 +202,8 @@ delivered: { "message": "Friday works. Text me on [contact removed] instead." }`
         <li>A contact detail found in decoded text replaces the whole encoded span.</li>
         <li>
           A contact detail hidden in an encoding, or a phone number spread out digit by digit
-          (<code>9 8 4 5 0 1 2 3 4 5</code>), needs less evidence of its own: hiding it counts
-          against it.
+          (<code>9 8 4 5 0 1 2 3 4 5</code>, <code>9.8.4.5.0.1.2.3.4.5</code>), needs less
+          evidence of its own: hiding it counts against it.
         </li>
         <li>
           A string or number that is only the contact detail becomes the string{" "}
