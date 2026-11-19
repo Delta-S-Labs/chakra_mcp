@@ -7,12 +7,12 @@ dependencies:
   version: 21.0.0
 - name: grafana
   repository: oci://ghcr.io/grafana-community/helm-charts
-  version: 14.4.0
+  version: 14.4.1
 - name: alloy
   repository: https://grafana.github.io/helm-charts
   version: 1.15.0
 - name: tempo
   repository: oci://ghcr.io/grafana-community/helm-charts
   version: 3.2.1
-digest: sha256:783c4c9b48d5c2328f4e318eb136725303f94f61b59b66e9c43a77993cb7979a
-generated: "2026-11-18T09:26:57.000000000Z"
+digest: sha256:d101474e0e20eaef51cbbd2bb24be0774bc8be6c919f3fb464d0a5b02d365832
+generated: "2026-11-19T14:06:03.672873771Z"
